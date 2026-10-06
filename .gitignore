@@ -12,3 +12,5 @@ venv/
 .idea/
 .vscode/
 .DS_Store
+.test-db.sqlite3
+.test-static/
