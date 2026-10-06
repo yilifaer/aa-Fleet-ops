@@ -13,9 +13,9 @@ FleetOps permissions are designed to be assigned through normal Alliance Auth gr
 | `fleetops.create_manual_fleet` | Create a manual/historical fleet record without ESI tracking. |
 | `fleetops.manage_fleets` | Manage every Fleet Operation, regardless of FC. |
 | `fleetops.view_corp_stats` | View the user's own corporation statistics and corporation attendance history. |
-| `fleetops.view_all_stats` | View alliance-wide corporation and FC statistics/history. |
+| `fleetops.view_all_stats` | View alliance-wide corporation and FC statistics/history. Statistics only: opening Fleet Operation records needs `view_all_fleets` or `manage_fleets`. |
 | `fleetops.manage_attendance` | Add/delete manual attendance and set 1x/2x/3x attendance multiplier on fleets the user is allowed to manage; with `manage_fleets`, applies alliance-wide. |
-| `fleetops.manage_incentives` | Manage monthly FC incentive periods, waivers, recalculation, finalization and unlock. |
+| `fleetops.manage_incentives` | Manage monthly FC incentive periods, waivers, recalculation, finalization and unlock. The FC Incentive pages are only available while **Incentive enabled** is ticked in FleetOps Administration → General Settings, which is off by default on new installs. |
 | `fleetops.manage_configuration` | Use FleetOps front-end Administration for fleet types, comms, channels, webhooks, templates and settings. |
 | `fleetops.view_audit_log` | View FleetOps audit logs. |
 
@@ -64,7 +64,7 @@ Capabilities:
 - Add/remove Back Seat FC, Logi Anchor and Snowflake assignments on own fleets, including after fleet end.
 - Correct attendance after fleet end.
 - Select 1x/2x/3x fleet attendance multiplier.
-- Add manual attendance with arbitrary attendance values.
+- Add manual attendance (1-100 credits per entry) for characters registered to an Alliance Auth user.
 - Create manual/historical fleet records.
 
 `view_all_fleets` is intentionally read-only. It lets an FC review every historical fleet without giving that FC the ability to edit another FC's operation.
@@ -86,7 +86,7 @@ Grant **all FleetOps permissions**:
 - `fleetops.manage_configuration`
 - `fleetops.view_audit_log`
 
-Capabilities include all fleet operations, all statistics, attendance management, FC incentives, configuration, and audit review.
+Capabilities include all fleet operations, all statistics, attendance management, FC incentives (once **Incentive enabled** is ticked in the FleetOps settings), configuration, and audit review.
 
 ## Important row-level rule
 

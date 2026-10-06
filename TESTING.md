@@ -2,12 +2,69 @@
 
 This alpha should be tested on a non-production Alliance Auth instance first.
 
-## Packaging smoke test
+## Automated test suite
+
+The Django test suite in `tests/` runs against the small Alliance Auth project in `testauth/`. It does not need a configured Alliance Auth project, but it does need:
+
+- the package installed with its test extra: `pip install -e ".[test]"` from the repository root (Alliance Auth pulls in `mysqlclient`, which needs the MySQL/MariaDB client headers and `pkg-config` to build);
+- a running Redis server, used as the Django cache. The default is `redis://localhost:6379/13`; set `FLEETOPS_TEST_REDIS=redis://host:6379/N` to use another server or database.
+
+Run the same checks as CI from the repository root:
+
+```bash
+python manage.py check
+python manage.py makemigrations fleetops --check --dry-run
+python runtests.py
+```
+
+`python runtests.py` runs all of `tests` on an in-memory SQLite database. To run one module, pass it as an argument:
+
+```bash
+python runtests.py tests.test_attendance
+```
+
+### MariaDB / MySQL
+
+Set `FLEETOPS_TEST_DB` to run the suite against MariaDB or MySQL instead of SQLite:
+
+```bash
+FLEETOPS_TEST_DB=mysql://user:pass@host:3306/name python runtests.py
+```
+
+Django creates and drops a separate `test_<name>` database for the run (the database named in the URL does not have to exist), so the user needs permission to create and drop databases.
+
+### Coverage
+
+To get the same coverage report as CI:
+
+```bash
+coverage run --source=fleetops --omit='fleetops/migrations/*' runtests.py tests
+coverage report --skip-covered --sort=cover
+```
+
+### Continuous integration
+
+GitHub Actions runs `manage.py check`, the migration check and the full suite with coverage on every push and pull request, using a Redis service and a MariaDB service:
+
+| Python | Alliance Auth | django-esi | Database |
+|---|---|---|---|
+| 3.10 | 5.2 | 9 | SQLite |
+| 3.12 | 5.4 | 9 | MariaDB |
+| 3.13 | latest 5.x (currently 5.5) | 10 | MariaDB |
+| 3.14 | latest 5.x (currently 5.5) | 10 | SQLite |
+
+Alliance Auth 5.4 and older stay on django-esi 9; Alliance Auth 5.5 requires django-esi 10. A separate job builds the wheel and sdist.
+
+### Quick check without Redis
+
+The payout and average calculations have plain unit tests that need neither Redis nor a database:
 
 ```bash
 python -m compileall fleetops
 python -m unittest tests.test_calculations
 ```
+
+These do not replace the full suite.
 
 ## AA integration smoke test
 
@@ -40,7 +97,7 @@ Then verify `/fleetops/` loads for a user with `fleetops.basic_access`.
 12. Manual attendance correction.
 13. End Fleet.
 14. Repeated ESI fleet-not-found auto-end.
-15. Monthly FC calculation, waiver, finalize and unlock.
+15. Monthly FC calculation, waiver, finalize and unlock (tick **Incentive enabled** in FleetOps Administration → General Settings first; it is off by default).
 16. Built-in SRP available: Fleet Start should create/link SRP without blocking the fleet if SRP fails.
 17. Manual attendance permission: FC can add multiple credits to a closed fleet; another FC cannot edit that fleet unless separately credited/admin.
 18. Attendance history: personal/corp/alliance views show up to configured retention; a departed mapped member is filtered/pruned when membership filtering is enabled.

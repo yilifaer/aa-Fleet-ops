@@ -33,7 +33,7 @@ The repository includes the full expected feature target and an explicit distinc
 - Manual **Copy Ping / Copy MOTD** fallback regardless of automation status.
 - Discord webhook Ping with per-step success/failure status.
 - ESI MOTD update with per-step success/failure status.
-- Near-real-time active fleet member tracking using ESI cache/ETag behavior.
+- Near-real-time active fleet member tracking. Fleet reads use django-esi response caching and always return the fleet data, also when it has not changed (ETags are not used for fleet reads).
 - Current fleet member state plus change events: Join, Leave, Rejoin, Ship, System, Role, Wing and Squad changes.
 - Automatic attendance separated from operational tracking.
 - Configurable maximum attendance credits per Auth user per fleet (`NULL` = unlimited).
@@ -187,6 +187,8 @@ fleetops.manage_configuration
 fleetops.view_audit_log
 ```
 
+`fleetops.manage_incentives` alone does not show the FC Incentive pages: FC incentives are off by default on a new install. Tick **Incentive enabled** in FleetOps Administration → General Settings (see step 2) to test them.
+
 ## 2. Configure optional presets
 
 Grant `fleetops.manage_configuration` to the appropriate alliance management group, then open:
@@ -203,7 +205,7 @@ The FleetOps front-end Administration Center can configure:
 - Discord Webhooks
 - Ping Targets
 - Message Templates
-- FleetOps Settings
+- FleetOps Settings, including the **Incentive enabled** switch for FC incentives (off by default)
 
 `Form Up` is intentionally **not** an administrator preset. Django Admin is retained as an IT/emergency interface only; normal FleetOps alliance administration is performed in the FleetOps front-end.
 
@@ -264,7 +266,7 @@ FleetOps can automatically create/link an SRP fleet at Fleet Start when a suppor
 
 ## Attendance history
 
-`data_retention_days` is enforced with a minimum of 365 days. Configure `history_alliance_ids` in FleetOps Administration if departed Alliance Auth users should immediately disappear from history/statistics. Run/schedule:
+`data_retention_days` must be between 365 and 36500 days. Configure `history_alliance_ids` in FleetOps Administration if departed Alliance Auth users should immediately disappear from history/statistics. Run/schedule:
 
 ```bash
 python manage.py fleetops_prune_history --dry-run
@@ -283,7 +285,9 @@ FC/fleet managers may assign Back Seat FC, Logi Anchor and Snowflake Member afte
 
 # Discord configuration
 
-Create a `DiscordWebhook` in Admin, then attach it to a `PingTarget`.
+Create a Discord webhook in FleetOps Administration → Discord Webhooks, then attach it to a Ping Target.
+
+Only Discord webhook URLs of the form `https://discord.com/api/webhooks/<id>/<token>` are accepted. The `ptb.discord.com`, `canary.discord.com` and `discordapp.com` hosts and an API version segment (`https://discord.com/api/v10/webhooks/<id>/<token>`) are accepted too. The URL is checked when it is saved and again before every send, so a webhook stored by an older FleetOps version that does not match is not used until its URL is fixed.
 
 A Ping Target without an active webhook is valid: the Discord step is marked failed/non-blocking and the Ping remains available to copy manually. This is useful for test environments.
 
@@ -308,6 +312,8 @@ If `eve_sde` is not installed or its Stargate schema cannot be detected, all oth
 ---
 
 # FC incentive model
+
+FC incentives are off until **Incentive enabled** is ticked in FleetOps Administration → General Settings. While it is off, the FC Incentive menu entry is hidden and incentive periods cannot be reviewed, recalculated, waived, finalized or unlocked, even with `fleetops.manage_incentives`. FC statistics are not affected. New installs start with the setting off; when upgrading to 0.1.0a6, the data migration turns it on for installs that already have incentive periods.
 
 Fleet Type weights are snapshotted onto each `FleetOperation`, so changing a Fleet Type weight later does not silently rewrite the points of fleets that already happened.
 

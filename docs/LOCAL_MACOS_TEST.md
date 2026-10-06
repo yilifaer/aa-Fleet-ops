@@ -58,6 +58,8 @@ For the package's pure calculation tests from the source root:
 python -m unittest tests.test_calculations
 ```
 
+The full Django test suite (`python runtests.py`, which needs Redis) is described in [`TESTING.md`](../TESTING.md).
+
 ## Important boundary
 
 Local macOS smoke testing is not proof that EVE ESI behavior works. Real fleet tracking belongs in staging after the application passes this gate.

@@ -2,25 +2,38 @@
 
 ## 0.1.0a6 (unreleased)
 
+### Upgrade notes
+
+- Run `python manage.py migrate fleetops` after upgrading; this release adds migrations `0005` and `0006`.
+- Keep the django-esi release that matches your Alliance Auth: django-esi 9 for Alliance Auth 5.4 and older, django-esi 10 for Alliance Auth 5.5.
+- FC incentive pages and calculations now follow the **Incentive enabled** setting in FleetOps Administration → General Settings. It is off by default on new installs. On existing installs that already have incentive periods, `python manage.py migrate fleetops` turns it on automatically; if you want FC incentives but have not created a period yet, tick it yourself.
+- When a Discord ping failed with a connection error, 0.1.0a1–0.1.0a5 could store the webhook token in the fleet's error message, where anyone who could open the fleet could read it. An upgrade step removes these tokens. If a ping failed with a connection error on one of those versions, replace that webhook (delete it in Discord, create a new one and save its URL in FleetOps), because the old token may already have been seen.
+- A default message template must now be active. If an upgraded install has an inactive template marked as default, editing it asks you to tick **Active** or untick **Default** before it can be saved.
+- Only Discord webhook URLs of the form `https://discord.com/api/webhooks/<id>/<token>` are accepted (the `ptb.`, `canary.` and `discordapp.com` variants are fine too, as is an API version segment such as `/api/v10/webhooks/...`), and the URL is checked again before every send. A webhook saved by an older version that does not match is not used until its URL is fixed in FleetOps Administration → Discord Webhooks.
+
 ### Fixed
 
 - Fleet tracking, fleet detection and MOTD updates no longer fail when ESI data is unchanged since the last read (django-esi ETag/304 handling).
 - MOTD updates now send the request body in the form django-esi expects; previously every MOTD write was rejected.
 - A failed tracking poll now waits for the configured tracking interval before retrying, so the auto-end window is no longer shortened.
-- Discord webhook URLs and tokens are no longer stored in step error messages or shown on fleet pages.
-- A broken Ping/MOTD template no longer blocks fleet start or crashes the preview; the built-in default text is used and the problem is reported.
+- Tracking polls follow the configured interval even when the worker starts a little after the beat. Previously such a poll was put off until the next beat, so a 60-second interval polled every 120 seconds.
+- Discord webhook URLs and tokens are no longer stored in step error messages or shown on fleet pages. An upgrade step also removes tokens that older versions stored in fleet error messages (see the upgrade notes).
+- Discord webhook URLs are checked again before every send, not only when they are saved, so a URL stored before validation existed is never posted to unless it is a Discord webhook URL.
+- A broken Ping/MOTD template no longer blocks fleet start or crashes the preview; the built-in default text is used, the problem is reported on the fleet and the Start Fleet preview shows a template warning.
 - Unexpected errors in Discord, MOTD, tracking or SRP steps are recorded as failed steps and no longer leave a fleet stuck in Starting.
+- Unexpected step failures, including SRP and background tracking, are logged without exposing secrets and stored as a generic message instead of the raw error text.
 - A double-submitted Start Fleet request returns the fleet that was already started.
 - Retrying SRP no longer creates duplicate SRP fleets or erases an existing SRP link. Built-in AA SRP fleets get a valid SRP code and link.
 - Retry Ping/MOTD/SRP do nothing for Attendance Tracking Only fleets.
-- FC incentives only count Closed fleets, honour the incentive enable switch, and refuse invalid period actions instead of returning HTTP 500.
+- Retry Ping and Retry MOTD re-render empty messages (for example after a failed render at start) and never send an empty ping or clear the in-game MOTD.
+- FC incentives only count Closed fleets, follow the Incentive enabled setting (see the upgrade notes), and refuse invalid period actions instead of returning HTTP 500.
 - Departed members (when current alliance filtering is configured) are excluded from FC statistics and incentives.
 - `view_all_stats` no longer grants access to fleet records; use `view_all_fleets` or `manage_fleets`.
 - The 1x/2x/3x end prompt appears as soon as a fleet has run longer than 90 minutes.
 - Attendance history and the audit log are paginated instead of silently truncated.
 - Manual attendance and special roles can only be added to Active or Closed fleets; manual attendance requires a registered character and a sane value.
 - Invalid archive filters, oversized values and out-of-range periods no longer cause HTTP 500.
-- Configuration input is validated: Discord webhook URLs, message template syntax, alliance ID lists, retention days and fleet type weights. Only one default template per type is kept.
+- Configuration input is validated: Discord webhook URLs, message template syntax, alliance ID lists, retention days (365 to 36500) and fleet type weights. Only one default template per type is kept, a default template must be active, and a default that is replaced by another template is recorded in the audit log.
 - `fleetops_seed` no longer overwrites existing templates or fleet types.
 - Bulk deletes in Django admin are audited, and history pruning reports accurate totals.
 - Added the missing migration for the attendance record ordering.

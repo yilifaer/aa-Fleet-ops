@@ -88,6 +88,8 @@ Alt count must not change the denominator.
 
 ## Stage 9 — FC incentives
 
+FC incentives are off by default. Tick **Incentive enabled** in FleetOps Administration → General Settings first, and check that the FC Incentive menu entry only appears while it is on.
+
 Verify:
 
 - minimum fleet threshold
