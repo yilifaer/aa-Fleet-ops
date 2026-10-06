@@ -1,0 +1,25 @@
+{% extends "fleetops/base.html" %}
+{% block fleetops_content %}
+<div class="mb-3">
+  <h2 class="mb-0">Manual Attendance</h2>
+  <div class="text-muted">Add one or multiple attendance credits to current or historical fleets. FCs with this permission see their own fleets; fleet managers can manage all fleets.</div>
+</div>
+<div class="card mb-3"><div class="card-header"><strong>Add Attendance</strong></div><div class="card-body">
+  <form method="post">{% csrf_token %}
+    {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="row g-3">
+      <div class="col-lg-6">{{ form.operation.label_tag }}{{ form.operation }}<div class="form-text">{{ form.operation.help_text }}</div></div>
+      <div class="col-lg-3">{{ form.character_id.label_tag }}{{ form.character_id }}</div>
+      <div class="col-lg-3">{{ form.character_name.label_tag }}{{ form.character_name }}</div>
+      <div class="col-lg-2">{{ form.attendance_value.label_tag }}{{ form.attendance_value }}<div class="form-text">Use 2, 3, etc. for multiple credits.</div></div>
+      <div class="col-lg-4">{{ form.duplicate_action.label_tag }}{{ form.duplicate_action }}</div>
+      <div class="col-lg-6">{{ form.notes.label_tag }}{{ form.notes }}</div>
+    </div>
+    <button class="btn btn-primary mt-3">Save Attendance</button>
+  </form>
+</div></div>
+<div class="card"><div class="card-header"><strong>Recent Manual Entries</strong></div><div class="table-responsive">
+<table class="table table-sm mb-0 align-middle"><thead><tr><th>Fleet</th><th>Character</th><th>Main</th><th>Value</th><th>Added by</th><th>Created</th><th></th></tr></thead><tbody>
+{% for r in recent_manual %}<tr><td><a href="{% url 'fleetops:operation_detail' r.operation.uuid %}">{{ r.operation.started_at|date:"Y-m-d H:i" }} · {{ r.operation.fleet_type }}</a></td><td>{{ r.character_name }}</td><td>{{ r.main_character_name|default:"—" }}</td><td>{{ r.attendance_value }}</td><td>{{ r.created_by|default:"—" }}</td><td>{{ r.created_at }}</td><td><form method="post" action="{% url 'fleetops:delete_manual_attendance' r.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">Delete</button></form></td></tr>{% empty %}<tr><td colspan="7" class="text-muted p-4">No manual attendance entries.</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

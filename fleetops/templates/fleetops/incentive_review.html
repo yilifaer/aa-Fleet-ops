@@ -1,0 +1,20 @@
+{% extends "fleetops/base.html" %}
+{% block fleetops_content %}
+<h2>FC Incentive Review</h2>
+{% include "fleetops/month_selector.html" %}
+{% if period %}
+<div class="card my-3"><div class="card-header d-flex justify-content-between"><strong>{{ period }}</strong><span class="badge bg-secondary">{{ period.get_status_display }}</span></div><div class="card-body">
+  <div class="row"><div class="col">Budget<br><strong>{{ period.budget }} ISK</strong></div><div class="col">Minimum Fleets<br><strong>{{ period.minimum_fleets }}</strong></div></div>
+  <div class="mt-3 d-flex gap-2">
+    {% if period.status != 'finalized' %}<form method="post" action="{% url 'fleetops:incentive_recalculate' period.pk %}">{% csrf_token %}<button class="btn btn-primary">Recalculate</button></form>{% endif %}
+    {% if period.status == 'review' %}<form method="post" action="{% url 'fleetops:incentive_finalize' period.pk %}">{% csrf_token %}<button class="btn btn-success">Finalize Month</button></form>{% endif %}
+    {% if period.status == 'finalized' %}<form method="post" action="{% url 'fleetops:incentive_unlock' period.pk %}">{% csrf_token %}<button class="btn btn-warning">Unlock</button></form>{% endif %}
+  </div>
+</div></div>
+<div class="table-responsive"><table class="table align-middle"><thead><tr><th>FC</th><th>Fleets</th><th>Points</th><th>Eligible</th><th>Waived</th><th>Payout</th><th></th></tr></thead><tbody>
+{% for row in period.fc_statistics.all %}<tr><td>{{ row.fc_user.profile.main_character.character_name|default:row.fc_user.username }}</td><td>{{ row.fleet_count }}</td><td>{{ row.total_points }}</td><td>{{ row.eligible|yesno:"YES,NO" }}</td><td>{{ row.waived|yesno:"YES,NO" }}</td><td>{{ row.final_payout }} ISK</td><td>{% if period.status != 'finalized' %}<form method="post" action="{% url 'fleetops:incentive_waiver' period.pk row.fc_user_id %}">{% csrf_token %}<input type="hidden" name="waived" value="{% if row.waived %}0{% else %}1{% endif %}"><button class="btn btn-sm btn-outline-secondary">{% if row.waived %}Restore{% else %}Waive{% endif %}</button></form>{% endif %}</td></tr>{% empty %}<tr><td colspan="7">Recalculate to build monthly FC statistics.</td></tr>{% endfor %}
+</tbody></table></div>
+{% else %}
+<div class="card mt-3"><div class="card-header">Create Selected Month</div><div class="card-body"><form method="post">{% csrf_token %}<input type="hidden" name="create_period" value="1">{{ form.as_p }}<button class="btn btn-primary">Create Period</button></form></div></div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,36 @@
+{% extends "fleetops/base.html" %}
+{% block fleetops_content %}
+<div class="d-flex justify-content-between align-items-start mb-3 gap-3">
+  <div>
+    <div class="small"><a href="{% url 'fleetops:configuration_index' %}">FleetOps Administration</a></div>
+    <h2 class="mb-1">{{ config.title }}</h2>
+    <div class="text-muted">{{ config.description }}</div>
+  </div>
+  <a class="btn btn-primary" href="{% url 'fleetops:configuration_add' section %}">Add</a>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead><tr>{% if rows %}{% for label,value in rows.0.values %}<th>{{ label }}</th>{% endfor %}{% else %}<th>{{ config.title }}</th>{% endif %}<th class="text-end">Actions</th></tr></thead>
+      <tbody>
+      {% for row in rows %}
+        <tr>
+          {% for label,value in row.values %}
+            <td>{% if value == True %}<span class="badge bg-success">Yes</span>{% elif value == False %}<span class="badge bg-secondary">No</span>{% elif value %}{{ value }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+          {% endfor %}
+          <td class="text-end text-nowrap">
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:configuration_edit' section row.object.pk %}">Edit</a>
+            <form method="post" action="{% url 'fleetops:configuration_delete' section row.object.pk %}" class="d-inline" onsubmit="return confirm('Delete this item? Existing fleet history may prevent deletion.');">
+              {% csrf_token %}<button class="btn btn-sm btn-outline-danger">Delete</button>
+            </form>
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="8" class="p-4 text-muted">No items configured yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

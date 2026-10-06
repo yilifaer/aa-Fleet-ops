@@ -1,0 +1,15 @@
+<form method="get" class="row g-2 align-items-end fleetops-period-selector mb-3">
+  <div class="col-sm-auto">
+    <label class="form-label mb-1">Year</label>
+    <select class="form-select" name="year">
+      {% for y in year_options %}<option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="col-sm-auto">
+    <label class="form-label mb-1">Month</label>
+    <select class="form-select" name="month">
+      {% for number,name in month_options %}<option value="{{ number }}" {% if number == selected_month %}selected{% endif %}>{{ name }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="col-sm-auto"><button class="btn btn-primary" type="submit">View Period</button></div>
+</form>

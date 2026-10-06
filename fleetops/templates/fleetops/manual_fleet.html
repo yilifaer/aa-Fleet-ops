@@ -1,0 +1,23 @@
+{% extends "fleetops/base.html" %}
+{% block fleetops_content %}
+<div class="d-flex justify-content-between align-items-start mb-3 gap-2 flex-wrap">
+  <div><h2 class="mb-1">Add Manual Fleet</h2><div class="text-muted">Create a historical fleet record without ESI tracking or a Discord ping.</div></div>
+  <a class="btn btn-outline-secondary" href="{% url 'fleetops:fleet_operations' %}">Fleet Archive</a>
+</div>
+<div class="alert alert-info">The current user's main character is recorded as FC. After creating the fleet, use <strong>Manual Attendance</strong> or the fleet Attendance tab to add participants/credits.</div>
+<div class="card"><div class="card-body">
+<form method="post">{% csrf_token %}
+  {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+  <div class="row g-3">
+    <div class="col-md-4">{{ form.fleet_type.label_tag }}{{ form.fleet_type }}{{ form.fleet_type.errors }}</div>
+    <div class="col-md-4">{{ form.doctrine_name.label_tag }}{{ form.doctrine_name }}{{ form.doctrine_name.errors }}</div>
+    <div class="col-md-4">{{ form.formup.label_tag }}{{ form.formup }}{{ form.formup.errors }}</div>
+    <div class="col-md-4">{{ form.started_at.label_tag }}{{ form.started_at }}{{ form.started_at.errors }}</div>
+    <div class="col-md-4">{{ form.ended_at.label_tag }}{{ form.ended_at }}{{ form.ended_at.errors }}</div>
+    <div class="col-md-4">{{ form.attendance_multiplier.label_tag }}{{ form.attendance_multiplier }}{{ form.attendance_multiplier.errors }}</div>
+    <div class="col-12">{{ form.notes.label_tag }}{{ form.notes }}{{ form.notes.errors }}</div>
+  </div>
+  <button class="btn btn-primary mt-3">Create Manual Fleet</button>
+</form>
+</div></div>
+{% endblock %}

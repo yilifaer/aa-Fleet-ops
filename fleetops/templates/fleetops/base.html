@@ -1,0 +1,24 @@
+{% extends "allianceauth/base-bs5.html" %}
+{% load static %}
+{% block page_title %}FleetOps{% endblock %}
+{% block header_nav_brand %}FleetOps{% endblock %}
+{% block header_nav_collapse_left %}
+<ul class="navbar-nav">
+  <li class="nav-item"><a class="nav-link" href="{% url 'fleetops:dashboard' %}">Dashboard</a></li>
+  {% if perms.fleetops.start_fleet %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:start_fleet' %}">Start Fleet</a></li>{% endif %}
+  <li class="nav-item"><a class="nav-link" href="{% url 'fleetops:fleet_operations' %}">Fleets</a></li>
+  {% if perms.fleetops.create_manual_fleet %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:manual_fleet' %}">Add Manual Fleet</a></li>{% endif %}
+  <li class="nav-item"><a class="nav-link" href="{% url 'fleetops:my_statistics' %}">My Statistics</a></li>
+  <li class="nav-item"><a class="nav-link" href="{% url 'fleetops:attendance_history_me' %}">My History</a></li>
+  {% if perms.fleetops.manage_attendance %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:manual_attendance' %}">Manual Attendance</a></li>{% endif %}
+  {% if perms.fleetops.view_corp_stats %}<li class="nav-item dropdown"><a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">Corporation</a><ul class="dropdown-menu"><li><a class="dropdown-item" href="{% url 'fleetops:corporation_statistics' %}">Statistics</a></li><li><a class="dropdown-item" href="{% url 'fleetops:attendance_history_corporation' %}">History</a></li></ul></li>{% endif %}
+  {% if perms.fleetops.view_all_stats %}<li class="nav-item dropdown"><a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">Alliance</a><ul class="dropdown-menu"><li><a class="dropdown-item" href="{% url 'fleetops:all_corporation_statistics' %}">All Corps</a></li><li><a class="dropdown-item" href="{% url 'fleetops:all_fc_statistics' %}">FC Stats</a></li><li><a class="dropdown-item" href="{% url 'fleetops:attendance_history_alliance' %}">Attendance History</a></li></ul></li>{% endif %}
+  {% if perms.fleetops.manage_incentives %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:incentive_review' %}">FC Incentive</a></li>{% endif %}
+  {% if perms.fleetops.manage_configuration %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:configuration_index' %}">Administration</a></li>{% endif %}
+  {% if perms.fleetops.view_audit_log %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:audit_log' %}">Audit</a></li>{% endif %}
+</ul>
+{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{% static 'fleetops/fleetops.css' %}">
+<div class="container-fluid py-3 fleetops">{% block fleetops_content %}{% endblock %}</div>
+{% endblock %}

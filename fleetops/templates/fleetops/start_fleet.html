@@ -1,0 +1,73 @@
+{% extends "fleetops/base.html" %}
+{% block fleetops_content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div><h2 class="mb-0">Start Fleet</h2><div class="text-muted">One form, one start action.</div></div>
+  <a class="btn btn-outline-secondary" href="{% url 'fleetops:authorize_esi' %}">Authorize / Refresh Fleet ESI</a>
+</div>
+<form method="post" id="fleet-start-form" data-preview-url="{% url 'fleetops:preview_fleet' %}">{% csrf_token %}
+  {{ form.request_id }}
+  {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+  <div class="card mb-3"><div class="card-header"><strong>Operation Mode</strong></div><div class="card-body">
+    {% for radio in form.operation_mode %}<div class="form-check mb-2">{{ radio.tag }} <label class="form-check-label" for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label></div>{% endfor %}
+    <div class="form-text">Attendance Tracking Only still detects the Fleet Boss and tracks ESI attendance, but intentionally skips Discord Ping, automatic MOTD update and automatic SRP creation. Ping/MOTD previews remain available for manual copy.</div>
+  </div></div>
+  <div class="row g-3">
+    <div class="col-lg-6"><div class="card h-100"><div class="card-header"><strong>Fleet</strong></div><div class="card-body">
+      <div class="mb-3">{{ form.fc_character_id.label_tag }}{{ form.fc_character_id }}{{ form.fc_character_id.errors }}<div id="fleet-detection" class="form-text">Select a character to detect its current ESI fleet.</div></div>
+      <div class="mb-3">{{ form.fleet_type.label_tag }}{{ form.fleet_type }}{{ form.fleet_type.errors }}</div>
+      <div class="mb-3">{{ form.doctrine_choice.label_tag }}{{ form.doctrine_choice }}</div>
+      <div class="mb-3" id="custom-doctrine-wrap">{{ form.custom_doctrine.label_tag }}{{ form.custom_doctrine }}</div>
+      <div class="mb-3">{{ form.formup.label_tag }}{{ form.formup }}<div class="form-text">Entered by the FC for this fleet; not an admin preset.</div>{{ form.formup.errors }}</div>
+      <div class="mb-3">{{ form.scheduled_at.label_tag }}{{ form.scheduled_at }}</div>
+    </div></div></div>
+    <div class="col-lg-6"><div class="card h-100"><div class="card-header"><strong>Communication</strong></div><div class="card-body">
+      <div class="mb-3">{{ form.comms.label_tag }}{{ form.comms }}</div>
+      <div class="mb-3">{{ form.logi_channel.label_tag }}{{ form.logi_channel }}</div>
+      <div class="mb-3">{{ form.boost_channel.label_tag }}{{ form.boost_channel }}</div>
+      <div class="mb-3">{{ form.ping_target.label_tag }}{{ form.ping_target }}</div>
+      <div class="mb-3">{{ form.ping_template.label_tag }}{{ form.ping_template }}</div>
+      <div class="mb-3">{{ form.motd_template.label_tag }}{{ form.motd_template }}</div>
+    </div></div></div>
+    <div class="col-12"><div class="card"><div class="card-header"><strong>Additional Information</strong></div><div class="card-body">{{ form.additional_message }}</div></div></div>
+    <div class="col-lg-6"><div class="card h-100"><div class="card-header d-flex justify-content-between"><strong>Ping Preview</strong><button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy="#ping-preview">Copy Ping</button></div><div class="card-body"><pre id="ping-preview" class="preview-box">Complete the form to render a preview.</pre></div></div></div>
+    <div class="col-lg-6"><div class="card h-100"><div class="card-header d-flex justify-content-between"><strong>MOTD Preview</strong><button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy="#motd-preview">Copy MOTD</button></div><div class="card-body"><pre id="motd-preview" class="preview-box">Complete the form to render a preview.</pre></div></div></div>
+  </div>
+  <div class="d-grid mt-3"><button class="btn btn-primary btn-lg" id="fleet-start-submit" type="submit">SEND PING &amp; START FLEET</button></div>
+</form>
+<script>
+(() => {
+ const form = document.getElementById('fleet-start-form');
+ const char = document.getElementById('id_fc_character_id');
+ const detect = document.getElementById('fleet-detection');
+ const doctrine = document.getElementById('id_doctrine_choice');
+ const customWrap = document.getElementById('custom-doctrine-wrap');
+ const submitButton = document.getElementById('fleet-start-submit');
+ const modeRadios = form.querySelectorAll('input[name="operation_mode"]');
+ let previewTimer;
+ function updateMode(){
+   const selected = form.querySelector('input[name="operation_mode"]:checked');
+   const attendanceOnly = selected && selected.value === 'attendance_only';
+   submitButton.textContent = attendanceOnly ? 'START ATTENDANCE TRACKING' : 'SEND PING & START FLEET';
+ }
+ function toggleCustom(){ customWrap.style.display = doctrine.value ? 'none' : 'block'; }
+ async function detectFleet(){
+   if(!char.value){ detect.textContent='Select a character to detect its current ESI fleet.'; return; }
+   detect.textContent='Checking fleet…';
+   const url = `{% url 'fleetops:detect_fleet' 999999 %}`.replace('999999', char.value);
+   try { const r=await fetch(url); const d=await r.json(); detect.textContent=d.ok ? `✓ Fleet ${d.fleet_id} — role: ${d.role}${d.is_fleet_boss?' — Fleet Boss':''}` : `⚠ ${d.message}`; detect.className=d.ok&&d.is_fleet_boss?'form-text text-success':'form-text text-warning'; }
+   catch(e){ detect.textContent='⚠ Fleet detection request failed.'; }
+ }
+ async function preview(){
+   const body = new FormData(form);
+   try { const r=await fetch(form.dataset.previewUrl,{method:'POST',body}); const d=await r.json(); if(d.ok){document.getElementById('ping-preview').textContent=d.ping; document.getElementById('motd-preview').textContent=d.motd;} }
+   catch(e){}
+ }
+ function queuePreview(){ clearTimeout(previewTimer); previewTimer=setTimeout(preview,350); }
+ char.addEventListener('change',()=>{detectFleet();queuePreview();}); doctrine.addEventListener('change',()=>{toggleCustom();queuePreview();});
+ modeRadios.forEach(x=>x.addEventListener('change',()=>{updateMode();queuePreview();}));
+ form.querySelectorAll('input,select,textarea').forEach(x=>x.addEventListener('input',queuePreview));
+ document.querySelectorAll('.copy-btn').forEach(btn=>btn.addEventListener('click',()=>navigator.clipboard.writeText(document.querySelector(btn.dataset.copy).textContent)));
+ toggleCustom(); updateMode(); if(char.value) detectFleet(); queuePreview();
+})();
+</script>
+{% endblock %}

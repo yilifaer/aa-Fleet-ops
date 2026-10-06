@@ -1,0 +1,8 @@
+{% extends "fleetops/base.html" %}
+{% block fleetops_content %}
+<div class="mb-3"><h2 class="mb-1">FC Statistics</h2><div class="text-muted">FC activity summary · {{ year }}-{{ month|stringformat:"02d" }}</div></div>
+{% include "fleetops/month_selector.html" %}
+<div class="card"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>FC</th><th>Fleets</th><th>Points</th><th>Breakdown</th><th></th></tr></thead><tbody>
+{% for row in rows %}<tr><td><a class="fw-semibold text-decoration-none" href="{% url 'fleetops:fc_statistics_detail' row.user.id %}?year={{ year }}&month={{ month }}">{{ row.user.profile.main_character.character_name|default:row.user.username }}</a></td><td>{{ row.fleet_count }}</td><td><strong>{{ row.total_points|floatformat:2 }}</strong></td><td>{% for name,b in row.breakdown.items %}<span class="badge bg-secondary me-1">{{ name }} {{ b.count }} / {{ b.points|floatformat:2 }} pts</span>{% empty %}—{% endfor %}</td><td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:fc_statistics_detail' row.user.id %}?year={{ year }}&month={{ month }}">Details</a></td></tr>{% empty %}<tr><td colspan="5" class="text-muted p-4">No FC operations in this month.</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

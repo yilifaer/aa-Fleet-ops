@@ -1,0 +1,11 @@
+{% extends "fleetops/base.html" %}
+{% block fleetops_content %}
+<div class="d-flex justify-content-between align-items-end mb-3">
+  <div><h2 class="mb-0">{{ title }}</h2><div class="text-muted">Configured retention: {{ retention_days }} days (minimum 365). Records for users no longer in configured member alliances are excluded and can be pruned.</div></div>
+  <div class="text-end"><div class="text-muted small">{{ scope_label }} total shown</div><div class="fs-3 fw-bold">{{ total }}</div></div>
+</div>
+<div class="card"><div class="table-responsive"><table class="table table-sm table-hover mb-0 align-middle">
+<thead><tr><th>Date</th><th>Main</th><th>Character</th><th>Corporation</th><th>Fleet</th><th>Type</th><th>Source</th><th>Attendance</th></tr></thead><tbody>
+{% for r in rows %}<tr><td>{{ r.operation.started_at|date:"Y-m-d H:i" }}</td><td>{{ r.main_character_name|default:"—" }}</td><td>{{ r.character_name }}</td><td>{{ r.corporation_name|default:"—" }}</td><td><a href="{% url 'fleetops:operation_detail' r.operation.uuid %}">{{ r.operation.fc_character_name }}</a></td><td>{{ r.operation.fleet_type }}</td><td>{{ r.get_source_display }}</td><td><strong>{{ r.attendance_value }}</strong></td></tr>{% empty %}<tr><td colspan="8" class="text-muted p-4">No attendance records in the retained period.</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

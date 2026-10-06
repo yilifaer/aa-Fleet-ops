@@ -1,0 +1,6 @@
+{% extends "fleetops/base.html" %}
+{% block fleetops_content %}
+<div class="d-flex justify-content-between align-items-start mb-3"><div><h2 class="mb-1">Edit Fleet Operation</h2><div class="text-muted">{{ operation.fleet_type }} · {{ operation.fc_character_name }} · {{ operation.started_at|date:"Y-m-d H:i" }}</div></div><a class="btn btn-outline-secondary" href="{% url 'fleetops:operation_detail' operation.uuid %}">Cancel</a></div>
+<div class="alert alert-info">This edits FleetOps metadata/history only. It does not recreate the fleet, resend the ping, or retroactively change ESI tracking events.</div>
+<div class="card"><div class="card-body"><form method="post">{% csrf_token %}{{ form.as_p }}<div class="d-flex gap-2"><button class="btn btn-primary" type="submit">Save Changes</button><a class="btn btn-outline-secondary" href="{% url 'fleetops:fleet_operations' %}">Fleet Archive</a></div></form></div></div>
+{% endblock %}

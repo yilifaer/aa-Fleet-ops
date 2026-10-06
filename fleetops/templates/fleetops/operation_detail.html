@@ -1,0 +1,223 @@
+{% extends "fleetops/base.html" %}
+{% block fleetops_content %}
+<div class="d-flex justify-content-between align-items-start mb-3 gap-3 flex-wrap">
+  <div>
+    <h2 class="mb-1">{{ operation.fleet_type }} <span class="badge bg-{% if operation.status == 'active' %}success{% elif operation.status == 'closed' %}secondary{% else %}warning text-dark{% endif %}">{{ operation.get_status_display }}</span></h2>
+    <div class="text-muted">FC {{ operation.fc_character_name }} · {{ operation.uuid }} {% if operation.is_manual %}<span class="badge bg-secondary">Manual Record</span>{% elif not operation.send_ping %}<span class="badge bg-info text-dark">Attendance Only</span>{% endif %}</div>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    {% if can_manage %}<a class="btn btn-outline-primary" href="{% url 'fleetops:edit_operation' operation.uuid %}">Edit Operation</a>{% endif %}
+    {% if operation.srp_url %}<a class="btn btn-outline-success" href="{{ operation.srp_url }}" target="_blank" rel="noopener">Open SRP</a>{% endif %}
+    {% if can_manage and operation.status == 'active' %}
+      {% if attendance_prompt_eligible %}
+        <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#endFleetModal">End Fleet</button>
+      {% else %}
+        <form method="post" action="{% url 'fleetops:end_fleet' operation.uuid %}">{% csrf_token %}<input type="hidden" name="attendance_multiplier" value="{{ operation.attendance_multiplier }}"><button class="btn btn-danger">End Fleet</button></form>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+{% if stale %}<div class="alert alert-warning"><strong>STALE DATA</strong> — last successful ESI update {{ operation.last_esi_update }}.</div>{% endif %}
+{% if operation.last_error %}<div class="alert alert-warning">{{ operation.last_error }}</div>{% endif %}
+{% if operation.srp_error %}<div class="alert alert-warning"><strong>SRP:</strong> {{ operation.srp_error }}</div>{% endif %}
+
+<div class="row g-3 mb-3">
+  <div class="col-md-2"><div class="stat-card"><span>Characters</span><strong>{{ members|length }}</strong></div></div>
+  <div class="col-md-2"><div class="stat-card"><span>Players</span><strong>{{ unique_players }}</strong></div></div>
+  <div class="col-md-2"><div class="stat-card"><span>Attendance</span><strong>{{ attendance_total }}</strong><div class="small text-muted">{{ operation.attendance_multiplier }}x fleet credit</div></div></div>
+  <div class="col-md-3"><div class="stat-card"><span>Form Up</span><strong class="small">{{ operation.formup }}</strong></div></div>
+  <div class="col-md-3"><div class="stat-card"><span>Last ESI</span><strong class="small">{{ operation.last_esi_update|default:"—" }}</strong></div></div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-8">
+    <div class="card h-100">
+      <div class="card-header"><strong>Operation Actions</strong></div>
+      <div class="card-body">
+        <div class="row g-2">
+          {% for a in actions %}
+            <div class="col-md-4"><div class="border rounded p-2 h-100">
+              <strong>{{ a.action }}</strong><br>
+              <span class="badge bg-{% if a.status == 'success' %}success{% elif a.status == 'failed' %}danger{% elif a.status == 'skipped' %}secondary{% else %}warning text-dark{% endif %}">{{ a.get_status_display }}</span>
+              <span class="small text-muted">attempt {{ a.attempts }}</span>
+              {% if a.error_message %}<div class="small text-muted mt-1 text-break">{{ a.error_message }}</div>{% endif %}
+            </div></div>
+          {% empty %}<div class="text-muted">No action records.</div>{% endfor %}
+        </div>
+        {% if can_manage %}
+          <div class="mt-3 d-flex gap-2 flex-wrap">
+            {% if operation.send_ping and not operation.is_manual %}
+            <form method="post" action="{% url 'fleetops:retry_ping' operation.uuid %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary">Retry Ping</button></form>
+            <form method="post" action="{% url 'fleetops:retry_motd' operation.uuid %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary">Retry MOTD</button></form>
+            {% endif %}
+            {% if operation.send_ping or operation.is_manual %}<form method="post" action="{% url 'fleetops:retry_srp' operation.uuid %}">{% csrf_token %}<button class="btn btn-sm btn-outline-success">Retry SRP</button></form>{% endif %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-header"><strong>SRP</strong></div>
+      <div class="card-body">
+        {% if operation.srp_url %}
+          <div class="mb-2"><span class="badge bg-success">Linked</span> <span class="text-muted">{{ operation.srp_provider }}</span></div>
+          {% if operation.srp_reference %}<div class="small text-muted mb-2">Reference: {{ operation.srp_reference }}</div>{% endif %}
+          <a class="btn btn-sm btn-success" href="{{ operation.srp_url }}" target="_blank" rel="noopener">Open SRP Fleet</a>
+        {% elif operation.srp_error %}
+          <span class="badge bg-warning text-dark">Unavailable</span>
+          <div class="small text-muted mt-2">{{ operation.srp_error }}</div>
+        {% else %}
+          <span class="text-muted">No SRP link was created for this operation.</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if can_manage and operation.status == 'active' %}
+<div class="card mb-3 border-warning">
+  <div class="card-header d-flex justify-content-between align-items-center"><strong>Fleet Control</strong><span class="badge bg-warning text-dark">{{ pod_count }} capsule{{ pod_count|pluralize }}</span></div>
+  <div class="card-body d-flex justify-content-between align-items-center gap-3 flex-wrap">
+    <div>
+      <strong>Kick all capsule members</strong>
+      <div class="small text-muted">Uses the stored Fleet Boss ESI write token. The FC character itself is never targeted.</div>
+    </div>
+    <form method="post" action="{% url 'fleetops:kick_capsules' operation.uuid %}" onsubmit="return confirm('Kick all currently detected capsule members from this fleet?');">
+      {% csrf_token %}
+      <button class="btn btn-warning" {% if not pod_count %}disabled{% endif %}>Kick {{ pod_count }} Capsule{{ pod_count|pluralize }}</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<ul class="nav nav-tabs" role="tablist">
+  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#members">Members</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#map">3-Jump Map</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#events">Events</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#attendance">Attendance</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#roles">Special Roles <span class="badge bg-secondary">{{ role_assignments|length }}</span></button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#messages">Ping / MOTD</button></li>
+</ul>
+<div class="tab-content border border-top-0 rounded-bottom p-3">
+  <div class="tab-pane fade show active" id="members">
+    <div class="table-responsive"><table class="table table-sm align-middle">
+      <thead><tr><th>Character</th><th>Main</th><th>Corporation</th><th>Ship</th><th>System</th><th>Role</th><th>Wing</th><th>Squad</th><th>Last Seen</th></tr></thead>
+      <tbody>{% for m in members %}<tr><td>{{ m.character_name }}</td><td>{{ m.main_character_name|default:"—" }}</td><td>{{ m.corporation_name|default:"—" }}</td><td>{{ m.ship_type_name|default:m.ship_type_id }}</td><td>{{ m.solar_system_name|default:m.solar_system_id }}</td><td>{{ m.fleet_role }}</td><td>{{ m.wing_id|default:"—" }}</td><td>{{ m.squad_id|default:"—" }}</td><td>{{ m.last_seen }}</td></tr>{% empty %}<tr><td colspan="9">No tracked members.</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </div>
+
+  <div class="tab-pane fade" id="map">
+    <div class="jump-map">
+      {% for row in map_rows %}
+        <div class="jump-system jump-{{ row.jump_distance }}">
+          <div><strong>{{ row.system_name }}</strong><span>{{ row.jump_distance }} jump{{ row.jump_distance|pluralize }}</span></div>
+          <b>{{ row.members|length }}</b>
+          <details><summary>Members</summary>{% for m in row.members %}<div class="small">{{ m.character_name }} — {{ m.ship_type_name|default:m.ship_type_id }}</div>{% endfor %}</details>
+        </div>
+      {% empty %}<div class="text-muted">Map requires the FC solar system and optional <code>eve_sde</code> Stargate data.</div>{% endfor %}
+    </div>
+  </div>
+
+  <div class="tab-pane fade" id="events">
+    {% for e in events %}<div class="event-row"><span>{{ e.created_at }}</span><strong>{{ e.character_name }}</strong><span>{{ e.get_event_type_display }}</span>{% if e.old_value or e.new_value %}<code>{{ e.old_value }} → {{ e.new_value }}</code>{% endif %}</div>{% empty %}<div class="text-muted">No events yet.</div>{% endfor %}
+  </div>
+
+  <div class="tab-pane fade" id="attendance">
+    {% if can_manage_attendance %}
+    <div class="card mb-3"><div class="card-header"><strong>Add / Correct Attendance</strong></div><div class="card-body">
+      <form method="post" action="{% url 'fleetops:add_manual_attendance' operation.uuid %}">{% csrf_token %}
+        <div class="row g-2">
+          <div class="col-md-2">{{ manual_attendance_form.character_id.label_tag }}{{ manual_attendance_form.character_id }}</div>
+          <div class="col-md-3">{{ manual_attendance_form.character_name.label_tag }}{{ manual_attendance_form.character_name }}</div>
+          <div class="col-md-2">{{ manual_attendance_form.attendance_value.label_tag }}{{ manual_attendance_form.attendance_value }}</div>
+          <div class="col-md-2">{{ manual_attendance_form.duplicate_action.label_tag }}{{ manual_attendance_form.duplicate_action }}</div>
+          <div class="col-md-3">{{ manual_attendance_form.notes.label_tag }}{{ manual_attendance_form.notes }}</div>
+        </div>
+        <button class="btn btn-sm btn-primary mt-2">Save Manual Attendance</button>
+      </form>
+    </div></div>
+    {% endif %}
+    {% if can_manage_attendance %}
+    <div class="card mb-3"><div class="card-header"><strong>Fleet Attendance Multiplier</strong></div><div class="card-body d-flex align-items-end gap-2 flex-wrap">
+      <form method="post" action="{% url 'fleetops:set_attendance_multiplier' operation.uuid %}" class="d-flex align-items-end gap-2">{% csrf_token %}
+        <div>{{ multiplier_form.attendance_multiplier.label_tag }}{{ multiplier_form.attendance_multiplier }}</div>
+        <button class="btn btn-outline-primary">Apply to Automatic Attendance</button>
+      </form>
+      <div class="small text-muted">Manual attendance rows remain explicit corrections and are not automatically multiplied.</div>
+    </div></div>
+    {% endif %}
+    <div class="table-responsive"><table class="table table-sm align-middle">
+      <thead><tr><th>Character</th><th>Main</th><th>Corp</th><th>Source</th><th>Value</th><th>Status</th><th>First</th><th>Last</th><th></th></tr></thead>
+      <tbody>{% for r in attendance %}<tr><td>{{ r.character_name }}</td><td>{{ r.main_character_name|default:"—" }}</td><td>{{ r.corporation_name|default:"—" }}</td><td>{{ r.get_source_display }}</td><td>{{ r.attendance_value }}</td><td>{% if r.granted %}<span class="badge bg-success">Granted</span>{% elif r.capped %}<span class="badge bg-warning text-dark">Capped</span>{% else %}<span class="badge bg-secondary">Not granted</span>{% endif %}</td><td>{{ r.first_seen|default:"—" }}</td><td>{{ r.last_seen|default:"—" }}</td><td>{% if can_manage_attendance and r.source == 'manual' %}<form method="post" action="{% url 'fleetops:delete_manual_attendance' r.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">Delete</button></form>{% endif %}</td></tr>{% empty %}<tr><td colspan="9">No attendance records.</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </div>
+
+  <div class="tab-pane fade" id="roles">
+    <div class="row g-3">
+      <div class="col-lg-7">
+        <div class="table-responsive"><table class="table table-sm align-middle">
+          <thead><tr><th>Role</th><th>Character</th><th>Main</th><th>Corporation</th><th>FC Credit</th><th>Notes</th><th></th></tr></thead>
+          <tbody>
+          {% for role in role_assignments %}
+            <tr>
+              <td><span class="badge bg-info text-dark">{{ role.get_role_display }}</span></td>
+              <td>{{ role.character_name }}</td>
+              <td>{{ role.main_character_name|default:"—" }}</td>
+              <td>{{ role.corporation_name|default:"—" }}</td>
+              <td>{% if role.grants_fc_credit %}<span class="badge bg-success">Yes</span>{% else %}<span class="badge bg-secondary">No</span>{% endif %}</td>
+              <td>{{ role.notes|default:"—" }}</td>
+              <td>{% if can_manage %}<form method="post" action="{% url 'fleetops:delete_operation_role' role.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">Remove</button></form>{% endif %}</td>
+            </tr>
+          {% empty %}<tr><td colspan="7" class="text-muted">No special roles assigned.</td></tr>{% endfor %}
+          </tbody>
+        </table></div>
+      </div>
+      <div class="col-lg-5">
+        {% if can_manage %}
+        <div class="card"><div class="card-header"><strong>Assign Special Role</strong></div><div class="card-body">
+          {% if assignable_members %}
+          <form method="post" action="{% url 'fleetops:add_operation_role' operation.uuid %}">{% csrf_token %}
+            <div class="mb-2">{{ role_assignment_form.role.label_tag }}{{ role_assignment_form.role }}</div>
+            <div class="mb-2">{{ role_assignment_form.character_id.label_tag }}{{ role_assignment_form.character_id }}</div>
+            <div class="mb-2">{{ role_assignment_form.notes.label_tag }}{{ role_assignment_form.notes }}</div>
+            <button class="btn btn-primary btn-sm">Assign Role</button>
+          </form>
+          <div class="small text-muted mt-3">Roles can be changed after a fleet is closed. If the selected member currently has FleetOps FC permission (<code>start_fleet</code>), this operation also counts toward that member's FC fleet/points.</div>
+          {% else %}<div class="text-muted">No tracked fleet members are available for role assignment yet.</div>{% endif %}
+        </div></div>
+        {% else %}<div class="text-muted">FC or Fleet Manager permission is required to change roles.</div>{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-pane fade" id="messages">
+    <div class="row g-3">
+      <div class="col-lg-6"><div class="d-flex justify-content-between"><strong>Ping</strong><button type="button" class="btn btn-sm btn-outline-secondary copy" data-id="ping-text">Copy Ping</button></div><pre id="ping-text" class="preview-box">{{ operation.ping_text }}</pre></div>
+      <div class="col-lg-6"><div class="d-flex justify-content-between"><strong>MOTD</strong><button type="button" class="btn btn-sm btn-outline-secondary copy" data-id="motd-text">Copy MOTD</button></div><pre id="motd-text" class="preview-box">{{ operation.motd_text }}</pre></div>
+    </div>
+  </div>
+</div>
+{% if can_manage and attendance_prompt_eligible %}
+<div class="modal fade" id="endFleetModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title">End Fleet & Finalize Attendance</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <form method="post" action="{% url 'fleetops:end_fleet' operation.uuid %}">{% csrf_token %}
+      <div class="modal-body">
+        <p>This fleet has been running for approximately <strong>{{ duration_minutes }} minutes</strong>.</p>
+        <p>Select the attendance credit to apply before closing the fleet.</p>
+        {{ end_form.attendance_multiplier.label_tag }}{{ end_form.attendance_multiplier }}
+        <div class="form-text">You can change the fleet multiplier later from the Attendance tab if a correction is needed.</div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button class="btn btn-danger">End Fleet</button></div>
+    </form>
+  </div></div>
+</div>
+{% endif %}
+
+<script>
+document.querySelectorAll('.copy').forEach(b=>b.addEventListener('click',()=>navigator.clipboard.writeText(document.getElementById(b.dataset.id).textContent)));
+{% if operation.status == 'active' %}setTimeout(()=>location.reload(),60000);{% endif %}
+</script>
+{% endblock %}

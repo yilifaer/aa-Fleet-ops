@@ -1,0 +1,49 @@
+{% extends "fleetops/base.html" %}
+{% block fleetops_content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h2 class="mb-1">FleetOps Administration</h2>
+    <div class="text-muted">Alliance-level FleetOps configuration. No Django Admin access is required.</div>
+  </div>
+</div>
+
+<div class="alert alert-info">
+  This area is controlled by the <code>fleetops.manage_configuration</code> permission. Django Admin remains an IT / emergency interface only.
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-6 col-xl-4">
+    <div class="card h-100">
+      <div class="card-body d-flex flex-column">
+        <h5 class="card-title">General Settings</h5>
+        <p class="text-muted flex-grow-1">Tracking, stale-data, automatic fleet-end, attendance limit and default FC incentive settings.</p>
+        <div><a class="btn btn-primary" href="{% url 'fleetops:configuration_settings' %}">Manage Settings</a></div>
+      </div>
+    </div>
+  </div>
+  {% for card in cards %}
+  <div class="col-md-6 col-xl-4">
+    <div class="card h-100">
+      <div class="card-body d-flex flex-column">
+        <div class="d-flex justify-content-between gap-2"><h5 class="card-title">{{ card.title }}</h5><span class="badge bg-secondary align-self-start">{{ card.count }}</span></div>
+        <p class="text-muted flex-grow-1">{{ card.description }}</p>
+        <div><a class="btn btn-outline-primary" href="{% url 'fleetops:configuration_list' card.key %}">Manage</a></div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <div class="card-header"><strong>Operational management</strong></div>
+  <div class="card-body">
+    <p class="mb-2">Operational/system-generated data is intentionally not edited as raw database rows.</p>
+    <div class="d-flex flex-wrap gap-2">
+      {% if perms.fleetops.manage_incentives %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:incentive_review' %}">FC Incentive</a>{% endif %}
+      {% if perms.fleetops.view_audit_log %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:audit_log' %}">Audit Log</a>{% endif %}
+      {% if perms.fleetops.view_all_stats %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:all_fc_statistics' %}">FC Statistics</a>{% endif %}
+      {% if perms.fleetops.view_all_stats %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:all_corporation_statistics' %}">Corporation Statistics</a>{% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

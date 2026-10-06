@@ -1,0 +1,20 @@
+{% extends "fleetops/base.html" %}
+{% block fleetops_content %}
+<div class="mb-3"><h2 class="mb-1">My Statistics</h2><div class="text-muted">Personal fleet activity · {{ year }}-{{ month|stringformat:"02d" }}</div></div>
+{% include "fleetops/month_selector.html" %}
+<div class="row g-3 mb-3">
+  <div class="col-xl-3 col-md-6"><div class="fleetops-metric fleetops-metric-1"><div class="fleetops-metric-value">{{ stats.total }}</div><div><div class="fleetops-metric-title">ATTENDANCE</div><div class="small">Granted credits this month</div></div></div></div>
+  <div class="col-xl-3 col-md-6"><div class="fleetops-metric fleetops-metric-2"><div class="fleetops-metric-value">{{ stats.unique_fleets }}</div><div><div class="fleetops-metric-title">UNIQUE FLEETS</div><div class="small">Participated fleets</div></div></div></div>
+  <div class="col-xl-3 col-md-6"><div class="fleetops-metric fleetops-metric-3"><div class="fleetops-metric-value">{{ stats.fc_fleet_count }}</div><div><div class="fleetops-metric-title">FC FLEETS</div><div class="small">FC credited operations</div></div></div></div>
+  <div class="col-xl-3 col-md-6"><div class="fleetops-metric fleetops-metric-4"><div class="fleetops-metric-value">{{ stats.fc_points|floatformat:1 }}</div><div><div class="fleetops-metric-title">FC POINTS</div><div class="small">Selected month</div></div></div></div>
+</div>
+<div class="row g-3 mb-3">
+  <div class="col-xl-5"><div class="card h-100"><div class="card-header"><strong>Fleet Types</strong></div><div class="card-body">{% for name,value in stats.breakdown.items %}<div class="d-flex justify-content-between align-items-center border-bottom py-2"><span>{{ name }}</span><span class="badge bg-secondary fs-6">{{ value }}</span></div>{% empty %}<div class="text-muted">No attendance this month.</div>{% endfor %}</div></div></div>
+  <div class="col-xl-7"><div class="card h-100"><div class="card-header"><strong>Characters Used</strong></div><div class="table-responsive"><table class="table table-sm table-hover mb-0"><thead><tr><th>Character</th><th>Fleets</th><th>Attendance</th></tr></thead><tbody>{% for row in stats.characters %}<tr><td>{{ row.character_name }}</td><td>{{ row.fleets }}</td><td><strong>{{ row.attendance }}</strong></td></tr>{% empty %}<tr><td colspan="3" class="text-muted p-4">No character data.</td></tr>{% endfor %}</tbody></table></div></div></div>
+</div>
+<div class="row g-3 mb-3">
+  <div class="col-xl-7"><div class="card h-100"><div class="card-header"><strong>Ships</strong></div><div class="card-body"><div class="fleetops-ship-grid">{% for ship in stats.top_ships %}<div class="fleetops-ship"><img src="{{ ship.image_url }}" alt="{{ ship.ship_type_name|default:ship.ship_type_id }}" loading="lazy"><div class="fw-semibold">{{ ship.ship_type_name|default:ship.ship_type_id }}</div><div class="small text-muted">{{ ship.uses }} fleet{{ ship.uses|pluralize }}</div></div>{% empty %}<div class="text-muted">No tracked ship data for this month.</div>{% endfor %}</div></div></div></div>
+  <div class="col-xl-5"><div class="card h-100"><div class="card-header"><strong>Special Roles</strong></div><div class="card-body">{% for role in stats.roles %}<div class="d-flex justify-content-between border-bottom py-2"><span>{{ role.label }}</span><strong>{{ role.count }}</strong></div>{% empty %}<div class="text-muted">No special-role assignments this month.</div>{% endfor %}</div></div></div>
+</div>
+<div class="card"><div class="card-header"><strong>Daily Activity</strong></div><div class="card-body">{% for row in stats.daily %}<div class="fleetops-daily-row"><span>{{ row.operation__started_at__date|date:"d M" }}</span><div class="progress flex-grow-1" style="height:22px"><div class="progress-bar" role="progressbar" style="width:{% widthratio row.attendance stats.total 100 %}%">{{ row.attendance }}</div></div></div>{% empty %}<div class="text-muted">No daily activity this month.</div>{% endfor %}</div></div>
+{% endblock %}
