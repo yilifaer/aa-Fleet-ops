@@ -4,21 +4,35 @@ from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 
-from fleetops.models import FleetOperation, FleetType, IncentivePeriod, MonthlyFCStatistic
+from fleetops.models import FleetOperation, FleetOpsSettings, FleetType, IncentivePeriod, MonthlyFCStatistic
+from fleetops.services.history import current_member_user_ids
 from fleetops.services.statistics import month_bounds
 from fleetops.calculations import calculate_payouts
 
 
+class IncentiveError(ValueError):
+    """An incentive action that is not allowed in the current state."""
+
+
+def _ensure_enabled():
+    if not FleetOpsSettings.get_solo().incentive_enabled:
+        raise IncentiveError("FC incentives are disabled in the FleetOps settings.")
+
+
 def rebuild_period(period: IncentivePeriod):
+    _ensure_enabled()
     if period.status == IncentivePeriod.Status.FINALIZED:
-        raise ValueError("Finalized periods must be unlocked before recalculation.")
+        raise IncentiveError("Finalized periods must be unlocked before recalculation.")
     start, end = month_bounds(period.year, period.month)
+    # Only Closed fleets count; manual fleets are created Closed.
     operations = list(
-        FleetOperation.objects.filter(started_at__gte=start, started_at__lt=end)
-        .exclude(status__in=[FleetOperation.Status.DRAFT, FleetOperation.Status.CANCELLED])
+        FleetOperation.objects.filter(
+            started_at__gte=start, started_at__lt=end, status=FleetOperation.Status.CLOSED
+        )
         .select_related("fc_user", "fleet_type")
         .prefetch_related("role_assignments")
     )
+    member_ids = current_member_user_ids()
     grouped = defaultdict(list)
     for op in operations:
         credited_user_ids = {op.fc_user_id}
@@ -27,6 +41,8 @@ def rebuild_period(period: IncentivePeriod):
             for assignment in op.role_assignments.all()
             if assignment.grants_fc_credit and assignment.auth_user_id
         )
+        if member_ids is not None:
+            credited_user_ids &= member_ids
         for user_id in credited_user_ids:
             grouped[user_id].append(op)
 
@@ -78,7 +94,7 @@ def rebuild_period(period: IncentivePeriod):
 
 def finalize_period(period: IncentivePeriod, user):
     if period.status != IncentivePeriod.Status.REVIEW:
-        raise ValueError("Period must be in review before finalizing.")
+        raise IncentiveError("Period must be in review before finalizing.")
     period.status = IncentivePeriod.Status.FINALIZED
     period.finalized_at = timezone.now()
     period.finalized_by = user
@@ -87,6 +103,8 @@ def finalize_period(period: IncentivePeriod, user):
 
 
 def unlock_period(period: IncentivePeriod):
+    if period.status != IncentivePeriod.Status.FINALIZED:
+        raise IncentiveError("Only finalized periods can be unlocked.")
     period.status = IncentivePeriod.Status.REVIEW
     period.finalized_at = None
     period.finalized_by = None
@@ -95,13 +113,18 @@ def unlock_period(period: IncentivePeriod):
 
 
 def set_waiver(period: IncentivePeriod, user_id: int, waived: bool):
-    """Set one FC waiver and immediately rebuild payout shares."""
+    """Set one FC waiver and immediately rebuild payout shares.
+
+    Returns the FC's recalculated statistic, or ``None`` when the FC no longer
+    has credited fleets in the period and the row was dropped by the rebuild.
+    """
+    _ensure_enabled()
     if period.status == IncentivePeriod.Status.FINALIZED:
-        raise ValueError("Finalized periods must be unlocked before waiver changes.")
+        raise IncentiveError("Finalized periods must be unlocked before waiver changes.")
     row = MonthlyFCStatistic.objects.filter(period=period, fc_user_id=user_id).first()
     if row is None:
-        raise ValueError("FC statistic does not exist. Recalculate the period first.")
+        raise IncentiveError("FC statistic does not exist. Recalculate the period first.")
     row.waived = bool(waived)
     row.save(update_fields=["waived"])
     rebuild_period(period)
-    return period.fc_statistics.get(fc_user_id=user_id)
+    return period.fc_statistics.filter(fc_user_id=user_id).first()

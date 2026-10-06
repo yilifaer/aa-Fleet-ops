@@ -59,7 +59,7 @@
  }
  async function preview(){
    const body = new FormData(form);
-   try { const r=await fetch(form.dataset.previewUrl,{method:'POST',body}); const d=await r.json(); if(d.ok){document.getElementById('ping-preview').textContent=d.ping; document.getElementById('motd-preview').textContent=d.motd;} }
+   try { const r=await fetch(form.dataset.previewUrl,{method:'POST',body}); const d=await r.json(); if(d.ok){document.getElementById('ping-preview').textContent=d.ping; document.getElementById('motd-preview').textContent=d.motd;} else if(d.error){document.getElementById('ping-preview').textContent=d.error; document.getElementById('motd-preview').textContent=d.error;} }
    catch(e){}
  }
  function queuePreview(){ clearTimeout(previewTimer); previewTimer=setTimeout(preview,350); }

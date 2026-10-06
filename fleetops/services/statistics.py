@@ -5,7 +5,7 @@ from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
 from fleetops.models import AttendanceRecord, FleetMemberState, FleetOperation, OperationRoleAssignment
-from fleetops.services.history import apply_current_membership_filter
+from fleetops.services.history import apply_current_membership_filter, current_member_user_ids
 from fleetops.services.identity import corporation_main_count
 
 
@@ -122,22 +122,32 @@ def corporation_statistics(corporation_id: int, year: int, month: int):
     }
 
 
-def fc_operations_queryset(user, year: int, month: int):
-    """Operations credited to an FC, including post-fleet special-role FC credits."""
+def fc_operations_queryset(user, year: int, month: int, *, include_active=False):
+    """Operations credited to an FC, including post-fleet special-role FC credits.
+
+    Only Closed fleets count, matching the FC incentive rules. ``include_active``
+    also counts fleets that are still running (used by the dashboard).
+    Users who left the configured alliances have no FC statistics.
+    """
+    member_ids = current_member_user_ids()
+    if member_ids is not None and user.pk not in member_ids:
+        return FleetOperation.objects.none()
+    statuses = [FleetOperation.Status.CLOSED]
+    if include_active:
+        statuses.append(FleetOperation.Status.ACTIVE)
     start, end = month_bounds(year, month)
     return (
-        FleetOperation.objects.filter(started_at__gte=start, started_at__lt=end)
+        FleetOperation.objects.filter(started_at__gte=start, started_at__lt=end, status__in=statuses)
         .filter(
             Q(fc_user=user)
             | Q(role_assignments__auth_user=user, role_assignments__grants_fc_credit=True)
         )
-        .exclude(status__in=[FleetOperation.Status.DRAFT, FleetOperation.Status.CANCELLED])
         .distinct()
     )
 
 
-def fc_statistics(user, year: int, month: int):
-    qs = fc_operations_queryset(user, year, month)
+def fc_statistics(user, year: int, month: int, *, include_active=False):
+    qs = fc_operations_queryset(user, year, month, include_active=include_active)
     breakdown = defaultdict(lambda: {"count": 0, "points": 0.0})
     points = 0.0
     operations = list(qs.select_related("fleet_type"))

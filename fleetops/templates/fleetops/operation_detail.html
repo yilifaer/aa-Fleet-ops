@@ -125,7 +125,7 @@
   </div>
 
   <div class="tab-pane fade" id="attendance">
-    {% if can_manage_attendance %}
+    {% if can_manage_attendance and accepts_records %}
     <div class="card mb-3"><div class="card-header"><strong>Add / Correct Attendance</strong></div><div class="card-body">
       <form method="post" action="{% url 'fleetops:add_manual_attendance' operation.uuid %}">{% csrf_token %}
         <div class="row g-2">
@@ -177,7 +177,8 @@
       <div class="col-lg-5">
         {% if can_manage %}
         <div class="card"><div class="card-header"><strong>Assign Special Role</strong></div><div class="card-body">
-          {% if assignable_members %}
+          {% if not accepts_records %}<div class="text-muted">Special roles can only be assigned on Active or Closed fleets.</div>
+          {% elif assignable_members %}
           <form method="post" action="{% url 'fleetops:add_operation_role' operation.uuid %}">{% csrf_token %}
             <div class="mb-2">{{ role_assignment_form.role.label_tag }}{{ role_assignment_form.role }}</div>
             <div class="mb-2">{{ role_assignment_form.character_id.label_tag }}{{ role_assignment_form.character_id }}</div>

@@ -1,9 +1,12 @@
 from fleetops.models import OperationRoleAssignment
+from fleetops.services.attendance import RECORDABLE_STATUSES
 from fleetops.services.audit import audit
 from fleetops.services.identity import identity_for_character_id
 
 
 def add_role_assignment(operation, *, actor, role: str, character_id: int, notes: str = ""):
+    if operation.status not in RECORDABLE_STATUSES:
+        raise ValueError("Special roles can only be assigned on Active or Closed fleets.")
     identity = identity_for_character_id(character_id)
     grants_fc_credit = bool(identity.user and identity.user.has_perm("fleetops.start_fleet"))
     assignment, created = OperationRoleAssignment.objects.update_or_create(

@@ -1,10 +1,13 @@
 import calendar
+import logging
 import uuid
+from datetime import timedelta
 
 from allianceauth.authentication.decorators import permissions_required
 from allianceauth.authentication.models import UserProfile
 from django.contrib import messages
 from django.contrib.auth.decorators import permission_required
+from django.core.paginator import Paginator
 from django.db.models import Count, IntegerField, OuterRef, Q, Subquery, Sum
 from django.db.models.deletion import ProtectedError
 from django.db.models.functions import Coalesce
@@ -53,11 +56,22 @@ from fleetops.models import (
 )
 from fleetops.providers.esi import FleetESIError, detect_character_fleet
 from fleetops.services.audit import audit
-from fleetops.services.attendance import create_manual_attendance, set_operation_attendance_multiplier
+from fleetops.services.attendance import (
+    RECORDABLE_STATUSES,
+    create_manual_attendance,
+    set_operation_attendance_multiplier,
+)
 from fleetops.services.dashboard import dashboard_metrics
 from fleetops.services.fleet_controls import kick_all_pods, pod_members
 from fleetops.services.identity import get_owned_character, identity_for_character_id
-from fleetops.services.incentives import finalize_period, rebuild_period, set_waiver, unlock_period
+from fleetops.services.history import current_member_user_ids
+from fleetops.services.incentives import (
+    IncentiveError,
+    finalize_period,
+    rebuild_period,
+    set_waiver,
+    unlock_period,
+)
 from fleetops.services.messages import render_operation_messages
 from fleetops.services.operations import create_manual_fleet, end_fleet, retry_motd, retry_ping, retry_srp, start_fleet
 from fleetops.services.roles import add_role_assignment, delete_role_assignment
@@ -65,9 +79,40 @@ from fleetops.services.routing import proximity_rows
 from fleetops.services.statistics import (
     attendance_history_queryset,
     corporation_statistics,
+    fc_operations_queryset,
     fc_statistics,
     member_statistics,
 )
+
+logger = logging.getLogger(__name__)
+
+# Fleets running longer than this get the 1x/2x/3x attendance prompt when ended.
+ATTENDANCE_PROMPT_AFTER = timedelta(minutes=90)
+HISTORY_PAGE_SIZE = 200
+AUDIT_PAGE_SIZE = 50
+MAX_DATABASE_ID = 2**63 - 1
+
+
+def _render(request, template_name, context=None):
+    """Render a FleetOps page with the context shared by the navigation."""
+    context = dict(context or {})
+    context["show_incentives"] = (
+        request.user.has_perm("fleetops.manage_incentives")
+        and FleetOpsSettings.get_solo().incentive_enabled
+    )
+    return render(request, template_name, context)
+
+
+def _database_id(value):
+    """Return ``value`` as a positive database id, or None if it is not a valid one."""
+    if not (value.isascii() and value.isdigit()):
+        return None
+    number = int(value)
+    return number if 0 < number <= MAX_DATABASE_ID else None
+
+
+def _can_view_all_fleets(user):
+    return user.has_perm("fleetops.manage_fleets") or user.has_perm("fleetops.view_all_fleets")
 
 
 def _is_credited_fc(user, operation):
@@ -83,7 +128,7 @@ def _can_manage_operation(user, operation):
 
 
 def _can_view_operation(user, operation):
-    if user.has_perm("fleetops.manage_fleets") or user.has_perm("fleetops.view_all_fleets") or user.has_perm("fleetops.view_all_stats"):
+    if _can_view_all_fleets(user):
         return True
     if not user.has_perm("fleetops.basic_access"):
         return False
@@ -160,10 +205,17 @@ def _incentive_redirect(period):
     )
 
 
+def _incentives_enabled(request):
+    if FleetOpsSettings.get_solo().incentive_enabled:
+        return True
+    messages.info(request, "FC incentives are disabled in the FleetOps settings.")
+    return False
+
+
 @permission_required("fleetops.basic_access", raise_exception=True)
 def dashboard(request):
     active_qs = FleetOperation.objects.filter(status=FleetOperation.Status.ACTIVE)
-    if not (request.user.has_perm("fleetops.manage_fleets") or request.user.has_perm("fleetops.view_all_stats")):
+    if not _can_view_all_fleets(request.user):
         active_qs = active_qs.filter(
             Q(fc_user=request.user)
             | Q(role_assignments__auth_user=request.user)
@@ -183,9 +235,9 @@ def dashboard(request):
         .distinct()[:10]
     )
     now = timezone.now()
-    fc = fc_statistics(request.user, now.year, now.month)
+    fc = fc_statistics(request.user, now.year, now.month, include_active=True)
     metrics = dashboard_metrics(request.user)
-    return render(
+    return _render(
         request,
         "fleetops/dashboard.html",
         {
@@ -222,7 +274,7 @@ def start_fleet_view(request):
                 return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     else:
         form = StartFleetForm(user=request.user, initial={"request_id": uuid.uuid4()})
-    return render(request, "fleetops/start_fleet.html", {"form": form})
+    return _render(request, "fleetops/start_fleet.html", {"form": form})
 
 
 @permission_required("fleetops.start_fleet", raise_exception=True)
@@ -261,7 +313,14 @@ def preview_fleet(request):
         scheduled_at=data.get("scheduled_at"),
         additional_message=data.get("additional_message", ""),
     )
-    ping, motd = render_operation_messages(op)
+    try:
+        ping, motd = render_operation_messages(op)
+    except Exception:
+        logger.exception("FleetOps message preview failed")
+        return JsonResponse(
+            {"ok": False, "error": "The ping or MOTD template could not be rendered. Check the message templates."},
+            status=400,
+        )
     return JsonResponse({"ok": True, "ping": ping, "motd": motd})
 
 
@@ -313,11 +372,7 @@ def fleet_operations_view(request):
     qs = FleetOperation.objects.exclude(status=FleetOperation.Status.DRAFT).select_related(
         "fleet_type", "fc_user", "comms"
     )
-    if not (
-        request.user.has_perm("fleetops.manage_fleets")
-        or request.user.has_perm("fleetops.view_all_fleets")
-        or request.user.has_perm("fleetops.view_all_stats")
-    ):
+    if not _can_view_all_fleets(request.user):
         qs = qs.filter(
             Q(fc_user=request.user)
             | Q(role_assignments__auth_user=request.user)
@@ -333,8 +388,9 @@ def fleet_operations_view(request):
     fc = request.GET.get("fc", "").strip()
     doctrine = request.GET.get("doctrine", "").strip()
     query = request.GET.get("q", "").strip()
-    if fleet_type.isdigit():
-        qs = qs.filter(fleet_type_id=int(fleet_type))
+    fleet_type_id = _database_id(fleet_type)
+    if fleet_type_id is not None:
+        qs = qs.filter(fleet_type_id=fleet_type_id)
     if status:
         qs = qs.filter(status=status)
     if fc:
@@ -367,8 +423,6 @@ def fleet_operations_view(request):
         tracked_members=Coalesce(Subquery(tracked_members_subquery, output_field=IntegerField()), 0),
     ).order_by("-started_at", "-created_at")
 
-    from django.core.paginator import Paginator
-
     page = Paginator(qs, 50).get_page(request.GET.get("page"))
     for operation in page.object_list:
         operation.can_edit = _can_manage_operation(request.user, operation)
@@ -389,7 +443,7 @@ def fleet_operations_view(request):
             },
         }
     )
-    return render(request, "fleetops/fleet_operations.html", period)
+    return _render(request, "fleetops/fleet_operations.html", period)
 
 
 @permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
@@ -431,7 +485,7 @@ def edit_operation_view(request, operation_uuid):
             return redirect("fleetops:operation_detail", operation_uuid=updated.uuid)
     else:
         form = OperationEditForm(instance=operation)
-    return render(request, "fleetops/operation_edit.html", {"operation": operation, "form": form})
+    return _render(request, "fleetops/operation_edit.html", {"operation": operation, "form": form})
 
 
 @permission_required("fleetops.basic_access", raise_exception=True)
@@ -449,15 +503,14 @@ def operation_detail(request, operation_uuid):
     pods = pod_members(operation) if operation.status == FleetOperation.Status.ACTIVE else []
     settings = FleetOpsSettings.get_solo()
     end_reference = operation.ended_at or timezone.now()
-    duration_minutes = 0
-    if operation.started_at:
-        duration_minutes = max(0, int((end_reference - operation.started_at).total_seconds() // 60))
+    elapsed = end_reference - operation.started_at if operation.started_at else timedelta(0)
+    duration_minutes = max(0, int(elapsed.total_seconds() // 60))
     stale = bool(
         operation.last_esi_update
         and (timezone.now() - operation.last_esi_update).total_seconds()
         > settings.stale_threshold
     )
-    return render(
+    return _render(
         request,
         "fleetops/operation_detail.html",
         {
@@ -476,11 +529,14 @@ def operation_detail(request, operation_uuid):
             "stale": stale,
             "can_manage": _can_manage_operation(request.user, operation),
             "can_manage_attendance": _can_manage_attendance_operation(request.user, operation),
+            "accepts_records": operation.status in RECORDABLE_STATUSES,
             "manual_attendance_form": ManualAttendanceForm(),
             "multiplier_form": FleetAttendanceMultiplierForm(initial={"attendance_multiplier": operation.attendance_multiplier}),
             "end_form": EndFleetForm(initial={"attendance_multiplier": operation.attendance_multiplier}),
             "duration_minutes": duration_minutes,
-            "attendance_prompt_eligible": operation.status == FleetOperation.Status.ACTIVE and duration_minutes > 90,
+            "attendance_prompt_eligible": (
+                operation.status == FleetOperation.Status.ACTIVE and elapsed > ATTENDANCE_PROMPT_AFTER
+            ),
         },
     )
 
@@ -491,10 +547,16 @@ def end_fleet_view(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid, manage=True)
     if not _can_manage_operation(request.user, operation):
         raise Http404
-    form = EndFleetForm(request.POST)
-    multiplier = form.cleaned_data["attendance_multiplier"] if form.is_valid() else 1
-    end_fleet(operation, actor=request.user, attendance_multiplier=multiplier)
-    messages.success(request, f"Fleet ended. Attendance finalized at {multiplier}x.")
+    multiplier = None
+    if request.POST.get("attendance_multiplier"):
+        form = EndFleetForm(request.POST)
+        if not form.is_valid():
+            messages.error(request, "Attendance multiplier must be 1x, 2x or 3x. The fleet was not ended.")
+            return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+        multiplier = form.cleaned_data["attendance_multiplier"]
+    # Without an explicit choice the fleet keeps its current multiplier.
+    operation = end_fleet(operation, actor=request.user, attendance_multiplier=multiplier)
+    messages.success(request, f"Fleet ended. Attendance finalized at {operation.attendance_multiplier}x.")
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
@@ -561,14 +623,14 @@ def manual_fleet_view(request):
                 return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     else:
         form = ManualFleetForm(initial={"started_at": timezone.now(), "ended_at": timezone.now()})
-    return render(request, "fleetops/manual_fleet.html", {"form": form})
+    return _render(request, "fleetops/manual_fleet.html", {"form": form})
 
 
 @permission_required("fleetops.basic_access", raise_exception=True)
 def my_statistics_view(request):
     year, month = _year_month(request)
     stats = member_statistics(request.user, year, month)
-    return render(
+    return _render(
         request,
         "fleetops/my_statistics.html",
         _period_render_context(year, month, stats=stats),
@@ -584,7 +646,7 @@ def corporation_statistics_view(request):
     year, month = _year_month(request)
     stats = corporation_statistics(main.corporation_id, year, month)
     stats["corporation_name"] = main.corporation_name
-    return render(
+    return _render(
         request,
         "fleetops/corporation_statistics.html",
         _period_render_context(year, month, stats=stats, own_corporation=True),
@@ -604,7 +666,7 @@ def corporation_statistics_detail_view(request, corporation_id):
         raise Http404
     stats = corporation_statistics(corporation_id, year, month)
     stats["corporation_name"] = corp_name
-    return render(
+    return _render(
         request,
         "fleetops/corporation_statistics.html",
         _period_render_context(year, month, stats=stats, own_corporation=False),
@@ -626,7 +688,7 @@ def all_corporation_statistics_view(request):
         stat = corporation_statistics(corp["main_character__corporation_id"], year, month)
         stat["corporation_name"] = corp["main_character__corporation_name"] or str(stat["corporation_id"])
         rows.append(stat)
-    return render(
+    return _render(
         request,
         "fleetops/all_corporation_statistics.html",
         _period_render_context(year, month, rows=rows),
@@ -636,15 +698,18 @@ def all_corporation_statistics_view(request):
 @permission_required("fleetops.view_all_stats", raise_exception=True)
 def all_fc_statistics_view(request):
     year, month = _year_month(request)
-    operation_qs = FleetOperation.objects.exclude(
-        status__in=[FleetOperation.Status.DRAFT, FleetOperation.Status.CANCELLED]
-    ).filter(started_at__year=year, started_at__month=month)
+    operation_qs = FleetOperation.objects.filter(
+        status=FleetOperation.Status.CLOSED, started_at__year=year, started_at__month=month
+    )
     user_ids = set(operation_qs.values_list("fc_user_id", flat=True))
     user_ids.update(
         OperationRoleAssignment.objects.filter(
             operation__in=operation_qs, grants_fc_credit=True
         ).exclude(auth_user=None).values_list("auth_user_id", flat=True)
     )
+    member_ids = current_member_user_ids()
+    if member_ids is not None:
+        user_ids &= member_ids
     # Reuse the same definition shown to individual FCs.
     from django.contrib.auth import get_user_model
 
@@ -655,7 +720,7 @@ def all_fc_statistics_view(request):
         stat["user"] = user
         rows.append(stat)
     rows.sort(key=lambda r: (-r["total_points"], -r["fleet_count"], r["user"].username))
-    return render(
+    return _render(
         request,
         "fleetops/all_fc_statistics.html",
         _period_render_context(year, month, rows=rows),
@@ -673,27 +738,25 @@ def fc_statistics_detail_view(request, user_id):
     )
     year, month = _year_month(request)
     stat = fc_statistics(user, year, month)
-    operations = (
-        FleetOperation.objects.filter(
-            Q(fc_user=user)
-            | Q(role_assignments__auth_user=user, role_assignments__grants_fc_credit=True),
-            started_at__year=year,
-            started_at__month=month,
-        )
-        .exclude(status__in=[FleetOperation.Status.DRAFT, FleetOperation.Status.CANCELLED])
-        .select_related("fleet_type")
-        .distinct()
-        .order_by("-started_at")
-    )
-    return render(
+    operations = fc_operations_queryset(user, year, month).select_related("fleet_type").order_by("-started_at")
+    return _render(
         request,
         "fleetops/fc_statistics_detail.html",
-        _period_render_context(year, month, stat=stat, fc_user=user, operations=operations),
+        _period_render_context(
+            year,
+            month,
+            stat=stat,
+            fc_user=user,
+            operations=operations,
+            can_open_fleets=user.pk == request.user.pk or _can_view_all_fleets(request.user),
+        ),
     )
 
 
 @permission_required("fleetops.manage_incentives", raise_exception=True)
 def incentive_review(request):
+    if not _incentives_enabled(request):
+        return redirect("fleetops:dashboard")
     year, month = _year_month(request)
     period = IncentivePeriod.objects.filter(year=year, month=month).first()
     if request.method == "POST" and request.POST.get("create_period"):
@@ -716,7 +779,7 @@ def incentive_review(request):
                 "minimum_fleets": FleetOpsSettings.get_solo().incentive_minimum_fleets,
             }
         )
-    return render(
+    return _render(
         request,
         "fleetops/incentive_review.html",
         _period_render_context(year, month, period=period, form=form),
@@ -727,8 +790,14 @@ def incentive_review(request):
 @require_POST
 def incentive_recalculate(request, pk):
     period = get_object_or_404(IncentivePeriod, pk=pk)
+    if not _incentives_enabled(request):
+        return redirect("fleetops:dashboard")
     old_status = period.status
-    rebuild_period(period)
+    try:
+        rebuild_period(period)
+    except IncentiveError as exc:
+        messages.error(request, str(exc))
+        return _incentive_redirect(period)
     audit(request.user, "incentive.recalculate", period, {"status": old_status}, {"status": period.status})
     messages.success(request, "Incentive period recalculated and moved to Review.")
     return _incentive_redirect(period)
@@ -738,8 +807,15 @@ def incentive_recalculate(request, pk):
 @require_POST
 def incentive_finalize(request, pk):
     period = get_object_or_404(IncentivePeriod, pk=pk)
-    finalize_period(period, request.user)
-    audit(request.user, "incentive.finalize", period, {"status": "review"}, {"status": "finalized"})
+    if not _incentives_enabled(request):
+        return redirect("fleetops:dashboard")
+    old_status = period.status
+    try:
+        finalize_period(period, request.user)
+    except IncentiveError as exc:
+        messages.error(request, str(exc))
+        return _incentive_redirect(period)
+    audit(request.user, "incentive.finalize", period, {"status": old_status}, {"status": period.status})
     messages.success(request, "Incentive period finalized.")
     return _incentive_redirect(period)
 
@@ -748,8 +824,15 @@ def incentive_finalize(request, pk):
 @require_POST
 def incentive_unlock(request, pk):
     period = get_object_or_404(IncentivePeriod, pk=pk)
-    unlock_period(period)
-    audit(request.user, "incentive.unlock", period, {"status": "finalized"}, {"status": "review"})
+    if not _incentives_enabled(request):
+        return redirect("fleetops:dashboard")
+    old_status = period.status
+    try:
+        unlock_period(period)
+    except IncentiveError as exc:
+        messages.error(request, str(exc))
+        return _incentive_redirect(period)
+    audit(request.user, "incentive.unlock", period, {"status": old_status}, {"status": period.status})
     messages.warning(request, "Incentive period unlocked.")
     return _incentive_redirect(period)
 
@@ -758,15 +841,26 @@ def incentive_unlock(request, pk):
 @require_POST
 def incentive_waiver(request, pk, user_id):
     period = get_object_or_404(IncentivePeriod, pk=pk)
+    row = get_object_or_404(MonthlyFCStatistic, period=period, fc_user_id=user_id)
+    if not _incentives_enabled(request):
+        return redirect("fleetops:dashboard")
     if period.status == IncentivePeriod.Status.FINALIZED:
         messages.error(request, "Unlock the finalized period before changing waivers.")
         return _incentive_redirect(period)
-    row = get_object_or_404(MonthlyFCStatistic, period=period, fc_user_id=user_id)
     old = row.waived
     new = request.POST.get("waived") == "1"
-    set_waiver(period, user_id, new)
+    try:
+        updated = set_waiver(period, user_id, new)
+    except IncentiveError as exc:
+        messages.error(request, str(exc))
+        return _incentive_redirect(period)
     audit(request.user, "incentive.waiver", row, {"waived": old}, {"waived": new})
-    messages.success(request, "FC waiver updated and payouts recalculated.")
+    if updated is None:
+        messages.warning(
+            request, "This FC no longer has credited fleets in this month. Payouts were recalculated without them."
+        )
+    else:
+        messages.success(request, "FC waiver updated and payouts recalculated.")
     return _incentive_redirect(period)
 
 
@@ -781,16 +875,20 @@ def add_manual_attendance(request, operation_uuid):
         messages.error(request, "Invalid manual attendance entry.")
         return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     data = form.cleaned_data
-    create_manual_attendance(
-        operation,
-        actor=request.user,
-        character_id=data["character_id"],
-        character_name=data["character_name"],
-        attendance_value=data["attendance_value"],
-        duplicate_action=data["duplicate_action"],
-        notes=data["notes"],
-    )
-    messages.success(request, "Manual attendance saved.")
+    try:
+        create_manual_attendance(
+            operation,
+            actor=request.user,
+            character_id=data["character_id"],
+            character_name=data["character_name"],
+            attendance_value=data["attendance_value"],
+            duplicate_action=data["duplicate_action"],
+            notes=data["notes"],
+        )
+    except ValueError as exc:
+        messages.error(request, str(exc))
+    else:
+        messages.success(request, "Manual attendance saved.")
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
@@ -824,17 +922,21 @@ def manual_attendance_view(request):
             if not _can_manage_attendance_operation(request.user, operation):
                 raise Http404
             data = form.cleaned_data
-            create_manual_attendance(
-                operation,
-                actor=request.user,
-                character_id=data["character_id"],
-                character_name=data["character_name"],
-                attendance_value=data["attendance_value"],
-                duplicate_action=data["duplicate_action"],
-                notes=data["notes"],
-            )
-            messages.success(request, "Historical manual attendance saved.")
-            return redirect("fleetops:manual_attendance")
+            try:
+                create_manual_attendance(
+                    operation,
+                    actor=request.user,
+                    character_id=data["character_id"],
+                    character_name=data["character_name"],
+                    attendance_value=data["attendance_value"],
+                    duplicate_action=data["duplicate_action"],
+                    notes=data["notes"],
+                )
+            except ValueError as exc:
+                form.add_error(None, str(exc))
+            else:
+                messages.success(request, "Historical manual attendance saved.")
+                return redirect("fleetops:manual_attendance")
     else:
         form = HistoricalManualAttendanceForm(user=request.user)
     recent = AttendanceRecord.objects.filter(source=AttendanceRecord.Source.MANUAL)
@@ -843,29 +945,35 @@ def manual_attendance_view(request):
             Q(operation__fc_user=request.user)
             | Q(operation__role_assignments__auth_user=request.user, operation__role_assignments__grants_fc_credit=True)
         ).distinct()
-    return render(
+    return _render(
         request,
         "fleetops/manual_attendance.html",
         {"form": form, "recent_manual": recent.select_related("operation__fleet_type", "created_by")[:100]},
     )
 
 
-def _history_context(rows, title, scope_label, retention_days):
-    total = sum(r.attendance_value for r in rows)
+def _history_context(request, queryset, title, scope_label, retention_days):
+    page = Paginator(queryset, HISTORY_PAGE_SIZE).get_page(request.GET.get("page"))
     return {
-        "rows": rows,
+        "rows": page.object_list,
+        "page": page,
         "title": title,
         "scope_label": scope_label,
-        "total": total,
+        "total": queryset.aggregate(total=Sum("attendance_value"))["total"] or 0,
         "retention_days": retention_days,
+        "can_open_fleets": _can_view_all_fleets(request.user),
     }
 
 
 @permission_required("fleetops.basic_access", raise_exception=True)
 def attendance_history_me(request):
     retention_days = max(365, FleetOpsSettings.get_solo().data_retention_days)
-    rows = list(attendance_history_queryset(user=request.user, days=retention_days)[:2000])
-    return render(request, "fleetops/attendance_history.html", _history_context(rows, "My Attendance History", "Personal", retention_days))
+    rows = attendance_history_queryset(user=request.user, days=retention_days)
+    return _render(
+        request,
+        "fleetops/attendance_history.html",
+        _history_context(request, rows, "My Attendance History", "Personal", retention_days),
+    )
 
 
 @permission_required("fleetops.view_corp_stats", raise_exception=True)
@@ -874,19 +982,23 @@ def attendance_history_corporation(request):
     if not main or not main.corporation_id:
         raise Http404
     retention_days = max(365, FleetOpsSettings.get_solo().data_retention_days)
-    rows = list(attendance_history_queryset(corporation_id=main.corporation_id, days=retention_days)[:5000])
-    return render(
+    rows = attendance_history_queryset(corporation_id=main.corporation_id, days=retention_days)
+    return _render(
         request,
         "fleetops/attendance_history.html",
-        _history_context(rows, f"{main.corporation_name} Attendance History", "Corporation", retention_days),
+        _history_context(request, rows, f"{main.corporation_name} Attendance History", "Corporation", retention_days),
     )
 
 
 @permission_required("fleetops.view_all_stats", raise_exception=True)
 def attendance_history_alliance(request):
     retention_days = max(365, FleetOpsSettings.get_solo().data_retention_days)
-    rows = list(attendance_history_queryset(alliance=True, days=retention_days)[:10000])
-    return render(request, "fleetops/attendance_history.html", _history_context(rows, "Alliance Attendance History", "Alliance", retention_days))
+    rows = attendance_history_queryset(alliance=True, days=retention_days)
+    return _render(
+        request,
+        "fleetops/attendance_history.html",
+        _history_context(request, rows, "Alliance Attendance History", "Alliance", retention_days),
+    )
 
 
 @permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
@@ -896,7 +1008,10 @@ def add_operation_role(request, operation_uuid):
     if not _can_manage_operation(request.user, operation):
         raise Http404
     form = OperationRoleAssignmentForm(request.POST, operation=operation)
-    if form.is_valid():
+    if not form.is_valid():
+        messages.error(request, "Invalid special-role assignment.")
+        return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+    try:
         assignment = add_role_assignment(
             operation,
             actor=request.user,
@@ -904,12 +1019,13 @@ def add_operation_role(request, operation_uuid):
             character_id=form.cleaned_data["character_id"],
             notes=form.cleaned_data["notes"],
         )
+    except ValueError as exc:
+        messages.error(request, str(exc))
+    else:
         if assignment.grants_fc_credit:
             messages.success(request, f"{assignment.character_name} assigned; FC credit granted.")
         else:
             messages.success(request, f"{assignment.character_name} assigned.")
-    else:
-        messages.error(request, "Invalid special-role assignment.")
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
@@ -941,8 +1057,9 @@ def kick_capsules_view(request, operation_uuid):
 
 @permission_required("fleetops.view_audit_log", raise_exception=True)
 def audit_log_view(request):
-    rows = AuditLog.objects.select_related("actor")[:500]
-    return render(request, "fleetops/audit_log.html", {"rows": rows})
+    entries = AuditLog.objects.select_related("actor").order_by("-created_at", "-pk")
+    page = Paginator(entries, AUDIT_PAGE_SIZE).get_page(request.GET.get("page"))
+    return _render(request, "fleetops/audit_log.html", {"rows": page.object_list, "page": page})
 
 
 # ---------------------------------------------------------------------------
@@ -1056,7 +1173,7 @@ def configuration_index(request):
         }
         for key, config in CONFIG_SECTIONS.items()
     ]
-    return render(
+    return _render(
         request,
         "fleetops/configuration/index.html",
         {"settings_obj": settings_obj, "cards": cards},
@@ -1083,7 +1200,7 @@ def configuration_settings(request):
             return redirect("fleetops:configuration_index")
     else:
         form = FleetOpsSettingsForm(instance=obj)
-    return render(
+    return _render(
         request,
         "fleetops/configuration/settings_form.html",
         {"form": form, "settings_obj": obj},
@@ -1105,7 +1222,7 @@ def configuration_list(request, section):
                 value = obj.get_template_type_display()
             values.append((label, value))
         rows.append({"object": obj, "values": values})
-    return render(
+    return _render(
         request,
         "fleetops/configuration/list.html",
         {"section": section, "config": config, "rows": rows},
@@ -1134,7 +1251,7 @@ def configuration_edit(request, section, pk=None):
             return redirect("fleetops:configuration_list", section=section)
     else:
         form = config["form"](instance=obj)
-    return render(
+    return _render(
         request,
         "fleetops/configuration/form.html",
         {"section": section, "config": config, "form": form, "object": obj},

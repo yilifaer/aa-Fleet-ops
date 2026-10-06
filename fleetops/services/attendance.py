@@ -1,6 +1,9 @@
 from django.db.models import Sum
 
-from fleetops.models import AttendanceRecord, FleetOpsSettings
+from fleetops.models import AttendanceRecord, FleetOperation, FleetOpsSettings
+
+# Fleets that accept manual attendance and special-role assignments.
+RECORDABLE_STATUSES = (FleetOperation.Status.ACTIVE, FleetOperation.Status.CLOSED)
 
 
 def ensure_automatic_attendance(operation, identity, seen_at):
@@ -53,6 +56,8 @@ def create_manual_attendance(operation, *, actor, character_id: int, character_n
     from fleetops.services.audit import audit
     from fleetops.services.identity import identity_for_character_id
 
+    if operation.status not in RECORDABLE_STATUSES:
+        raise ValueError("Manual attendance can only be added to Active or Closed fleets.")
     identity = identity_for_character_id(character_id)
     automatic = AttendanceRecord.objects.filter(
         operation=operation,

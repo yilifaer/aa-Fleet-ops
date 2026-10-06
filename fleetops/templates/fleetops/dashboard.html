@@ -81,7 +81,7 @@
     <div class="card">
       <div class="card-header"><strong>My FC Month</strong></div>
       <div class="card-body">
-        <div class="display-6">{{ fc_stats.fleet_count }}</div><div class="text-muted">FC credited fleets</div>
+        <div class="display-6">{{ fc_stats.fleet_count }}</div><div class="text-muted">FC credited fleets, closed and active</div>
         <hr><div class="d-flex justify-content-between"><span>FC Points</span><strong>{{ fc_stats.total_points|floatformat:2 }}</strong></div>
         {% for name,row in fc_stats.breakdown.items %}<div class="d-flex justify-content-between small mt-2"><span>{{ name }}</span><span>{{ row.count }} / {{ row.points|floatformat:2 }} pts</span></div>{% endfor %}
       </div>
