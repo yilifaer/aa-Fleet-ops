@@ -234,13 +234,13 @@ class HistoricalManualAttendanceForm(ManualAttendanceForm):
     operation = forms.ModelChoiceField(
         queryset=FleetOperation.objects.none(),
         label="Historical Fleet",
-        help_text="Closed fleets are available. Repeat entries or use Attendance Value > 1 when multiple credits are required.",
+        help_text="Active and closed fleets are available. Repeat entries or use Attendance Value > 1 when multiple credits are required.",
     )
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        qs = FleetOperation.objects.exclude(
-            status__in=[FleetOperation.Status.DRAFT, FleetOperation.Status.CANCELLED]
+        qs = FleetOperation.objects.filter(
+            status__in=[FleetOperation.Status.ACTIVE, FleetOperation.Status.CLOSED]
         ).select_related("fleet_type", "fc_user")
         if user is not None and not user.has_perm("fleetops.manage_fleets"):
             qs = qs.filter(

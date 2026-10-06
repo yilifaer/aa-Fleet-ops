@@ -767,8 +767,6 @@ class IncentiveRebuildTests(TestCase):
         rebuild_period(self.period)
         self.assertFalse(MonthlyFCStatistic.objects.filter(period=self.period, fc_user=self.fc2).exists())
 
-    # Known issue: incentive rebuild also counts Active/Starting/Ending/Error fleets, not only Closed ones
-    @unittest.expectedFailure
     def test_only_closed_fleets_count(self):
         closed_op(self.fc1, utc(2026, 3, 1))
         for status in (Status.ACTIVE, Status.STARTING, Status.ENDING, Status.ERROR):
@@ -910,8 +908,6 @@ class IncentiveStateMachineTests(TestCase):
         rebuild_period(self.period)
         self.assertEqual(stat_for(self.period, self.fc2).fleet_count, 2)
 
-    # Known issue: unlock_period moves an Open (never calculated) period to Review without a recalculation
-    @unittest.expectedFailure
     def test_unlock_only_applies_to_finalized_periods(self):
         try:
             unlock_period(self.period)
@@ -1082,8 +1078,6 @@ class IncentiveViewTests(TestCase):
             with self.subTest(view=name):
                 self.assertEqual(self.client.get(reverse(f"fleetops:{name}", args=[self.period.pk])).status_code, 405)
 
-    # Known issue: recalculating a Finalized period raises ValueError in the view (HTTP 500)
-    @unittest.expectedFailure
     def test_recalculate_finalized_period_is_rejected_gracefully(self):
         rebuild_period(self.period)
         finalize_period(self.period, self.manager)
@@ -1095,8 +1089,6 @@ class IncentiveViewTests(TestCase):
         self.period.refresh_from_db()
         self.assertEqual(self.period.status, PeriodStatus.FINALIZED)
 
-    # Known issue: finalizing a period that is not in Review raises ValueError in the view (HTTP 500)
-    @unittest.expectedFailure
     def test_finalize_open_period_is_rejected_gracefully(self):
         self.client.raise_request_exception = False
 
@@ -1107,8 +1099,6 @@ class IncentiveViewTests(TestCase):
         self.assertEqual(self.period.status, PeriodStatus.OPEN)
         self.assertFalse(AuditLog.objects.filter(action="incentive.finalize").exists())
 
-    # Known issue: unlocking an Open period moves it to Review and writes a false finalized->review audit entry
-    @unittest.expectedFailure
     def test_unlock_open_period_does_nothing(self):
         self.client.raise_request_exception = False
 
@@ -1118,8 +1108,6 @@ class IncentiveViewTests(TestCase):
         self.assertEqual(self.period.status, PeriodStatus.OPEN)
         self.assertFalse(AuditLog.objects.filter(action="incentive.unlock").exists())
 
-    # Known issue: toggling a waiver for an FC whose fleets dropped out since the last recalculation crashes
-    @unittest.expectedFailure
     def test_waiver_after_fc_lost_all_fleets_does_not_crash(self):
         rebuild_period(self.period)
         FleetOperation.objects.filter(fc_user=self.fc1).update(status=Status.CANCELLED)
@@ -1144,14 +1132,10 @@ class IncentiveDisabledTests(TestCase):
         self.assertFalse(f.settings().incentive_enabled)
         self.assertTrue(f.settings(incentive_enabled=True).incentive_enabled)
 
-    # Known issue: FleetOpsSettings.incentive_enabled is ignored; incentive pages stay available
-    @unittest.expectedFailure
     def test_review_page_unavailable_when_disabled(self):
         response = self.client.get(reverse("fleetops:incentive_review"), {"year": 2026, "month": 3})
         self.assertIn(response.status_code, (302, 403, 404))
 
-    # Known issue: FleetOpsSettings.incentive_enabled is ignored; recalculation still runs
-    @unittest.expectedFailure
     def test_nothing_is_calculated_when_disabled(self):
         self.client.raise_request_exception = False
         self.client.post(reverse("fleetops:incentive_recalculate", args=[self.period.pk]))
@@ -1163,8 +1147,6 @@ class IncentiveDisabledTests(TestCase):
         self.assertEqual(self.period.status, PeriodStatus.OPEN)
         self.assertFalse(MonthlyFCStatistic.objects.exists())
 
-    # Known issue: FleetOpsSettings.incentive_enabled is ignored; the menu link is still rendered
-    @unittest.expectedFailure
     def test_navigation_hides_incentive_link_when_disabled(self):
         response = self.client.get(reverse("fleetops:my_statistics"))
         self.assertEqual(response.status_code, 200)
@@ -1313,8 +1295,12 @@ class DashboardViewTests(TestCase):
         self.assertEqual(active, {self.joined})
 
     def test_fc_sees_own_active_fleets(self):
-        _, active = self.active_for(self.fc)
-        self.assertEqual(active, {self.mine})
+        own_fleet_fc = f.create_user(
+            "ownfleetfc", perms=["fleetops.basic_access", "fleetops.start_fleet", "fleetops.manage_own_fleet"]
+        )
+        mine = f.create_operation(own_fleet_fc, started_at=NOW - timedelta(minutes=30))
+        _, active = self.active_for(own_fleet_fc)
+        self.assertEqual(active, {mine})
 
     def test_closed_fleets_not_listed_as_active(self):
         self.joined.status = Status.CLOSED
@@ -1335,15 +1321,11 @@ class DashboardViewTests(TestCase):
         response, _ = self.active_for(self.fc)
         self.assertEqual(response.context["active_operations"][0].active_member_count, 1)
 
-    # Known issue: view_all_stats grants access to all fleet records (dashboard lists every active fleet)
-    @unittest.expectedFailure
     def test_view_all_stats_alone_does_not_list_other_fleets(self):
         analyst = f.create_user("analyst", perms=f.MEMBER_PERMS + ["fleetops.view_all_stats"])
         _, active = self.active_for(analyst)
         self.assertEqual(active, set())
 
-    # Known issue: dashboard keys the all-fleets list on view_all_stats instead of view_all_fleets
-    @unittest.expectedFailure
     def test_view_all_fleets_lists_every_active_fleet(self):
         viewer = f.create_user("viewer", perms=f.MEMBER_PERMS + ["fleetops.view_all_fleets"])
         _, active = self.active_for(viewer)

@@ -63,7 +63,7 @@ from fleetops.services.attendance import (
 )
 from fleetops.services.dashboard import dashboard_metrics
 from fleetops.services.fleet_controls import kick_all_pods, pod_members
-from fleetops.services.identity import get_owned_character, identity_for_character_id
+from fleetops.services.identity import get_owned_character
 from fleetops.services.history import current_member_user_ids
 from fleetops.services.incentives import (
     IncentiveError,
@@ -264,8 +264,9 @@ def start_fleet_view(request):
                 )
             except (FleetESIError, PermissionError) as exc:
                 form.add_error(None, str(exc))
-            except Exception as exc:
-                form.add_error(None, f"Fleet start failed: {exc}")
+            except Exception:
+                logger.exception("Fleet start failed")
+                form.add_error(None, "Fleet start failed because of an unexpected error. Please try again or contact an administrator.")
             else:
                 messages.success(
                     request,
@@ -567,7 +568,8 @@ def retry_ping_view(request, operation_uuid):
     if not _can_manage_operation(request.user, operation):
         raise Http404
     action = retry_ping(operation)
-    messages.info(request, f"Ping retry: {action.get_status_display()}.")
+    detail = f" {action.error_message}" if action.error_message else ""
+    messages.info(request, f"Ping retry: {action.get_status_display()}.{detail}")
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
@@ -578,7 +580,8 @@ def retry_motd_view(request, operation_uuid):
     if not _can_manage_operation(request.user, operation):
         raise Http404
     action = retry_motd(operation)
-    messages.info(request, f"MOTD retry: {action.get_status_display()}.")
+    detail = f" {action.error_message}" if action.error_message else ""
+    messages.info(request, f"MOTD retry: {action.get_status_display()}.{detail}")
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
@@ -589,7 +592,8 @@ def retry_srp_view(request, operation_uuid):
     if not _can_manage_operation(request.user, operation):
         raise Http404
     action = retry_srp(operation)
-    messages.info(request, f"SRP retry: {action.get_status_display()}.")
+    detail = f" {action.error_message}" if action.error_message else ""
+    messages.info(request, f"SRP retry: {action.get_status_display()}.{detail}")
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
@@ -872,7 +876,8 @@ def add_manual_attendance(request, operation_uuid):
         raise Http404
     form = ManualAttendanceForm(request.POST)
     if not form.is_valid():
-        messages.error(request, "Invalid manual attendance entry.")
+        details = " ".join(str(error) for errors in form.errors.values() for error in errors)
+        messages.error(request, f"Invalid manual attendance entry. {details}".strip())
         return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     data = form.cleaned_data
     try:

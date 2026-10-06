@@ -5,20 +5,92 @@ on:
   pull_request:
 
 jobs:
-  package-smoke:
+  tests:
+    name: Tests (Python ${{ matrix.python-version }}, AA ${{ matrix.allianceauth }}, ${{ matrix.database }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.10", "3.12", "3.14"]
+        include:
+          - python-version: "3.10"
+            allianceauth: "5.2.0"
+            database: sqlite
+          - python-version: "3.12"
+            allianceauth: "5.4.0"
+            database: mariadb
+          - python-version: "3.13"
+            allianceauth: "latest"
+            database: mariadb
+          - python-version: "3.14"
+            allianceauth: "latest"
+            database: sqlite
+
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: fleetops
+          MARIADB_DATABASE: fleetops
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      FLEETOPS_TEST_REDIS: redis://localhost:6379/1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends default-libmysqlclient-dev pkg-config
+
+      - name: Install Python packages
+        run: |
+          python -m pip install --upgrade pip
+          if [ "${{ matrix.allianceauth }}" = "latest" ]; then
+            pip install "allianceauth>=5.2,<6"
+          else
+            pip install "allianceauth==${{ matrix.allianceauth }}"
+          fi
+          pip install -e ".[test]"
+
+      - name: Select database
+        if: matrix.database == 'mariadb'
+        run: echo "FLEETOPS_TEST_DB=mysql://root:fleetops@127.0.0.1:3306/fleetops" >> "$GITHUB_ENV"
+
+      - name: Django checks
+        run: |
+          python manage.py check
+          python manage.py makemigrations fleetops --check --dry-run
+
+      - name: Run tests
+        run: coverage run --source=fleetops --omit='fleetops/migrations/*' runtests.py tests
+
+      - name: Coverage report
+        run: coverage report --skip-covered --sort=cover
+
+  build:
+    name: Build package
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
-      - name: Compile package
-        run: python -m compileall -q fleetops
-      - name: Pure calculation tests
-        run: PYTHONPATH=. python tests/test_calculations.py
+          python-version: "3.12"
       - name: Build wheel and sdist
         run: |
           python -m pip install --upgrade pip build

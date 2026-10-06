@@ -2,7 +2,6 @@
 
 import importlib
 import re
-import unittest
 from datetime import timedelta
 from decimal import Decimal
 from io import StringIO
@@ -196,8 +195,6 @@ class FleetOpsSettingsTests(TestCase):
         obj.history_alliance_ids = f"{f.DEFAULT_ALLIANCE[0]}, {f.FOREIGN_ALLIANCE[0]}"
         obj.full_clean()
 
-    # Known issue: history_alliance_ids silently accepts entries that are not alliance IDs
-    @unittest.expectedFailure
     def test_history_alliance_ids_rejects_non_numeric_entries(self):
         obj = FleetOpsSettings.get_solo()
         obj.history_alliance_ids = f"{f.DEFAULT_ALLIANCE[0]}, Foreign Alliance"
@@ -615,8 +612,6 @@ class MigrationTests(TestCase):
         self.assertEqual(migration.PING, DEFAULT_PING_TEMPLATE)
         self.assertEqual(migration.MOTD, DEFAULT_MOTD_TEMPLATE)
 
-    # Known issue K9: AttendanceRecord Meta.ordering change has no migration
-    @unittest.expectedFailure
     def test_models_and_migrations_are_in_sync(self):
         out = StringIO()
         try:
@@ -786,8 +781,6 @@ class SeedCommandTests(TestCase):
         self.assertEqual(target.webhook, hook)
         self.assertEqual(DiscordWebhook.objects.count(), 1)
 
-    # Known issue: re-running fleetops_seed overwrites customised default templates
-    @unittest.expectedFailure
     def test_seed_rerun_keeps_customised_default_templates(self):
         template = MessageTemplate.objects.get(template_type="ping", name="Default Ping")
         template.content = "Custom alliance ping {{ fc }}"
@@ -800,8 +793,6 @@ class SeedCommandTests(TestCase):
         self.assertEqual(template.content, "Custom alliance ping {{ fc }}")
         self.assertFalse(template.is_default)
 
-    # Known issue: re-running fleetops_seed --demo resets configured fleet type weights
-    @unittest.expectedFailure
     def test_seed_demo_rerun_keeps_configured_fleet_type_weights(self):
         run_command("fleetops_seed", "--demo")
         cta = FleetType.objects.get(name="Call To Arms")
@@ -929,8 +920,6 @@ class PruneHistoryCommandTests(TestCase):
         self.assertFalse(AttendanceRecord.objects.filter(pk=old_departed.pk).exists())
         self.assertEqual(list(AttendanceRecord.objects.all()), [self.recent_record])
 
-    # Known issue: prune counts rows that are both expired and departed twice
-    @unittest.expectedFailure
     def test_reported_totals_match_rows_removed(self):
         f.settings(history_alliance_ids=str(f.DEFAULT_ALLIANCE[0]))
         departed = f.create_user(alliance=f.FOREIGN_ALLIANCE)
@@ -1161,8 +1150,6 @@ class AdminTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertFalse(CommsPreset.objects.filter(pk=comms.pk).exists())
 
-    # Known issue: admin bulk "delete selected" bypasses the configuration audit
-    @unittest.expectedFailure
     def test_bulk_delete_of_configuration_is_audited(self):
         hook = DiscordWebhook.objects.create(name="Bulk Hook", webhook_url=WEBHOOK_SECRET)
 

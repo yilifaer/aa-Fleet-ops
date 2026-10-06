@@ -1,6 +1,5 @@
 """Tests for starting, tracking and ending fleet operations against a fake ESI."""
 
-import unittest
 import uuid
 from contextlib import contextmanager
 from datetime import timedelta
@@ -148,8 +147,9 @@ class FakeFleetsAPI:
         self.calls.append(("members", fleet_id, token))
         return self._request(self.members.get(fleet_id, http_error(404)), ("members", fleet_id))
 
-    def PutFleetsFleetId(self, *, fleet_id, token, new_settings=None, body=None):
-        self.put_calls.append({"fleet_id": fleet_id, "token": token, "body": new_settings if new_settings is not None else body})
+    def PutFleetsFleetId(self, *, fleet_id, token, body):
+        # django-esi only accepts the request body as ``body``.
+        self.put_calls.append({"fleet_id": fleet_id, "token": token, "body": body})
         return FakeRequest(self.put_outcome)
 
     def DeleteFleetsFleetIdMembersMemberId(self, *, fleet_id, member_id, token):
@@ -669,8 +669,6 @@ class StartFleetIdempotencyTests(StartFleetTestBase):
         self.assertEqual(operation.doctrine_source, "custom")
         self.assertEqual(self.discord_post.call_count, 1)
 
-    # Known issue: a concurrent duplicate submit fails with an IntegrityError instead of returning the started operation
-    @unittest.expectedFailure
     def test_concurrent_duplicate_submit_returns_the_operation_started_first(self):
         request_id = uuid.uuid4()
         competing = {}
@@ -1054,8 +1052,6 @@ class ScheduleTrackingTests(FakeESIMixin, TestCase):
 
         self.assertEqual(self.queued_ids(), {recent.pk})
 
-    # Known issue: a failed poll does not count towards the interval, so failing fleets are polled on every beat
-    @unittest.expectedFailure
     def test_failed_poll_also_waits_for_the_interval(self):
         f.settings(tracking_interval=300, auto_end_enabled=True, auto_end_missing_count=3)
         fc_char = f.main_of(self.fc)
@@ -1374,8 +1370,6 @@ class EndFleetTests(TrackingTestBase):
         self.assertEqual(self.operation.status, Status.CLOSED)
         self.assertEqual(self.operation.attendance_multiplier, 3)
 
-    # Known issue: the fleet.end audit entry always records "active" as the previous status
-    @unittest.expectedFailure
     def test_audit_records_the_real_previous_status(self):
         FleetOperation.objects.filter(pk=self.operation.pk).update(status=Status.ERROR)
         self.operation.refresh_from_db()
@@ -1713,8 +1707,6 @@ class ESIUnchangedResponseTests(FakeESIMixin, TestCase):
         self.esi.put_in_fleet(self.fc_char)
         self.esi.members[FLEET_ID] = [f.esi_member(self.fc_char, role="fleet_commander"), f.esi_member(f.main_of(self.pilot))]
 
-    # Known issue: re-reading an unchanged fleet (ETag hit) raises ESI_ERROR, so start fails after the detection preview
-    @unittest.expectedFailure
     def test_start_after_detection_preview_succeeds(self):
         # The start page asks the detect endpoint first; the form submit detects again.
         detect_character_fleet(self.fc, self.fc_char.character_id)
@@ -1735,8 +1727,6 @@ class ESIUnchangedResponseTests(FakeESIMixin, TestCase):
 
         self.assertEqual(operation.status, Status.ACTIVE)
 
-    # Known issue: an unchanged fleet member list (ETag hit) is treated as an ESI error during tracking
-    @unittest.expectedFailure
     def test_unchanged_member_list_still_counts_as_successful_sync(self):
         operation = f.create_operation(self.fc, esi_fleet_id=FLEET_ID)
         self.assertEqual(track_operation(operation.pk), 2)
@@ -1762,7 +1752,7 @@ class DiscordWebhookTests(FakeESIMixin, TestCase):
 
         self.assertTrue(result.success)
         self.assertEqual(result.status_code, 204)
-        self.discord_post.assert_called_once_with(WEBHOOK_URL, json={"content": "ping"}, timeout=15)
+        self.discord_post.assert_called_once_with(WEBHOOK_URL, json={"content": "ping"}, timeout=15, allow_redirects=False)
 
     def test_error_response(self):
         self.discord_post.return_value = mock.Mock(status_code=429, text="rate limited")
@@ -1786,8 +1776,6 @@ class DiscordWebhookTests(FakeESIMixin, TestCase):
 
         self.assertFalse(result.success)
 
-    # Known issue: requests exception text containing the webhook URL is stored and shown on the operation page
-    @unittest.expectedFailure
     def test_webhook_secret_never_reaches_action_error_message(self):
         fc = f.create_user(perms=f.FC_PERMS)
         # A webhook saved without the scheme; requests rejects it while preparing the request.
@@ -1803,8 +1791,6 @@ class DiscordWebhookTests(FakeESIMixin, TestCase):
 
 
 class WebhookSecretPageTests(FakeESIMixin, TestCase):
-    # Known issue: a failed ping exposes the webhook URL, including its token, to members viewing the fleet
-    @unittest.expectedFailure
     def test_webhook_secret_is_not_shown_to_fleet_members(self):
         fc = f.create_user(perms=f.FC_PERMS)
         member = f.create_user(perms=f.MEMBER_PERMS)
@@ -1845,7 +1831,7 @@ class RetryTests(FakeESIMixin, TestCase):
     def test_retry_ping_posts_stored_ping_text(self):
         result = retry_ping(self.operation)
 
-        self.discord_post.assert_called_once_with(WEBHOOK_URL, json={"content": "ping"}, timeout=15)
+        self.discord_post.assert_called_once_with(WEBHOOK_URL, json={"content": "ping"}, timeout=15, allow_redirects=False)
         self.assertEqual(result.status, ActionStatus.SUCCESS)
 
     def test_retry_motd_uses_fc_character_token(self):
@@ -1862,8 +1848,6 @@ class RetryTests(FakeESIMixin, TestCase):
         self.assertEqual(result.status, ActionStatus.FAILED)
         self.assertIn("Could not update fleet MOTD", result.error_message)
 
-    # Known issue K4: retrying SRP for an operation that already has an SRP reference creates another SRP fleet
-    @unittest.expectedFailure
     def test_retry_srp_does_not_duplicate_existing_srp_fleet(self):
         provider = mock.Mock(key="counting_srp")
         provider.available.return_value = True

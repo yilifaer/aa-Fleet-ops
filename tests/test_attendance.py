@@ -6,7 +6,6 @@ from io import StringIO
 from unittest import mock
 
 from django.core.management import call_command
-from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -534,8 +533,6 @@ class ManualAttendanceViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(AttendanceRecord.objects.exists())
 
-    # Known issue: per-fleet manual attendance accepts Cancelled fleets (only Active/Closed are allowed)
-    @unittest.expectedFailure
     def test_cancelled_fleet_rejects_manual_attendance(self):
         operation = f.create_operation(self.fc, status=FleetOperation.Status.CANCELLED)
 
@@ -543,8 +540,6 @@ class ManualAttendanceViewTests(TestCase):
 
         self.assertFalse(AttendanceRecord.objects.filter(operation=operation).exists())
 
-    # Known issue: per-fleet manual attendance accepts Draft fleets (only Active/Closed are allowed)
-    @unittest.expectedFailure
     def test_draft_fleet_rejects_manual_attendance(self):
         operation = f.create_operation(self.fc, status=FleetOperation.Status.DRAFT)
 
@@ -989,21 +984,29 @@ class PruneHistoryTests(TestCase):
         self.assertTrue(self._exists(kept))
         self.assertFalse(self._exists(removed))
 
-    def test_settings_form_accepts_very_long_retention(self):
+    def _settings_form(self, retention_days):
         data = {
             "tracking_interval": 60,
             "stale_threshold": 180,
             "auto_end_missing_count": 3,
             "incentive_minimum_fleets": 3,
-            "data_retention_days": 999_999,
+            "data_retention_days": retention_days,
             "history_alliance_ids": "",
             "srp_provider": "auto",
         }
-        form = FleetOpsSettingsForm(data, instance=FleetOpsSettings.get_solo())
+        return FleetOpsSettingsForm(data, instance=FleetOpsSettings.get_solo())
+
+    def test_settings_form_accepts_long_retention_up_to_the_maximum(self):
+        form = self._settings_form(36_500)
         self.assertTrue(form.is_valid(), form.errors)
 
-    # Known issue: a very long retention (e.g. 999999 days to "keep forever") overflows the cutoff date and crashes pruning
-    @unittest.expectedFailure
+    def test_settings_form_rejects_retention_beyond_the_maximum(self):
+        for days in (36_501, 999_999):
+            with self.subTest(days=days):
+                form = self._settings_form(days)
+                self.assertFalse(form.is_valid())
+                self.assertIn("data_retention_days", form.errors)
+
     def test_very_long_retention_keeps_everything(self):
         f.settings(data_retention_days=999_999)
         kept = self._attendance_at(5000)
@@ -1013,8 +1016,6 @@ class PruneHistoryTests(TestCase):
         self.assertEqual(result["old_attendance"], 0)
         self.assertTrue(self._exists(kept))
 
-    # Known issue: the same overflow turns the personal attendance history page into a server error
-    @unittest.expectedFailure
     def test_history_page_with_very_long_retention(self):
         f.settings(data_retention_days=999_999)
         self._attendance_at(5)

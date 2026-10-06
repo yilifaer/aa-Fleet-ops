@@ -1,7 +1,6 @@
 """Tests for the front-end configuration centre and the FleetOps audit log."""
 
 import json
-import unittest
 import uuid
 from datetime import timedelta
 from decimal import Decimal
@@ -375,8 +374,6 @@ class ConfigurationCrudTests(TestCase):
         self.assertContains(response, "<td>2.50</td>")
         self.assertContains(response, "<td>5</td>")
 
-    # Known issue: numeric values equal to 1 or 0 are rendered as Yes/No badges on list pages
-    @unittest.expectedFailure
     def test_list_does_not_render_numeric_one_and_zero_as_booleans(self):
         FleetType.objects.create(name="Standard", point_weight=Decimal("1.00"), sort_order=1)
         FleetType.objects.create(name="Training", point_weight=Decimal("0.00"), sort_order=0)
@@ -740,8 +737,6 @@ class SettingsFormTests(TestCase):
         self.assertFalse(obj.srp_auto_create)
         self.assertFalse(obj.incentive_enabled)
 
-    # Known issue: very large retention values are accepted and overflow the history cutoff date
-    @unittest.expectedFailure
     def test_huge_retention_value_does_not_break_history(self):
         self._post(data_retention_days="1000000")
         member = f.create_user(perms=f.MEMBER_PERMS)
@@ -898,8 +893,6 @@ class WebhookSecretTests(TestCase):
 
         self.assertNoSecret(self.client.get(reverse("fleetops:operation_detail", args=[operation.uuid])))
 
-    # Known issue: a failed Discord ping stores the requests exception text, which contains the webhook URL
-    @unittest.expectedFailure
     def test_failed_ping_does_not_expose_webhook_url(self):
         fc = f.create_user(perms=f.FC_PERMS)
         pilot = f.create_user(perms=f.MEMBER_PERMS)
@@ -957,8 +950,6 @@ class MessageTemplateValidationTests(TestCase):
 
         self.assertEqual(ping, f"Fleet by {operation.fc_character_name} at Amarr")
 
-    # Known issue: marking a template as default keeps the previous default, which wins by name ordering
-    @unittest.expectedFailure
     def test_newly_marked_default_template_is_used(self):
         self.assertTrue(MessageTemplate.objects.filter(name="Default Ping", is_default=True).exists())
         self.client.post(
@@ -984,8 +975,6 @@ class MessageTemplateValidationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("content", response.context["form"].errors)
 
-    # Known issue: message templates are saved without checking Django template syntax
-    @unittest.expectedFailure
     def test_invalid_template_syntax_is_rejected(self):
         response = self.client.post(
             self.url, {"name": "Broken", "template_type": "ping", "content": "{% if %}Fleet up", "is_active": "on"}
@@ -996,8 +985,6 @@ class MessageTemplateValidationTests(TestCase):
         self.assertFalse(MessageTemplate.objects.filter(name="Broken").exists())
         self.assertFalse(AuditLog.objects.exists())
 
-    # Known issue: message templates are saved without checking Django template syntax
-    @unittest.expectedFailure
     def test_form_rejects_common_template_mistakes(self):
         broken = [
             "{% if fc %}missing endif",
@@ -1013,8 +1000,6 @@ class MessageTemplateValidationTests(TestCase):
                 accepted.append(content)
         self.assertEqual(accepted, [])
 
-    # Known issue: a stored template with invalid syntax makes the start-fleet preview crash with HTTP 500
-    @unittest.expectedFailure
     def test_preview_with_invalid_stored_template_does_not_crash(self):
         fc = f.create_user(perms=f.FC_PERMS)
         fleet_type = f.fleet_type()
@@ -1121,8 +1106,6 @@ class AuditLogPageTests(TestCase):
         self.assertContains(response, "configuration.create")
         self.assertContains(response, f"CommsPreset #{comms.pk}")
 
-    # Known issue: the audit log page shows only the newest 500 entries and has no pagination
-    @unittest.expectedFailure
     def test_old_entries_are_reachable_through_pagination(self):
         fleet_type = f.fleet_type()
         oldest = audit(self.auditor, "oldest.marker", fleet_type)

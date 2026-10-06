@@ -24,7 +24,7 @@ def send_discord_webhook(webhook_url: str, content: str) -> PingResult:
     if not webhook_url:
         return PingResult(False, message="No Discord webhook is configured for this ping target.")
     try:
-        response = requests.post(webhook_url, json={"content": content}, timeout=15)
+        response = requests.post(webhook_url, json={"content": content}, timeout=15, allow_redirects=False)
     except (requests.exceptions.MissingSchema, requests.exceptions.InvalidSchema, requests.exceptions.InvalidURL):
         return PingResult(False, message="The configured Discord webhook URL is invalid.")
     except requests.RequestException as exc:

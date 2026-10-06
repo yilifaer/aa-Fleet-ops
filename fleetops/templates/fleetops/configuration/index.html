@@ -39,7 +39,7 @@
   <div class="card-body">
     <p class="mb-2">Operational/system-generated data is intentionally not edited as raw database rows.</p>
     <div class="d-flex flex-wrap gap-2">
-      {% if perms.fleetops.manage_incentives %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:incentive_review' %}">FC Incentive</a>{% endif %}
+      {% if show_incentives %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:incentive_review' %}">FC Incentive</a>{% endif %}
       {% if perms.fleetops.view_audit_log %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:audit_log' %}">Audit Log</a>{% endif %}
       {% if perms.fleetops.view_all_stats %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:all_fc_statistics' %}">FC Statistics</a>{% endif %}
       {% if perms.fleetops.view_all_stats %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:all_corporation_statistics' %}">Corporation Statistics</a>{% endif %}

@@ -687,7 +687,7 @@ class ManualRecordStatusTests(TestCase):
         response = self.client.post(reverse("fleetops:manual_attendance"), self.attendance_payload(operation=errored.pk))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Manual attendance can only be added to Active or Closed fleets.")
+        self.assertIn("operation", response.context["form"].errors)
         self.assertFalse(AttendanceRecord.objects.exists())
         self.assertFalse(AuditLog.objects.exists())
 

@@ -32,7 +32,7 @@ dependencies = [
 [project.optional-dependencies]
 fittings = ["fittings>=2.3"]
 sde = ["django-eveonline-sde>=0.0.1"]
-test = ["pytest>=8", "pytest-django>=4.8", "coverage>=7"]
+test = ["coverage>=7"]
 
 
 [tool.setuptools.packages.find]

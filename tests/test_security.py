@@ -7,7 +7,6 @@ secret handling and redirects.
 
 import json
 import re
-import unittest
 import uuid
 from datetime import timedelta
 from decimal import Decimal
@@ -178,6 +177,14 @@ class OutputEscapingTests(TestCase):
         )
         OperationAction.objects.create(
             operation=cls.operation, action="discord_ping", status=OperationAction.Status.FAILED, error_message=XSS_SCRIPT
+        )
+        f.create_operation(
+            cls.lead,
+            status=CLOSED,
+            type_obj=cls.fleet_type,
+            started_at=max(month_start, now - timedelta(minutes=30)),
+            formup=XSS_SCRIPT,
+            doctrine_name=XSS_SCRIPT,
         )
         add_member_state(
             cls.operation,
@@ -400,16 +407,12 @@ class MessageTemplateRenderingTests(StartFleetPatchesMixin, TestCase):
                     continue
                 self.assertNotIn("root:", ping)
 
-    # Known issue: the MOTD script filter is case-sensitive, so <SCRIPT> passes through unchanged
-    @unittest.expectedFailure
     def test_motd_script_filter_is_case_insensitive(self):
         template = self.make_template("<SCRIPT>alert(1)</SCRIPT><Script>alert(2)</Script>", MessageTemplate.TemplateType.MOTD)
         operation = f.create_operation(self.fc, motd_template=template)
         _ping, motd = render_operation_messages(operation)
         self.assertNotIn("<script", motd.lower())
 
-    # Known issue: a ping template that fails while rendering turns the start preview into HTTP 500
-    @unittest.expectedFailure
     def test_preview_contains_template_render_errors(self):
         template = self.make_template('{% include "fleetops/no-such-ping.txt" %}')
         self.client.force_login(self.fc)
@@ -427,8 +430,6 @@ class MessageTemplateRenderingTests(StartFleetPatchesMixin, TestCase):
         )
         self.assertLess(response.status_code, 500)
 
-    # Known issue: a broken ping/MOTD template aborts every fleet start, even attendance-only starts
-    @unittest.expectedFailure
     def test_broken_template_does_not_block_attendance_only_start(self):
         self.patch_externals()
         # An administrator saves a typo into the default ping template.
@@ -461,6 +462,7 @@ class MessageTemplateRenderingTests(StartFleetPatchesMixin, TestCase):
 class CsrfAndMethodTests(StartFleetPatchesMixin, TestCase):
     @classmethod
     def setUpTestData(cls):
+        f.settings(incentive_enabled=True)
         cls.lead = f.create_user(perms=f.FC_LEAD_PERMS, main_name="Lead Main")
         cls.member = f.create_user(perms=f.MEMBER_PERMS, main_name="Member Main")
         cls.fleet_type = f.fleet_type("StratOp", "1.00")
@@ -751,8 +753,6 @@ class ObjectIsolationTests(StartFleetPatchesMixin, TestCase):
         self.assertTrue(DiscordWebhook.objects.filter(pk=webhook.pk).exists())
         self.assertEqual(self.client.get(reverse("fleetops:configuration_list", args=["users"])).status_code, 404)
 
-    # Known issue K6: view_all_stats also unlocks every fleet record (detail and archive)
-    @unittest.expectedFailure
     def test_view_all_stats_does_not_grant_fleet_records(self):
         analyst = f.create_user(perms=f.MEMBER_PERMS + ["fleetops.view_all_stats"])
         self.client.force_login(analyst)
@@ -768,6 +768,7 @@ class ObjectIsolationTests(StartFleetPatchesMixin, TestCase):
 class MassAssignmentTests(StartFleetPatchesMixin, TestCase):
     @classmethod
     def setUpTestData(cls):
+        f.settings(incentive_enabled=True)
         cls.fc = f.create_user(perms=f.FC_LEAD_PERMS, main_name="Owner FC")
         cls.other = f.create_user(perms=f.FC_PERMS, main_name="Other FC")
         cls.member = f.create_user(perms=f.MEMBER_PERMS, main_name="Member Main")
@@ -1169,8 +1170,6 @@ class SecretHandlingTests(StartFleetPatchesMixin, TestCase):
         self.assertEqual(action.status, OperationAction.Status.SUCCESS)
         self.assertNotIn(WEBHOOK_TOKEN, action.error_message)
 
-    # Known issue: requests exception text (which embeds the webhook URL) is stored as the ping error
-    @unittest.expectedFailure
     def test_failed_ping_does_not_store_webhook_url(self):
         self.mocks["post"].side_effect = requests.ConnectionError(
             "HTTPSConnectionPool(host='discord.com', port=443): Max retries exceeded with url: "
@@ -1182,8 +1181,6 @@ class SecretHandlingTests(StartFleetPatchesMixin, TestCase):
         self.assertEqual(action.status, OperationAction.Status.FAILED)
         self.assertNotIn(WEBHOOK_TOKEN, action.error_message)
 
-    # Known issue: a misconfigured webhook URL is echoed in the ping error that every fleet viewer can read
-    @unittest.expectedFailure
     def test_members_never_see_webhook_url_after_failed_ping(self):
         broken_url = f"discord.com/api/webhooks/987654321/{WEBHOOK_TOKEN}"
         DiscordWebhook.objects.filter(pk=self.webhook.pk).update(webhook_url=broken_url)
@@ -1199,8 +1196,6 @@ class SecretHandlingTests(StartFleetPatchesMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNoSecret(response)
 
-    # Known issue: webhook URLs are not validated, so the server will POST to internal addresses (SSRF)
-    @unittest.expectedFailure
     def test_webhook_form_rejects_non_discord_targets(self):
         for url in (
             "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
@@ -1226,8 +1221,6 @@ class PingDeliveryTests(StartFleetPatchesMixin, TestCase):
         f.add_token(self.fc, self.fc_char)
         self.client.force_login(self.fc)
 
-    # Known issue: retry endpoints skip the attendance-only check the page applies, so a POST still pings and writes the MOTD
-    @unittest.expectedFailure
     def test_retry_does_not_ping_or_write_motd_for_attendance_only_fleet(self):
         operation = f.create_operation(
             self.fc, type_obj=self.fleet_type, send_ping=False, ping_target=self.quiet_target, ping_text="Quiet fleet"
@@ -1255,6 +1248,7 @@ class RedirectTests(StartFleetPatchesMixin, TestCase):
 
     @classmethod
     def setUpTestData(cls):
+        f.settings(incentive_enabled=True)
         cls.lead = f.create_user(perms=f.FC_LEAD_PERMS, main_name="Lead Main")
         cls.other = f.create_user(perms=f.FC_PERMS, main_name="Other FC")
         cls.fleet_type = f.fleet_type("StratOp", "1.00")
@@ -1371,20 +1365,14 @@ class MalformedInputTests(TestCase):
             with self.subTest(query=query):
                 self.assertEqual(self.client.get(reverse("fleetops:fleet_operations") + query).status_code, 200)
 
-    # Known issue: str.isdigit() accepts Unicode digits such as "²" that int() rejects, causing HTTP 500
-    @unittest.expectedFailure
     def test_archive_fleet_type_filter_with_unicode_digit(self):
         response = self.client.get(reverse("fleetops:fleet_operations") + "?fleet_type=%C2%B2")
         self.assertEqual(response.status_code, 200)
 
-    # Known issue: an over-long numeric fleet_type filter reaches the database unchecked and crashes the archive
-    @unittest.expectedFailure
     def test_archive_fleet_type_filter_out_of_range(self):
         response = self.client.get(reverse("fleetops:fleet_operations") + "?fleet_type=" + "9" * 30)
         self.assertEqual(response.status_code, 200)
 
-    # Known issue: manual attendance has no upper bound, so an oversized value crashes with HTTP 500
-    @unittest.expectedFailure
     def test_manual_attendance_rejects_out_of_range_value(self):
         response = self.client.post(
             reverse("fleetops:add_manual_attendance", args=[self.operation.uuid]),

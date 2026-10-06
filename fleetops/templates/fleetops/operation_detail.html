@@ -51,7 +51,7 @@
             <form method="post" action="{% url 'fleetops:retry_ping' operation.uuid %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary">Retry Ping</button></form>
             <form method="post" action="{% url 'fleetops:retry_motd' operation.uuid %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary">Retry MOTD</button></form>
             {% endif %}
-            {% if operation.send_ping or operation.is_manual %}<form method="post" action="{% url 'fleetops:retry_srp' operation.uuid %}">{% csrf_token %}<button class="btn btn-sm btn-outline-success">Retry SRP</button></form>{% endif %}
+            {% if operation.send_ping or operation.is_manual %}{% if not operation.srp_reference and not operation.srp_url %}<form method="post" action="{% url 'fleetops:retry_srp' operation.uuid %}">{% csrf_token %}<button class="btn btn-sm btn-outline-success">Retry SRP</button></form>{% endif %}{% endif %}
           </div>
         {% endif %}
       </div>

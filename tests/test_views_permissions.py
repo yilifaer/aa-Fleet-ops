@@ -1,6 +1,5 @@
 """Permission matrix, object isolation and page rendering tests for FleetOps views."""
 
-import unittest
 import uuid
 from collections import namedtuple
 from datetime import timedelta
@@ -155,7 +154,7 @@ class FleetOpsViewTestCase(TestCase):
             content="<b>{{ fleet_type }}</b><br>FC: {{ fc }}",
             is_default=True,
         )
-        f.settings()
+        f.settings(incentive_enabled=True)
 
         cls.member = f.create_user("member", perms=f.MEMBER_PERMS)
         cls.corp_manager = f.create_user("corpmanager", perms=f.CORP_MANAGEMENT_PERMS)
@@ -1114,14 +1113,10 @@ class QueryParameterTests(FleetOpsViewTestCase):
         self.assertEqual(client.post(reverse("fleetops:incentive_recalculate", args=[987_654])).status_code, 404)
         self.assertEqual(client.post(reverse("fleetops:delete_operation_role", args=[987_654])).status_code, 404)
 
-    # Known issue: str.isdigit() accepts Unicode digits such as "²" that int() rejects
-    @unittest.expectedFailure
     def test_archive_unicode_digit_fleet_type_does_not_fail(self):
         response = self.client_for(self.lead).get(reverse("fleetops:fleet_operations"), {"fleet_type": "²"})
         self.assertEqual(response.status_code, 200)
 
-    # Known issue: an oversized fleet_type id overflows the database integer and crashes the archive
-    @unittest.expectedFailure
     def test_archive_oversized_fleet_type_does_not_fail(self):
         response = self.client_for(self.lead).get(
             reverse("fleetops:fleet_operations"), {"fleet_type": "9" * 25}
@@ -1151,21 +1146,15 @@ class ViewAllStatsScopeTests(FleetOpsViewTestCase):
             with self.subTest(url=url):
                 self.assertEqual(client.get(url).status_code, 200)
 
-    # Known issue K6: view_all_stats grants access to every fleet detail page
-    @unittest.expectedFailure
     def test_view_all_stats_does_not_open_fleet_detail(self):
         response = self.client_for(self.stats_viewer).get(self.detail_url(self.other_closed))
         self.assertIn(response.status_code, (403, 404))
 
-    # Known issue K6: view_all_stats shows every active fleet on the dashboard
-    @unittest.expectedFailure
     def test_view_all_stats_does_not_list_other_active_fleets_on_dashboard(self):
         response = self.client_for(self.stats_viewer).get(reverse("fleetops:dashboard"))
         active = {op.pk for op in response.context["active_operations"]}
         self.assertNotIn(self.other_active.pk, active)
 
-    # Known issue K6: view_all_stats lists every fleet in the archive
-    @unittest.expectedFailure
     def test_view_all_stats_does_not_list_other_fleets_in_archive(self):
         response = self.client_for(self.stats_viewer).get(
             reverse("fleetops:fleet_operations"), {"year": self.other_closed.started_at.year}
@@ -1192,8 +1181,6 @@ class EndFleetPromptTests(FleetOpsViewTestCase):
         self.assertFalse(response.context["attendance_prompt_eligible"])
         self.assertNotContains(response, "endFleetModal")
 
-    # Known issue K1: duration is floored to whole minutes, so 90:01-90:59 does not prompt
-    @unittest.expectedFailure
     def test_prompt_after_90_minutes_30_seconds(self):
         response = self.detail_at(timedelta(minutes=90, seconds=30))
         self.assertTrue(response.context["attendance_prompt_eligible"])
@@ -1209,8 +1196,6 @@ class EndFleetPromptTests(FleetOpsViewTestCase):
 
 
 class AttendanceHistoryLimitTests(FleetOpsViewTestCase):
-    # Known issue K5: personal history silently stops at 2000 rows without pagination
-    @unittest.expectedFailure
     def test_personal_history_does_not_truncate_large_result_sets(self):
         pilot = f.create_user("veteran", perms=f.MEMBER_PERMS)
         main = f.main_of(pilot)
@@ -1272,8 +1257,6 @@ class IncentiveActionTests(FleetOpsViewTestCase):
         self.period.refresh_from_db()
         self.assertEqual(self.period.status, IncentivePeriod.Status.REVIEW)
 
-    # Known issue: finalizing a period that is not in Review raises ValueError (HTTP 500)
-    @unittest.expectedFailure
     def test_finalize_open_period_is_rejected_gracefully(self):
         self.set_status(IncentivePeriod.Status.OPEN)
         response = self.client_for(self.lead).post(reverse("fleetops:incentive_finalize", args=[self.period.pk]))
@@ -1281,8 +1264,6 @@ class IncentiveActionTests(FleetOpsViewTestCase):
         self.period.refresh_from_db()
         self.assertEqual(self.period.status, IncentivePeriod.Status.OPEN)
 
-    # Known issue: recalculating a finalized period raises ValueError (HTTP 500)
-    @unittest.expectedFailure
     def test_recalculate_finalized_period_is_rejected_gracefully(self):
         self.set_status(IncentivePeriod.Status.FINALIZED)
         response = self.client_for(self.lead).post(
@@ -1292,8 +1273,6 @@ class IncentiveActionTests(FleetOpsViewTestCase):
         self.period.refresh_from_db()
         self.assertEqual(self.period.status, IncentivePeriod.Status.FINALIZED)
 
-    # Known issue: unlock moves an Open period straight to Review and audits it as finalized
-    @unittest.expectedFailure
     def test_unlock_only_applies_to_finalized_periods(self):
         self.set_status(IncentivePeriod.Status.OPEN)
         self.client_for(self.lead).post(reverse("fleetops:incentive_unlock", args=[self.period.pk]))
@@ -1301,8 +1280,6 @@ class IncentiveActionTests(FleetOpsViewTestCase):
         self.assertEqual(self.period.status, IncentivePeriod.Status.OPEN)
         self.assertFalse(AuditLog.objects.filter(action="incentive.unlock").exists())
 
-    # Known issue: incentive periods accept out-of-range years and then crash on recalculation
-    @unittest.expectedFailure
     def test_out_of_range_period_year_cannot_break_recalculation(self):
         client = self.client_for(self.lead)
         client.post(
@@ -1316,8 +1293,6 @@ class IncentiveActionTests(FleetOpsViewTestCase):
 
 
 class ViewRuleViolationTests(FleetOpsViewTestCase):
-    # Known issue: webhook URL from a failed Discord request is stored in the action error and rendered
-    @unittest.expectedFailure
     def test_failed_ping_does_not_expose_webhook_url_on_detail_page(self):
         self.discord_post.side_effect = requests.ConnectionError(
             "HTTPSConnectionPool(host='discord.com', port=443): Max retries exceeded with url: "
@@ -1330,8 +1305,6 @@ class ViewRuleViolationTests(FleetOpsViewTestCase):
         self.assertEqual(detail.status_code, 200)
         self.assertNotIn(WEBHOOK_SECRET, detail.content.decode())
 
-    # Known issue: per-fleet manual attendance endpoint accepts Cancelled fleets
-    @unittest.expectedFailure
     def test_manual_attendance_not_added_to_cancelled_fleet(self):
         cancelled = f.create_operation(self.fc, status=CANCELLED)
         self.client_for(self.fc).post(
@@ -1340,8 +1313,6 @@ class ViewRuleViolationTests(FleetOpsViewTestCase):
         )
         self.assertFalse(AttendanceRecord.objects.filter(operation=cancelled).exists())
 
-    # Known issue: fleet edit accepts an end time earlier than the start time
-    @unittest.expectedFailure
     def test_edit_rejects_end_before_start(self):
         start = self.own_closed.started_at
         response = self.client_for(self.fc).post(
@@ -1357,8 +1328,6 @@ class ViewRuleViolationTests(FleetOpsViewTestCase):
         self.own_closed.refresh_from_db()
         self.assertGreaterEqual(self.own_closed.ended_at, self.own_closed.started_at)
 
-    # Known issue: retry ping endpoint sends a Discord ping for attendance-only fleets
-    @unittest.expectedFailure
     def test_retry_ping_does_not_ping_for_attendance_only_fleet(self):
         operation = f.create_operation(self.fc, send_ping=False, ping_target=self.ping_target, ping_text="ping")
         OperationAction.objects.create(

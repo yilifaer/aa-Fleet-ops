@@ -1,6 +1,5 @@
 """Tests for optional integrations (SRP, doctrines, SDE routing), fleet controls and special roles."""
 
-import unittest
 import uuid
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
@@ -454,8 +453,6 @@ class BuiltinSRPProviderTests(TestCase):
         self.assertIn("fleet_budget", result.message)
         self.assertEqual(model.objects.created, [])
 
-    # Known issue: built-in SRP fleets are created without fleet_srp_code, which AA treats as a disabled fleet
-    @unittest.expectedFailure
     def test_created_builtin_srp_fleet_accepts_requests(self):
         model = fake_aa_srp_model()
         self.installed_with(model)
@@ -464,8 +461,6 @@ class BuiltinSRPProviderTests(TestCase):
 
         self.assertTrue(getattr(model.objects.created[0], "fleet_srp_code", ""))
 
-    # Known issue: none of the URL names tried match Alliance Auth's srp URLs, so the link is always the SRP index
-    @unittest.expectedFailure
     @override_settings(ROOT_URLCONF=__name__)
     def test_link_points_to_the_created_srp_fleet(self):
         model = fake_aa_srp_model()
@@ -635,8 +630,6 @@ class RetrySRPTests(IsolatedSRPRegistryMixin, TestCase):
         self.assertEqual(operation.srp_reference, "SRP-OLD")
         self.assertEqual(operation.srp_url, "/srp/old/")
 
-    # Known issue: retry_srp creates a second SRP fleet when the operation already has an SRP reference
-    @unittest.expectedFailure
     def test_retry_does_not_create_duplicate_srp_fleet(self):
         provider = self.register(FakeSRPProvider("zeta_srp"))
         operation = f.create_operation(
@@ -649,8 +642,6 @@ class RetrySRPTests(IsolatedSRPRegistryMixin, TestCase):
         self.assertEqual(provider.calls, [])
         self.assertEqual(operation.srp_reference, "SRP-OLD")
 
-    # Known issue: a retry that finds no available provider wipes the existing SRP reference and URL
-    @unittest.expectedFailure
     def test_retry_without_provider_keeps_existing_link(self):
         self.register(FakeSRPProvider("zeta_srp", available=False))
         operation = f.create_operation(

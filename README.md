@@ -56,7 +56,7 @@ The repository includes the full expected feature target and an explicit distinc
 - Python `>=3.10,<3.15`
 - Alliance Auth `>=5.2,<6`
 - Django 5.2 through Alliance Auth
-- django-esi `>=9,<10`
+- django-esi `>=9,<11` (django-esi 10 is required by Alliance Auth 5.5)
 
 FleetOps uses django-esi's OpenAPI3 client and ESI compatibility date `2025-11-06` for the fleet endpoints used by this alpha.
 

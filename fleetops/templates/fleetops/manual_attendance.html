@@ -8,12 +8,12 @@
   <form method="post">{% csrf_token %}
     {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
     <div class="row g-3">
-      <div class="col-lg-6">{{ form.operation.label_tag }}{{ form.operation }}<div class="form-text">{{ form.operation.help_text }}</div></div>
-      <div class="col-lg-3">{{ form.character_id.label_tag }}{{ form.character_id }}</div>
-      <div class="col-lg-3">{{ form.character_name.label_tag }}{{ form.character_name }}</div>
-      <div class="col-lg-2">{{ form.attendance_value.label_tag }}{{ form.attendance_value }}<div class="form-text">Use 2, 3, etc. for multiple credits.</div></div>
-      <div class="col-lg-4">{{ form.duplicate_action.label_tag }}{{ form.duplicate_action }}</div>
-      <div class="col-lg-6">{{ form.notes.label_tag }}{{ form.notes }}</div>
+      <div class="col-lg-6">{{ form.operation.label_tag }}{{ form.operation }}{% if form.operation.errors %}<div class="text-danger small">{{ form.operation.errors|join:" " }}</div>{% endif %}<div class="form-text">{{ form.operation.help_text }}</div></div>
+      <div class="col-lg-3">{{ form.character_id.label_tag }}{{ form.character_id }}{% if form.character_id.errors %}<div class="text-danger small">{{ form.character_id.errors|join:" " }}</div>{% endif %}</div>
+      <div class="col-lg-3">{{ form.character_name.label_tag }}{{ form.character_name }}{% if form.character_name.errors %}<div class="text-danger small">{{ form.character_name.errors|join:" " }}</div>{% endif %}</div>
+      <div class="col-lg-2">{{ form.attendance_value.label_tag }}{{ form.attendance_value }}{% if form.attendance_value.errors %}<div class="text-danger small">{{ form.attendance_value.errors|join:" " }}</div>{% endif %}<div class="form-text">Use 2, 3, etc. for multiple credits.</div></div>
+      <div class="col-lg-4">{{ form.duplicate_action.label_tag }}{{ form.duplicate_action }}{% if form.duplicate_action.errors %}<div class="text-danger small">{{ form.duplicate_action.errors|join:" " }}</div>{% endif %}</div>
+      <div class="col-lg-6">{{ form.notes.label_tag }}{{ form.notes }}{% if form.notes.errors %}<div class="text-danger small">{{ form.notes.errors|join:" " }}</div>{% endif %}</div>
     </div>
     <button class="btn btn-primary mt-3">Save Attendance</button>
   </form>

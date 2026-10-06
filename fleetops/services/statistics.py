@@ -1,11 +1,11 @@
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
 from fleetops.models import AttendanceRecord, FleetMemberState, FleetOperation, OperationRoleAssignment
-from fleetops.services.history import apply_current_membership_filter, current_member_user_ids
+from fleetops.services.history import apply_current_membership_filter, current_member_user_ids, retention_cutoff
 from fleetops.services.identity import corporation_main_count
 
 
@@ -29,11 +29,12 @@ def attendance_queryset(year, month):
 
 
 def attendance_history_queryset(*, user=None, corporation_id=None, alliance=False, days=365):
-    since = timezone.now() - timedelta(days=max(365, int(days or 365)))
-    qs = AttendanceRecord.objects.filter(
-        granted=True,
-        operation__started_at__gte=since,
-    ).select_related("operation", "operation__fleet_type", "auth_user")
+    qs = AttendanceRecord.objects.filter(granted=True).select_related(
+        "operation", "operation__fleet_type", "auth_user"
+    )
+    since = retention_cutoff(days)
+    if since is not None:
+        qs = qs.filter(operation__started_at__gte=since)
     qs = apply_current_membership_filter(qs)
     if user is not None:
         qs = qs.filter(auth_user=user)
