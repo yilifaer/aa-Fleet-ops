@@ -6,6 +6,7 @@ FleetOperation core logic.
 """
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -109,6 +110,9 @@ class AllianceAuthBuiltinSRPProvider:
             if commander is None:
                 return SRPLinkResult(self.key, message="FC character is not present in Alliance Auth EveCharacter data.")
             values["fleet_commander"] = commander
+        if "fleet_srp_code" in fields:
+            # Alliance Auth treats a fleet with an empty code as disabled; it uses 8 uppercase characters.
+            values["fleet_srp_code"] = uuid.uuid4().hex.upper()[:8]
 
         unknown = self._required_unknown_fields(model, values)
         if unknown:
@@ -129,11 +133,12 @@ class AllianceAuthBuiltinSRPProvider:
             except Exception:
                 url = ""
 
-        # AA/community versions have used different URL names over time. Try a
-        # conservative list and then fall back to the SRP index.
+        # Alliance Auth names the fleet page "srp:fleet" and the pilot request page
+        # "srp:request". Older/community versions used other names, tried afterwards.
         if not url and reference:
             url = _reverse_first(
                 [
+                    "srp:fleet",
                     "srp:request_srp",
                     "srp:srp_request",
                     "srp:srp_fleet_view",
@@ -143,8 +148,10 @@ class AllianceAuthBuiltinSRPProvider:
                 ],
                 [obj.pk],
             )
+        if not url and values.get("fleet_srp_code"):
+            url = _reverse_first(["srp:request"], [values["fleet_srp_code"]])
         if not url:
-            url = _reverse_first(["srp:index", "srp:srp", "srp:srp_management", "srp_management"])
+            url = _reverse_first(["srp:management", "srp:index", "srp:srp", "srp:srp_management", "srp_management"])
         if not url:
             # Built-in AA app normally lives here. Keeping this as a relative
             # fallback makes the operation useful even if URL names changed.

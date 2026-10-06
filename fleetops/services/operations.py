@@ -1,6 +1,6 @@
 import uuid
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from fleetops.models import FleetOperation, FleetOpsSettings, OperationAction
@@ -10,7 +10,7 @@ from fleetops.providers.srp import create_srp_link
 from fleetops.services.audit import audit
 from fleetops.services.attendance import set_operation_attendance_multiplier
 from fleetops.services.identity import get_owned_character
-from fleetops.services.messages import render_operation_messages
+from fleetops.services.messages import render_messages
 from fleetops.services.tracking import sync_operation
 
 
@@ -25,6 +25,48 @@ def set_action(operation, action, success, error=""):
     obj.error_message = str(error or "")[:4000]
     obj.save()
     return obj
+
+
+def _failure_message(step, exc):
+    # FleetESIError messages are written for users; other exception text may echo URLs or tokens.
+    if isinstance(exc, FleetESIError):
+        return str(exc)
+    return f"{step} failed unexpectedly ({type(exc).__name__})."
+
+
+def _skipped_message(operation, step):
+    mode = "Manual fleet" if operation.is_manual else "Attendance-only mode"
+    return f"{mode}: {step} intentionally skipped."
+
+
+def _keep_skipped(operation, action, message):
+    """Return the record of a step this fleet never performs, without attempting it."""
+    obj, _created = OperationAction.objects.get_or_create(
+        operation=operation,
+        action=action,
+        defaults={"status": OperationAction.Status.SKIPPED, "error_message": message},
+    )
+    return obj
+
+
+def _send_ping(operation):
+    target = operation.ping_target
+    webhook_url = target.webhook.webhook_url if target and target.webhook and target.webhook.is_active else ""
+    if not webhook_url:
+        return set_action(
+            operation, "discord_ping", False, "No active webhook configured. Ping remains available for manual copy."
+        )
+    result = send_discord_webhook(webhook_url, operation.ping_text)
+    return set_action(operation, "discord_ping", result.success, result.message)
+
+
+def _apply_srp_result(operation, srp):
+    # A declined or unavailable provider must never erase a link that already exists.
+    if srp.created or not (operation.srp_reference or operation.srp_url):
+        operation.srp_provider = srp.provider
+        operation.srp_reference = srp.reference
+        operation.srp_url = srp.url
+    operation.srp_error = "" if srp.created else srp.message
 
 
 def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None):
@@ -51,88 +93,102 @@ def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None
 
     fleet_type = cleaned_data["fleet_type"]
     full_mode = cleaned_data.get("operation_mode", "full") == "full"
-    with transaction.atomic():
-        operation = FleetOperation.objects.create(
-            start_request_id=request_id,
-            status=FleetOperation.Status.STARTING,
-            created_by=user,
-            fc_user=user,
-            fc_character_id=character.character_id,
-            fc_character_name=character.character_name,
-            fc_main_character_id=getattr(main, "character_id", None),
-            fc_main_character_name=getattr(main, "character_name", "") or "",
-            fleet_boss_character_id=character.character_id,
-            esi_fleet_id=detection.fleet_id,
-            fleet_type=fleet_type,
-            fleet_point_weight_snapshot=fleet_type.point_weight,
-            doctrine_name=cleaned_data.get("doctrine_name", "") or "",
-            doctrine_external_id=cleaned_data.get("doctrine_external_id", "") or "",
-            doctrine_source=cleaned_data.get("doctrine_source", "") or "custom",
-            formup=cleaned_data["formup"],
-            comms=cleaned_data.get("comms"),
-            logi_channel=cleaned_data.get("logi_channel"),
-            boost_channel=cleaned_data.get("boost_channel"),
-            ping_target=cleaned_data.get("ping_target"),
-            ping_template=cleaned_data.get("ping_template"),
-            motd_template=cleaned_data.get("motd_template"),
-            additional_message=cleaned_data.get("additional_message", "") or "",
-            scheduled_at=cleaned_data.get("scheduled_at"),
-            started_at=timezone.now(),
-            tracking_enabled=True,
-            send_ping=full_mode,
-            attendance_multiplier=1,
-            is_manual=False,
-        )
-        set_action(operation, "fleet_detection", True)
-        ping, motd = render_operation_messages(operation)
-        operation.ping_text = ping
-        operation.motd_text = motd
-        operation.save(update_fields=["ping_text", "motd_text", "updated_at"])
+    try:
+        with transaction.atomic():
+            operation = FleetOperation.objects.create(
+                start_request_id=request_id,
+                status=FleetOperation.Status.STARTING,
+                created_by=user,
+                fc_user=user,
+                fc_character_id=character.character_id,
+                fc_character_name=character.character_name,
+                fc_main_character_id=getattr(main, "character_id", None),
+                fc_main_character_name=getattr(main, "character_name", "") or "",
+                fleet_boss_character_id=character.character_id,
+                esi_fleet_id=detection.fleet_id,
+                fleet_type=fleet_type,
+                fleet_point_weight_snapshot=fleet_type.point_weight,
+                doctrine_name=cleaned_data.get("doctrine_name", "") or "",
+                doctrine_external_id=cleaned_data.get("doctrine_external_id", "") or "",
+                doctrine_source=cleaned_data.get("doctrine_source", "") or "custom",
+                formup=cleaned_data["formup"],
+                comms=cleaned_data.get("comms"),
+                logi_channel=cleaned_data.get("logi_channel"),
+                boost_channel=cleaned_data.get("boost_channel"),
+                ping_target=cleaned_data.get("ping_target"),
+                ping_template=cleaned_data.get("ping_template"),
+                motd_template=cleaned_data.get("motd_template"),
+                additional_message=cleaned_data.get("additional_message", "") or "",
+                scheduled_at=cleaned_data.get("scheduled_at"),
+                started_at=timezone.now(),
+                tracking_enabled=True,
+                send_ping=full_mode,
+                attendance_multiplier=1,
+                is_manual=False,
+            )
+            set_action(operation, "fleet_detection", True)
+    except IntegrityError:
+        # A concurrent submit of the same form created the operation first.
+        existing = FleetOperation.objects.filter(start_request_id=request_id).first()
+        if existing is None:
+            raise
+        return existing
 
-    if full_mode:
-        target = operation.ping_target
-        webhook_url = target.webhook.webhook_url if target and target.webhook and target.webhook.is_active else ""
-        if target and webhook_url:
-            result = send_discord_webhook(webhook_url, operation.ping_text)
-            set_action(operation, "discord_ping", result.success, result.message)
-        else:
-            set_action(operation, "discord_ping", False, "No active webhook configured. Ping remains available for manual copy.")
+    # Every step below is best effort: failures are recorded and the fleet still becomes active.
+    messages_ready = False
+    try:
+        with transaction.atomic():
+            rendered = render_messages(operation)
+            operation.ping_text = rendered.ping
+            operation.motd_text = rendered.motd
+            operation.save(update_fields=["ping_text", "motd_text", "updated_at"])
+        messages_ready = True
+        if rendered.errors:
+            set_action(operation, "message_render", False, " ".join(rendered.errors))
+    except Exception as exc:
+        set_action(operation, "message_render", False, _failure_message("Message rendering", exc))
+
+    if not full_mode:
+        set_action(operation, "discord_ping", None, _skipped_message(operation, "Discord ping"))
+        set_action(operation, "motd_update", None, _skipped_message(operation, "MOTD update"))
+    elif not messages_ready:
+        not_sent = "Not sent because the fleet messages could not be rendered."
+        set_action(operation, "discord_ping", False, not_sent)
+        set_action(operation, "motd_update", False, not_sent)
+    else:
+        try:
+            _send_ping(operation)
+        except Exception as exc:
+            set_action(operation, "discord_ping", False, _failure_message("Discord ping", exc))
 
         try:
             set_fleet_motd(user, char_id, operation.esi_fleet_id, operation.motd_text)
             set_action(operation, "motd_update", True)
         except Exception as exc:
-            set_action(operation, "motd_update", False, exc)
-    else:
-        set_action(operation, "discord_ping", None, "Attendance-only mode: Discord ping intentionally skipped.")
-        set_action(operation, "motd_update", None, "Attendance-only mode: MOTD update intentionally skipped.")
+            set_action(operation, "motd_update", False, _failure_message("MOTD update", exc))
 
     try:
         sync_operation(operation)
         set_action(operation, "tracking_start", True)
     except Exception as exc:
-        set_action(operation, "tracking_start", False, exc)
-        operation.last_error = str(exc)[:4000]
+        operation.last_error = _failure_message("Fleet tracking", exc)[:4000]
+        set_action(operation, "tracking_start", False, operation.last_error)
 
-    settings_obj = FleetOpsSettings.get_solo()
     if not full_mode:
-        set_action(operation, "srp_link", None, "Attendance-only mode: SRP creation intentionally skipped.")
-    elif settings_obj.srp_auto_create:
+        set_action(operation, "srp_link", None, _skipped_message(operation, "SRP creation"))
+    else:
         try:
-            srp = create_srp_link(operation, settings_obj.srp_provider)
-            operation.srp_provider = srp.provider
-            operation.srp_reference = srp.reference
-            operation.srp_url = srp.url
-            operation.srp_error = "" if srp.created else srp.message
-            if srp.created:
-                set_action(operation, "srp_link", True, srp.message)
+            settings_obj = FleetOpsSettings.get_solo()
+            if settings_obj.srp_auto_create:
+                with transaction.atomic():
+                    srp = create_srp_link(operation, settings_obj.srp_provider)
+                _apply_srp_result(operation, srp)
+                set_action(operation, "srp_link", True if srp.created else None, srp.message)
             else:
-                set_action(operation, "srp_link", None, srp.message)
+                set_action(operation, "srp_link", None, "Automatic SRP link creation is disabled.")
         except Exception as exc:
             operation.srp_error = str(exc)[:4000]
             set_action(operation, "srp_link", False, exc)
-    else:
-        set_action(operation, "srp_link", None, "Automatic SRP link creation is disabled.")
 
     operation.status = FleetOperation.Status.ACTIVE
     operation.save(update_fields=["status", "last_error", "srp_provider", "srp_reference", "srp_url", "srp_error", "updated_at"])
@@ -140,43 +196,47 @@ def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None
 
 
 def retry_ping(operation):
-    target = operation.ping_target
-    webhook_url = target.webhook.webhook_url if target and target.webhook and target.webhook.is_active else ""
-    result = send_discord_webhook(webhook_url, operation.ping_text)
-    return set_action(operation, "discord_ping", result.success, result.message)
+    if not operation.send_ping:
+        return _keep_skipped(operation, "discord_ping", _skipped_message(operation, "Discord ping"))
+    return _send_ping(operation)
 
 
 def retry_motd(operation):
+    if not operation.send_ping:
+        return _keep_skipped(operation, "motd_update", _skipped_message(operation, "MOTD update"))
     try:
         set_fleet_motd(operation.fc_user, operation.fc_character_id, operation.esi_fleet_id, operation.motd_text)
         return set_action(operation, "motd_update", True)
     except Exception as exc:
-        return set_action(operation, "motd_update", False, exc)
-
+        return set_action(operation, "motd_update", False, _failure_message("MOTD update", exc))
 
 
 def retry_srp(operation):
-    settings_obj = FleetOpsSettings.get_solo()
+    # Manual records may link SRP later; attendance-only fleets never create one.
+    if not operation.send_ping and not operation.is_manual:
+        return _keep_skipped(operation, "srp_link", _skipped_message(operation, "SRP creation"))
     try:
-        srp = create_srp_link(operation, settings_obj.srp_provider)
-        operation.srp_provider = srp.provider
-        operation.srp_reference = srp.reference
-        operation.srp_url = srp.url
-        operation.srp_error = "" if srp.created else srp.message
-        operation.save(
-            update_fields=["srp_provider", "srp_reference", "srp_url", "srp_error", "updated_at"]
-        )
-        if srp.created:
-            return set_action(operation, "srp_link", True, srp.message)
-        return set_action(operation, "srp_link", None, srp.message)
+        with transaction.atomic():
+            # Lock the row so concurrent retries cannot both create an SRP fleet.
+            current = FleetOperation.objects.select_for_update().get(pk=operation.pk)
+            if current.srp_reference or current.srp_url:
+                return set_action(
+                    operation, "srp_link", True, "SRP fleet is already linked; no new SRP fleet was created."
+                )
+            srp = create_srp_link(operation, FleetOpsSettings.get_solo().srp_provider)
+            _apply_srp_result(operation, srp)
+            operation.save(update_fields=["srp_provider", "srp_reference", "srp_url", "srp_error", "updated_at"])
+            return set_action(operation, "srp_link", True if srp.created else None, srp.message)
     except Exception as exc:
         operation.srp_error = str(exc)[:4000]
         operation.save(update_fields=["srp_error", "updated_at"])
         return set_action(operation, "srp_link", False, exc)
 
+
 def end_fleet(operation, actor=None, automatic=False, attendance_multiplier=None):
     if operation.status in (FleetOperation.Status.CLOSED, FleetOperation.Status.CANCELLED):
         return operation
+    old_state = {"status": operation.status, "tracking_enabled": operation.tracking_enabled}
     operation.status = FleetOperation.Status.ENDING
     operation.save(update_fields=["status", "updated_at"])
     try:
@@ -195,7 +255,7 @@ def end_fleet(operation, actor=None, automatic=False, attendance_multiplier=None
         actor,
         "fleet.auto_end" if automatic else "fleet.end",
         operation,
-        {"status": FleetOperation.Status.ACTIVE, "tracking_enabled": True},
+        old_state,
         {"status": operation.status, "tracking_enabled": operation.tracking_enabled},
     )
     return operation
