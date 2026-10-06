@@ -12,11 +12,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Alliance Auth up to 5.4 ships with django-esi 9 (5.4 imports httpx,
+          # which django-esi 10 no longer installs); 5.5 requires django-esi 10.
           - python-version: "3.10"
             allianceauth: "5.2.0"
+            django-esi: "<10"
             database: sqlite
           - python-version: "3.12"
             allianceauth: "5.4.0"
+            django-esi: "<10"
             database: mariadb
           - python-version: "3.13"
             allianceauth: "latest"
@@ -64,9 +68,10 @@ jobs:
           if [ "${{ matrix.allianceauth }}" = "latest" ]; then
             pip install "allianceauth>=5.2,<6"
           else
-            pip install "allianceauth==${{ matrix.allianceauth }}"
+            pip install "allianceauth==${{ matrix.allianceauth }}" "django-esi${{ matrix.django-esi }}"
           fi
           pip install -e ".[test]"
+          pip list | grep -iE "^(allianceauth|django-esi|django) "
 
       - name: Select database
         if: matrix.database == 'mariadb'

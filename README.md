@@ -58,6 +58,8 @@ The repository includes the full expected feature target and an explicit distinc
 - Django 5.2 through Alliance Auth
 - django-esi `>=9,<11` (django-esi 10 is required by Alliance Auth 5.5)
 
+Keep the django-esi version that matches your Alliance Auth release: Alliance Auth 5.4 and older run on django-esi 9, Alliance Auth 5.5 needs django-esi 10. Installing FleetOps does not upgrade an existing django-esi, so do not force an upgrade (for example with `--upgrade-strategy eager`) on Alliance Auth 5.4 or older; upgrade Alliance Auth and django-esi together.
+
 FleetOps uses django-esi's OpenAPI3 client and ESI compatibility date `2025-11-06` for the fleet endpoints used by this alpha.
 
 ## ESI scopes
