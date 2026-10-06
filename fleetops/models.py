@@ -1,9 +1,47 @@
+import re
 import uuid
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
-from django.db import models
+from django.db import models, transaction
+from django.template import Template, TemplateSyntaxError
+
+MIN_RETENTION_DAYS = 365
+MAX_RETENTION_DAYS = 36500
+
+DISCORD_WEBHOOK_URL_RE = re.compile(
+    r"https://(?:(?:ptb|canary)\.)?discord(?:app)?\.com/api/webhooks/[\w/-]+(?:\?[\w=&-]*)?",
+    re.ASCII,
+)
+
+
+def validate_alliance_ids(value):
+    for part in (value or "").replace(";", ",").split(","):
+        part = part.strip()
+        if part and not (part.isascii() and part.isdigit() and 0 < int(part) <= 2147483647):
+            raise ValidationError(
+                "“%(value)s” is not a valid alliance ID. Enter numeric alliance IDs separated by commas or semicolons.",
+                code="invalid",
+                params={"value": part},
+            )
+
+
+def validate_discord_webhook_url(value):
+    # Never echo the URL back: it carries the webhook token.
+    if not DISCORD_WEBHOOK_URL_RE.fullmatch(value or ""):
+        raise ValidationError(
+            "Enter a Discord webhook URL in the form https://discord.com/api/webhooks/<id>/<token>.",
+            code="invalid",
+        )
+
+
+def validate_template_syntax(value):
+    try:
+        Template(value)
+    except TemplateSyntaxError as exc:
+        raise ValidationError("Invalid template syntax: %(error)s", code="invalid", params={"error": exc})
 
 
 class FleetOpsSettings(models.Model):
@@ -20,13 +58,14 @@ class FleetOpsSettings(models.Model):
     incentive_enabled = models.BooleanField(default=False)
     incentive_minimum_fleets = models.PositiveIntegerField(default=3, validators=[MinValueValidator(1)])
     data_retention_days = models.PositiveIntegerField(
-        default=365,
-        validators=[MinValueValidator(365)],
-        help_text="Attendance/event history retention in days. Minimum 365 days.",
+        default=MIN_RETENTION_DAYS,
+        validators=[MinValueValidator(MIN_RETENTION_DAYS), MaxValueValidator(MAX_RETENTION_DAYS)],
+        help_text="Attendance/event history retention in days. Minimum 365 days, maximum 36500 days (100 years).",
     )
     history_alliance_ids = models.CharField(
         max_length=500,
         blank=True,
+        validators=[validate_alliance_ids],
         help_text="Comma-separated alliance IDs whose current members may appear in attendance history. Empty disables membership pruning.",
     )
     srp_auto_create = models.BooleanField(
@@ -69,7 +108,9 @@ class FleetOpsSettings(models.Model):
 class FleetType(models.Model):
     name = models.CharField(max_length=100, unique=True)
     short_name = models.CharField(max_length=30, blank=True)
-    point_weight = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("0"))
+    point_weight = models.DecimalField(
+        max_digits=8, decimal_places=2, default=Decimal("0"), validators=[MinValueValidator(Decimal("0"))]
+    )
     is_active = models.BooleanField(default=True)
     sort_order = models.PositiveIntegerField(default=0)
 
@@ -116,7 +157,7 @@ class ChannelPreset(models.Model):
 
 class DiscordWebhook(models.Model):
     name = models.CharField(max_length=100, unique=True)
-    webhook_url = models.TextField()
+    webhook_url = models.TextField(validators=[validate_discord_webhook_url])
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -146,7 +187,7 @@ class MessageTemplate(models.Model):
 
     name = models.CharField(max_length=100)
     template_type = models.CharField(max_length=20, choices=TemplateType.choices)
-    content = models.TextField()
+    content = models.TextField(validators=[validate_template_syntax])
     is_default = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
 
@@ -158,6 +199,15 @@ class MessageTemplate(models.Model):
 
     def __str__(self):
         return f"{self.get_template_type_display()}: {self.name}"
+
+    def save(self, *args, **kwargs):
+        # Only one default per template type, otherwise the fallback template is ambiguous.
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            if self.is_default:
+                MessageTemplate.objects.filter(template_type=self.template_type, is_default=True).exclude(
+                    pk=self.pk
+                ).update(is_default=False)
 
 
 class FleetOperation(models.Model):
@@ -396,7 +446,7 @@ class IncentivePeriod(models.Model):
         REVIEW = "review", "Review"
         FINALIZED = "finalized", "Finalized"
 
-    year = models.PositiveIntegerField()
+    year = models.PositiveIntegerField(validators=[MinValueValidator(2003), MaxValueValidator(2200)])
     month = models.PositiveIntegerField(validators=[MinValueValidator(1), MaxValueValidator(12)])
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.OPEN)
     budget = models.BigIntegerField(default=0, validators=[MinValueValidator(0)])

@@ -6,7 +6,23 @@ from allianceauth.authentication.models import UserProfile
 from django.db.models import Q
 from django.utils import timezone
 
-from fleetops.models import AttendanceRecord, FleetMemberEvent, FleetOpsSettings
+from fleetops.models import (
+    MAX_RETENTION_DAYS,
+    MIN_RETENTION_DAYS,
+    AttendanceRecord,
+    FleetMemberEvent,
+    FleetOpsSettings,
+)
+
+
+def retention_cutoff(days, *, now=None):
+    """History older than the returned time has expired; None means nothing expires."""
+    days = max(MIN_RETENTION_DAYS, int(days or MIN_RETENTION_DAYS))
+    if days > MAX_RETENTION_DAYS:
+        # Longer than any supported window (e.g. 999999 meant as "keep forever");
+        # subtracting it from now would also overflow the calendar.
+        return None
+    return (now or timezone.now()) - timedelta(days=days)
 
 
 def configured_alliance_ids(settings_obj=None) -> set[int]:
@@ -45,18 +61,24 @@ def apply_current_membership_filter(qs, settings_obj=None):
 
 def prune_history(*, dry_run: bool = False) -> dict:
     settings_obj = FleetOpsSettings.get_solo()
-    cutoff = timezone.now() - timedelta(days=max(365, settings_obj.data_retention_days))
+    cutoff = retention_cutoff(settings_obj.data_retention_days)
     result = {"old_attendance": 0, "left_alliance": 0, "old_events": 0}
 
-    old_attendance = AttendanceRecord.objects.filter(operation__started_at__lt=cutoff)
+    old_attendance = AttendanceRecord.objects.none()
+    old_events = FleetMemberEvent.objects.none()
+    if cutoff is not None:
+        old_attendance = AttendanceRecord.objects.filter(operation__started_at__lt=cutoff)
+        old_events = FleetMemberEvent.objects.filter(created_at__lt=cutoff)
     result["old_attendance"] = old_attendance.count()
-    old_events = FleetMemberEvent.objects.filter(created_at__lt=cutoff)
     result["old_events"] = old_events.count()
 
     user_ids = current_member_user_ids(settings_obj)
     left_qs = AttendanceRecord.objects.none()
     if user_ids is not None:
         left_qs = AttendanceRecord.objects.exclude(auth_user=None).exclude(auth_user_id__in=user_ids)
+        if cutoff is not None:
+            # Expired rows are already counted above; keep the two totals disjoint.
+            left_qs = left_qs.exclude(operation__started_at__lt=cutoff)
         result["left_alliance"] = left_qs.count()
 
     if not dry_run:

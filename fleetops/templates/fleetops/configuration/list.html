@@ -1,4 +1,5 @@
 {% extends "fleetops/base.html" %}
+{% load fleetops_config %}
 {% block fleetops_content %}
 <div class="d-flex justify-content-between align-items-start mb-3 gap-3">
   <div>
@@ -17,7 +18,7 @@
       {% for row in rows %}
         <tr>
           {% for label,value in row.values %}
-            <td>{% if value == True %}<span class="badge bg-success">Yes</span>{% elif value == False %}<span class="badge bg-secondary">No</span>{% elif value %}{{ value }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td>{% if value|is_bool %}{% if value %}<span class="badge bg-success">Yes</span>{% else %}<span class="badge bg-secondary">No</span>{% endif %}{% elif value is None or value == "" %}<span class="text-muted">—</span>{% else %}{{ value }}{% endif %}</td>
           {% endfor %}
           <td class="text-end text-nowrap">
             <a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:configuration_edit' section row.object.pk %}">Edit</a>

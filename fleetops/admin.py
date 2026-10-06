@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.db import transaction
 
 from fleetops.models import (
     AttendanceRecord,
@@ -68,6 +69,12 @@ class FleetOpsConfigAuditMixin:
             old_value=old,
             new_value=None,
         )
+
+    def delete_queryset(self, request, queryset):
+        # The changelist "delete selected" action must leave the same audit trail as single deletes.
+        with transaction.atomic():
+            for obj in queryset:
+                self.delete_model(request, obj)
 
 
 @admin.register(FleetOpsSettings)

@@ -13,21 +13,22 @@ class Command(BaseCommand):
         parser.add_argument(
             "--demo",
             action="store_true",
-            help="Create PCT, StratOps and CTA example fleet types plus a manual-copy ping target.",
+            help="Create PCT, StratOps and CTA example fleet types plus a manual-copy ping target. Existing entries are kept.",
         )
 
     def handle(self, *args, **options):
         FleetOpsSettings.get_solo()
-        MessageTemplate.objects.update_or_create(
-            template_type=MessageTemplate.TemplateType.PING,
-            name="Default Ping",
-            defaults={"content": DEFAULT_PING_TEMPLATE, "is_default": True, "is_active": True},
-        )
-        MessageTemplate.objects.update_or_create(
-            template_type=MessageTemplate.TemplateType.MOTD,
-            name="Default MOTD",
-            defaults={"content": DEFAULT_MOTD_TEMPLATE, "is_default": True, "is_active": True},
-        )
+        # Never overwrite configuration that already exists; only fill in what is missing.
+        for template_type, name, content in (
+            (MessageTemplate.TemplateType.PING, "Default Ping", DEFAULT_PING_TEMPLATE),
+            (MessageTemplate.TemplateType.MOTD, "Default MOTD", DEFAULT_MOTD_TEMPLATE),
+        ):
+            has_default = MessageTemplate.objects.filter(template_type=template_type, is_default=True).exists()
+            MessageTemplate.objects.get_or_create(
+                template_type=template_type,
+                name=name,
+                defaults={"content": content, "is_default": not has_default, "is_active": True},
+            )
         self.stdout.write(self.style.SUCCESS("FleetOps settings and default message templates are ready."))
 
         if options["demo"]:
@@ -36,7 +37,7 @@ class Command(BaseCommand):
                 (20, "Strategic Operation", "StratOps", Decimal("1.00")),
                 (30, "Call To Arms", "CTA", Decimal("1.50")),
             ):
-                FleetType.objects.update_or_create(
+                FleetType.objects.get_or_create(
                     name=name,
                     defaults={
                         "short_name": short,
@@ -51,6 +52,7 @@ class Command(BaseCommand):
             )
             self.stdout.write(
                 self.style.WARNING(
-                    "Demo data created: PCT 0.5 / StratOps 1.0 / CTA 1.5 and a manual-copy ping target."
+                    "Demo data created: PCT 0.5 / StratOps 1.0 / CTA 1.5 and a manual-copy ping target "
+                    "(existing entries are kept as configured)."
                 )
             )

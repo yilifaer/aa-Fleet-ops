@@ -1,3 +1,4 @@
+from allianceauth.authentication.models import CharacterOwnership
 from django import forms
 from django.db.models import Q
 
@@ -183,6 +184,14 @@ class OperationEditForm(forms.ModelForm):
             else:
                 field.widget.attrs["class"] = "form-control"
 
+    def clean(self):
+        data = super().clean()
+        started = data.get("started_at")
+        ended = data.get("ended_at")
+        if started and ended and ended < started:
+            raise forms.ValidationError("End Time cannot be earlier than Start Time.")
+        return data
+
 
 class IncentivePeriodForm(forms.ModelForm):
     class Meta:
@@ -196,9 +205,9 @@ class IncentivePeriodForm(forms.ModelForm):
 
 
 class ManualAttendanceForm(forms.Form):
-    character_id = forms.IntegerField(min_value=1)
+    character_id = forms.IntegerField(min_value=1, max_value=2**63 - 1)
     character_name = forms.CharField(max_length=255, required=False)
-    attendance_value = forms.IntegerField(min_value=1, initial=1)
+    attendance_value = forms.IntegerField(min_value=1, max_value=100, initial=1)
     duplicate_action = forms.ChoiceField(
         choices=[("keep", "Keep separate"), ("replace", "Replace automatic"), ("merge", "Merge into automatic")],
         initial="keep",
@@ -210,6 +219,15 @@ class ManualAttendanceForm(forms.Form):
         for field in self.fields.values():
             field.widget.attrs["class"] = "form-control"
         self.fields["duplicate_action"].widget.attrs["class"] = "form-select"
+
+    def clean(self):
+        data = super().clean()
+        character_id = data.get("character_id")
+        if character_id and not CharacterOwnership.objects.filter(character__character_id=character_id).exists():
+            raise forms.ValidationError(
+                f"Character {character_id} is not registered to any Alliance Auth user, so it cannot receive attendance."
+            )
+        return data
 
 
 class HistoricalManualAttendanceForm(ManualAttendanceForm):
