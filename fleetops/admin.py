@@ -55,6 +55,10 @@ class FleetOpsConfigAuditMixin:
             old,
             _audit_snapshot(obj),
         )
+        # A new default template takes the flag from the previous one.
+        for demoted in getattr(obj, "demoted_defaults", ()):
+            new = _audit_snapshot(demoted)
+            audit(request.user, "configuration.update", demoted, {**new, "is_default": True}, new)
 
     def delete_model(self, request, obj):
         old = _audit_snapshot(obj)

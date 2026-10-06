@@ -6,15 +6,24 @@ from unittest import mock
 
 import requests
 from allianceauth.eveonline.models import EveCharacter
+from django.contrib.messages import get_messages
 from django.db import models
 from django.http import HttpResponse
 from django.test import TestCase, override_settings
 from django.urls import include, path, reverse
 
-from fleetops.models import AuditLog, DiscordWebhook, FleetOperation, MessageTemplate, OperationAction, PingTarget
+from fleetops.models import (
+    AuditLog,
+    DiscordWebhook,
+    FleetOperation,
+    MessageTemplate,
+    OperationAction,
+    PingTarget,
+    validate_template_syntax,
+)
 from fleetops.providers import srp as srp_module
 from fleetops.providers.esi import FleetDetectionResult, FleetESIError
-from fleetops.providers.pings import send_discord_webhook
+from fleetops.providers.pings import _redact, send_discord_webhook
 from fleetops.providers.srp import AllianceAuthBuiltinSRPProvider, SRPLinkResult, register_srp_provider
 from fleetops.services.messages import render_messages, render_operation_messages
 from fleetops.services.operations import end_fleet, retry_motd, retry_ping, retry_srp, start_fleet
@@ -45,6 +54,10 @@ def make_template(content, template_type=PING, **extra):
     )
 
 
+def flashed(response):
+    return [str(message) for message in get_messages(response.wsgi_request)]
+
+
 # ---------------------------------------------------------------------------
 # Discord webhook errors
 # ---------------------------------------------------------------------------
@@ -68,13 +81,63 @@ class DiscordWebhookErrorTests(TestCase):
         self.assertNotIn(WEBHOOK_TOKEN, result.message)
         self.assertIn("ConnectionError", result.message)
 
-    def test_url_without_scheme_is_reported_as_invalid(self):
-        self.post.side_effect = lambda url, **kwargs: requests.Request("POST", url, json=kwargs.get("json")).prepare()
-
+    def test_url_without_scheme_is_not_sent(self):
         result = send_discord_webhook(f"discord.com/api/webhooks/555000111/{WEBHOOK_TOKEN}", "ping")
 
         self.assertFalse(result.success)
-        self.assertEqual(result.message, "The configured Discord webhook URL is invalid.")
+        self.assertEqual(
+            result.message, "The configured webhook URL is not a Discord webhook URL, so nothing was sent."
+        )
+        self.post.assert_not_called()
+
+    def test_documented_discord_webhook_urls_are_sent_to(self):
+        self.post.return_value = mock.Mock(status_code=204, text="")
+        for url in (
+            WEBHOOK_URL,
+            f"{WEBHOOK_URL}/",
+            f"https://discord.com/api/v10/webhooks/555000111/{WEBHOOK_TOKEN}",
+            f"https://canary.discordapp.com/api/webhooks/555000111/{WEBHOOK_TOKEN}?wait=true&thread_id=1",
+        ):
+            with self.subTest(url=url):
+                self.post.reset_mock()
+
+                self.assertTrue(send_discord_webhook(url, "ping").success)
+                self.assertEqual(self.post.call_args.args, (url,))
+
+    def test_anything_else_is_never_sent_to(self):
+        for url in (
+            "http://127.0.0.1:8080/internal",
+            "https://example.com/api/webhooks/555000111/token",
+            f"http://discord.com/api/webhooks/555000111/{WEBHOOK_TOKEN}",
+            f"{WEBHOOK_URL}/slack",
+            f"https://discord.com/api/webhooks/{WEBHOOK_TOKEN}",
+        ):
+            with self.subTest(url=url):
+                result = send_discord_webhook(url, "ping")
+
+                self.assertFalse(result.success)
+                self.assertNotIn(WEBHOOK_TOKEN, result.message)
+        self.post.assert_not_called()
+
+    def test_error_body_echoing_the_bare_token_is_redacted(self):
+        self.post.return_value = mock.Mock(
+            status_code=401, text=f'{{"message": "Invalid Webhook Token {WEBHOOK_TOKEN}"}}'
+        )
+        for url in (
+            WEBHOOK_URL,
+            f"{WEBHOOK_URL}?wait=true",
+            f"https://discord.com/api/v10/webhooks/555000111/{WEBHOOK_TOKEN}/",
+        ):
+            with self.subTest(url=url):
+                result = send_discord_webhook(url, "ping")
+
+                self.assertIn("Invalid Webhook Token ***", result.message)
+                self.assertNotIn(WEBHOOK_TOKEN, result.message)
+
+    def test_redaction_takes_the_token_after_the_webhook_id(self):
+        text = _redact(f"bad token {WEBHOOK_TOKEN} via slack", f"{WEBHOOK_URL}/slack")
+
+        self.assertEqual(text, "bad token *** via slack")
 
     def test_timeout_names_the_error_only(self):
         self.post.side_effect = requests.ReadTimeout(f"{WEBHOOK_URL}: read timed out (read timeout=15)")
@@ -157,26 +220,40 @@ class SafeMessageRenderingTests(TestCase):
         self.assertNotIn("</script", text.lower())
         self.assertIn("&lt;ScRiPt>", text)
 
-    def test_preview_with_broken_template_shows_the_default_text(self):
-        broken = make_template("{% for %}")
-        fleet_type = f.fleet_type()
+    def preview(self, **extra):
         self.client.force_login(self.fc)
         self.client.raise_request_exception = False
+        data = {
+            "request_id": str(uuid.uuid4()),
+            "operation_mode": "full",
+            "fc_character_id": str(f.main_of(self.fc).character_id),
+            "fleet_type": str(f.fleet_type().pk),
+            "formup": "Jita",
+        }
+        data.update(extra)
+        return self.client.post(reverse("fleetops:preview_fleet"), data)
 
-        response = self.client.post(
-            reverse("fleetops:preview_fleet"),
-            {
-                "request_id": str(uuid.uuid4()),
-                "operation_mode": "full",
-                "fc_character_id": str(f.main_of(self.fc).character_id),
-                "fleet_type": str(fleet_type.pk),
-                "formup": "Jita",
-                "ping_template": str(broken.pk),
-            },
-        )
+    def test_preview_warns_about_a_template_that_fails_while_rendering(self):
+        content = f'{{% include "{WEBHOOK_URL}.txt" %}}'
+        validate_template_syntax(content)  # compiles, so it passes the save-time check
+        broken = make_template(content)
+
+        response = self.preview(ping_template=str(broken.pk))
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("FC: Render FC", response.json()["ping"])
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertIn("FC: Render FC", body["ping"])
+        self.assertEqual(len(body["warnings"]), 1)
+        self.assertIn(broken.name, body["warnings"][0])
+        self.assertIn("TemplateDoesNotExist", body["warnings"][0])
+        self.assertNotIn(WEBHOOK_TOKEN, response.content.decode())
+
+    def test_preview_without_template_problems_has_no_warnings(self):
+        response = self.preview()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["warnings"], [])
 
 
 # ---------------------------------------------------------------------------
@@ -221,9 +298,30 @@ class StartFleetSafetyTests(TestCase):
         data.update(extra)
         return start_fleet(user=self.fc, cleaned_data=data, request_id=request_id or uuid.uuid4())
 
+    def view_payload(self):
+        return {
+            "request_id": str(uuid.uuid4()),
+            "operation_mode": "full",
+            "fc_character_id": str(self.fc_char.character_id),
+            "fleet_type": str(self.fleet_type.pk),
+            "formup": "Jita",
+            "ping_target": str(self.target.pk),
+        }
+
     def assertActive(self, operation):
         operation.refresh_from_db()
         self.assertEqual(operation.status, Status.ACTIVE)
+
+    def assertLoggedSafely(self, logs, *expected, secrets=(WEBHOOK_TOKEN,)):
+        """The log names the failure and has a traceback, but never the exception text."""
+        log = "\n".join(logs.output)
+        for text in expected:
+            self.assertIn(text, log)
+        self.assertIn("Traceback", log)
+        for secret in secrets:
+            self.assertNotIn(secret, log)
+        # No exc_info either, or a handler would print the exception text.
+        self.assertTrue(all(record.exc_info is None for record in logs.records))
 
     def test_broken_ping_template_falls_back_and_the_fleet_is_pinged(self):
         broken = MessageTemplate.objects.create(name="Typo Ping", template_type=PING, content="{% if %}x")
@@ -265,23 +363,31 @@ class StartFleetSafetyTests(TestCase):
         MessageTemplate.objects.update(content="{% if %}broken")
         self.client.force_login(self.fc)
 
-        response = self.client.post(
-            reverse("fleetops:start_fleet"),
-            {
-                "request_id": str(uuid.uuid4()),
-                "operation_mode": "full",
-                "fc_character_id": str(self.fc_char.character_id),
-                "fleet_type": str(self.fleet_type.pk),
-                "formup": "Jita",
-                "ping_target": str(self.target.pk),
-            },
-        )
+        response = self.client.post(reverse("fleetops:start_fleet"), self.view_payload())
 
         operation = FleetOperation.objects.get()
         self.assertRedirects(
             response, reverse("fleetops:operation_detail", args=[operation.uuid]), fetch_redirect_response=False
         )
         self.assertEqual(operation.status, Status.ACTIVE)
+
+    def test_start_view_keeps_unexpected_error_text_off_the_page_and_out_of_the_log(self):
+        self.client.force_login(self.fc)
+        error = RuntimeError(f"Failed posting to {WEBHOOK_URL}")
+
+        with mock.patch("fleetops.views.start_fleet", side_effect=error), self.assertLogs(
+            "fleetops.views", "ERROR"
+        ) as logs:
+            response = self.client.post(reverse("fleetops:start_fleet"), self.view_payload())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.context["form"].non_field_errors(),
+            ["Fleet start failed because of an unexpected error. Please try again or contact an administrator."],
+        )
+        self.assertNotContains(response, WEBHOOK_TOKEN)
+        self.assertFalse(FleetOperation.objects.exists())
+        self.assertLoggedSafely(logs, "Fleet start failed (RuntimeError)")
 
     def test_working_templates_record_no_render_action(self):
         operation = self.start()
@@ -291,7 +397,7 @@ class StartFleetSafetyTests(TestCase):
     def test_unexpected_discord_error_is_recorded_without_its_text(self):
         with mock.patch(
             "fleetops.services.operations.send_discord_webhook", side_effect=ValueError(f"bad url {WEBHOOK_URL}")
-        ):
+        ), self.assertLogs("fleetops.services.operations", "ERROR") as logs:
             operation = self.start()
 
         self.assertActive(operation)
@@ -302,12 +408,14 @@ class StartFleetSafetyTests(TestCase):
         self.assertEqual(action(operation, "motd_update").status, ActionStatus.SUCCESS)
         self.assertEqual(action(operation, "tracking_start").status, ActionStatus.SUCCESS)
         self.assertEqual(action(operation, "srp_link").status, ActionStatus.SUCCESS)
+        self.assertLoggedSafely(logs, f"Discord ping failed for operation {operation.pk} (ValueError)")
 
     def test_unexpected_motd_and_tracking_errors_are_recorded_safely(self):
         self.mocks["motd"].side_effect = KeyError("access-token-123")
         self.mocks["sync"].side_effect = TypeError("refresh-token-456")
 
-        operation = self.start()
+        with self.assertLogs("fleetops.services.operations", "ERROR") as logs:
+            operation = self.start()
 
         self.assertActive(operation)
         motd = action(operation, "motd_update")
@@ -320,12 +428,19 @@ class StartFleetSafetyTests(TestCase):
         self.assertIn("TypeError", operation.last_error)
         self.assertEqual(tracking.error_message, operation.last_error)
         self.assertEqual(action(operation, "srp_link").status, ActionStatus.SUCCESS)
+        self.assertLoggedSafely(
+            logs,
+            "MOTD update failed for operation",
+            "Fleet tracking failed for operation",
+            secrets=("access-token-123", "refresh-token-456"),
+        )
 
     def test_esi_error_messages_are_kept_for_the_fc(self):
         message = "ESI denied permission to update the fleet MOTD."
         self.mocks["motd"].side_effect = FleetESIError("MOTD_FORBIDDEN", message)
 
-        operation = self.start()
+        with self.assertNoLogs("fleetops", "ERROR"):
+            operation = self.start()
 
         self.assertEqual(action(operation, "motd_update").error_message, message)
 
@@ -347,6 +462,74 @@ class StartFleetSafetyTests(TestCase):
         )
         self.mocks["post"].assert_not_called()
         self.mocks["motd"].assert_not_called()
+
+    def test_webhook_saved_before_validation_is_never_posted_to(self):
+        # objects.create() skips validation, like a row saved by an earlier release.
+        legacy = DiscordWebhook.objects.create(name="Legacy", webhook_url="http://127.0.0.1:8080/internal")
+        target = PingTarget.objects.create(name="Legacy target", webhook=legacy)
+
+        operation = self.start(ping_target=target)
+        retried = retry_ping(operation)
+
+        self.assertActive(operation)
+        self.mocks["post"].assert_not_called()
+        for result in (action(operation, "discord_ping"), retried):
+            self.assertEqual(result.status, ActionStatus.FAILED)
+            self.assertEqual(
+                result.error_message, "The configured webhook URL is not a Discord webhook URL, so nothing was sent."
+            )
+
+    def test_retry_after_a_render_failure_renders_the_messages_and_sends_them(self):
+        with mock.patch("fleetops.services.operations.render_messages", side_effect=RuntimeError("boom")):
+            operation = self.start()
+        self.assertEqual((operation.ping_text, operation.motd_text), ("", ""))
+
+        ping = retry_ping(operation)
+        motd = retry_motd(operation)
+
+        operation.refresh_from_db()
+        self.assertIn("FC: Start FC", operation.ping_text)
+        self.assertIn("FC: Start FC", operation.motd_text)
+        self.assertEqual(ping.status, ActionStatus.SUCCESS)
+        self.assertEqual(motd.status, ActionStatus.SUCCESS)
+        self.mocks["post"].assert_called_once()
+        self.assertEqual(self.mocks["post"].call_args.kwargs["json"], {"content": operation.ping_text})
+        self.mocks["motd"].assert_called_once_with(self.fc, self.fc_char.character_id, FLEET_ID, operation.motd_text)
+        self.assertEqual(action(operation, "message_render").status, ActionStatus.SUCCESS)
+
+    def test_retry_sends_nothing_while_the_messages_still_cannot_be_rendered(self):
+        with mock.patch("fleetops.services.operations.render_messages", side_effect=RuntimeError("boom")):
+            operation = self.start()
+            ping = retry_ping(operation)
+            motd = retry_motd(operation)
+
+        for result in (ping, motd):
+            self.assertEqual(result.status, ActionStatus.FAILED)
+            self.assertEqual(result.error_message, "Not sent because the fleet messages could not be rendered.")
+        render = action(operation, "message_render")
+        self.assertEqual(render.status, ActionStatus.FAILED)
+        self.assertEqual(render.error_message, "Message rendering failed unexpectedly (RuntimeError).")
+        self.assertEqual(render.attempts, 3)
+        self.mocks["post"].assert_not_called()
+        self.mocks["motd"].assert_not_called()
+        operation.refresh_from_db()
+        self.assertEqual((operation.ping_text, operation.motd_text), ("", ""))
+
+    def test_database_error_inside_the_srp_provider_does_not_break_the_start(self):
+        def write_then_fail(operation, provider_key):
+            first = AuditLog.objects.create(action="srp.partial", object_type="SRP", object_id="1")
+            AuditLog.objects.create(pk=first.pk, action="srp.duplicate", object_type="SRP", object_id="1")
+
+        self.mocks["srp"].side_effect = write_then_fail
+
+        with self.assertLogs("fleetops.services.operations", "ERROR"):
+            operation = self.start()
+
+        self.assertActive(operation)
+        srp = action(operation, "srp_link")
+        self.assertEqual(srp.status, ActionStatus.FAILED)
+        self.assertEqual(srp.error_message, "SRP creation failed unexpectedly (IntegrityError).")
+        self.assertFalse(AuditLog.objects.filter(action__startswith="srp.").exists())
 
     def test_settings_lookup_failure_is_recorded_as_srp_failure(self):
         with mock.patch(
@@ -518,11 +701,76 @@ class RetrySafetyTests(TestCase):
         self.motd.side_effect = RuntimeError("secret-access-token")
         operation = f.create_operation(self.fc, motd_text="motd")
 
-        result = retry_motd(operation)
+        with self.assertLogs("fleetops.services.operations", "ERROR") as logs:
+            result = retry_motd(operation)
 
         self.assertEqual(result.status, ActionStatus.FAILED)
         self.assertNotIn("secret-access-token", result.error_message)
         self.assertIn("RuntimeError", result.error_message)
+        self.assertNotIn("secret-access-token", "\n".join(logs.output))
+
+    def test_unexpected_ping_retry_error_is_generic(self):
+        operation = f.create_operation(self.fc, ping_target=self.target, ping_text="ping")
+
+        with mock.patch(
+            "fleetops.services.operations.send_discord_webhook", side_effect=ValueError(f"bad url {WEBHOOK_URL}")
+        ), self.assertLogs("fleetops.services.operations", "ERROR") as logs:
+            result = retry_ping(operation)
+
+        self.assertEqual(result.status, ActionStatus.FAILED)
+        self.assertEqual(result.error_message, "Discord ping failed unexpectedly (ValueError).")
+        self.assertNotIn(WEBHOOK_TOKEN, "\n".join(logs.output))
+
+    def test_unexpected_srp_retry_error_is_generic_and_logged_safely(self):
+        self.provider.create_for_operation = mock.Mock(side_effect=RuntimeError(f"posted to {WEBHOOK_URL}"))
+        operation = f.create_operation(self.fc)
+
+        with self.assertLogs("fleetops.services.operations", "ERROR") as logs:
+            result = retry_srp(operation)
+
+        operation.refresh_from_db()
+        self.assertEqual(result.status, ActionStatus.FAILED)
+        self.assertEqual(operation.srp_error, "SRP creation failed unexpectedly (RuntimeError).")
+        log = "\n".join(logs.output)
+        self.assertIn(f"SRP creation failed for operation {operation.pk} (RuntimeError)", log)
+        self.assertNotIn(WEBHOOK_TOKEN, log)
+
+    def test_retry_never_sends_a_ping_or_motd_that_renders_empty(self):
+        operation = f.create_operation(
+            self.fc,
+            ping_target=self.target,
+            ping_template=make_template("{% if additional_message %}x{% endif %}"),
+            motd_template=make_template("{# nothing #}", MOTD),
+        )
+
+        ping = retry_ping(operation)
+        motd = retry_motd(operation)
+
+        self.assertEqual(ping.status, ActionStatus.FAILED)
+        self.assertEqual(ping.error_message, "Not sent because the ping text is empty.")
+        self.assertEqual(motd.status, ActionStatus.FAILED)
+        self.assertEqual(motd.error_message, "Not sent because the MOTD text is empty.")
+        self.post.assert_not_called()
+        self.motd.assert_not_called()
+
+    def test_retry_views_flash_the_step_detail(self):
+        self.provider.created = False
+        operation = f.create_operation(self.fc, ping_text="ping", motd_text="motd")
+        self.motd.side_effect = FleetESIError("MOTD_FORBIDDEN", "ESI denied permission to update the fleet MOTD.")
+        self.client.force_login(self.fc)
+
+        for name, expected in (
+            ("retry_ping", "Ping retry: Failed. No active webhook configured. Ping remains available for manual copy."),
+            ("retry_motd", "MOTD retry: Failed. ESI denied permission to update the fleet MOTD."),
+            ("retry_srp", "SRP retry: Skipped. Provider declined to create an SRP fleet."),
+        ):
+            with self.subTest(view=name):
+                response = self.client.post(reverse(f"fleetops:{name}", args=[operation.uuid]))
+
+                self.assertRedirects(
+                    response, reverse("fleetops:operation_detail", args=[operation.uuid]), fetch_redirect_response=False
+                )
+                self.assertIn(expected, flashed(response))
 
 
 # ---------------------------------------------------------------------------
@@ -667,3 +915,51 @@ class EndFleetAuditTests(TestCase):
 
         entry = AuditLog.objects.get(action="fleet.auto_end")
         self.assertEqual(entry.old_value, {"status": Status.ACTIVE, "tracking_enabled": True})
+
+
+class EndAndManualFleetErrorTests(TestCase):
+    def test_end_fleet_logs_unexpected_final_sync_errors_without_their_text(self):
+        fc = f.create_user(perms=f.FC_PERMS)
+        operation = f.create_operation(fc)
+        with mock.patch("fleetops.services.operations.sync_operation", side_effect=RuntimeError(f"boom {WEBHOOK_URL}")):
+            with self.assertLogs("fleetops.services.operations", "ERROR") as logs:
+                end_fleet(operation, actor=fc)
+
+        operation.refresh_from_db()
+        self.assertEqual(operation.status, FleetOperation.Status.CLOSED)
+        self.assertIn("Final fleet sync failed", logs.output[0])
+        self.assertNotIn(WEBHOOK_TOKEN, "\n".join(logs.output))
+
+    def test_end_fleet_does_not_log_expected_esi_errors(self):
+        fc = f.create_user(perms=f.FC_PERMS)
+        operation = f.create_operation(fc)
+        with mock.patch(
+            "fleetops.services.operations.sync_operation",
+            side_effect=FleetESIError("FLEET_NOT_FOUND", "Fleet no longer exists.", 404),
+        ):
+            with self.assertNoLogs("fleetops.services.operations", "ERROR"):
+                end_fleet(operation, actor=fc)
+
+        operation.refresh_from_db()
+        self.assertEqual(operation.status, FleetOperation.Status.CLOSED)
+
+    def test_manual_fleet_page_hides_unexpected_error_text(self):
+        fc = f.create_user(perms=f.FC_PERMS)
+        self.client.force_login(fc)
+        data = {
+            "fleet_type": f.fleet_type().pk,
+            "doctrine_name": "",
+            "formup": "Jita",
+            "started_at": "2026-03-01T18:00",
+            "ended_at": "2026-03-01T20:00",
+            "attendance_multiplier": 1,
+            "notes": "",
+        }
+        with mock.patch("fleetops.views.create_manual_fleet", side_effect=RuntimeError(f"db error {WEBHOOK_URL}")):
+            with self.assertLogs("fleetops.views", "ERROR") as logs:
+                response = self.client.post(reverse("fleetops:manual_fleet"), data)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "unexpected error")
+        self.assertNotContains(response, WEBHOOK_TOKEN)
+        self.assertNotIn(WEBHOOK_TOKEN, "\n".join(logs.output))

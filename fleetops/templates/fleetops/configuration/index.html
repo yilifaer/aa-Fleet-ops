@@ -37,7 +37,7 @@
 <div class="card">
   <div class="card-header"><strong>Operational management</strong></div>
   <div class="card-body">
-    <p class="mb-2">Operational/system-generated data is intentionally not edited as raw database rows.</p>
+    <p class="mb-2">Operational data recorded by FleetOps is intentionally not edited as raw database rows.</p>
     <div class="d-flex flex-wrap gap-2">
       {% if show_incentives %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:incentive_review' %}">FC Incentive</a>{% endif %}
       {% if perms.fleetops.view_audit_log %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:audit_log' %}">Audit Log</a>{% endif %}

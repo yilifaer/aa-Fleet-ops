@@ -122,7 +122,7 @@ def detect_character_fleet(user, character_id: int) -> FleetDetectionResult:
                 )
             )
         )
-    except Exception as exc:  # django-esi exposes generated HTTP exceptions
+    except Exception as exc:  # django-esi raises its own HTTP exception classes
         status = _status_code(exc)
         if status == 404:
             raise FleetESIError("NOT_IN_FLEET", "Character is currently not in a fleet.", status) from exc

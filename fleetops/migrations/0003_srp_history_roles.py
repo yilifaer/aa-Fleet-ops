@@ -1,4 +1,4 @@
-# Generated manually for AA FleetOps 0.1.0a3
+# AA FleetOps 0.1.0a3: SRP links, history retention and special roles
 import django.core.validators
 import django.db.models.deletion
 from django.conf import settings

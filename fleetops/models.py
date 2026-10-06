@@ -10,9 +10,13 @@ from django.template import Template, TemplateSyntaxError
 
 MIN_RETENTION_DAYS = 365
 MAX_RETENTION_DAYS = 36500
+# Largest value a BigIntegerField id can hold.
+MAX_DATABASE_ID = 2**63 - 1
 
+# https://discord.com/api[/v<n>]/webhooks/<id>/<token>, optionally with a trailing slash and a query
+# such as ?wait=true&thread_id=1. Suffixed endpoints (/slack, /github) are not accepted.
 DISCORD_WEBHOOK_URL_RE = re.compile(
-    r"https://(?:(?:ptb|canary)\.)?discord(?:app)?\.com/api/webhooks/[\w/-]+(?:\?[\w=&-]*)?",
+    r"https://(?:(?:ptb|canary)\.)?discord(?:app)?\.com/api/(?:v\d+/)?webhooks/\d+/[\w-]+/?(?:\?[\w=&-]*)?",
     re.ASCII,
 )
 
@@ -200,14 +204,28 @@ class MessageTemplate(models.Model):
     def __str__(self):
         return f"{self.get_template_type_display()}: {self.name}"
 
+    def clean(self):
+        super().clean()
+        # Fleet start ignores inactive templates, so an inactive default would silently drop the live one.
+        if self.is_default and not self.is_active:
+            raise ValidationError({"is_default": "A default template must be active."})
+
     def save(self, *args, **kwargs):
-        # Only one default per template type, otherwise the fallback template is ambiguous.
+        # One default per template type, otherwise the fallback template is ambiguous. Only an active
+        # template takes over the default. Templates that lost the flag are kept in demoted_defaults
+        # so callers can audit them.
+        self.demoted_defaults = []
         with transaction.atomic():
             super().save(*args, **kwargs)
-            if self.is_default:
-                MessageTemplate.objects.filter(template_type=self.template_type, is_default=True).exclude(
-                    pk=self.pk
-                ).update(is_default=False)
+            if self.is_default and self.is_active:
+                others = MessageTemplate.objects.select_for_update().filter(
+                    template_type=self.template_type, is_default=True
+                )
+                self.demoted_defaults = list(others.exclude(pk=self.pk))
+                demoted_pks = [other.pk for other in self.demoted_defaults]
+                MessageTemplate.objects.filter(pk__in=demoted_pks).update(is_default=False)
+                for other in self.demoted_defaults:
+                    other.is_default = False
 
 
 class FleetOperation(models.Model):

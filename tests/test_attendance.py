@@ -5,6 +5,7 @@ from datetime import timedelta
 from io import StringIO
 from unittest import mock
 
+from django.contrib.messages import get_messages
 from django.core.management import call_command
 from django.test import TestCase
 from django.urls import reverse
@@ -531,6 +532,38 @@ class ManualAttendanceViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
+        self.assertFalse(AttendanceRecord.objects.exists())
+
+    def test_invalid_entry_flashes_the_field_errors(self):
+        operation = f.create_operation(self.fc, status=FleetOperation.Status.CLOSED)
+
+        response = self._post(operation, attendance_value=101)
+
+        self.assertRedirects(
+            response, reverse("fleetops:operation_detail", args=[operation.uuid]), fetch_redirect_response=False
+        )
+        flashed = [str(message) for message in get_messages(response.wsgi_request)]
+        self.assertEqual(
+            flashed, ["Invalid manual attendance entry. Ensure this value is less than or equal to 100."]
+        )
+        self.assertFalse(AttendanceRecord.objects.exists())
+
+    def test_historical_form_shows_field_errors(self):
+        operation = f.create_operation(self.fc, status=FleetOperation.Status.CLOSED)
+
+        response = self.client.post(
+            reverse("fleetops:manual_attendance"),
+            {
+                "operation": operation.pk,
+                "character_id": "0",
+                "attendance_value": "101",
+                "duplicate_action": "keep",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Ensure this value is greater than or equal to 1.")
+        self.assertContains(response, "Ensure this value is less than or equal to 100.")
         self.assertFalse(AttendanceRecord.objects.exists())
 
     def test_cancelled_fleet_rejects_manual_attendance(self):

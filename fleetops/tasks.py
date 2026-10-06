@@ -1,14 +1,23 @@
+import logging
+
 from celery import shared_task
 from django.core.cache import cache
 from django.utils import timezone
 
 from fleetops.models import FleetOperation, FleetOpsSettings
 from fleetops.providers.esi import FleetESIError
+from fleetops.services.errors import report_failure
 from fleetops.services.operations import end_fleet
 from fleetops.services.tracking import sync_operation
 
+logger = logging.getLogger(__name__)
+
 # Only a successful sync sets last_esi_update, so the scheduler also remembers each poll attempt.
 POLL_ATTEMPT_TIMEOUT = 24 * 60 * 60
+# Polls are recorded by the worker, a little after the beat that queued them. Without some
+# slack the next beat finds the poll just short of the interval and skips it, so a 60 s
+# interval would poll every 120 s. Must stay below the 30 s minimum interval.
+POLL_SLACK_SECONDS = 10
 
 
 def _poll_attempt_key(operation_id):
@@ -33,7 +42,7 @@ def schedule_active_fleet_tracking():
         last_poll = max((poll for poll in polls if poll is not None), default=None)
         if last_poll is not None:
             age = (now - last_poll).total_seconds()
-            if age < settings.tracking_interval:
+            if age < settings.tracking_interval - POLL_SLACK_SECONDS:
                 continue
         track_operation.delay(operation.pk)
         queued += 1
@@ -67,7 +76,7 @@ def track_operation(self, operation_id):
             operation.save(update_fields=["last_error", "fleet_missing_count", "updated_at"])
             return exc.code
         except Exception as exc:
-            operation.last_error = str(exc)[:4000]
+            operation.last_error = report_failure(logger, "Fleet tracking", exc, operation)[:4000]
             operation.save(update_fields=["last_error", "updated_at"])
             return "error"
     finally:

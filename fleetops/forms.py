@@ -3,6 +3,7 @@ from django import forms
 from django.db.models import Q
 
 from fleetops.models import (
+    MAX_DATABASE_ID,
     ChannelPreset,
     CommsPreset,
     DiscordWebhook,
@@ -205,7 +206,7 @@ class IncentivePeriodForm(forms.ModelForm):
 
 
 class ManualAttendanceForm(forms.Form):
-    character_id = forms.IntegerField(min_value=1, max_value=2**63 - 1)
+    character_id = forms.IntegerField(min_value=1, max_value=MAX_DATABASE_ID)
     character_name = forms.CharField(max_length=255, required=False)
     attendance_value = forms.IntegerField(min_value=1, max_value=100, initial=1)
     duplicate_action = forms.ChoiceField(

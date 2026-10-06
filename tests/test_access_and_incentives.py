@@ -22,7 +22,15 @@ from fleetops.models import (
 )
 from fleetops.services.attendance import create_manual_attendance
 from fleetops.services.audit import audit
-from fleetops.services.incentives import IncentiveError, finalize_period, rebuild_period, set_waiver, unlock_period
+from fleetops.services.incentives import (
+    INCENTIVES_DISABLED_MESSAGE,
+    WAIVER_LOCKED_MESSAGE,
+    IncentiveError,
+    finalize_period,
+    rebuild_period,
+    set_waiver,
+    unlock_period,
+)
 from fleetops.services.roles import add_role_assignment
 from fleetops.services.statistics import fc_statistics, member_statistics
 
@@ -207,11 +215,19 @@ class IncentivesDisabledTests(TestCase):
         open_period = IncentivePeriod.objects.create(year=2026, month=4, budget=300, minimum_fleets=1)
         closed_op(self.fc, utc(2026, 4, 2))
 
-        with self.assertRaises(IncentiveError):
-            rebuild_period(open_period)
-        with self.assertRaises(IncentiveError):
-            set_waiver(self.period, self.fc.pk, True)
+        finalized = IncentivePeriod.objects.create(year=2026, month=5, status=PeriodStatus.FINALIZED)
+        for call in (
+            lambda: rebuild_period(open_period),
+            lambda: set_waiver(self.period, self.fc.pk, True),
+            lambda: finalize_period(self.period, self.manager),
+            lambda: unlock_period(finalized),
+        ):
+            with self.assertRaisesMessage(IncentiveError, INCENTIVES_DISABLED_MESSAGE):
+                call()
 
+        self.period.refresh_from_db()
+        finalized.refresh_from_db()
+        self.assertEqual((self.period.status, finalized.status), (PeriodStatus.REVIEW, PeriodStatus.FINALIZED))
         open_period.refresh_from_db()
         self.row.refresh_from_db()
         self.assertEqual(open_period.status, PeriodStatus.OPEN)
@@ -311,6 +327,19 @@ class IncentiveActionGuardTests(TestCase):
         self.assertFalse(MonthlyFCStatistic.objects.filter(period=self.period, fc_user=self.fc1).exists())
         self.assertEqual(stat_for(self.period, self.fc2).final_payout, 300)
         self.assertEqual(self.entries("incentive.waiver"), [({"waived": False}, {"waived": True})])
+
+    def test_waiver_on_a_finalized_period_gives_the_same_message_as_the_service(self):
+        rebuild_period(self.period)
+        finalize_period(self.period, self.manager)
+
+        response = self.post("incentive_waiver", self.period.pk, self.fc1.pk, data={"waived": "1"})
+
+        self.assertRedirects(response, self.review_url, fetch_redirect_response=False)
+        self.assertEqual(message_texts(response), [WAIVER_LOCKED_MESSAGE])
+        with self.assertRaisesMessage(IncentiveError, WAIVER_LOCKED_MESSAGE):
+            set_waiver(self.period, self.fc1.pk, True)
+        self.assertFalse(stat_for(self.period, self.fc1).waived)
+        self.assertEqual(self.entries("incentive.waiver"), [])
 
     def test_set_waiver_returns_none_when_the_row_is_dropped(self):
         rebuild_period(self.period)
@@ -759,7 +788,9 @@ class PreviewErrorTests(TestCase):
         self.client.force_login(fc)
         error = RuntimeError(f"Failed posting to https://discord.com/api/webhooks/1/{WEBHOOK_SECRET}")
 
-        with mock.patch("fleetops.views.render_operation_messages", side_effect=error):
+        with mock.patch("fleetops.views.render_messages", side_effect=error), self.assertLogs(
+            "fleetops.views", "ERROR"
+        ) as logs:
             response = self.client.post(
                 reverse("fleetops:preview_fleet"),
                 {
@@ -776,3 +807,8 @@ class PreviewErrorTests(TestCase):
         self.assertFalse(body["ok"])
         self.assertIn("could not be rendered", body["error"])
         self.assertNotIn(WEBHOOK_SECRET, response.content.decode())
+        log = "\n".join(logs.output)
+        self.assertIn("Message preview failed (RuntimeError)", log)
+        self.assertIn("Traceback", log)
+        self.assertNotIn(WEBHOOK_SECRET, log)
+        self.assertTrue(all(record.exc_info is None for record in logs.records))

@@ -36,6 +36,7 @@ from fleetops.models import (
     FleetType,
     IncentivePeriod,
     MessageTemplate,
+    OperationAction,
 )
 from fleetops.services.history import prune_history, retention_cutoff
 from fleetops.services.messages import render_operation_messages
@@ -70,6 +71,8 @@ def settings_payload(**overrides):
 
 
 class MigrationTests(TestCase):
+    upgrade = importlib.import_module("fleetops.migrations.0006_redact_webhook_tokens_keep_incentives")
+
     def test_duplicate_defaults_are_reduced_to_the_one_in_use(self):
         migration = importlib.import_module("fleetops.migrations.0005_settings_validation_and_ordering")
         MessageTemplate.objects.create(name="Alpha Ping", template_type="ping", content="a")
@@ -85,6 +88,90 @@ class MigrationTests(TestCase):
             list(MessageTemplate.objects.filter(is_default=True).values_list("template_type", "name")),
             [("motd", "Default MOTD"), ("ping", "Alpha Ping")],
         )
+
+    def test_webhook_tokens_from_earlier_releases_are_removed_from_stored_errors(self):
+        legacy_url = "http://10.0.0.5:8080/hooks/relay?key=legacy-relay-secret"
+        DiscordWebhook.objects.create(name="Ops", webhook_url=WEBHOOK_URL)
+        DiscordWebhook.objects.create(name="Relay", webhook_url=legacy_url)
+        DiscordWebhook.objects.create(name="Test", webhook_url="https://discord.com/api/webhooks/1/token")
+        other_token = "Ab3-other-webhook-token-never-stored"
+        operation = f.create_operation(
+            f.create_user(perms=f.FC_PERMS),
+            last_error=f"Failed posting to {WEBHOOK_URL}?wait=true",
+            srp_error=f"SRP provider echoed https://discordapp.com/api/v10/webhooks/42/{other_token}",
+        )
+        updated_at = FleetOperation.objects.get(pk=operation.pk).updated_at
+        connection_error = (
+            "HTTPSConnectionPool(host='discord.com', port=443): Max retries exceeded with url: "
+            f"/api/webhooks/445566778899/{WEBHOOK_TOKEN} (Caused by NewConnectionError("
+            "'<urllib3.connection.HTTPSConnection object at 0x7f3a>: Failed to establish a new connection: "
+            "[Errno 111] Connection refused'))"
+        )
+        read_timeout = "HTTPSConnectionPool(host='discord.com', port=443): Read timed out. (read timeout=15)"
+        expected = {
+            "discord_ping": (
+                connection_error,
+                connection_error.replace(WEBHOOK_TOKEN, "***"),
+            ),
+            "motd_update": (read_timeout, read_timeout),
+            "srp_link": (
+                f'{{"message": "Invalid Webhook Token", "token": "{WEBHOOK_TOKEN}"}}',
+                '{"message": "Invalid Webhook Token", "token": "***"}',
+            ),
+            "tracking_start": (
+                f"HTTPConnectionPool(host='10.0.0.5', port=8080): request to {legacy_url} failed",
+                "HTTPConnectionPool(host='10.0.0.5', port=8080): request to *** failed",
+            ),
+            "fleet_end": ("Could not refresh the ESI token.", "Could not refresh the ESI token."),
+            "kick_capsules": (
+                "HTTPConnectionPool(host='10.0.0.5', port=8080): Max retries exceeded with url: "
+                "/hooks/relay?key=legacy-relay-secret (Caused by NewConnectionError('Connection refused'))",
+                "HTTPConnectionPool(host='10.0.0.5', port=8080): Max retries exceeded with url: "
+                "*** (Caused by NewConnectionError('Connection refused'))",
+            ),
+        }
+        for name, (stored, _cleaned) in expected.items():
+            OperationAction.objects.create(operation=operation, action=name, status="failed", error_message=stored)
+
+        self.upgrade.redact_webhook_tokens(apps, None)
+
+        for name, (_stored, cleaned) in expected.items():
+            with self.subTest(action=name):
+                self.assertEqual(OperationAction.objects.get(operation=operation, action=name).error_message, cleaned)
+        operation.refresh_from_db()
+        self.assertEqual(
+            operation.last_error, "Failed posting to https://discord.com/api/webhooks/445566778899/***?wait=true"
+        )
+        self.assertEqual(operation.srp_error, "SRP provider echoed https://discordapp.com/api/v10/webhooks/42/***")
+        self.assertEqual(operation.updated_at, updated_at)
+        stored = " ".join(OperationAction.objects.values_list("error_message", flat=True))
+        for secret in (WEBHOOK_TOKEN, other_token, "legacy-relay-secret"):
+            self.assertNotIn(secret, stored + operation.last_error + operation.srp_error)
+
+    def test_upgraded_installs_with_incentive_periods_keep_incentives_enabled(self):
+        f.settings(incentive_enabled=False)
+        IncentivePeriod.objects.create(year=2026, month=3, budget=100, minimum_fleets=1)
+
+        self.upgrade.keep_incentives_for_existing_users(apps, None)
+
+        self.assertTrue(FleetOpsSettings.get_solo().incentive_enabled)
+
+    def test_installs_without_incentive_periods_keep_incentives_off(self):
+        f.settings(incentive_enabled=False)
+
+        self.upgrade.keep_incentives_for_existing_users(apps, None)
+
+        self.assertFalse(FleetOpsSettings.get_solo().incentive_enabled)
+
+    def test_missing_settings_row_is_created_enabled_when_periods_exist(self):
+        FleetOpsSettings.objects.all().delete()
+        IncentivePeriod.objects.create(year=2026, month=3, budget=100, minimum_fleets=1)
+
+        self.upgrade.keep_incentives_for_existing_users(apps, None)
+
+        settings_obj = FleetOpsSettings.get_solo()
+        self.assertTrue(settings_obj.incentive_enabled)
+        self.assertEqual(settings_obj.tracking_interval, 60)
 
 
 class RetentionTests(TestCase):
@@ -271,6 +358,31 @@ class MessageTemplateRulesTests(TestCase):
         MessageTemplate.objects.create(name="Other", template_type="ping", content="x")
         self.assertTrue(MessageTemplate.objects.get(name="Default Ping").is_default)
 
+    def test_inactive_template_cannot_be_the_default(self):
+        form = MessageTemplateForm({"name": "Draft", "template_type": "ping", "content": "x", "is_default": "on"})
+
+        self.assertFalse(form.is_valid())
+        self.assertEqual(form.errors["is_default"], ["A default template must be active."])
+        template = MessageTemplate(name="Draft", template_type="ping", content="x", is_default=True, is_active=False)
+        with self.assertRaises(ValidationError) as ctx:
+            template.full_clean()
+        self.assertEqual(ctx.exception.message_dict["is_default"], ["A default template must be active."])
+
+    def test_saving_an_inactive_default_never_removes_the_live_default(self):
+        draft = MessageTemplate.objects.create(
+            name="Draft", template_type="ping", content="x", is_default=True, is_active=False
+        )
+
+        self.assertEqual(draft.demoted_defaults, [])
+        self.assertTrue(MessageTemplate.objects.get(name="Default Ping").is_default)
+
+    def test_saving_a_new_default_reports_the_template_it_replaced(self):
+        new_default = MessageTemplate.objects.create(name="New", template_type="ping", content="x", is_default=True)
+
+        self.assertEqual([t.name for t in new_default.demoted_defaults], ["Default Ping"])
+        self.assertFalse(new_default.demoted_defaults[0].is_default)
+        self.assertFalse(MessageTemplate.objects.get(name="Default Ping").is_default)
+
 
 class WebhookUrlValidationTests(TestCase):
     def _form(self, url):
@@ -282,7 +394,12 @@ class WebhookUrlValidationTests(TestCase):
             "https://discordapp.com/api/webhooks/1/abc_DEF-123",
             "https://ptb.discord.com/api/webhooks/1/token",
             "https://canary.discord.com/api/webhooks/1/token",
+            "https://ptb.discordapp.com/api/webhooks/1/token",
             f"{WEBHOOK_URL}?wait=true&thread_id=123",
+            f"{WEBHOOK_URL}/",
+            f"{WEBHOOK_URL}/?wait=true",
+            f"https://discord.com/api/v10/webhooks/445566778899/{WEBHOOK_TOKEN}",
+            f"https://discord.com/api/v9/webhooks/445566778899/{WEBHOOK_TOKEN}?thread_id=1",
             f"  {WEBHOOK_URL}  ",
         ):
             with self.subTest(url=url):
@@ -301,6 +418,13 @@ class WebhookUrlValidationTests(TestCase):
             f"https://discord.com/api/v10/users/1/{WEBHOOK_TOKEN}",
             f"https://discord.com/api/webhooks/../../oauth2/{WEBHOOK_TOKEN}",
             f"discord.com/api/webhooks/1/{WEBHOOK_TOKEN}",
+            f"{WEBHOOK_URL}/slack",
+            f"{WEBHOOK_URL}/github",
+            f"{WEBHOOK_URL}/messages/456",
+            f"https://discord.com/api/webhooks/{WEBHOOK_TOKEN}",
+            f"https://discord.com/api/webhooks/ops/{WEBHOOK_TOKEN}",
+            f"https://discord.com/api/vX/webhooks/1/{WEBHOOK_TOKEN}",
+            f"https://discord.com/webhooks/1/{WEBHOOK_TOKEN}",
         ):
             with self.subTest(url=url):
                 form = self._form(url)

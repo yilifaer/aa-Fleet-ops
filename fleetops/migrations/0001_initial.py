@@ -1,4 +1,4 @@
-# Generated manually for AA FleetOps 0.1.0a1
+# AA FleetOps 0.1.0a1: initial schema
 import decimal
 import django.core.validators
 import django.db.models.deletion

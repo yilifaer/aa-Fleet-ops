@@ -870,6 +870,14 @@ class PageRenderingTests(FleetOpsViewTestCase):
         self.assertNotIn(reverse("fleetops:retry_ping", args=[operation.uuid]), content)
         self.assertNotIn(reverse("fleetops:retry_srp", args=[operation.uuid]), content)
 
+    def test_retry_srp_is_offered_only_until_an_srp_fleet_is_linked(self):
+        linked = f.create_operation(self.fc, srp_reference="9", srp_url="/srp/9/")
+        unlinked = f.create_operation(self.fc)
+        client = self.client_for(self.fc)
+
+        self.assertNotContains(client.get(self.detail_url(linked)), reverse("fleetops:retry_srp", args=[linked.uuid]))
+        self.assertContains(client.get(self.detail_url(unlinked)), reverse("fleetops:retry_srp", args=[unlinked.uuid]))
+
     def test_manual_fleet_detail_renders(self):
         operation = f.create_operation(
             self.fc, status=CLOSED, is_manual=True, send_ping=False, esi_fleet_id=0, tracking_enabled=False
@@ -1232,12 +1240,17 @@ class AttendanceHistoryLimitTests(FleetOpsViewTestCase):
             )
             for operation in operations
         )
-        response = self.client_for(pilot).get(reverse("fleetops:attendance_history_me"))
+        url = reverse("fleetops:attendance_history_me")
+        response = self.client_for(pilot).get(url)
         self.assertEqual(response.status_code, 200)
-        paginated = any(key in response.context for key in ("page", "page_obj", "paginator", "is_paginated"))
-        if not paginated:
-            self.assertEqual(len(response.context["rows"]), total)
-            self.assertEqual(response.context["total"], total)
+        paginator = response.context["page"].paginator
+        self.assertEqual(paginator.count, total)
+        self.assertEqual(response.context["total"], total)
+
+        last = self.client_for(pilot).get(url, {"page": paginator.num_pages})
+        self.assertEqual(last.status_code, 200)
+        # The oldest fleet is the last one created, so it closes the last page.
+        self.assertEqual(list(last.context["rows"])[-1].operation_id, operations[-1].pk)
 
 
 class IncentiveActionTests(FleetOpsViewTestCase):

@@ -31,6 +31,7 @@
     <div class="col-12"><div class="card"><div class="card-header"><strong>Additional Information</strong></div><div class="card-body">{{ form.additional_message }}</div></div></div>
     <div class="col-lg-6"><div class="card h-100"><div class="card-header d-flex justify-content-between"><strong>Ping Preview</strong><button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy="#ping-preview">Copy Ping</button></div><div class="card-body"><pre id="ping-preview" class="preview-box">Complete the form to render a preview.</pre></div></div></div>
     <div class="col-lg-6"><div class="card h-100"><div class="card-header d-flex justify-content-between"><strong>MOTD Preview</strong><button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy="#motd-preview">Copy MOTD</button></div><div class="card-body"><pre id="motd-preview" class="preview-box">Complete the form to render a preview.</pre></div></div></div>
+    <div class="col-12 d-none" id="preview-warnings"><div class="alert alert-warning mb-0" role="status"></div></div>
   </div>
   <div class="d-grid mt-3"><button class="btn btn-primary btn-lg" id="fleet-start-submit" type="submit">SEND PING &amp; START FLEET</button></div>
 </form>
@@ -43,6 +44,7 @@
  const customWrap = document.getElementById('custom-doctrine-wrap');
  const submitButton = document.getElementById('fleet-start-submit');
  const modeRadios = form.querySelectorAll('input[name="operation_mode"]');
+ const previewWarnings = document.getElementById('preview-warnings');
  let previewTimer;
  function updateMode(){
    const selected = form.querySelector('input[name="operation_mode"]:checked');
@@ -57,9 +59,14 @@
    try { const r=await fetch(url); const d=await r.json(); detect.textContent=d.ok ? `✓ Fleet ${d.fleet_id} — role: ${d.role}${d.is_fleet_boss?' — Fleet Boss':''}` : `⚠ ${d.message}`; detect.className=d.ok&&d.is_fleet_boss?'form-text text-success':'form-text text-warning'; }
    catch(e){ detect.textContent='⚠ Fleet detection request failed.'; }
  }
+ function showWarnings(list){
+   const items = (list||[]).map(text=>{const item=document.createElement('div'); item.textContent=text; return item;});
+   previewWarnings.firstElementChild.replaceChildren(...items);
+   previewWarnings.classList.toggle('d-none', !items.length);
+ }
  async function preview(){
    const body = new FormData(form);
-   try { const r=await fetch(form.dataset.previewUrl,{method:'POST',body}); const d=await r.json(); if(d.ok){document.getElementById('ping-preview').textContent=d.ping; document.getElementById('motd-preview').textContent=d.motd;} else if(d.error){document.getElementById('ping-preview').textContent=d.error; document.getElementById('motd-preview').textContent=d.error;} }
+   try { const r=await fetch(form.dataset.previewUrl,{method:'POST',body}); const d=await r.json(); if(d.ok){document.getElementById('ping-preview').textContent=d.ping; document.getElementById('motd-preview').textContent=d.motd; showWarnings(d.warnings);} else if(d.error){document.getElementById('ping-preview').textContent=d.error; document.getElementById('motd-preview').textContent=d.error; showWarnings([]);} }
    catch(e){}
  }
  function queuePreview(){ clearTimeout(previewTimer); previewTimer=setTimeout(preview,350); }

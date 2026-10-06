@@ -480,17 +480,22 @@ class StartFleetSRPTests(IsolatedSRPRegistryMixin, PatchedStartFleetMixin, TestC
     def test_provider_exception_is_captured_and_fleet_still_starts(self):
         provider = self.register(FakeSRPProvider("zeta_srp", error=RuntimeError("SRP database is locked")))
 
-        operation = self.start()
+        with self.assertLogs("fleetops.services.operations", "ERROR") as logs:
+            operation = self.start()
 
         operation.refresh_from_db()
         self.assertEqual(provider.calls, [operation.pk])
         self.assertEqual(operation.status, Status.ACTIVE)
-        self.assertIn("SRP database is locked", operation.srp_error)
+        self.assertEqual(operation.srp_error, "SRP creation failed unexpectedly (RuntimeError).")
         self.assertEqual(operation.srp_reference, "")
         srp_action = action_of(operation, "srp_link")
         self.assertEqual(srp_action.status, ActionStatus.FAILED)
-        self.assertIn("SRP database is locked", srp_action.error_message)
+        self.assertEqual(srp_action.error_message, operation.srp_error)
+        self.assertNotIn("SRP database is locked", srp_action.error_message)
         self.assertEqual(action_of(operation, "tracking_start").status, ActionStatus.SUCCESS)
+        log = "\n".join(logs.output)
+        self.assertIn(f"SRP creation failed for operation {operation.pk} (RuntimeError)", log)
+        self.assertNotIn("SRP database is locked", log)
 
     def test_provider_availability_check_exception_does_not_block_start(self):
         self.register(FakeSRPProvider("zeta_srp", available=RuntimeError("provider import failed")))
@@ -499,7 +504,8 @@ class StartFleetSRPTests(IsolatedSRPRegistryMixin, PatchedStartFleetMixin, TestC
 
         operation.refresh_from_db()
         self.assertEqual(operation.status, Status.ACTIVE)
-        self.assertIn("provider import failed", operation.srp_error)
+        self.assertIn("RuntimeError", operation.srp_error)
+        self.assertNotIn("provider import failed", operation.srp_error)
         self.assertEqual(action_of(operation, "srp_link").status, ActionStatus.FAILED)
 
     def test_created_link_is_stored_on_operation(self):
@@ -616,7 +622,9 @@ class RetrySRPTests(IsolatedSRPRegistryMixin, TestCase):
 
         operation.refresh_from_db()
         self.assertEqual(action.status, ActionStatus.FAILED)
-        self.assertIn("SRP backend timeout", operation.srp_error)
+        self.assertEqual(operation.srp_error, "SRP creation failed unexpectedly (RuntimeError).")
+        self.assertEqual(action.error_message, operation.srp_error)
+        self.assertNotIn("SRP backend timeout", operation.srp_error)
 
     def test_retry_exception_keeps_existing_link(self):
         self.register(FakeSRPProvider("zeta_srp", error=RuntimeError("SRP backend timeout")))

@@ -1,4 +1,4 @@
-# Generated for AA FleetOps 0.1.0a5
+# AA FleetOps 0.1.0a5: attendance-only and manual fleets, attendance multiplier and permissions
 import django.core.validators
 from django.db import migrations, models
 

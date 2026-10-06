@@ -458,8 +458,9 @@ class StartFleetFullModeTests(StartFleetTestBase):
 
         operation.refresh_from_db()
         self.assertEqual(operation.status, Status.ACTIVE)
-        self.assertEqual(operation.srp_error, "SRP backend down")
+        self.assertEqual(operation.srp_error, "SRP creation failed unexpectedly (RuntimeError).")
         self.assertEqual(action(operation, "srp_link").status, ActionStatus.FAILED)
+        self.assertEqual(action(operation, "srp_link").error_message, operation.srp_error)
 
     def test_srp_without_available_provider_is_skipped(self):
         with mock.patch.dict(srp_module._PROVIDERS, {}, clear=True), mock.patch(
@@ -1209,13 +1210,19 @@ class TrackOperationTaskTests(TrackingTestBase):
         self.assertEqual(self.operation.fleet_missing_count, 0)
 
     def test_unexpected_error_is_recorded_without_ending_the_fleet(self):
-        with mock.patch("fleetops.tasks.sync_operation", side_effect=ValueError("bad payload")):
+        with mock.patch("fleetops.tasks.sync_operation", side_effect=ValueError("bad payload")), self.assertLogs(
+            "fleetops.tasks", "ERROR"
+        ) as logs:
             self.assertEqual(track_operation(self.operation.pk), "error")
 
         self.operation.refresh_from_db()
         self.assertEqual(self.operation.status, Status.ACTIVE)
-        self.assertEqual(self.operation.last_error, "bad payload")
+        self.assertEqual(self.operation.last_error, "Fleet tracking failed unexpectedly (ValueError).")
         self.assertIsNone(cache.get(self.lock_key()))
+        log = "\n".join(logs.output)
+        self.assertIn(f"Fleet tracking failed for operation {self.operation.pk} (ValueError)", log)
+        self.assertIn("Traceback", log)
+        self.assertNotIn("bad payload", log)
 
     def test_read_only_token_from_another_app_is_enough_for_tracking(self):
         set_scopes(self.token, [FLEET_READ_SCOPE, "esi-location.read_location.v1"])

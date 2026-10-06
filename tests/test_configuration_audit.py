@@ -738,15 +738,27 @@ class SettingsFormTests(TestCase):
         self.assertFalse(obj.incentive_enabled)
 
     def test_huge_retention_value_does_not_break_history(self):
-        self._post(data_retention_days="1000000")
+        response = self._post(data_retention_days="1000000")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("data_retention_days", response.context["form"].errors)
+        self.assertEqual(FleetOpsSettings.get_solo().data_retention_days, 365)
+
+        # A value saved before the upper limit existed keeps the whole history.
+        FleetOpsSettings.objects.filter(pk=self.settings.pk).update(data_retention_days=1_000_000)
         member = f.create_user(perms=f.MEMBER_PERMS)
+        old_fleet = f.create_operation(
+            self.admin, status=FleetOperation.Status.CLOSED, started_at=timezone.now() - timedelta(days=5000)
+        )
+        record = f.add_attendance(old_fleet, member)
         client = Client(raise_request_exception=False)
         client.force_login(member)
 
         response = client.get(reverse("fleetops:attendance_history_me"))
 
         self.assertEqual(response.status_code, 200)
-        prune_history(dry_run=True)
+        self.assertEqual(response.context["retention_days"], 1_000_000)
+        self.assertEqual(list(response.context["rows"]), [record])
+        self.assertEqual(prune_history(dry_run=True)["old_attendance"], 0)
 
     def test_form_level_validation_matches_view(self):
         form = FleetOpsSettingsForm(settings_payload(data_retention_days="100"), instance=FleetOpsSettings.get_solo())
@@ -968,6 +980,41 @@ class MessageTemplateValidationTests(TestCase):
         ping, _ = render_operation_messages(operation)
 
         self.assertEqual(ping, "NEW DEFAULT Amarr")
+
+    def test_new_default_audits_the_template_it_replaced(self):
+        old_default = MessageTemplate.objects.get(name="Default Ping")
+
+        response = self.client.post(
+            self.url,
+            {"name": "Short Ping", "template_type": "ping", "content": "{{ fc }}", "is_default": "on", "is_active": "on"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        old_default.refresh_from_db()
+        self.assertFalse(old_default.is_default)
+        entries = audit_entries("configuration.update", old_default)
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0].actor, self.admin)
+        self.assertEqual(entries[0].old_value, {**entries[0].new_value, "is_default": True})
+        self.assertFalse(entries[0].new_value["is_default"])
+        self.assertEqual(entries[0].new_value["name"], "Default Ping")
+
+    def test_inactive_template_cannot_replace_the_live_default(self):
+        live = MessageTemplate.objects.get(name="Default Ping")
+        draft = MessageTemplate.objects.create(name="Draft", template_type="ping", content="draft", is_active=False)
+
+        response = self.client.post(
+            reverse("fleetops:configuration_edit", args=["templates", draft.pk]),
+            {"name": "Draft", "template_type": "ping", "content": "draft", "is_default": "on"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["form"].errors["is_default"], ["A default template must be active."])
+        live.refresh_from_db()
+        draft.refresh_from_db()
+        self.assertTrue(live.is_default)
+        self.assertFalse(draft.is_default)
+        self.assertFalse(AuditLog.objects.exists())
 
     def test_blank_content_is_rejected(self):
         response = self.client.post(self.url, {"name": "Empty", "template_type": "ping", "content": ""})

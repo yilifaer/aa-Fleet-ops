@@ -1108,6 +1108,36 @@ class AdminTests(TestCase):
         audit_list = self.client.get(self._url(AuditLog, "changelist")).content.decode()
         self.assertNotIn("another-hidden-token", audit_list)
 
+    def test_new_default_template_audits_the_template_it_replaced(self):
+        old_default = MessageTemplate.objects.get(name="Default Ping")
+
+        response = self.client.post(
+            self._url(MessageTemplate, "add"),
+            {"name": "Admin Ping", "template_type": "ping", "content": "{{ fc }}", "is_default": "on", "is_active": "on"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        old_default.refresh_from_db()
+        self.assertFalse(old_default.is_default)
+        entry = AuditLog.objects.get(
+            action="configuration.update", object_type="MessageTemplate", object_id=str(old_default.pk)
+        )
+        self.assertEqual(entry.actor, self.superuser)
+        self.assertEqual(entry.old_value, {**entry.new_value, "is_default": True})
+        self.assertFalse(entry.new_value["is_default"])
+
+    def test_admin_refuses_an_inactive_default_template(self):
+        response = self.client.post(
+            self._url(MessageTemplate, "add"),
+            {"name": "Draft Ping", "template_type": "ping", "content": "{{ fc }}", "is_default": "on"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "A default template must be active.")
+        self.assertFalse(MessageTemplate.objects.filter(name="Draft Ping").exists())
+        self.assertTrue(MessageTemplate.objects.get(name="Default Ping").is_default)
+        self.assertFalse(AuditLog.objects.filter(object_type="MessageTemplate").exists())
+
     def test_list_editable_change_is_audited(self):
         url = self._url(FleetType, "changelist")
         response = self.client.post(

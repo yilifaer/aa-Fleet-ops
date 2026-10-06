@@ -41,7 +41,7 @@ from fleetops.providers.esi import (
     set_fleet_motd,
 )
 from fleetops.services.operations import end_fleet, retry_motd, start_fleet
-from fleetops.tasks import schedule_active_fleet_tracking, track_operation
+from fleetops.tasks import POLL_SLACK_SECONDS, schedule_active_fleet_tracking, track_operation
 
 from . import factories as f
 
@@ -428,7 +428,8 @@ class FailedPollScheduleTests(FakeESIMixin, TestCase):
                     track_operation(self.operation.pk)
 
                 self.assertNotIn(self.operation.pk, self.queued_at(self.start + timedelta(seconds=60)))
-                self.assertNotIn(self.operation.pk, self.queued_at(self.start + timedelta(seconds=299)))
+                early = timedelta(seconds=300 - POLL_SLACK_SECONDS - 1)
+                self.assertNotIn(self.operation.pk, self.queued_at(self.start + early))
                 self.assertIn(self.operation.pk, self.queued_at(self.start + timedelta(seconds=300)))
 
     def test_auto_end_waits_for_the_configured_number_of_intervals(self):
@@ -461,8 +462,63 @@ class FailedPollScheduleTests(FakeESIMixin, TestCase):
         with frozen_now(self.start):
             self.assertEqual(track_operation(self.operation.pk), 2)
 
-        self.assertNotIn(self.operation.pk, self.queued_at(self.start + timedelta(seconds=119)))
+        early = timedelta(seconds=120 - POLL_SLACK_SECONDS - 1)
+        self.assertNotIn(self.operation.pk, self.queued_at(self.start + early))
         self.assertIn(self.operation.pk, self.queued_at(self.start + timedelta(seconds=120)))
+
+    def run_beats(self, minutes, first=0, latency=timedelta(seconds=1)):
+        """Run one scheduler beat per minute, each a little after the minute, and return the poll times.
+
+        A queued poll runs ``latency`` after its beat, like a Celery worker picking it up.
+        """
+        polls = []
+
+        def run_later(operation_id):
+            moment = timezone.now() + latency
+            polls.append(moment)
+            with frozen_now(moment):
+                track_operation(operation_id)
+
+        with mock.patch.object(track_operation, "delay", side_effect=run_later):
+            for minute in range(first, first + minutes):
+                with frozen_now(self.start + timedelta(minutes=minute, seconds=0.2)):
+                    schedule_active_fleet_tracking()
+        return polls
+
+    def polls_at(self, *seconds):
+        return [self.start + timedelta(seconds=value) for value in seconds]
+
+    def test_late_worker_still_polls_every_interval(self):
+        for interval, minutes, expected in (
+            (60, 5, (1.2, 61.2, 121.2, 181.2, 241.2)),
+            (300, 11, (1.2, 301.2, 601.2)),
+        ):
+            with self.subTest(interval=interval):
+                cache.clear()
+                FleetOperation.objects.filter(pk=self.operation.pk).update(
+                    last_esi_update=self.start - timedelta(minutes=10)
+                )
+                f.settings(tracking_interval=interval)
+
+                self.assertEqual(self.run_beats(minutes), self.polls_at(*expected))
+
+    def test_late_worker_paces_failed_polls_the_same_way(self):
+        f.settings(tracking_interval=60, auto_end_enabled=False)
+        self.esi.members[FLEET_ID] = http_error(502)
+
+        self.assertEqual(self.run_beats(4), self.polls_at(1.2, 61.2, 121.2, 181.2))
+
+    def test_auto_end_with_a_late_worker_takes_the_configured_number_of_intervals(self):
+        f.settings(tracking_interval=300, auto_end_enabled=True, auto_end_missing_count=3)
+        self.esi.members[FLEET_ID] = http_error(404)
+
+        self.assertEqual(self.run_beats(10), self.polls_at(1.2, 301.2))
+        self.operation.refresh_from_db()
+        self.assertEqual(self.operation.status, Status.ACTIVE)
+
+        self.assertEqual(self.run_beats(1, first=10), self.polls_at(601.2))
+        self.operation.refresh_from_db()
+        self.assertEqual(self.operation.status, Status.CLOSED)
 
     def test_empty_cache_falls_back_to_last_successful_sync(self):
         f.settings(tracking_interval=300)

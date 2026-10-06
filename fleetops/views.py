@@ -39,6 +39,8 @@ from fleetops.forms import (
     StartFleetForm,
 )
 from fleetops.models import (
+    MAX_DATABASE_ID,
+    MIN_RETENTION_DAYS,
     AttendanceRecord,
     AuditLog,
     ChannelPreset,
@@ -62,17 +64,20 @@ from fleetops.services.attendance import (
     set_operation_attendance_multiplier,
 )
 from fleetops.services.dashboard import dashboard_metrics
+from fleetops.services.errors import log_failure
 from fleetops.services.fleet_controls import kick_all_pods, pod_members
 from fleetops.services.identity import get_owned_character
 from fleetops.services.history import current_member_user_ids
 from fleetops.services.incentives import (
+    INCENTIVES_DISABLED_MESSAGE,
+    WAIVER_LOCKED_MESSAGE,
     IncentiveError,
     finalize_period,
     rebuild_period,
     set_waiver,
     unlock_period,
 )
-from fleetops.services.messages import render_operation_messages
+from fleetops.services.messages import render_messages
 from fleetops.services.operations import create_manual_fleet, end_fleet, retry_motd, retry_ping, retry_srp, start_fleet
 from fleetops.services.roles import add_role_assignment, delete_role_assignment
 from fleetops.services.routing import proximity_rows
@@ -90,7 +95,6 @@ logger = logging.getLogger(__name__)
 ATTENDANCE_PROMPT_AFTER = timedelta(minutes=90)
 HISTORY_PAGE_SIZE = 200
 AUDIT_PAGE_SIZE = 50
-MAX_DATABASE_ID = 2**63 - 1
 
 
 def _render(request, template_name, context=None):
@@ -208,7 +212,7 @@ def _incentive_redirect(period):
 def _incentives_enabled(request):
     if FleetOpsSettings.get_solo().incentive_enabled:
         return True
-    messages.info(request, "FC incentives are disabled in the FleetOps settings.")
+    messages.info(request, INCENTIVES_DISABLED_MESSAGE)
     return False
 
 
@@ -264,8 +268,8 @@ def start_fleet_view(request):
                 )
             except (FleetESIError, PermissionError) as exc:
                 form.add_error(None, str(exc))
-            except Exception:
-                logger.exception("Fleet start failed")
+            except Exception as exc:
+                log_failure(logger, "Fleet start", exc)
                 form.add_error(None, "Fleet start failed because of an unexpected error. Please try again or contact an administrator.")
             else:
                 messages.success(
@@ -315,14 +319,15 @@ def preview_fleet(request):
         additional_message=data.get("additional_message", ""),
     )
     try:
-        ping, motd = render_operation_messages(op)
-    except Exception:
-        logger.exception("FleetOps message preview failed")
+        rendered = render_messages(op)
+    except Exception as exc:
+        log_failure(logger, "Message preview", exc)
         return JsonResponse(
             {"ok": False, "error": "The ping or MOTD template could not be rendered. Check the message templates."},
             status=400,
         )
-    return JsonResponse({"ok": True, "ping": ping, "motd": motd})
+    # Template problems only name the template and the error class, so they are safe to show.
+    return JsonResponse({"ok": True, "ping": rendered.ping, "motd": rendered.motd, "warnings": rendered.errors})
 
 
 @permission_required("fleetops.start_fleet", raise_exception=True)
@@ -620,8 +625,11 @@ def manual_fleet_view(request):
         if form.is_valid():
             try:
                 operation = create_manual_fleet(user=request.user, cleaned_data=form.cleaned_data)
-            except Exception as exc:
+            except ValueError as exc:
                 form.add_error(None, str(exc))
+            except Exception as exc:
+                log_failure(logger, "Manual fleet creation", exc)
+                form.add_error(None, "The manual fleet could not be created because of an unexpected error.")
             else:
                 messages.success(request, "Manual fleet record created. Add attendance from the Attendance tab or Manual Attendance page.")
                 return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
@@ -849,7 +857,7 @@ def incentive_waiver(request, pk, user_id):
     if not _incentives_enabled(request):
         return redirect("fleetops:dashboard")
     if period.status == IncentivePeriod.Status.FINALIZED:
-        messages.error(request, "Unlock the finalized period before changing waivers.")
+        messages.error(request, WAIVER_LOCKED_MESSAGE)
         return _incentive_redirect(period)
     old = row.waived
     new = request.POST.get("waived") == "1"
@@ -972,7 +980,7 @@ def _history_context(request, queryset, title, scope_label, retention_days):
 
 @permission_required("fleetops.basic_access", raise_exception=True)
 def attendance_history_me(request):
-    retention_days = max(365, FleetOpsSettings.get_solo().data_retention_days)
+    retention_days = max(MIN_RETENTION_DAYS, FleetOpsSettings.get_solo().data_retention_days)
     rows = attendance_history_queryset(user=request.user, days=retention_days)
     return _render(
         request,
@@ -986,7 +994,7 @@ def attendance_history_corporation(request):
     main = getattr(getattr(request.user, "profile", None), "main_character", None)
     if not main or not main.corporation_id:
         raise Http404
-    retention_days = max(365, FleetOpsSettings.get_solo().data_retention_days)
+    retention_days = max(MIN_RETENTION_DAYS, FleetOpsSettings.get_solo().data_retention_days)
     rows = attendance_history_queryset(corporation_id=main.corporation_id, days=retention_days)
     return _render(
         request,
@@ -997,7 +1005,7 @@ def attendance_history_corporation(request):
 
 @permission_required("fleetops.view_all_stats", raise_exception=True)
 def attendance_history_alliance(request):
-    retention_days = max(365, FleetOpsSettings.get_solo().data_retention_days)
+    retention_days = max(MIN_RETENTION_DAYS, FleetOpsSettings.get_solo().data_retention_days)
     rows = attendance_history_queryset(alliance=True, days=retention_days)
     return _render(
         request,
@@ -1252,6 +1260,17 @@ def configuration_edit(request, section, pk=None):
                 _configuration_snapshot(saved),
                 reason="Changed from FleetOps front-end administration",
             )
+            # A new default template takes the flag from the previous one.
+            for demoted in getattr(saved, "demoted_defaults", ()):
+                new = _configuration_snapshot(demoted)
+                audit(
+                    request.user,
+                    "configuration.update",
+                    demoted,
+                    {**new, "is_default": True},
+                    new,
+                    reason="Default template replaced from FleetOps front-end administration",
+                )
             messages.success(request, f"{config['title']} saved.")
             return redirect("fleetops:configuration_list", section=section)
     else:

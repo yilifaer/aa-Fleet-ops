@@ -10,13 +10,17 @@ from fleetops.services.statistics import month_bounds
 from fleetops.calculations import calculate_payouts
 
 
+INCENTIVES_DISABLED_MESSAGE = "FC incentives are disabled in the FleetOps settings."
+WAIVER_LOCKED_MESSAGE = "Finalized periods must be unlocked before waiver changes."
+
+
 class IncentiveError(ValueError):
     """An incentive action that is not allowed in the current state."""
 
 
 def _ensure_enabled():
     if not FleetOpsSettings.get_solo().incentive_enabled:
-        raise IncentiveError("FC incentives are disabled in the FleetOps settings.")
+        raise IncentiveError(INCENTIVES_DISABLED_MESSAGE)
 
 
 def rebuild_period(period: IncentivePeriod):
@@ -93,6 +97,7 @@ def rebuild_period(period: IncentivePeriod):
 
 
 def finalize_period(period: IncentivePeriod, user):
+    _ensure_enabled()
     if period.status != IncentivePeriod.Status.REVIEW:
         raise IncentiveError("Period must be in review before finalizing.")
     period.status = IncentivePeriod.Status.FINALIZED
@@ -103,6 +108,7 @@ def finalize_period(period: IncentivePeriod, user):
 
 
 def unlock_period(period: IncentivePeriod):
+    _ensure_enabled()
     if period.status != IncentivePeriod.Status.FINALIZED:
         raise IncentiveError("Only finalized periods can be unlocked.")
     period.status = IncentivePeriod.Status.REVIEW
@@ -120,7 +126,7 @@ def set_waiver(period: IncentivePeriod, user_id: int, waived: bool):
     """
     _ensure_enabled()
     if period.status == IncentivePeriod.Status.FINALIZED:
-        raise IncentiveError("Finalized periods must be unlocked before waiver changes.")
+        raise IncentiveError(WAIVER_LOCKED_MESSAGE)
     row = MonthlyFCStatistic.objects.filter(period=period, fc_user_id=user_id).first()
     if row is None:
         raise IncentiveError("FC statistic does not exist. Recalculate the period first.")

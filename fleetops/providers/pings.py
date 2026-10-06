@@ -1,7 +1,12 @@
+import re
 from dataclasses import dataclass
-from urllib.parse import urlsplit
 
 import requests
+
+from fleetops.models import DISCORD_WEBHOOK_URL_RE
+
+# The secret token is the path segment right after the numeric webhook id.
+WEBHOOK_TOKEN_RE = re.compile(r"/webhooks/\d+/([^/?#\s]+)")
 
 
 @dataclass(slots=True)
@@ -12,17 +17,22 @@ class PingResult:
 
 
 def _redact(text: str, webhook_url: str) -> str:
-    # The last path segment of a Discord webhook URL is its secret token.
-    token = urlsplit(webhook_url).path.rstrip("/").rpartition("/")[2]
-    for secret in (webhook_url, token):
+    match = WEBHOOK_TOKEN_RE.search(webhook_url)
+    for secret in (webhook_url, match.group(1) if match else ""):
         if secret:
             text = text.replace(secret, "***")
     return text
 
 
 def send_discord_webhook(webhook_url: str, content: str) -> PingResult:
+    webhook_url = (webhook_url or "").strip()
     if not webhook_url:
         return PingResult(False, message="No Discord webhook is configured for this ping target.")
+    # Rows saved before the URL was validated may point anywhere; never send to them.
+    if not DISCORD_WEBHOOK_URL_RE.fullmatch(webhook_url):
+        return PingResult(
+            False, message="The configured webhook URL is not a Discord webhook URL, so nothing was sent."
+        )
     try:
         response = requests.post(webhook_url, json={"content": content}, timeout=15, allow_redirects=False)
     except (requests.exceptions.MissingSchema, requests.exceptions.InvalidSchema, requests.exceptions.InvalidURL):

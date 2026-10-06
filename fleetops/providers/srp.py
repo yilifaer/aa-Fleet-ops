@@ -59,7 +59,7 @@ def _reverse_first(candidates, args=None):
 class AllianceAuthBuiltinSRPProvider:
     """Best-effort adapter for Alliance Auth's built-in ``allianceauth.srp``.
 
-    The core SRP app has kept the SrpFleetMain concept for many AA generations.
+    The core SRP app has kept the SrpFleetMain concept across many AA releases.
     We intentionally introspect fields and URL names instead of importing forms
     or views, reducing coupling to one exact AA patch release.
     """

@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from django.db import IntegrityError, transaction
@@ -9,9 +10,14 @@ from fleetops.providers.pings import send_discord_webhook
 from fleetops.providers.srp import create_srp_link
 from fleetops.services.audit import audit
 from fleetops.services.attendance import set_operation_attendance_multiplier
+from fleetops.services.errors import report_failure
 from fleetops.services.identity import get_owned_character
 from fleetops.services.messages import render_messages
 from fleetops.services.tracking import sync_operation
+
+logger = logging.getLogger(__name__)
+
+NOT_RENDERED = "Not sent because the fleet messages could not be rendered."
 
 
 def set_action(operation, action, success, error=""):
@@ -25,13 +31,6 @@ def set_action(operation, action, success, error=""):
     obj.error_message = str(error or "")[:4000]
     obj.save()
     return obj
-
-
-def _failure_message(step, exc):
-    # FleetESIError messages are written for users; other exception text may echo URLs or tokens.
-    if isinstance(exc, FleetESIError):
-        return str(exc)
-    return f"{step} failed unexpectedly ({type(exc).__name__})."
 
 
 def _skipped_message(operation, step):
@@ -56,8 +55,43 @@ def _send_ping(operation):
         return set_action(
             operation, "discord_ping", False, "No active webhook configured. Ping remains available for manual copy."
         )
+    if not operation.ping_text:
+        return set_action(operation, "discord_ping", False, "Not sent because the ping text is empty.")
     result = send_discord_webhook(webhook_url, operation.ping_text)
     return set_action(operation, "discord_ping", result.success, result.message)
+
+
+def _update_motd(operation, user, character_id):
+    # An empty MOTD would wipe the one the FC already set in game.
+    if not operation.motd_text:
+        return set_action(operation, "motd_update", False, "Not sent because the MOTD text is empty.")
+    try:
+        set_fleet_motd(user, character_id, operation.esi_fleet_id, operation.motd_text)
+    except Exception as exc:
+        return set_action(operation, "motd_update", False, report_failure(logger, "MOTD update", exc, operation))
+    return set_action(operation, "motd_update", True)
+
+
+def _render_missing_text(operation, field):
+    """Render ``ping_text`` or ``motd_text`` again when it is empty, e.g. after a render failure at start.
+
+    Returns False when the messages still cannot be rendered.
+    """
+    if getattr(operation, field):
+        return True
+    try:
+        with transaction.atomic():
+            rendered = render_messages(operation)
+            setattr(operation, field, rendered.ping if field == "ping_text" else rendered.motd)
+            operation.save(update_fields=[field, "updated_at"])
+    except Exception as exc:
+        set_action(operation, "message_render", False, report_failure(logger, "Message rendering", exc, operation))
+        return False
+    if rendered.errors:
+        set_action(operation, "message_render", False, " ".join(rendered.errors))
+    elif operation.actions.filter(action="message_render").exists():
+        set_action(operation, "message_render", True)
+    return True
 
 
 def _apply_srp_result(operation, srp):
@@ -146,32 +180,26 @@ def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None
         if rendered.errors:
             set_action(operation, "message_render", False, " ".join(rendered.errors))
     except Exception as exc:
-        set_action(operation, "message_render", False, _failure_message("Message rendering", exc))
+        set_action(operation, "message_render", False, report_failure(logger, "Message rendering", exc, operation))
 
     if not full_mode:
         set_action(operation, "discord_ping", None, _skipped_message(operation, "Discord ping"))
         set_action(operation, "motd_update", None, _skipped_message(operation, "MOTD update"))
     elif not messages_ready:
-        not_sent = "Not sent because the fleet messages could not be rendered."
-        set_action(operation, "discord_ping", False, not_sent)
-        set_action(operation, "motd_update", False, not_sent)
+        set_action(operation, "discord_ping", False, NOT_RENDERED)
+        set_action(operation, "motd_update", False, NOT_RENDERED)
     else:
         try:
             _send_ping(operation)
         except Exception as exc:
-            set_action(operation, "discord_ping", False, _failure_message("Discord ping", exc))
-
-        try:
-            set_fleet_motd(user, char_id, operation.esi_fleet_id, operation.motd_text)
-            set_action(operation, "motd_update", True)
-        except Exception as exc:
-            set_action(operation, "motd_update", False, _failure_message("MOTD update", exc))
+            set_action(operation, "discord_ping", False, report_failure(logger, "Discord ping", exc, operation))
+        _update_motd(operation, user, char_id)
 
     try:
         sync_operation(operation)
         set_action(operation, "tracking_start", True)
     except Exception as exc:
-        operation.last_error = _failure_message("Fleet tracking", exc)[:4000]
+        operation.last_error = report_failure(logger, "Fleet tracking", exc, operation)[:4000]
         set_action(operation, "tracking_start", False, operation.last_error)
 
     if not full_mode:
@@ -187,8 +215,8 @@ def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None
             else:
                 set_action(operation, "srp_link", None, "Automatic SRP link creation is disabled.")
         except Exception as exc:
-            operation.srp_error = str(exc)[:4000]
-            set_action(operation, "srp_link", False, exc)
+            operation.srp_error = report_failure(logger, "SRP creation", exc, operation)[:4000]
+            set_action(operation, "srp_link", False, operation.srp_error)
 
     operation.status = FleetOperation.Status.ACTIVE
     operation.save(update_fields=["status", "last_error", "srp_provider", "srp_reference", "srp_url", "srp_error", "updated_at"])
@@ -198,17 +226,20 @@ def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None
 def retry_ping(operation):
     if not operation.send_ping:
         return _keep_skipped(operation, "discord_ping", _skipped_message(operation, "Discord ping"))
-    return _send_ping(operation)
+    if not _render_missing_text(operation, "ping_text"):
+        return set_action(operation, "discord_ping", False, NOT_RENDERED)
+    try:
+        return _send_ping(operation)
+    except Exception as exc:
+        return set_action(operation, "discord_ping", False, report_failure(logger, "Discord ping", exc, operation))
 
 
 def retry_motd(operation):
     if not operation.send_ping:
         return _keep_skipped(operation, "motd_update", _skipped_message(operation, "MOTD update"))
-    try:
-        set_fleet_motd(operation.fc_user, operation.fc_character_id, operation.esi_fleet_id, operation.motd_text)
-        return set_action(operation, "motd_update", True)
-    except Exception as exc:
-        return set_action(operation, "motd_update", False, _failure_message("MOTD update", exc))
+    if not _render_missing_text(operation, "motd_text"):
+        return set_action(operation, "motd_update", False, NOT_RENDERED)
+    return _update_motd(operation, operation.fc_user, operation.fc_character_id)
 
 
 def retry_srp(operation):
@@ -228,9 +259,9 @@ def retry_srp(operation):
             operation.save(update_fields=["srp_provider", "srp_reference", "srp_url", "srp_error", "updated_at"])
             return set_action(operation, "srp_link", True if srp.created else None, srp.message)
     except Exception as exc:
-        operation.srp_error = str(exc)[:4000]
+        operation.srp_error = report_failure(logger, "SRP creation", exc, operation)[:4000]
         operation.save(update_fields=["srp_error", "updated_at"])
-        return set_action(operation, "srp_link", False, exc)
+        return set_action(operation, "srp_link", False, operation.srp_error)
 
 
 def end_fleet(operation, actor=None, automatic=False, attendance_multiplier=None):
@@ -241,8 +272,9 @@ def end_fleet(operation, actor=None, automatic=False, attendance_multiplier=None
     operation.save(update_fields=["status", "updated_at"])
     try:
         sync_operation(operation)
-    except Exception:
-        pass
+    except Exception as exc:
+        # Best effort: a fleet that is already gone must still close.
+        report_failure(logger, "Final fleet sync", exc, operation)
     if attendance_multiplier is None:
         attendance_multiplier = operation.attendance_multiplier or 1
     set_operation_attendance_multiplier(operation, attendance_multiplier, actor=actor)
