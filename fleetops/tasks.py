@@ -7,20 +7,32 @@ from fleetops.providers.esi import FleetESIError
 from fleetops.services.operations import end_fleet
 from fleetops.services.tracking import sync_operation
 
+# Only a successful sync sets last_esi_update, so the scheduler also remembers each poll attempt.
+POLL_ATTEMPT_TIMEOUT = 24 * 60 * 60
+
+
+def _poll_attempt_key(operation_id):
+    return f"fleetops:track:attempt:{operation_id}"
+
 
 @shared_task
 def schedule_active_fleet_tracking():
     """Fan out one task per active fleet when its configured interval is due."""
     settings = FleetOpsSettings.get_solo()
     now = timezone.now()
-    operations = FleetOperation.objects.filter(
-        status=FleetOperation.Status.ACTIVE,
-        tracking_enabled=True,
-    ).only("pk", "last_esi_update")
+    operations = list(
+        FleetOperation.objects.filter(
+            status=FleetOperation.Status.ACTIVE,
+            tracking_enabled=True,
+        ).only("pk", "last_esi_update")
+    )
+    attempts = cache.get_many([_poll_attempt_key(operation.pk) for operation in operations])
     queued = 0
-    for operation in operations.iterator():
-        if operation.last_esi_update is not None:
-            age = (now - operation.last_esi_update).total_seconds()
+    for operation in operations:
+        polls = [operation.last_esi_update, attempts.get(_poll_attempt_key(operation.pk))]
+        last_poll = max((poll for poll in polls if poll is not None), default=None)
+        if last_poll is not None:
+            age = (now - last_poll).total_seconds()
             if age < settings.tracking_interval:
                 continue
         track_operation.delay(operation.pk)
@@ -36,9 +48,12 @@ def track_operation(self, operation_id):
     if not cache.add(lock_key, "1", timeout=lock_timeout):
         return "already-running"
     try:
-        operation = FleetOperation.objects.select_related("fc_user", "fleet_type").get(pk=operation_id)
+        operation = FleetOperation.objects.select_related("fc_user", "fleet_type").filter(pk=operation_id).first()
+        if operation is None:
+            return "missing"
         if operation.status != FleetOperation.Status.ACTIVE or not operation.tracking_enabled:
             return "inactive"
+        cache.set(_poll_attempt_key(operation.pk), timezone.now(), timeout=POLL_ATTEMPT_TIMEOUT)
         try:
             count = sync_operation(operation)
             return count

@@ -25,7 +25,7 @@ classifiers = [
 ]
 dependencies = [
   "allianceauth>=5.2,<6",
-  "django-esi>=9,<10",
+  "django-esi>=9,<11",
   "requests>=2.31",
 ]
 

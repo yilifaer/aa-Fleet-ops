@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
+from esi.exceptions import HTTPNotModified
 from esi.models import Token
 from esi.openapi_clients import ESIClientProvider
 
@@ -49,10 +50,19 @@ def _status_code(exc: Exception) -> int | None:
     return value if isinstance(value, int) else None
 
 
-def _result(operation):
-    """Normalize django-esi OpenAPI operation result handling."""
-    # Keep django-esi cache/ETag defaults enabled; fleet endpoints refresh at CCP's cache cadence.
-    return operation.result()
+def _read(operation):
+    """Return the body of a GET operation, also when it has not changed since the last read."""
+    # With ETags enabled django-esi raises HTTPNotModified for an unchanged resource instead
+    # of returning it. Fleet state is needed on every read, so only its response cache is used.
+    try:
+        return operation.result(use_etag=False)
+    except HTTPNotModified:
+        return operation.result(use_etag=False, force_refresh=True)
+
+
+def _write(operation):
+    """Send a PUT/DELETE operation to ESI; a write is never answered from the cache."""
+    return operation.result(use_etag=False, use_cache=False, store_cache=False)
 
 
 def as_dict(value: Any) -> dict:
@@ -105,7 +115,7 @@ def detect_character_fleet(user, character_id: int) -> FleetDetectionResult:
     token = get_token(user, character_id, write=False)
     try:
         payload = as_dict(
-            _result(
+            _read(
                 esi.client.Fleets.GetCharactersCharacterIdFleet(
                     character_id=character_id,
                     token=token,
@@ -134,7 +144,7 @@ def detect_character_fleet(user, character_id: int) -> FleetDetectionResult:
 def get_fleet_info(user, character_id: int, fleet_id: int) -> dict:
     token = get_token(user, character_id, write=False)
     try:
-        return as_dict(_result(esi.client.Fleets.GetFleetsFleetId(fleet_id=fleet_id, token=token)))
+        return as_dict(_read(esi.client.Fleets.GetFleetsFleetId(fleet_id=fleet_id, token=token)))
     except Exception as exc:
         status = _status_code(exc)
         if status == 404:
@@ -145,7 +155,7 @@ def get_fleet_info(user, character_id: int, fleet_id: int) -> dict:
 def get_fleet_members(user, character_id: int, fleet_id: int) -> list[dict]:
     token = get_token(user, character_id, write=False)
     try:
-        result = _result(esi.client.Fleets.GetFleetsFleetIdMembers(fleet_id=fleet_id, token=token))
+        result = _read(esi.client.Fleets.GetFleetsFleetIdMembers(fleet_id=fleet_id, token=token))
         return [as_dict(item) for item in (result or [])]
     except Exception as exc:
         status = _status_code(exc)
@@ -161,17 +171,8 @@ def set_fleet_motd(user, character_id: int, fleet_id: int, motd: str) -> None:
         "motd": motd,
         "is_free_move": bool(info.get("is_free_move", False)),
     }
-    operation_factory = esi.client.Fleets.PutFleetsFleetId
     try:
-        try:
-            # Current ESI OpenAPI names the request body `new_settings`.
-            operation = operation_factory(fleet_id=fleet_id, token=token, new_settings=body)
-        except TypeError:
-            # Compatibility fallback for generated clients that expose a generic body argument.
-            operation = operation_factory(fleet_id=fleet_id, token=token, body=body)
-        _result(operation)
-    except FleetESIError:
-        raise
+        _write(esi.client.Fleets.PutFleetsFleetId(fleet_id=fleet_id, token=token, body=body))
     except Exception as exc:
         status = _status_code(exc)
         if status in (401, 403):
@@ -183,7 +184,7 @@ def kick_fleet_member(user, character_id: int, fleet_id: int, member_id: int) ->
     """Kick one member from an EVE fleet via the fleet boss write token."""
     token = get_token(user, character_id, write=True)
     try:
-        _result(
+        _write(
             esi.client.Fleets.DeleteFleetsFleetIdMembersMemberId(
                 fleet_id=fleet_id,
                 member_id=member_id,
