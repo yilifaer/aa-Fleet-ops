@@ -133,6 +133,17 @@ class BackgroundEndTests(EndTestBase):
         entry = AuditLog.objects.get(action="fleet.end")
         self.assertEqual(entry.actor, self.fc)
         self.assertEqual(entry.reason, "Ended manually")
+        # The status before the end request, not the passing Ending state.
+        self.assertEqual(entry.old_value, {"status": Status.ACTIVE, "tracking_enabled": True})
+
+    def test_end_of_a_requested_start_records_the_status_it_had(self):
+        FleetOperation.objects.filter(pk=self.operation.pk).update(status=Status.STARTING)
+        with mock.patch("fleetops.tasks.finish_fleet_end.delay"):
+            request_fleet_end(self.refresh(), actor=self.fc)
+
+        finish_fleet_end(self.operation.pk)
+
+        self.assertEqual(AuditLog.objects.get(action="fleet.end").old_value["status"], Status.STARTING)
 
     def test_double_submit_ends_the_fleet_once(self):
         with mock.patch("fleetops.tasks.finish_fleet_end.delay") as delay:

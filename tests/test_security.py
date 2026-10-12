@@ -40,7 +40,7 @@ from fleetops.models import (
     MonthlyFCStatistic,
     OperationAction,
     OperationRoleAssignment,
-    PingTarget,
+    PingRole,
 )
 from fleetops.providers.esi import FleetDetectionResult, FleetESIError, detect_character_fleet
 from fleetops.providers.srp import SRPLinkResult
@@ -123,7 +123,7 @@ class StartFleetPatchesMixin:
     """Replaces every external call made while starting or managing a fleet."""
 
     def patch_externals(self, *, role="fleet_commander", fleet_id=FLEET_ID):
-        def detect(user, character_id):
+        def detect(user, character_id, fresh=False):
             # The selected character is the fleet boss, as ESI reports it in fleet_boss_id.
             return FleetDetectionResult(fleet_id=fleet_id, role=role, fleet_boss_id=character_id)
 
@@ -325,6 +325,7 @@ class MessageTemplateRenderingTests(StartFleetPatchesMixin, TestCase):
     )
 
     def setUp(self):
+        f.builtin_default_templates()
         self.fc = f.create_user(perms=f.FC_PERMS, main_name="Template FC")
         self.fc.email = "fc-private@example.com"
         self.fc.set_password("correct horse battery staple")
@@ -1106,9 +1107,8 @@ class SecretHandlingTests(StartFleetPatchesMixin, TestCase):
         cls.lead = f.create_user(perms=f.FC_LEAD_PERMS, main_name="Lead Main")
         cls.member = f.create_user(perms=f.MEMBER_PERMS, main_name="Member Main")
         cls.webhook = DiscordWebhook.objects.create(name="Ops Pings", webhook_url=WEBHOOK_URL)
-        cls.target = PingTarget.objects.create(name="Everyone", target_value="@everyone", webhook=cls.webhook)
         cls.fleet_type = f.fleet_type("StratOp", "1.00")
-        cls.operation = f.create_operation(cls.lead, type_obj=cls.fleet_type, ping_target=cls.target, ping_text="Ping body")
+        cls.operation = f.create_operation(cls.lead, type_obj=cls.fleet_type, ping_channel=cls.webhook, ping_text="Ping body")
         f.add_attendance(cls.operation, cls.member)
 
     def setUp(self):
@@ -1122,10 +1122,9 @@ class SecretHandlingTests(StartFleetPatchesMixin, TestCase):
         f.add_token(self.lead, f.main_of(self.lead))
         urls = [
             reverse("fleetops:configuration_index"),
-            reverse("fleetops:configuration_list", args=["webhooks"]),
-            reverse("fleetops:configuration_list", args=["ping-targets"]),
-            reverse("fleetops:configuration_add", args=["ping-targets"]),
-            reverse("fleetops:configuration_edit", args=["ping-targets", self.target.pk]),
+            reverse("fleetops:configuration_list", args=["ping-channels"]),
+            reverse("fleetops:configuration_list", args=["ping-roles"]),
+            reverse("fleetops:configuration_add", args=["ping-roles"]),
             reverse("fleetops:start_fleet"),
             reverse("fleetops:operation_detail", args=[self.operation.uuid]),
             reverse("fleetops:audit_log"),
@@ -1138,26 +1137,39 @@ class SecretHandlingTests(StartFleetPatchesMixin, TestCase):
 
     def test_webhook_edit_form_is_where_the_url_is_shown(self):
         self.client.force_login(self.lead)
-        response = self.client.get(reverse("fleetops:configuration_edit", args=["webhooks", self.webhook.pk]))
+        response = self.client.get(reverse("fleetops:configuration_edit", args=["ping-channels", self.webhook.pk]))
         self.assertContains(response, WEBHOOK_TOKEN)
 
     def test_webhook_url_is_redacted_from_configuration_audit(self):
         self.client.force_login(self.lead)
         second_secret = "Second-secret-token-77"
         self.client.post(
-            reverse("fleetops:configuration_add", args=["webhooks"]),
-            {"name": "New Hook", "webhook_url": f"https://discord.com/api/webhooks/1/{second_secret}", "is_active": "on"},
+            reverse("fleetops:configuration_add", args=["ping-channels"]),
+            {
+                "name": "New Hook",
+                "webhook_url": f"https://discord.com/api/webhooks/1/{second_secret}",
+                "is_active": "on",
+                "sort_order": "0",
+            },
         )
         hook = DiscordWebhook.objects.get(name="New Hook")
         self.client.post(
-            reverse("fleetops:configuration_edit", args=["webhooks", hook.pk]),
-            {"name": "New Hook", "webhook_url": WEBHOOK_URL, "is_active": "on"},
+            reverse("fleetops:configuration_edit", args=["ping-channels", hook.pk]),
+            {"name": "New Hook", "webhook_url": WEBHOOK_URL, "is_active": "on", "sort_order": "0"},
         )
+        role = PingRole.objects.create(name="Logi", role_id=1234)
         self.client.post(
-            reverse("fleetops:configuration_add", args=["ping-targets"]),
-            {"name": "Logi", "target_value": "@logi", "webhook": hook.pk, "is_active": "on"},
+            reverse("fleetops:configuration_edit", args=["ping-channels", hook.pk]),
+            {
+                "name": "New Hook",
+                "webhook_url": WEBHOOK_URL,
+                "is_active": "on",
+                "allow_here": "on",
+                "allowed_roles": [str(role.pk)],
+                "sort_order": "0",
+            },
         )
-        self.client.post(reverse("fleetops:configuration_delete", args=["webhooks", hook.pk]))
+        self.client.post(reverse("fleetops:configuration_delete", args=["ping-channels", hook.pk]))
 
         entries = AuditLog.objects.filter(action__startswith="configuration.")
         self.assertEqual(entries.count(), 4)
@@ -1173,7 +1185,10 @@ class SecretHandlingTests(StartFleetPatchesMixin, TestCase):
         self.client.post(reverse("fleetops:retry_ping", args=[self.operation.uuid]), follow=True)
         self.mocks["post"].assert_called_once()
         self.assertEqual(self.mocks["post"].call_args.args[0], WEBHOOK_URL)
-        self.assertEqual(self.mocks["post"].call_args.kwargs["json"], {"content": "Ping body"})
+        self.assertEqual(
+            self.mocks["post"].call_args.kwargs["json"],
+            {"content": "Ping body", "allowed_mentions": {"parse": []}, "flags": 4},
+        )
         action = OperationAction.objects.get(operation=self.operation, action="discord_ping")
         self.assertEqual(action.status, OperationAction.Status.SUCCESS)
         self.assertNotIn(WEBHOOK_TOKEN, action.error_message)
@@ -1211,7 +1226,7 @@ class SecretHandlingTests(StartFleetPatchesMixin, TestCase):
             "http://localhost:8000/admin/",
         ):
             with self.subTest(url=url):
-                form = DiscordWebhookForm(data={"name": "Internal", "webhook_url": url, "is_active": "on"})
+                form = DiscordWebhookForm(data={"name": "Internal", "webhook_url": url, "is_active": "on", "sort_order": "0"})
                 self.assertFalse(form.is_valid())
 
 
@@ -1221,7 +1236,6 @@ class PingDeliveryTests(StartFleetPatchesMixin, TestCase):
         cls.fc = f.create_user(perms=f.FC_PERMS, main_name="Ping FC")
         cls.fc_char = f.main_of(cls.fc)
         cls.webhook = DiscordWebhook.objects.create(name="Ops Pings", webhook_url=WEBHOOK_URL)
-        cls.quiet_target = PingTarget.objects.create(name="Fleet channel only", target_value="", webhook=cls.webhook)
         cls.fleet_type = f.fleet_type("StratOp", "1.00")
 
     def setUp(self):
@@ -1231,7 +1245,7 @@ class PingDeliveryTests(StartFleetPatchesMixin, TestCase):
 
     def test_retry_does_not_ping_or_write_motd_for_attendance_only_fleet(self):
         operation = f.create_operation(
-            self.fc, type_obj=self.fleet_type, send_ping=False, ping_target=self.quiet_target, ping_text="Quiet fleet"
+            self.fc, type_obj=self.fleet_type, send_ping=False, ping_channel=self.webhook, ping_text="Quiet fleet"
         )
         for name in ("discord_ping", "motd_update"):
             OperationAction.objects.create(operation=operation, action=name, status=OperationAction.Status.SKIPPED)

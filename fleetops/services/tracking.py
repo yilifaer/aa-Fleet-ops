@@ -5,8 +5,14 @@ from django.utils import timezone
 from fleetops.models import FleetMemberEvent, FleetMemberState, FleetOperation
 from fleetops.providers.esi import FleetESIError, detect_character_fleet, get_fleet_members
 from fleetops.services.attendance import ensure_automatic_attendance
-from fleetops.services.errors import report_failure
+from fleetops.services.errors import log_failure, report_failure
 from fleetops.services.identity import character_label, resolve_many
+from fleetops.services.names import (
+    is_placeholder,
+    queue_name_resolution,
+    stale_character_ids,
+    unnamed_character_ids,
+)
 from fleetops.services.sde import item_type_names, solar_system_names
 
 logger = get_extension_logger(__name__)
@@ -23,6 +29,20 @@ def _event(operation, state, event_type, old_value="", new_value=""):
         old_value=str(old_value or ""),
         new_value=str(new_value or ""),
     )
+
+
+def _keep_known_details(values, state):
+    """Keep the name and corporation a member without Alliance Auth account already has.
+
+    The ESI name cache may not know the member (yet), and a placeholder never replaces a real name.
+    """
+    if is_placeholder(values["character_name"], state.character_id) and not is_placeholder(
+        state.character_name, state.character_id
+    ):
+        values["character_name"] = state.character_name
+    if values["corporation_id"] is None and state.corporation_id:
+        for key in ("corporation_id", "corporation_name", "alliance_id", "alliance_name"):
+            values[key] = getattr(state, key)
 
 
 def sync_operation(operation):
@@ -47,7 +67,7 @@ def sync_operation(operation):
         # when the fleet ended cannot put its pilots back in fleet afterwards.
         current = (
             FleetOperation.objects.select_for_update()
-            .only("status", "attendance_multiplier")
+            .only("status", "attendance_multiplier", "missing_reason")
             .get(pk=operation.pk)
         )
         if current.status not in FleetOperation.OPEN_STATUSES:
@@ -66,6 +86,7 @@ def sync_operation(operation):
 
         for cid, member in incoming.items():
             identity = identities[cid]
+            state = existing.get(cid)
             defaults = {
                 "character_name": identity.character_name,
                 "main_character_id": identity.main_character_id,
@@ -87,7 +108,8 @@ def sync_operation(operation):
                 "left_at": None,
                 "is_active": True,
             }
-            state = existing.get(cid)
+            if identity.external and state is not None:
+                _keep_known_details(defaults, state)
             if state is None:
                 state = FleetMemberState.objects.create(operation=operation, character_id=cid, **defaults)
                 _event(operation, state, FleetMemberEvent.EventType.JOIN)
@@ -117,31 +139,64 @@ def sync_operation(operation):
 
             ensure_automatic_attendance(operation, identity, now)
 
+        update_fields = [
+            "last_esi_update", "fleet_missing_count", "missing_reason", "missing_detail", "last_error", "updated_at",
+        ]
+        if current.missing_reason == EndReason.BOSS_HANDOVER:
+            # Only the boss can read the fleet, so the FC character holds the boss role again.
+            operation.fleet_boss_character_id = operation.fc_character_id
+            update_fields.append("fleet_boss_character_id")
         operation.last_esi_update = now
         operation.fleet_missing_count = 0
         operation.missing_reason = ""
         operation.missing_detail = ""
         operation.last_error = ""
-        operation.save(
-            update_fields=[
-                "last_esi_update", "fleet_missing_count", "missing_reason", "missing_detail", "last_error", "updated_at",
-            ]
-        )
+        operation.save(update_fields=update_fields)
+
+    # Members without an Alliance Auth account are named in the background, after this commit; so are
+    # members who left before a lookup could name them.
+    external = [cid for cid in incoming if identities[cid].external]
+    try:
+        queue_name_resolution(operation.pk, stale_character_ids([*external, *unnamed_character_ids(operation.pk)]))
+    except Exception as exc:
+        # The poll itself succeeded; names are looked up again on a later one.
+        log_failure(logger, "Queueing the name lookup", exc, operation)
     return len(incoming)
+
+
+class UnreadableFleet(tuple):
+    """Why a fleet could not be read; unpacks to ``(reason, detail)``.
+
+    ``boss_id`` is the character that holds the boss role after a handover, else None.
+    """
+
+    def __new__(cls, reason, detail="", boss_id=None):
+        observation = super().__new__(cls, (reason, detail))
+        observation.boss_id = boss_id
+        return observation
+
+    @property
+    def reason(self):
+        return self[0]
+
+    @property
+    def detail(self):
+        return self[1]
 
 
 def observe_unreadable_fleet(operation):
     """Find out why the FC token got a 404 for the fleet.
 
     Only the fleet boss can read a fleet, so a 404 means either the fleet is gone (disbanded,
-    or the FC left it) or the FC handed the boss role to someone else. Returns
-    ``(reason, detail)``, or None when the check itself failed and the poll proves nothing.
+    or the FC left it) or the FC handed the boss role to someone else. Returns an
+    ``UnreadableFleet`` (``reason, detail`` plus the new boss id of a handover), or None when the
+    check itself failed and the poll proves nothing.
     """
     try:
         detection = detect_character_fleet(operation.fc_user, operation.fc_character_id, fresh=True)
     except FleetESIError as exc:
         if exc.code == "NOT_IN_FLEET":
-            return EndReason.FLEET_GONE, ""
+            return UnreadableFleet(EndReason.FLEET_GONE)
         return None
     except Exception as exc:
         report_failure(logger, "Fleet boss check", exc, operation)
@@ -149,8 +204,9 @@ def observe_unreadable_fleet(operation):
     if detection.fleet_id == operation.esi_fleet_id and detection.fleet_boss_id and not detection.is_boss(
         operation.fc_character_id
     ):
-        return EndReason.BOSS_HANDOVER, character_label(detection.fleet_boss_id)
-    return EndReason.FLEET_GONE, ""
+        boss_id = int(detection.fleet_boss_id)
+        return UnreadableFleet(EndReason.BOSS_HANDOVER, character_label(boss_id), boss_id)
+    return UnreadableFleet(EndReason.FLEET_GONE)
 
 
 def unreadable_fleet_message(reason, detail=""):

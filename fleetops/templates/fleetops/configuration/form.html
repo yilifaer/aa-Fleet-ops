@@ -9,7 +9,17 @@
   {% csrf_token %}
   {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
   {% for field in form %}
-    {% if field.field.widget.input_type == 'checkbox' %}
+    {% if field.field.widget.input_type == 'checkbox' and field.field.widget.allow_multiple_selected %}
+      <fieldset class="mb-3">
+        <legend class="form-label fs-6 mb-1">{{ field.label }}</legend>
+        {% for option in field %}
+          <div class="form-check">{{ option.tag }} <label class="form-check-label" for="{{ option.id_for_label }}">{{ option.choice_label }}</label></div>
+        {% empty %}
+          <div class="text-muted small">Nothing to choose from yet.</div>
+        {% endfor %}
+        {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}<div class="text-danger small">{{ field.errors }}</div>
+      </fieldset>
+    {% elif field.field.widget.input_type == 'checkbox' %}
       <div class="form-check mb-3">{{ field }} <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}{{ field.errors }}</div>
     {% else %}
       <div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}<div class="text-danger small">{{ field.errors }}</div></div>

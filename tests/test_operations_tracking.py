@@ -2,7 +2,7 @@
 
 import uuid
 from contextlib import contextmanager
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest import mock
@@ -29,7 +29,6 @@ from fleetops.models import (
     FleetOperation,
     MessageTemplate,
     OperationAction,
-    PingTarget,
 )
 from fleetops.providers import esi as esi_provider
 from fleetops.providers import srp as srp_module
@@ -49,7 +48,8 @@ from fleetops.providers.pings import send_discord_webhook
 from fleetops.providers.srp import SRPLinkResult
 from fleetops.services.attendance import create_manual_attendance
 from fleetops.services.fleet_controls import kick_all_pods
-from fleetops.services.messages import render_operation_messages
+from fleetops.services.mentions import EVERYONE, MentionSelection
+from fleetops.services.messages import render_messages, render_operation_messages
 from fleetops.services.operations import (
     create_manual_fleet,
     end_fleet,
@@ -232,6 +232,7 @@ def events(operation, character=None):
 class StartFleetTestBase(FakeESIMixin, TestCase):
     def setUp(self):
         super().setUp()
+        f.builtin_default_templates()
         self.fc = f.create_user(perms=f.FC_PERMS, main_name="Boss Main")
         self.fc_char = f.main_of(self.fc)
         self.token = f.add_token(self.fc, self.fc_char)
@@ -241,8 +242,7 @@ class StartFleetTestBase(FakeESIMixin, TestCase):
         self.comms = CommsPreset.objects.create(name="Main Comms", channel_name="Fleet 1", voice_url="mumble://voice.example/fleet1")
         self.logi = ChannelPreset.objects.create(name="Logi", channel_type=ChannelPreset.ChannelType.LOGI, channel_value="logi-chan")
         self.boost = ChannelPreset.objects.create(name="Boost", channel_type=ChannelPreset.ChannelType.BOOST, channel_value="boost-chan")
-        self.webhook = DiscordWebhook.objects.create(name="Pings", webhook_url=WEBHOOK_URL)
-        self.target = PingTarget.objects.create(name="Everyone", target_value="@everyone", webhook=self.webhook)
+        self.webhook = f.ping_channel("Pings", allow_everyone=True, url=WEBHOOK_URL)
 
         self.esi.put_in_fleet(self.fc_char)
         self.esi.fleet_info[FLEET_ID] = {"is_free_move": True, "motd": "old"}
@@ -270,10 +270,10 @@ class StartFleetTestBase(FakeESIMixin, TestCase):
             "comms": self.comms,
             "logi_channel": self.logi,
             "boost_channel": self.boost,
-            "ping_target": self.target,
+            "ping_channel": self.webhook,
+            "mention_selection": MentionSelection(EVERYONE),
             "ping_template": None,
             "motd_template": None,
-            "scheduled_at": None,
             "additional_message": "Bring cap boosters",
         }
         data.update(overrides)
@@ -307,7 +307,12 @@ class StartFleetFullModeTests(StartFleetTestBase):
         self.assertEqual(operation.comms, self.comms)
         self.assertEqual(operation.logi_channel, self.logi)
         self.assertEqual(operation.boost_channel, self.boost)
-        self.assertEqual(operation.ping_target, self.target)
+        self.assertEqual(operation.ping_channel, self.webhook)
+        self.assertEqual(operation.ping_channel_name, "Pings")
+        self.assertEqual(operation.ping_mention_mode, EVERYONE)
+        self.assertEqual(operation.ping_roles, [])
+        self.assertIsNone(operation.ping_target)
+        self.assertIsNone(operation.scheduled_at)
         self.assertEqual(operation.additional_message, "Bring cap boosters")
         self.assertTrue(operation.tracking_enabled)
         self.assertTrue(operation.send_ping)
@@ -337,12 +342,30 @@ class StartFleetFullModeTests(StartFleetTestBase):
         self.assertEqual(operation.doctrine_source, "custom")
 
     def test_renders_ping_and_motd_from_operation_data(self):
+        fields = "{{ fleet_type }}|{{ fc }}|{{ formup }}|{{ doctrine }}|{{ comms }}|{{ logi_channel }}|{{ boost_channel }}"
+        ping = MessageTemplate.objects.create(
+            name="Fields", template_type=MessageTemplate.TemplateType.PING, content=f"{fields}|{{{{ additional_message }}}}"
+        )
+        motd = MessageTemplate.objects.create(
+            name="Fields", template_type=MessageTemplate.TemplateType.MOTD, content=f"<b>{fields}</b>"
+        )
+
+        operation = self.start(ping_template=ping, motd_template=motd)
+
+        values = "StratOp|Boss Main|Jita IV-4|Ferox Fleet|Main Comms|logi-chan|boost-chan"
+        self.assertEqual(operation.ping_text, f"{values}|Bring cap boosters")
+        self.assertEqual(operation.motd_text, f"<b>{values}</b>")
+
+    def test_default_templates_render_operation_data(self):
         operation = self.start()
 
-        for expected in ("@everyone", "StratOp", "Boss Main", "Jita IV-4", "Ferox Fleet", "Main Comms",
-                         "mumble://voice.example/fleet1", "logi-chan", "boost-chan", "Bring cap boosters"):
+        for expected in ("StratOp", "Boss Main", "Jita IV-4", "Ferox Fleet", "Main Comms", "Bring cap boosters",
+                         f"[Main Comms](http://localhost:8000/fleetops/comms/{self.comms.join_token}/join/)"):
             self.assertIn(expected, operation.ping_text)
-        self.assertTrue(operation.motd_text.startswith("<b>StratOp</b>"))
+        for unexpected in ("mumble://", "logi-chan", "boost-chan"):
+            self.assertNotIn(unexpected, operation.ping_text)
+        self.assertTrue(operation.ping_text.startswith("@everyone\n"))
+        self.assertTrue(operation.motd_text.startswith('<font color="#bfffffff"><b>StratOp</b>'))
         for expected in ("FC: Boss Main", "Form Up: Jita IV-4", "Doctrine: Ferox Fleet", "Logi: logi-chan", "Boost: boost-chan"):
             self.assertIn(expected, operation.motd_text)
 
@@ -352,7 +375,10 @@ class StartFleetFullModeTests(StartFleetTestBase):
         self.discord_post.assert_called_once()
         args, kwargs = self.discord_post.call_args
         self.assertEqual(args[0], WEBHOOK_URL)
-        self.assertEqual(kwargs["json"], {"content": operation.ping_text})
+        # Exactly the selected mention may notify.
+        self.assertEqual(
+            kwargs["json"], {"content": operation.ping_text, "allowed_mentions": {"parse": ["everyone"]}, "flags": 4}
+        )
         self.assertIn("timeout", kwargs)
         self.assertEqual(action(operation, "discord_ping").status, ActionStatus.SUCCESS)
 
@@ -375,15 +401,14 @@ class StartFleetFullModeTests(StartFleetTestBase):
         self.assertEqual(action(operation, "discord_ping").status, ActionStatus.FAILED)
         self.assertEqual(operation.status, Status.ACTIVE)
 
-    def test_without_webhook_ping_is_not_sent_but_kept_for_manual_copy(self):
-        self.target.webhook = None
-        self.target.save()
-
-        operation = self.start()
+    def test_without_ping_channel_ping_is_not_sent_but_kept_for_manual_copy(self):
+        operation = self.start(ping_channel=None)
 
         self.discord_post.assert_not_called()
-        self.assertNotEqual(action(operation, "discord_ping").status, ActionStatus.SUCCESS)
-        self.assertIn("@everyone", operation.ping_text)
+        ping = action(operation, "discord_ping")
+        self.assertEqual(ping.status, ActionStatus.SKIPPED)
+        self.assertEqual(ping.error_message, "No Discord channel selected; the ping is available to copy.")
+        self.assertIn("**FC Name:** Boss Main", operation.ping_text)
         self.assertEqual(operation.status, Status.ACTIVE)
 
     def test_inactive_webhook_is_never_called(self):
@@ -393,7 +418,9 @@ class StartFleetFullModeTests(StartFleetTestBase):
         operation = self.start()
 
         self.discord_post.assert_not_called()
-        self.assertNotEqual(action(operation, "discord_ping").status, ActionStatus.SUCCESS)
+        ping = action(operation, "discord_ping")
+        self.assertEqual(ping.status, ActionStatus.FAILED)
+        self.assertEqual(ping.error_message, "Ping channel Pings is disabled.")
 
     def test_writes_motd_through_esi_preserving_free_move(self):
         operation = self.start()
@@ -553,8 +580,10 @@ class StartFleetAttendanceOnlyTests(StartFleetTestBase):
     def test_ping_and_motd_previews_remain_available(self):
         operation = self.start(operation_mode="attendance_only")
 
-        self.assertIn("@everyone", operation.ping_text)
+        self.assertIn("**FC Name:** Boss Main", operation.ping_text)
         self.assertIn("Jita IV-4", operation.motd_text)
+        # Nothing is posted, so the ping is only copied.
+        self.assertIsNone(operation.ping_channel)
 
     def test_still_requires_fleet_boss(self):
         self.esi.put_in_fleet(self.fc_char, role="squad_member")
@@ -673,7 +702,8 @@ class StartFleetIdempotencyTests(StartFleetTestBase):
             "doctrine_choice": "",
             "custom_doctrine": "Ferox Fleet",
             "formup": "Jita IV-4",
-            "ping_target": str(self.target.pk),
+            "ping_channel": str(self.webhook.pk),
+            "ping_mentions": ["everyone"],
         }
 
         first = self.client.post(reverse("fleetops:start_fleet"), payload)
@@ -692,7 +722,7 @@ class StartFleetIdempotencyTests(StartFleetTestBase):
         request_id = uuid.uuid4()
         competing = {}
 
-        def detect_while_other_request_commits(user, character_id):
+        def detect_while_other_request_commits(user, character_id, fresh=False):
             # The other request finishes while this one waits on ESI fleet detection.
             competing["operation"] = f.create_operation(self.fc, start_request_id=request_id, esi_fleet_id=FLEET_ID)
             return FleetDetectionResult(fleet_id=FLEET_ID, role="fleet_commander", fleet_boss_id=character_id)
@@ -735,26 +765,30 @@ class StartFleetViewErrorTests(StartFleetTestBase):
 
 class RenderOperationMessagesTests(TestCase):
     def setUp(self):
+        f.builtin_default_templates()
         self.fc = f.create_user(perms=f.FC_PERMS, main_name="Boss Main")
         self.operation = f.create_operation(self.fc, doctrine_name="", additional_message="")
 
     def test_default_templates_without_optional_data(self):
         ping, motd = render_operation_messages(self.operation)
 
-        self.assertIn("**StratOp**", ping)
-        self.assertIn("FC: Boss Main", ping)
-        self.assertIn("Form Up: Jita", ping)
-        self.assertIn("Doctrine: None / Custom", ping)
-        self.assertIn("Time: Now", ping)
-        self.assertNotIn("Logi:", ping)
+        self.assertIn("**PAP Type:** StratOp", ping)
+        self.assertIn("**FC Name:** Boss Main", ping)
+        self.assertIn("**Formup Location:** Jita", ping)
+        self.assertNotIn("Doctrine", ping)
+        self.assertNotIn("Fleet Time", ping)
+        self.assertNotIn("Logi", ping)
         self.assertIn("<b>StratOp</b>", motd)
 
     def test_scheduled_time_is_rendered(self):
-        self.operation.scheduled_at = timezone.now().replace(year=2026, month=10, day=6, hour=19, minute=30, second=0, microsecond=0)
+        self.operation.ping_template = MessageTemplate.objects.create(
+            name="Time", template_type=MessageTemplate.TemplateType.PING, content="Time: {{ fleet_time }}"
+        )
+        self.operation.scheduled_at = datetime(2026, 10, 6, 19, 30, tzinfo=dt_timezone.utc)
 
-        ping, _ = render_operation_messages(self.operation)
+        ping = render_messages(self.operation, pre_ping=True).ping
 
-        self.assertIn("Time: 2026-10-06T19:30", ping)
+        self.assertEqual(ping, "Time: 2026-10-06 19:30 EVE")
 
     def test_operation_template_overrides_default_template(self):
         MessageTemplate.objects.create(
@@ -1783,7 +1817,12 @@ class DiscordWebhookTests(FakeESIMixin, TestCase):
 
         self.assertTrue(result.success)
         self.assertEqual(result.status_code, 204)
-        self.discord_post.assert_called_once_with(WEBHOOK_URL, json={"content": "ping"}, timeout=15, allow_redirects=False)
+        self.discord_post.assert_called_once_with(
+            WEBHOOK_URL,
+            json={"content": "ping", "allowed_mentions": {"parse": []}, "flags": 4},
+            timeout=15,
+            allow_redirects=False,
+        )
 
     def test_error_response(self):
         self.discord_post.return_value = mock.Mock(status_code=429, text="rate limited")
@@ -1811,8 +1850,7 @@ class DiscordWebhookTests(FakeESIMixin, TestCase):
         fc = f.create_user(perms=f.FC_PERMS)
         # A webhook saved without the scheme; requests rejects it while preparing the request.
         webhook = DiscordWebhook.objects.create(name="Typo", webhook_url="discord.com/api/webhooks/123456/webhook-secret-token")
-        target = PingTarget.objects.create(name="Pings", target_value="@here", webhook=webhook)
-        operation = f.create_operation(fc, ping_target=target, ping_text="ping")
+        operation = f.create_operation(fc, ping_channel=webhook, ping_text="ping")
         self.discord_post.side_effect = lambda url, **kwargs: requests.Request("POST", url, json=kwargs.get("json")).prepare()
 
         ping = retry_ping(operation)
@@ -1826,8 +1864,7 @@ class WebhookSecretPageTests(FakeESIMixin, TestCase):
         fc = f.create_user(perms=f.FC_PERMS)
         member = f.create_user(perms=f.MEMBER_PERMS)
         webhook = DiscordWebhook.objects.create(name="Typo", webhook_url="discord.com/api/webhooks/123456/webhook-secret-token")
-        target = PingTarget.objects.create(name="Pings", target_value="@here", webhook=webhook)
-        operation = f.create_operation(fc, ping_target=target, ping_text="ping")
+        operation = f.create_operation(fc, ping_channel=webhook, ping_text="ping")
         f.add_attendance(operation, member)
         self.discord_post.side_effect = lambda url, **kwargs: requests.Request("POST", url, json=kwargs.get("json")).prepare()
         retry_ping(operation)
@@ -1845,10 +1882,14 @@ class RetryTests(FakeESIMixin, TestCase):
         self.fc = f.create_user(perms=f.FC_PERMS)
         self.fc_char = f.main_of(self.fc)
         f.add_token(self.fc, self.fc_char)
-        webhook = DiscordWebhook.objects.create(name="Pings", webhook_url=WEBHOOK_URL)
-        self.target = PingTarget.objects.create(name="Everyone", target_value="@everyone", webhook=webhook)
+        webhook = f.ping_channel("Pings", allow_everyone=True, url=WEBHOOK_URL)
         self.operation = f.create_operation(
-            self.fc, esi_fleet_id=FLEET_ID, ping_target=self.target, ping_text="ping", motd_text="motd"
+            self.fc,
+            esi_fleet_id=FLEET_ID,
+            ping_channel=webhook,
+            ping_mention_mode=EVERYONE,
+            ping_text="ping",
+            motd_text="motd",
         )
 
     def test_set_action_counts_attempts(self):
@@ -1862,7 +1903,12 @@ class RetryTests(FakeESIMixin, TestCase):
     def test_retry_ping_posts_stored_ping_text(self):
         result = retry_ping(self.operation)
 
-        self.discord_post.assert_called_once_with(WEBHOOK_URL, json={"content": "ping"}, timeout=15, allow_redirects=False)
+        self.discord_post.assert_called_once_with(
+            WEBHOOK_URL,
+            json={"content": "ping", "allowed_mentions": {"parse": ["everyone"]}, "flags": 4},
+            timeout=15,
+            allow_redirects=False,
+        )
         self.assertEqual(result.status, ActionStatus.SUCCESS)
 
     def test_retry_motd_uses_fc_character_token(self):

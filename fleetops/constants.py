@@ -2,6 +2,25 @@ FLEET_READ_SCOPE = "esi-fleets.read_fleet.v1"
 FLEET_WRITE_SCOPE = "esi-fleets.write_fleet.v1"
 FLEET_SCOPES = [FLEET_READ_SCOPE, FLEET_WRITE_SCOPE]
 
-DEFAULT_PING_TEMPLATE = """{{ ping_target }}\n**{{ fleet_type }}**\nFC: {{ fc }}\nForm Up: {{ formup }}\nDoctrine: {{ doctrine }}\nComms: {{ comms }}{% if comms_link %} — {{ comms_link }}{% endif %}\n{% if logi_channel %}Logi: {{ logi_channel }}\n{% endif %}{% if boost_channel %}Boost: {{ boost_channel }}\n{% endif %}{% if fleet_time %}Time: {{ fleet_time }}\n{% endif %}{% if additional_message %}\n{{ additional_message }}{% endif %}"""
+# Built-in templates, also used as the fallback when a stored template cannot be rendered.
+# Migration 0009 keeps copies of both; they must stay identical.
+DEFAULT_PING_TEMPLATE = """{% if ping_mention %}{{ ping_mention }}
+{% endif %}{% if additional_message %}{{ additional_message }}
 
-DEFAULT_MOTD_TEMPLATE = """<b>{{ fleet_type }}</b><br>FC: {{ fc }}<br>Form Up: {{ formup }}<br>Doctrine: {{ doctrine }}<br>Comms: {{ comms }}{% if comms_link %} — {{ comms_link }}{% endif %}{% if logi_channel %}<br>Logi: {{ logi_channel }}{% endif %}{% if boost_channel %}<br>Boost: {{ boost_channel }}{% endif %}{% if additional_message %}<br><br>{{ additional_message }}{% endif %}"""
+{% endif %}**FC Name:** {{ fc }}
+**Formup Location:** {{ formup }}
+**PAP Type:** {{ fleet_type }}
+{% if comms %}**Comms:** {% if comms_link %}[{{ comms }}]({{ comms_link }}){% else %}{{ comms }}{% endif %}
+{% endif %}{% if doctrine_name %}**Doctrine:** {% if doctrine_url %}[{{ doctrine_name }}]({{ doctrine_url }}){% else %}{{ doctrine_name }}{% endif %}{% if doctrine_ships %} ({{ doctrine_ships }}){% endif %}
+{% endif %}{% if is_pre_ping %}**Fleet Time:** {{ fleet_time_eve }} ({{ fleet_time_discord }})
+{% endif %}
+-# This was a FleetOps broadcast from {{ sender }} to {{ ping_target_label }} at {{ sent_at }} EVE"""
+
+DEFAULT_MOTD_TEMPLATE = """<font color="#bfffffff"><b>{{ fleet_type }}</b><br>FC: {{ fc }}<br>Form Up: {{ formup }}{% if doctrine_name %}<br>Doctrine: {% if doctrine_url %}<a href="{{ doctrine_url }}">{{ doctrine_name }}</a>{% else %}{{ doctrine_name }}{% endif %}{% if doctrine_ships %} ({{ doctrine_ships }}){% endif %}{% endif %}{% if comms %}<br>Comms: {% if comms_link %}<a href="{{ comms_link }}">{{ comms }}</a>{% else %}{{ comms }}{% endif %}{% endif %}{% if logi_channel %}<br>Logi: {{ logi_channel_link }}{% endif %}{% if boost_channel %}<br>Boost: {{ boost_channel_link }}{% endif %}{% if additional_message %}<br><br>{{ additional_message|linebreaksbr }}{% endif %}</font>"""
+
+# Posted without any mention in the pre-ping channel when a scheduled fleet is cancelled.
+SCHEDULE_CANCELLED_TEMPLATE = """**Cancelled:** {{ fleet_type }} at {{ fleet_time_eve }} ({{ formup }})
+-# FleetOps notice from {{ sender }} at {{ sent_at }} EVE"""
+
+# Longer MOTDs only get a warning; the in-game limit is not documented.
+MOTD_SOFT_LIMIT = 1000

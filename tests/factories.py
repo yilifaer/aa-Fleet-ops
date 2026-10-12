@@ -16,8 +16,16 @@ from allianceauth.tests.auth_utils import AuthUtils
 from django.utils import timezone
 from esi.models import Scope, Token
 
-from fleetops.constants import FLEET_READ_SCOPE, FLEET_WRITE_SCOPE
-from fleetops.models import AttendanceRecord, FleetOperation, FleetOpsSettings, FleetType
+from fleetops.constants import DEFAULT_MOTD_TEMPLATE, DEFAULT_PING_TEMPLATE, FLEET_READ_SCOPE, FLEET_WRITE_SCOPE
+from fleetops.models import (
+    AttendanceRecord,
+    DiscordWebhook,
+    FleetOperation,
+    FleetOpsSettings,
+    FleetType,
+    MessageTemplate,
+    PingRole,
+)
 
 _ids = itertools.count(90_000_001)
 
@@ -145,6 +153,43 @@ def settings(**values) -> FleetOpsSettings:
     return obj
 
 
+def builtin_default_templates():
+    """Make the stored "Default Ping" and "Default MOTD" templates the built-in ones from constants.py."""
+    MessageTemplate.objects.filter(template_type=MessageTemplate.TemplateType.PING, name="Default Ping").update(
+        content=DEFAULT_PING_TEMPLATE
+    )
+    MessageTemplate.objects.filter(template_type=MessageTemplate.TemplateType.MOTD, name="Default MOTD").update(
+        content=DEFAULT_MOTD_TEMPLATE
+    )
+
+
+def ping_role(name: str = "Sig A", *, role_id: int | None = None, **extra) -> PingRole:
+    return PingRole.objects.create(name=name, role_id=role_id or next_id(), **extra)
+
+
+def ping_channel(
+    name: str = "STR",
+    *,
+    allow_everyone: bool = False,
+    allow_here: bool = False,
+    url: str | None = None,
+    roles: list[PingRole] | None = None,
+    **extra,
+) -> DiscordWebhook:
+    """A ping channel (Discord webhook); ``roles`` restricts the roles it allows."""
+    webhook_id = next_id()
+    channel = DiscordWebhook.objects.create(
+        name=name,
+        webhook_url=url or f"https://discord.com/api/webhooks/{webhook_id}/factory-token-{webhook_id}",
+        allow_everyone=allow_everyone,
+        allow_here=allow_here,
+        **extra,
+    )
+    if roles:
+        channel.allowed_roles.set(roles)
+    return channel
+
+
 def create_operation(
     fc_user,
     *,
@@ -154,13 +199,22 @@ def create_operation(
     started_at=None,
     ended_at=None,
     esi_fleet_id: int | None = None,
+    ping_channel: DiscordWebhook | None = None,
+    ping_mention_mode: str = FleetOperation.MentionMode.NONE,
+    ping_roles: list[dict] | None = None,
+    doctrine_fits: list[dict] | None = None,
     **extra,
 ) -> FleetOperation:
     fc_character = fc_character or main_of(fc_user)
     type_obj = type_obj or fleet_type()
-    started_at = started_at or (timezone.now() - timedelta(minutes=30))
+    scheduled = status == FleetOperation.Status.SCHEDULED
+    # A scheduled fleet has not started and has no ESI fleet yet.
+    if not scheduled:
+        started_at = started_at or (timezone.now() - timedelta(minutes=30))
     if ended_at is None and status == FleetOperation.Status.CLOSED:
         ended_at = started_at + timedelta(hours=1)
+    if esi_fleet_id is None and not scheduled:
+        esi_fleet_id = next_id()
     defaults = dict(
         created_by=fc_user,
         fc_user=fc_user,
@@ -169,7 +223,7 @@ def create_operation(
         fc_main_character_id=main_of(fc_user).character_id if main_of(fc_user) else None,
         fc_main_character_name=main_of(fc_user).character_name if main_of(fc_user) else "",
         fleet_boss_character_id=fc_character.character_id,
-        esi_fleet_id=esi_fleet_id if esi_fleet_id is not None else next_id(),
+        esi_fleet_id=esi_fleet_id,
         fleet_type=type_obj,
         fleet_point_weight_snapshot=type_obj.point_weight,
         formup="Jita",
@@ -177,9 +231,24 @@ def create_operation(
         started_at=started_at,
         ended_at=ended_at,
         tracking_enabled=status == FleetOperation.Status.ACTIVE,
+        ping_channel=ping_channel,
+        ping_channel_name=ping_channel.name if ping_channel else "",
+        ping_mention_mode=ping_mention_mode,
+        ping_roles=ping_roles or [],
+        doctrine_fits=doctrine_fits or [],
     )
     defaults.update(extra)
     return FleetOperation.objects.create(**defaults)
+
+
+def create_scheduled_operation(fc_user, scheduled_at=None, **extra) -> FleetOperation:
+    """A pre-pinged fleet waiting for its FC to start it (``scheduled_at`` defaults to an hour ahead)."""
+    return create_operation(
+        fc_user,
+        status=FleetOperation.Status.SCHEDULED,
+        scheduled_at=scheduled_at or (timezone.now() + timedelta(hours=1)),
+        **extra,
+    )
 
 
 def add_attendance(

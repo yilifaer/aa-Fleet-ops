@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.core.management.base import BaseCommand
 
 from fleetops.constants import DEFAULT_MOTD_TEMPLATE, DEFAULT_PING_TEMPLATE
-from fleetops.models import FleetOpsSettings, FleetType, MessageTemplate, PingTarget
+from fleetops.models import FleetOpsSettings, FleetType, MessageTemplate
 
 
 class Command(BaseCommand):
@@ -13,7 +13,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--demo",
             action="store_true",
-            help="Create PCT, StratOps and CTA example fleet types plus a manual-copy ping target. Existing entries are kept.",
+            help="Create PCT, StratOps and CTA example fleet types. Existing entries are kept.",
         )
 
     def handle(self, *args, **options):
@@ -46,13 +46,11 @@ class Command(BaseCommand):
                         "sort_order": order,
                     },
                 )
-            PingTarget.objects.get_or_create(
-                name="Manual / Copy Only",
-                defaults={"target_value": "", "is_active": True},
-            )
+            # No demo ping channel: a channel needs a real Discord webhook, and without one the ping is
+            # copied by hand anyway.
             self.stdout.write(
                 self.style.WARNING(
-                    "Demo data created: PCT 0.5 / StratOps 1.0 / CTA 1.5 and a manual-copy ping target "
+                    "Demo data created: PCT 0.5 / StratOps 1.0 / CTA 1.5 "
                     "(existing entries are kept as configured)."
                 )
             )

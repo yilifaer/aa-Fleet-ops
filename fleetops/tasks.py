@@ -9,6 +9,7 @@ from django.utils import timezone
 from fleetops.models import FleetOperation, FleetOpsSettings
 from fleetops.providers.esi import FleetESIError
 from fleetops.services.errors import log_failure, report_failure
+from fleetops.services.names import apply_names_to_operation, resolve_and_store
 from fleetops.services.operations import cancel_abandoned_starts, end_fleet, finish_requested_end
 from fleetops.services.tracking import observe_unreadable_fleet, sync_operation, unreadable_fleet_message
 
@@ -122,12 +123,17 @@ def _unreadable_fleet(operation, settings):
         message = "The fleet could not be read and the fleet boss check failed; this check was not counted."
         return "FLEET_CHECK_FAILED" if _save_if_active(operation, last_error=message) else "inactive"
     reason, detail = observation
+    fields = {}
+    if observation.boss_id:
+        # The label is shown; the id keeps who holds the boss role now.
+        fields["fleet_boss_character_id"] = observation.boss_id
     counted = _save_if_active(
         operation,
         fleet_missing_count=operation.fleet_missing_count + 1,
         missing_reason=reason,
         missing_detail=detail[:255],
         last_error=unreadable_fleet_message(reason, detail),
+        **fields,
     )
     if not counted:
         return "inactive"
@@ -168,6 +174,26 @@ def finish_fleet_end(operation_id):
         return "closed"
     finally:
         cache.delete(lock_key)
+
+
+@shared_task(autoretry_for=(), max_retries=0)
+def resolve_character_names(operation_id, character_ids):
+    """Look up members without an Alliance Auth account and put their names on the fleet.
+
+    Never raises: a failed lookup is logged and a later poll queues the next one.
+    """
+    try:
+        resolve_and_store(character_ids)
+    except FleetESIError:
+        # The provider has logged the failure; whatever was stored before it is still applied.
+        pass
+    except Exception as exc:
+        log_failure(logger, "Name lookup", exc)
+    try:
+        return apply_names_to_operation(operation_id, character_ids)
+    except Exception as exc:
+        log_failure(logger, "Name update", exc)
+        return "error"
 
 
 @shared_task

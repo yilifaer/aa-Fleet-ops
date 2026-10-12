@@ -18,7 +18,6 @@ from fleetops.models import (
     FleetOperation,
     MessageTemplate,
     OperationAction,
-    PingTarget,
     validate_template_syntax,
 )
 from fleetops.providers import srp as srp_module
@@ -181,8 +180,8 @@ class SafeMessageRenderingTests(TestCase):
 
         rendered = render_messages(operation)
 
-        self.assertIn("FC: Render FC", rendered.ping)
-        self.assertIn("Form Up: Amarr", rendered.ping)
+        self.assertIn("**FC Name:** Render FC", rendered.ping)
+        self.assertIn("**Formup Location:** Amarr", rendered.ping)
         self.assertEqual(len(rendered.errors), 1)
         self.assertIn(broken.name, rendered.errors[0])
         self.assertIn("TemplateSyntaxError", rendered.errors[0])
@@ -193,7 +192,7 @@ class SafeMessageRenderingTests(TestCase):
 
         ping, _motd = render_operation_messages(operation)
 
-        self.assertIn("FC: Render FC", ping)
+        self.assertIn("**FC Name:** Render FC", ping)
 
     def test_broken_default_motd_only_affects_the_motd(self):
         MessageTemplate.objects.filter(template_type=MOTD).update(is_active=False)
@@ -203,7 +202,7 @@ class SafeMessageRenderingTests(TestCase):
         rendered = render_messages(operation)
 
         self.assertEqual(rendered.ping, "PING Dodixie")
-        self.assertTrue(rendered.motd.startswith("<b>"))
+        self.assertTrue(rendered.motd.startswith('<font color="#bfffffff"><b>'))
         self.assertEqual(len(rendered.errors), 1)
         self.assertTrue(rendered.errors[0].startswith("MOTD template"))
 
@@ -245,7 +244,7 @@ class SafeMessageRenderingTests(TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertTrue(body["ok"])
-        self.assertIn("FC: Render FC", body["ping"])
+        self.assertIn("**FC Name:** Render FC", body["ping"])
         self.assertEqual(len(body["warnings"]), 1)
         self.assertIn(broken.name, body["warnings"][0])
         self.assertIn("TemplateDoesNotExist", body["warnings"][0])
@@ -265,12 +264,12 @@ class SafeMessageRenderingTests(TestCase):
 
 class StartFleetSafetyTests(TestCase):
     def setUp(self):
+        f.builtin_default_templates()
         self.fc = f.create_user(perms=f.FC_PERMS, main_name="Start FC")
         self.fc_char = f.main_of(self.fc)
         f.add_token(self.fc, self.fc_char)
         self.fleet_type = f.fleet_type("StratOp", "1.00")
-        webhook = DiscordWebhook.objects.create(name="Pings", webhook_url=WEBHOOK_URL)
-        self.target = PingTarget.objects.create(name="Everyone", target_value="@everyone", webhook=webhook)
+        self.channel = DiscordWebhook.objects.create(name="Pings", webhook_url=WEBHOOK_URL)
         patches = {
             "detect": (
                 "detect_character_fleet",
@@ -298,7 +297,7 @@ class StartFleetSafetyTests(TestCase):
             "fc_character_id": str(self.fc_char.character_id),
             "fleet_type": self.fleet_type,
             "formup": "Jita",
-            "ping_target": self.target,
+            "ping_channel": self.channel,
         }
         data.update(extra)
         return start_fleet(user=self.fc, cleaned_data=data, request_id=request_id or uuid.uuid4())
@@ -310,7 +309,7 @@ class StartFleetSafetyTests(TestCase):
             "fc_character_id": str(self.fc_char.character_id),
             "fleet_type": str(self.fleet_type.pk),
             "formup": "Jita",
-            "ping_target": str(self.target.pk),
+            "ping_channel": str(self.channel.pk),
         }
 
     def assertActive(self, operation):
@@ -334,9 +333,12 @@ class StartFleetSafetyTests(TestCase):
         operation = self.start(ping_template=broken)
 
         self.assertActive(operation)
-        self.assertIn("FC: Start FC", operation.ping_text)
+        self.assertIn("**FC Name:** Start FC", operation.ping_text)
         self.mocks["post"].assert_called_once()
-        self.assertEqual(self.mocks["post"].call_args.kwargs["json"], {"content": operation.ping_text})
+        self.assertEqual(
+            self.mocks["post"].call_args.kwargs["json"],
+            {"content": operation.ping_text, "allowed_mentions": {"parse": []}, "flags": 4},
+        )
         render = action(operation, "message_render")
         self.assertEqual(render.status, ActionStatus.FAILED)
         self.assertIn("Typo Ping", render.error_message)
@@ -471,9 +473,8 @@ class StartFleetSafetyTests(TestCase):
     def test_webhook_saved_before_validation_is_never_posted_to(self):
         # objects.create() skips validation, like a row saved by an earlier release.
         legacy = DiscordWebhook.objects.create(name="Legacy", webhook_url="http://127.0.0.1:8080/internal")
-        target = PingTarget.objects.create(name="Legacy target", webhook=legacy)
 
-        operation = self.start(ping_target=target)
+        operation = self.start(ping_channel=legacy)
         retried = retry_ping(operation)
 
         self.assertActive(operation)
@@ -493,12 +494,15 @@ class StartFleetSafetyTests(TestCase):
         motd = retry_motd(operation)
 
         operation.refresh_from_db()
-        self.assertIn("FC: Start FC", operation.ping_text)
+        self.assertIn("**FC Name:** Start FC", operation.ping_text)
         self.assertIn("FC: Start FC", operation.motd_text)
         self.assertEqual(ping.status, ActionStatus.SUCCESS)
         self.assertEqual(motd.status, ActionStatus.SUCCESS)
         self.mocks["post"].assert_called_once()
-        self.assertEqual(self.mocks["post"].call_args.kwargs["json"], {"content": operation.ping_text})
+        self.assertEqual(
+            self.mocks["post"].call_args.kwargs["json"],
+            {"content": operation.ping_text, "allowed_mentions": {"parse": []}, "flags": 4},
+        )
         self.mocks["motd"].assert_called_once_with(self.fc, self.fc_char.character_id, FLEET_ID, operation.motd_text)
         self.assertEqual(action(operation, "message_render").status, ActionStatus.SUCCESS)
 
@@ -550,7 +554,7 @@ class StartFleetSafetyTests(TestCase):
         request_id = uuid.uuid4()
         first = {}
 
-        def other_request_finishes_first(user, character_id):
+        def other_request_finishes_first(user, character_id, fresh=False):
             first["operation"] = f.create_operation(self.fc, start_request_id=request_id, esi_fleet_id=FLEET_ID)
             return FleetDetectionResult(fleet_id=FLEET_ID, role="fleet_commander", fleet_boss_id=character_id)
 
@@ -596,8 +600,7 @@ class RetrySafetyTests(TestCase):
         register_srp_provider(self.provider)
         f.settings(srp_provider="safety_srp")
         self.fc = f.create_user(perms=f.FC_PERMS)
-        webhook = DiscordWebhook.objects.create(name="Pings", webhook_url=WEBHOOK_URL)
-        self.target = PingTarget.objects.create(name="Everyone", target_value="@everyone", webhook=webhook)
+        self.channel = DiscordWebhook.objects.create(name="Pings", webhook_url=WEBHOOK_URL)
         post = mock.patch("fleetops.providers.pings.requests.post", return_value=mock.Mock(status_code=204, text=""))
         self.post = post.start()
         self.addCleanup(post.stop)
@@ -607,7 +610,7 @@ class RetrySafetyTests(TestCase):
 
     def test_attendance_only_retries_send_nothing_and_stay_skipped(self):
         operation = f.create_operation(
-            self.fc, send_ping=False, ping_target=self.target, ping_text="quiet", motd_text="quiet"
+            self.fc, send_ping=False, ping_channel=self.channel, ping_text="quiet", motd_text="quiet"
         )
         for name in ("discord_ping", "motd_update", "srp_link"):
             OperationAction.objects.create(
@@ -627,7 +630,7 @@ class RetrySafetyTests(TestCase):
         self.assertEqual(operation.srp_reference, "")
 
     def test_attendance_only_retry_without_a_record_explains_the_skip(self):
-        operation = f.create_operation(self.fc, send_ping=False, ping_target=self.target, ping_text="quiet")
+        operation = f.create_operation(self.fc, send_ping=False, ping_channel=self.channel, ping_text="quiet")
 
         result = retry_ping(operation)
 
@@ -637,7 +640,7 @@ class RetrySafetyTests(TestCase):
 
     def test_manual_fleet_never_pings_but_can_still_link_srp(self):
         operation = f.create_operation(
-            self.fc, status=Status.CLOSED, send_ping=False, is_manual=True, ping_target=self.target, ping_text="late"
+            self.fc, status=Status.CLOSED, send_ping=False, is_manual=True, ping_channel=self.channel, ping_text="late"
         )
 
         ping = retry_ping(operation)
@@ -687,7 +690,7 @@ class RetrySafetyTests(TestCase):
 
     def test_failed_ping_retry_never_shows_the_webhook_to_members(self):
         member = f.create_user(perms=f.MEMBER_PERMS)
-        operation = f.create_operation(self.fc, ping_target=self.target, ping_text="ping")
+        operation = f.create_operation(self.fc, ping_channel=self.channel, ping_text="ping")
         f.add_attendance(operation, member)
         self.post.side_effect = requests.ConnectionError(
             f"Max retries exceeded with url: /api/webhooks/555000111/{WEBHOOK_TOKEN}"
@@ -715,7 +718,7 @@ class RetrySafetyTests(TestCase):
         self.assertNotIn("secret-access-token", "\n".join(logs.output))
 
     def test_unexpected_ping_retry_error_is_generic(self):
-        operation = f.create_operation(self.fc, ping_target=self.target, ping_text="ping")
+        operation = f.create_operation(self.fc, ping_channel=self.channel, ping_text="ping")
 
         with mock.patch(
             "fleetops.services.operations.send_discord_webhook", side_effect=ValueError(f"bad url {WEBHOOK_URL}")
@@ -743,7 +746,7 @@ class RetrySafetyTests(TestCase):
     def test_retry_never_sends_a_ping_or_motd_that_renders_empty(self):
         operation = f.create_operation(
             self.fc,
-            ping_target=self.target,
+            ping_channel=self.channel,
             ping_template=make_template("{% if additional_message %}x{% endif %}"),
             motd_template=make_template("{# nothing #}", MOTD),
         )
@@ -765,7 +768,7 @@ class RetrySafetyTests(TestCase):
         self.client.force_login(self.fc)
 
         for name, expected in (
-            ("retry_ping", "Ping retry: Failed. No active webhook configured. Ping remains available for manual copy."),
+            ("retry_ping", "Ping retry: Skipped. No Discord channel selected; the ping is available to copy."),
             ("retry_motd", "MOTD retry: Failed. ESI denied permission to update the fleet MOTD."),
             ("retry_srp", "SRP retry: Skipped. Provider declined to create an SRP fleet."),
         ):

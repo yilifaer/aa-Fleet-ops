@@ -30,7 +30,7 @@ Test the complete intended workflow:
 4. select Doctrine / Custom
 5. manually enter Form Up
 6. select Comms / Logi / Boost
-7. select Ping Target
+7. select Ping channel and Ping target
 8. verify Ping/MOTD preview
 9. start fleet
 10. verify per-step result states

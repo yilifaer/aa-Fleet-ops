@@ -32,6 +32,7 @@
  const ended = document.getElementById('{{ form.ended_at.id_for_label }}');
  const duration = document.getElementById('manual-fleet-duration');
  const confirmWrap = document.getElementById('confirm-long-fleet-wrap');
+ const confirmBox = document.getElementById('{{ form.confirm_long_fleet.id_for_label }}');
  const now = document.getElementById('eve-time-now');
  const LONG_FLEET_MINUTES = 6 * 60;
  // The inputs hold EVE time, so they are read as UTC whatever the browser's time zone is.
@@ -40,6 +41,8 @@
  function showDuration(){
    const minutes = Math.round((asUtc(ended.value) - asUtc(started.value)) / 60000);
    duration.className = 'form-text';
+   // The confirmation is only asked for while the fleet is longer than 6 hours.
+   if(!(minutes > LONG_FLEET_MINUTES)){ confirmWrap.classList.add('d-none'); confirmBox.checked = false; }
    if(Number.isNaN(minutes)){ duration.textContent = ''; return; }
    if(minutes <= 0){ duration.textContent = 'End Time must be after Start Time.'; duration.className = 'form-text text-danger'; return; }
    const hours = Math.floor(minutes / 60);

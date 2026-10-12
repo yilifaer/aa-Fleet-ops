@@ -26,4 +26,10 @@ def register_menu():
 
 @hooks.register("url_hook")
 def register_urls():
-    return UrlHook(fleetops.urls, "fleetops", r"^fleetops/")
+    # The comms join page is public when the site lists "fleetops" in APPS_WITH_PUBLIC_VIEWS.
+    return UrlHook(
+        fleetops.urls,
+        "fleetops",
+        r"^fleetops/",
+        excluded_views=["fleetops.public_views.comms_join"],
+    )

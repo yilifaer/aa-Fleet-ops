@@ -386,7 +386,7 @@ class MessageTemplateRulesTests(TestCase):
 
 class WebhookUrlValidationTests(TestCase):
     def _form(self, url):
-        return DiscordWebhookForm(data={"name": "Ops", "webhook_url": url, "is_active": "on"})
+        return DiscordWebhookForm(data={"name": "Ops", "webhook_url": url, "is_active": "on", "sort_order": "0"})
 
     def test_discord_webhook_urls_are_accepted(self):
         for url in (
@@ -435,8 +435,8 @@ class WebhookUrlValidationTests(TestCase):
         self.client.force_login(f.create_user(perms=CONFIG_PERMS))
 
         response = self.client.post(
-            reverse("fleetops:configuration_add", args=["webhooks"]),
-            {"name": "Internal", "webhook_url": "http://localhost:8000/admin/", "is_active": "on"},
+            reverse("fleetops:configuration_add", args=["ping-channels"]),
+            {"name": "Internal", "webhook_url": "http://localhost:8000/admin/", "is_active": "on", "sort_order": "0"},
         )
 
         self.assertEqual(response.status_code, 200)
@@ -480,17 +480,26 @@ class OperationEditFormTests(TestCase):
             instance=self.operation,
         )
 
-    def test_end_before_start_is_rejected(self):
+    def test_end_before_or_at_the_start_is_rejected(self):
         start = timezone.now()
-        form = self._form(start, start - timedelta(minutes=1))
-        self.assertFalse(form.is_valid())
-        self.assertIn("End Time cannot be earlier than Start Time.", form.non_field_errors())
+        for ended in (start - timedelta(minutes=1), start):
+            with self.subTest(ended=ended):
+                form = self._form(start, ended)
+                self.assertFalse(form.is_valid())
+                self.assertEqual(form.errors["ended_at"], ["End Time must be after Start Time."])
 
-    def test_same_or_later_end_and_open_end_are_accepted(self):
+    def test_later_end_and_open_end_are_accepted(self):
         start = timezone.now()
-        for ended in (start, start + timedelta(hours=2), None):
+        for ended in (start + timedelta(minutes=1), start + timedelta(hours=2), None):
             with self.subTest(ended=ended):
                 self.assertTrue(self._form(start, ended).is_valid())
+
+    def test_stored_fleet_that_ended_in_its_start_minute_stays_editable(self):
+        start = timezone.now().replace(second=10, microsecond=0)
+        FleetOperation.objects.filter(pk=self.operation.pk).update(started_at=start, ended_at=start.replace(second=50))
+        self.operation.refresh_from_db()
+
+        self.assertTrue(self._form(start, start).is_valid())
 
 
 class ManualAttendanceFormTests(TestCase):

@@ -26,6 +26,7 @@ from fleetops.models import (
     MonthlyFCStatistic,
     OperationAction,
     OperationRoleAssignment,
+    PingRole,
     PingTarget,
 )
 from fleetops.providers.esi import FleetDetectionResult, FleetESIError
@@ -53,7 +54,7 @@ ROLES = ("member", "corp", "fc", "lead")
 
 Case = namedtuple("Case", "label method url data expected")
 
-CONFIG_SECTIONS = ("fleet-types", "comms", "channels", "webhooks", "ping-targets", "templates")
+CONFIG_SECTIONS = ("fleet-types", "comms", "channels", "ping-channels", "ping-roles", "templates")
 
 
 def add_member_state(
@@ -142,6 +143,7 @@ class FleetOpsViewTestCase(TestCase):
         )
         cls.webhook = DiscordWebhook.objects.create(name="Ops Pings", webhook_url=WEBHOOK_URL)
         cls.ping_target = PingTarget.objects.create(name="Everyone", target_value="@everyone", webhook=cls.webhook)
+        cls.ping_role = PingRole.objects.create(name="Sig A", role_id=123456789012345678)
         cls.ping_template = MessageTemplate.objects.create(
             name="Standard ping",
             template_type=MessageTemplate.TemplateType.PING,
@@ -257,6 +259,10 @@ class FleetOpsViewTestCase(TestCase):
             cls.credited_closed, cls.fc_main, cls.fc, role=OperationRoleAssignment.Role.BACKSEAT_FC, credit=True
         )
 
+        # Pre-pinged fleets waiting for their FC.
+        cls.own_scheduled = f.create_scheduled_operation(cls.fc, ping_channel=cls.webhook, ping_text="Pre ping")
+        cls.other_scheduled = f.create_scheduled_operation(cls.other_fc, ping_channel=cls.webhook)
+
         cls.period = IncentivePeriod.objects.create(
             year=now.year,
             month=now.month,
@@ -288,8 +294,8 @@ class FleetOpsViewTestCase(TestCase):
             "fleet-types": cls.stratop,
             "comms": cls.comms,
             "channels": cls.logi,
-            "webhooks": cls.webhook,
-            "ping-targets": cls.ping_target,
+            "ping-channels": cls.webhook,
+            "ping-roles": cls.ping_role,
             "templates": cls.ping_template,
         }
 
@@ -310,6 +316,12 @@ class FleetOpsViewTestCase(TestCase):
             "fleetops.views.detect_character_fleet",
             side_effect=lambda user, character_id: FleetDetectionResult(
                 fleet_id=1_000_000_001, role="fleet_commander", fleet_boss_id=character_id
+            ),
+        )
+        self.start_detect = self.patch(
+            "fleetops.services.operations.detect_character_fleet",
+            side_effect=lambda user, character_id, fresh=False: FleetDetectionResult(
+                fleet_id=1_000_000_002, role="fleet_commander", fleet_boss_id=character_id
             ),
         )
 
@@ -349,6 +361,9 @@ class PermissionMatrixTests(FleetOpsViewTestCase):
                      {"member": DENIED, "corp": DENIED, "fc": HIDDEN, "lead": REDIRECT}),
             ]
 
+        def start_scheduled_data(user):
+            return {"fc_character_id": str(f.main_of(user).character_id), "send_ping": "on"}
+
         def preview_data(user):
             return {
                 "request_id": str(uuid.uuid4()),
@@ -375,6 +390,11 @@ class PermissionMatrixTests(FleetOpsViewTestCase):
             Case("operation_detail own_active", "get", self.detail_url(self.own_active), None,
                  {"member": OK, "corp": HIDDEN, "fc": OK, "lead": OK}),
             Case("operation_detail other_closed", "get", self.detail_url(self.other_closed), None,
+                 {"member": HIDDEN, "corp": HIDDEN, "fc": OK, "lead": OK}),
+            # Pre pings may go to restricted channels: FCs and managers only.
+            Case("operation_detail own_scheduled", "get", self.detail_url(self.own_scheduled), None,
+                 {"member": HIDDEN, "corp": HIDDEN, "fc": OK, "lead": OK}),
+            Case("operation_detail other_scheduled", "get", self.detail_url(self.other_scheduled), None,
                  {"member": HIDDEN, "corp": HIDDEN, "fc": OK, "lead": OK}),
             Case("edit_operation own", "get", r("fleetops:edit_operation", args=[self.own_closed.uuid]), None,
                  {"member": DENIED, "corp": DENIED, "fc": OK, "lead": OK}),
@@ -404,6 +424,10 @@ class PermissionMatrixTests(FleetOpsViewTestCase):
             Case("incentive_review", "get", r("fleetops:incentive_review"), None, member_only),
             Case("configuration_index", "get", r("fleetops:configuration_index"), None, member_only),
             Case("configuration_settings", "get", r("fleetops:configuration_settings"), None, member_only),
+            Case("sync_discord_roles", "post", r("fleetops:sync_discord_roles"), None, lead_post),
+            # Public page; anonymous access depends on APPS_WITH_PUBLIC_VIEWS (see test_public_urls).
+            Case("comms_join", "get", r("fleetops:comms_join", args=[self.comms.join_token]), None,
+                 dict.fromkeys(ROLES, OK)),
         ]
         for section in CONFIG_SECTIONS:
             obj = self.config_objects[section]
@@ -428,6 +452,21 @@ class PermissionMatrixTests(FleetOpsViewTestCase):
             *own_and_other("retry_ping", "retry_ping", self.own_active, self.other_active),
             *own_and_other("retry_motd", "retry_motd", self.own_active, self.other_active),
             *own_and_other("retry_srp", "retry_srp", self.own_active, self.other_active),
+            *own_and_other("regenerate_motd", "regenerate_motd", self.own_active, self.other_active),
+            # Only the FC who scheduled a fleet starts it; managers edit and cancel it.
+            Case("start_scheduled_fleet own", "post",
+                 r("fleetops:start_scheduled_fleet", args=[self.own_scheduled.uuid]), start_scheduled_data,
+                 {"member": DENIED, "corp": DENIED, "fc": REDIRECT, "lead": HIDDEN}),
+            Case("start_scheduled_fleet other", "post",
+                 r("fleetops:start_scheduled_fleet", args=[self.other_scheduled.uuid]), start_scheduled_data,
+                 {"member": DENIED, "corp": DENIED, "fc": HIDDEN, "lead": HIDDEN}),
+            Case("edit_scheduled_fleet own", "get", r("fleetops:edit_scheduled_fleet", args=[self.own_scheduled.uuid]),
+                 None, {"member": DENIED, "corp": DENIED, "fc": OK, "lead": OK}),
+            Case("edit_scheduled_fleet other", "get",
+                 r("fleetops:edit_scheduled_fleet", args=[self.other_scheduled.uuid]),
+                 None, {"member": DENIED, "corp": DENIED, "fc": HIDDEN, "lead": OK}),
+            *own_and_other("cancel_scheduled_fleet", "cancel_scheduled_fleet", self.own_scheduled,
+                           self.other_scheduled, {"notify": "on"}),
             *own_and_other("add_operation_role", "add_operation_role", self.own_closed, self.other_closed,
                            {"role": "backseat_fc", "character_id": str(self.outsider_main.character_id),
                             "notes": "Ran logi"}),
@@ -510,7 +549,8 @@ class PermissionMatrixTests(FleetOpsViewTestCase):
         for case in self.cases():
             with self.subTest(case=case.label):
                 response = self.perform(client, case, self.no_perms)
-                self.assertEqual(response.status_code, 403)
+                # The comms join page is the one public FleetOps page.
+                self.assertEqual(response.status_code, OK if case.label == "comms_join" else DENIED)
 
     def test_member_matrix(self):
         self.run_matrix("member")
@@ -801,7 +841,7 @@ class ObjectIsolationTests(FleetOpsViewTestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn("fc_character_id", response.context["form"].errors)
-        self.assertEqual(FleetOperation.objects.filter(fc_user=self.fc).count(), 2)
+        self.assertEqual(FleetOperation.objects.filter(fc_user=self.fc).count(), 3)
 
     def test_fc_statistics_detail_hidden_from_other_members(self):
         client = self.client_for(self.member)
@@ -940,13 +980,15 @@ class PageRenderingTests(FleetOpsViewTestCase):
                 "fc_character_id": str(self.fc_alt.character_id),
                 "fleet_type": str(self.stratop.pk),
                 "formup": "Amarr",
-                "ping_target": str(self.ping_target.pk),
+                "ping_channel": str(self.webhook.pk),
+                "ping_mentions": ["everyone"],
             },
         )
         payload = response.json()
         self.assertTrue(payload["ok"])
-        self.assertIn("@everyone", payload["ping"])
         self.assertIn("FC Alt", payload["ping"])
+        self.assertIn("FC Alt", payload["ping_display"])
+        self.assertEqual(payload["blocking"], [])
         self.assertIn("Amarr", payload["ping"])
         self.assertIn("<b>StratOp</b>", payload["motd"])
         self.assertFalse(FleetOperation.objects.filter(formup="Amarr").exists())
@@ -971,7 +1013,7 @@ class PageRenderingTests(FleetOpsViewTestCase):
         ]
         for section in CONFIG_SECTIONS:
             urls.append(reverse("fleetops:configuration_list", args=[section]))
-            if section != "webhooks":
+            if section != "ping-channels":
                 urls.append(
                     reverse("fleetops:configuration_edit", args=[section, self.config_objects[section].pk])
                 )
@@ -981,7 +1023,7 @@ class PageRenderingTests(FleetOpsViewTestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertNotIn(WEBHOOK_SECRET, response.content.decode())
 
-        edit = client.get(reverse("fleetops:configuration_edit", args=["webhooks", self.webhook.pk]))
+        edit = client.get(reverse("fleetops:configuration_edit", args=["ping-channels", self.webhook.pk]))
         self.assertContains(edit, WEBHOOK_SECRET)
 
     def test_edit_operation_updates_metadata_without_side_effects(self):

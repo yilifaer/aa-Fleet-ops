@@ -34,10 +34,12 @@ from fleetops.models import AttendanceRecord, FleetMemberEvent, FleetMemberState
 from fleetops.providers import esi as esi_provider
 from fleetops.providers.esi import (
     FleetESIError,
+    character_affiliations,
     detect_character_fleet,
     get_fleet_info,
     get_fleet_members,
     kick_fleet_member,
+    resolve_names,
     set_fleet_motd,
 )
 from fleetops.services.operations import end_fleet, retry_motd, start_fleet
@@ -46,6 +48,16 @@ from fleetops.tasks import POLL_SLACK_SECONDS, schedule_active_fleet_tracking, t
 from . import factories as f
 
 FLEET_ID = 1_045_000_000_777
+# Public lookups (no token) FleetOps sends as POST requests.
+POST_OPERATIONS = ["PostUniverseNames", "PostCharactersAffiliation"]
+OUTSIDE_PILOT = 2_119_000_001
+OUTSIDE_CORP = 98_700_001
+OUTSIDE_ALLIANCE = 99_000_001
+LOOKUP_NAMES = {
+    OUTSIDE_PILOT: ("character", "Outside Pilot"),
+    OUTSIDE_CORP: ("corporation", "Outside Corp"),
+    OUTSIDE_ALLIANCE: ("alliance", "Outside Alliance"),
+}
 
 Status = FleetOperation.Status
 
@@ -585,12 +597,41 @@ def _fleet_spec():
             }
         return spec
 
+    def lookup(operation_id, tag, schema):
+        # Public bulk lookups: no security, a body of 1-1000 unique IDs.
+        return {
+            "operationId": operation_id,
+            "tags": [tag],
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "array",
+                            "items": {"type": "integer", "format": "int64"},
+                            "minItems": 1,
+                            "maxItems": 1000,
+                            "uniqueItems": True,
+                        }
+                    }
+                },
+            },
+            "responses": {
+                "200": {
+                    "description": "OK",
+                    "content": {"application/json": {"schema": {"$ref": f"#/components/schemas/{schema}"}}},
+                },
+                "default": error,
+            },
+            "x-compatibility-date": "2020-01-01",
+        }
+
     integer = {"type": "integer", "format": "int64"}
     return {
         "openapi": "3.1.0",
         "info": {"title": "EVE Stable Infrastructure (ESI) - tranquility", "version": "2025-11-06"},
         "servers": [{"url": "https://esi.evetech.net"}],
-        "tags": [{"name": "Fleets"}],
+        "tags": [{"name": "Fleets"}, {"name": "Universe"}, {"name": "Character"}],
         "paths": {
             "/characters/{character_id}/fleet": {
                 "get": operation("GetCharactersCharacterIdFleet", FLEET_READ_SCOPE, ["character_id"], "200", "CharacterFleet"),
@@ -604,6 +645,10 @@ def _fleet_spec():
             },
             "/fleets/{fleet_id}/members/{member_id}": {
                 "delete": operation("DeleteFleetsFleetIdMembersMemberId", FLEET_WRITE_SCOPE, ["fleet_id", "member_id"], "204"),
+            },
+            "/universe/names": {"post": lookup("PostUniverseNames", "Universe", "UniverseNamesPost")},
+            "/characters/affiliation": {
+                "post": lookup("PostCharactersAffiliation", "Character", "CharactersAffiliationPost"),
             },
         },
         "components": {
@@ -623,6 +668,37 @@ def _fleet_spec():
                     },
                 },
                 "FleetUpdate": {"type": "object", "properties": {"is_free_move": {"type": "boolean"}, "motd": {"type": "string"}}},
+                "UniverseNamesPost": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "category": {
+                                "type": "string",
+                                "enum": [
+                                    "alliance", "character", "constellation", "corporation", "inventory_type",
+                                    "region", "solar_system", "station", "faction",
+                                ],
+                            },
+                            "id": integer,
+                            "name": {"type": "string"},
+                        },
+                        "required": ["id", "name", "category"],
+                    },
+                },
+                "CharactersAffiliationPost": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "alliance_id": integer,
+                            "character_id": integer,
+                            "corporation_id": integer,
+                            "faction_id": integer,
+                        },
+                        "required": ["character_id", "corporation_id"],
+                    },
+                },
                 "FleetMembers": {
                     "type": "array",
                     "items": {
@@ -669,7 +745,9 @@ class RecordedESI:
     def send(self, request, *args, **kwargs):
         body = json.loads(request.content) if request.content else None
         self.requests.append((request.method, request.url.path, request.headers.get("If-None-Match"), body))
-        status, payload = self.routes.get((request.method, request.url.path), (404, {"error": "Not found"}))
+        route = self.routes.get((request.method, request.url.path), (404, {"error": "Not found"}))
+        # A route may answer according to the request body.
+        status, payload = route(body) if callable(route) else route
         headers = {}
         if self.cache_seconds:
             expires = timezone.now() + timedelta(seconds=self.cache_seconds)
@@ -706,7 +784,7 @@ class DjangoEsiOperationTests(TestCase):
             ua_appname="aa-fleetops-tests",
             ua_version="0.0.0",
             spec_file=spec_file,
-            operations=list(FakeFleetsAPI.OPERATIONS),
+            operations=[*FakeFleetsAPI.OPERATIONS, *POST_OPERATIONS],
         )
 
     @classmethod
@@ -901,3 +979,105 @@ class DjangoEsiOperationTests(TestCase):
                     get_fleet_members(self.fc, self.fc_char.character_id, FLEET_ID)
                 self.assertEqual(ctx.exception.code, code)
                 self.assertNotIn(self.token.access_token, str(ctx.exception))
+
+    # -- POST lookups -------------------------------------------------------------------------
+
+    def names_route(self, known):
+        """POST /universe/names/: one unknown ID fails the whole request with a 404."""
+
+        def answer(body):
+            if any(entity_id not in known for entity_id in body):
+                return 404, {"error": "Ensure all IDs are valid before resolving."}
+            return 200, [
+                {"category": known[entity_id][0], "id": entity_id, "name": known[entity_id][1]} for entity_id in body
+            ]
+
+        return answer
+
+    def test_django_esi_answers_a_post_with_another_body_from_its_cache(self):
+        # Why every FleetOps POST skips the response cache: django-esi's cache key leaves the body out.
+        self.server.cache_seconds = 300
+        self.server.routes[("POST", "/universe/names")] = self.names_route(LOOKUP_NAMES)
+
+        self.provider.client.Universe.PostUniverseNames(body=[OUTSIDE_PILOT]).result()
+        answer = self.provider.client.Universe.PostUniverseNames(body=[OUTSIDE_CORP]).result()
+
+        self.assertEqual(len(self.server.requests_of("POST")), 1)
+        self.assertEqual(esi_provider.as_dict(answer[0])["id"], OUTSIDE_PILOT)
+
+    def test_name_lookups_with_different_bodies_both_reach_esi(self):
+        self.server.cache_seconds = 300
+        self.server.routes[("POST", "/universe/names")] = self.names_route(LOOKUP_NAMES)
+
+        first = resolve_names([OUTSIDE_PILOT])
+        second = resolve_names([OUTSIDE_CORP, OUTSIDE_ALLIANCE, OUTSIDE_CORP])
+
+        self.assertEqual(first, {OUTSIDE_PILOT: ("character", "Outside Pilot")})
+        self.assertEqual(
+            second,
+            {OUTSIDE_CORP: ("corporation", "Outside Corp"), OUTSIDE_ALLIANCE: ("alliance", "Outside Alliance")},
+        )
+        self.assertEqual(
+            [request[1:] for request in self.server.requests_of("POST")],
+            [
+                ("/universe/names", None, [OUTSIDE_PILOT]),
+                ("/universe/names", None, [OUTSIDE_CORP, OUTSIDE_ALLIANCE]),
+            ],
+        )
+
+    def test_affiliation_lookups_with_different_bodies_both_reach_esi(self):
+        self.server.cache_seconds = 3600
+        npc_pilot = OUTSIDE_PILOT + 1
+        affiliations = {
+            OUTSIDE_PILOT: {"alliance_id": OUTSIDE_ALLIANCE, "character_id": OUTSIDE_PILOT, "corporation_id": OUTSIDE_CORP},
+            npc_pilot: {"character_id": npc_pilot, "corporation_id": 1_000_180, "faction_id": 500_001},
+        }
+        self.server.routes[("POST", "/characters/affiliation")] = lambda body: (200, [affiliations[cid] for cid in body])
+
+        first = character_affiliations([OUTSIDE_PILOT])
+        second = character_affiliations([npc_pilot])
+
+        self.assertEqual(
+            first, {OUTSIDE_PILOT: {"corporation_id": OUTSIDE_CORP, "alliance_id": OUTSIDE_ALLIANCE, "faction_id": None}}
+        )
+        self.assertEqual(second, {npc_pilot: {"corporation_id": 1_000_180, "alliance_id": None, "faction_id": 500_001}})
+        self.assertEqual(
+            [request[1:] for request in self.server.requests_of("POST")],
+            [("/characters/affiliation", None, [OUTSIDE_PILOT]), ("/characters/affiliation", None, [npc_pilot])],
+        )
+
+    def test_an_invalid_id_is_isolated_by_splitting_the_request(self):
+        invalid = 1
+        self.server.routes[("POST", "/universe/names")] = self.names_route(LOOKUP_NAMES)
+
+        result = resolve_names([OUTSIDE_PILOT, invalid, OUTSIDE_CORP])
+
+        self.assertEqual(
+            result,
+            {
+                OUTSIDE_PILOT: ("character", "Outside Pilot"),
+                OUTSIDE_CORP: ("corporation", "Outside Corp"),
+                invalid: ("unresolved", ""),
+            },
+        )
+        self.assertEqual(
+            [request[3] for request in self.server.requests_of("POST")],
+            [[OUTSIDE_PILOT, invalid, OUTSIDE_CORP], [OUTSIDE_PILOT], [invalid, OUTSIDE_CORP], [invalid], [OUTSIDE_CORP]],
+        )
+
+    def test_other_lookup_errors_are_short_esi_errors(self):
+        self.server.routes[("POST", "/universe/names")] = (400, {"error": "Invalid body"})
+        self.server.routes[("POST", "/characters/affiliation")] = (403, {"error": "Forbidden"})
+
+        with self.assertLogs(esi_provider.logger, "WARNING"), self.assertRaises(FleetESIError) as names:
+            resolve_names([OUTSIDE_PILOT])
+        with self.assertLogs(esi_provider.logger, "WARNING"), self.assertRaises(FleetESIError) as affiliation:
+            character_affiliations([OUTSIDE_PILOT])
+
+        self.assertEqual(names.exception.code, "NAMES_ERROR")
+        self.assertEqual(str(names.exception), "Could not look up names: ESI returned HTTP 400 (Invalid body).")
+        self.assertEqual(affiliation.exception.code, "AFFILIATION_ERROR")
+        self.assertEqual(
+            str(affiliation.exception), "Could not look up character affiliations: ESI returned HTTP 403 (Forbidden)."
+        )
+        self.assertEqual(len(self.server.requests_of("POST")), 2)

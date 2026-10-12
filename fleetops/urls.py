@@ -1,6 +1,6 @@
 from django.urls import path
 
-from fleetops import views
+from fleetops import public_views, views, views_config, views_fleet_actions
 
 app_name = "fleetops"
 
@@ -14,11 +14,15 @@ urlpatterns = [
     path("operations/", views.fleet_operations_view, name="fleet_operations"),
     path("operations/<uuid:operation_uuid>/", views.operation_detail, name="operation_detail"),
     path("operations/<uuid:operation_uuid>/edit/", views.edit_operation_view, name="edit_operation"),
+    path("operations/<uuid:operation_uuid>/start-scheduled/", views.start_scheduled_fleet, name="start_scheduled_fleet"),
+    path("operations/<uuid:operation_uuid>/edit-scheduled/", views.edit_scheduled_fleet, name="edit_scheduled_fleet"),
+    path("operations/<uuid:operation_uuid>/cancel-scheduled/", views.cancel_scheduled_fleet, name="cancel_scheduled_fleet"),
     path("operations/<uuid:operation_uuid>/end/", views.end_fleet_view, name="end_fleet"),
     path("operations/<uuid:operation_uuid>/attendance-multiplier/", views.set_attendance_multiplier_view, name="set_attendance_multiplier"),
     path("operations/<uuid:operation_uuid>/retry/ping/", views.retry_ping_view, name="retry_ping"),
     path("operations/<uuid:operation_uuid>/retry/motd/", views.retry_motd_view, name="retry_motd"),
     path("operations/<uuid:operation_uuid>/retry/srp/", views.retry_srp_view, name="retry_srp"),
+    path("operations/<uuid:operation_uuid>/motd/regenerate/", views_fleet_actions.regenerate_motd, name="regenerate_motd"),
     path("operations/<uuid:operation_uuid>/roles/add/", views.add_operation_role, name="add_operation_role"),
     path("operations/roles/<int:pk>/delete/", views.delete_operation_role, name="delete_operation_role"),
     path("operations/<uuid:operation_uuid>/kick-capsules/", views.kick_capsules_view, name="kick_capsules"),
@@ -43,10 +47,17 @@ urlpatterns = [
 ]
 
 urlpatterns += [
-    path("configuration/", views.configuration_index, name="configuration_index"),
-    path("configuration/settings/", views.configuration_settings, name="configuration_settings"),
-    path("configuration/<slug:section>/", views.configuration_list, name="configuration_list"),
-    path("configuration/<slug:section>/add/", views.configuration_edit, name="configuration_add"),
-    path("configuration/<slug:section>/<int:pk>/edit/", views.configuration_edit, name="configuration_edit"),
-    path("configuration/<slug:section>/<int:pk>/delete/", views.configuration_delete, name="configuration_delete"),
+    path("configuration/", views_config.configuration_index, name="configuration_index"),
+    path("configuration/settings/", views_config.configuration_settings, name="configuration_settings"),
+    path("configuration/ping-roles/sync/", views_config.sync_discord_roles, name="sync_discord_roles"),
+    path("configuration/<slug:section>/", views_config.configuration_list, name="configuration_list"),
+    path("configuration/<slug:section>/add/", views_config.configuration_edit, name="configuration_add"),
+    path("configuration/<slug:section>/<int:pk>/edit/", views_config.configuration_edit, name="configuration_edit"),
+    path("configuration/<slug:section>/<int:pk>/delete/", views_config.configuration_delete, name="configuration_delete"),
+]
+
+# Public page; it must stay the last pattern. Alliance Auth stops adding its login check at the first
+# view it excludes, so every pattern after this one would be reachable without a login.
+urlpatterns += [
+    path("comms/<uuid:token>/join/", public_views.comms_join, name="comms_join"),
 ]

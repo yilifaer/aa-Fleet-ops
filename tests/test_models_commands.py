@@ -31,8 +31,10 @@ from fleetops.models import (
     AttendanceRecord,
     AuditLog,
     ChannelPreset,
+    CharacterAffiliation,
     CommsPreset,
     DiscordWebhook,
+    EveEntityName,
     FleetMemberEvent,
     FleetMemberState,
     FleetOperation,
@@ -44,12 +46,17 @@ from fleetops.models import (
     OperationAction,
     OperationActionAttempt,
     OperationRoleAssignment,
+    PingRole,
     PingTarget,
 )
+
+from fleetops.services.mentions import ROLES, MentionSelection, RoleRef, validate_for_channel
 
 from . import factories as f
 
 WEBHOOK_SECRET = "https://discord.com/api/webhooks/123456789/sUp3r-s3cret-t0ken"
+# Shown in Django admin without add or change pages.
+READ_ONLY_ADMIN_MODELS = (PingTarget, EveEntityName, CharacterAffiliation)
 
 ALL_PERMISSIONS = [
     "basic_access",
@@ -501,8 +508,11 @@ class ModelDefaultsAndConstraintsTests(TestCase):
     def test_operation_lifecycle_statuses(self):
         self.assertEqual(
             set(FleetOperation.Status.values),
-            {"draft", "starting", "active", "ending", "closed", "cancelled", "error"},
+            {"draft", "scheduled", "starting", "active", "ending", "closed", "cancelled", "error"},
         )
+
+    def test_scheduled_fleets_do_not_hold_an_esi_fleet(self):
+        self.assertNotIn(FleetOperation.Status.SCHEDULED, FleetOperation.OPEN_STATUSES)
 
 
 class ModelOrderingTests(TestCase):
@@ -609,9 +619,17 @@ class MigrationTests(TestCase):
         self.assertTrue(motd.is_default and motd.is_active)
 
     def test_seed_migration_templates_match_constants(self):
-        migration = importlib.import_module("fleetops.migrations.0002_seed_defaults")
-        self.assertEqual(migration.PING, DEFAULT_PING_TEMPLATE)
-        self.assertEqual(migration.MOTD, DEFAULT_MOTD_TEMPLATE)
+        seed = importlib.import_module("fleetops.migrations.0002_seed_defaults")
+        upgrade = importlib.import_module("fleetops.migrations.0009_convert_ping_targets_and_presets")
+        # 0009 replaces exactly the templates 0002 created with the current built-in ones.
+        self.assertEqual(upgrade.OLD_PING, seed.PING)
+        self.assertEqual(upgrade.OLD_MOTD, seed.MOTD)
+        self.assertEqual(upgrade.NEW_PING, DEFAULT_PING_TEMPLATE)
+        self.assertEqual(upgrade.NEW_MOTD, DEFAULT_MOTD_TEMPLATE)
+
+    def test_new_installations_get_the_current_default_templates(self):
+        self.assertEqual(MessageTemplate.objects.get(name="Default Ping").content, DEFAULT_PING_TEMPLATE)
+        self.assertEqual(MessageTemplate.objects.get(name="Default MOTD").content, DEFAULT_MOTD_TEMPLATE)
 
     def test_models_and_migrations_are_in_sync(self):
         out = StringIO()
@@ -731,11 +749,10 @@ class SeedCommandTests(TestCase):
             ["PCT", "StratOps", "CTA"],
         )
 
-        target = PingTarget.objects.get()
-        self.assertEqual(target.name, "Manual / Copy Only")
-        self.assertEqual(target.target_value, "")
-        self.assertIsNone(target.webhook)
-        self.assertTrue(target.is_active)
+        # Legacy ping targets are no longer created; without a ping channel the ping is copied by hand.
+        self.assertFalse(PingTarget.objects.exists())
+        self.assertFalse(DiscordWebhook.objects.exists())
+        self.assertNotIn("ping target", output)
 
         self.assertEqual(MessageTemplate.objects.filter(is_default=True).count(), 2)
         self.assertEqual(FleetOpsSettings.objects.count(), 1)
@@ -763,7 +780,7 @@ class SeedCommandTests(TestCase):
             with self.subTest(model=model.__name__):
                 self.assertEqual(model.objects.count(), count)
         self.assertEqual(FleetType.objects.filter(short_name="CTA").count(), 1)
-        self.assertEqual(PingTarget.objects.filter(name="Manual / Copy Only").count(), 1)
+        self.assertFalse(PingTarget.objects.exists())
         self.assertEqual(MessageTemplate.objects.filter(name="Default Ping").count(), 1)
         self.assertEqual(MessageTemplate.objects.filter(name="Default MOTD").count(), 1)
 
@@ -949,6 +966,9 @@ class AdminTests(TestCase):
         CommsPreset.objects.create(name="Comms", voice_url="mumble://voice.example.com")
         ChannelPreset.objects.create(name="Logi", channel_type="logi", channel_value="logi-ch")
         cls.operation = f.create_operation(cls.fc, type_obj=cls.fleet_type, ping_target=cls.target)
+        PingRole.objects.create(name="Sig A", role_id=1234)
+        EveEntityName.objects.create(id=98_000_001, category="corporation", name="Outside Corp", updated_at=timezone.now())
+        CharacterAffiliation.objects.create(character_id=95_000_001, corporation_id=98_000_001, updated_at=timezone.now())
         step = OperationAction.objects.create(operation=cls.operation, action="ping", status="failed", error_message="boom")
         OperationActionAttempt.objects.create(action=step, status="failed", message="boom")
         FleetMemberState.objects.create(
@@ -998,7 +1018,7 @@ class AdminTests(TestCase):
 
     def test_add_pages_load(self):
         for model in self._fleetops_models():
-            if model is FleetOpsSettings:
+            if model in (FleetOpsSettings,) + READ_ONLY_ADMIN_MODELS:
                 continue
             with self.subTest(model=model.__name__):
                 response = self.client.get(self._url(model, "add"))
@@ -1064,12 +1084,21 @@ class AdminTests(TestCase):
         self.assertIn("Ops Pings", changelist)
         self.assertNotIn("sUp3r-s3cret", changelist)
 
-    def test_ping_target_form_does_not_expose_webhook_url(self):
-        for url in (self._url(PingTarget, "add"), self._url(PingTarget, "change", self.target.pk)):
-            with self.subTest(url=url):
-                content = self.client.get(url).content.decode()
-                self.assertIn("Ops Pings", content)
-                self.assertNotIn("sUp3r-s3cret", content)
+    def test_ping_target_page_does_not_expose_webhook_url(self):
+        content = self.client.get(self._url(PingTarget, "change", self.target.pk)).content.decode()
+
+        self.assertIn("Ops Pings", content)
+        self.assertNotIn("sUp3r-s3cret", content)
+
+    def test_legacy_targets_and_name_caches_are_read_only(self):
+        request = RequestFactory().get("/")
+        request.user = self.superuser
+        for model in READ_ONLY_ADMIN_MODELS:
+            with self.subTest(model=model.__name__):
+                model_admin = admin.site._registry[model]
+                self.assertFalse(model_admin.has_add_permission(request))
+                self.assertFalse(model_admin.has_change_permission(request, model.objects.first()))
+                self.assertEqual(self.client.get(self._url(model, "add")).status_code, 403)
 
     def test_webhook_delete_confirmation_does_not_expose_url(self):
         content = self.client.get(self._url(DiscordWebhook, "delete", self.webhook.pk)).content.decode()
@@ -1079,14 +1108,14 @@ class AdminTests(TestCase):
         new_secret = "https://discord.com/api/webhooks/987/another-hidden-token"
         response = self.client.post(
             self._url(DiscordWebhook, "add"),
-            {"name": "New Hook", "webhook_url": new_secret, "is_active": "on"},
+            {"name": "New Hook", "webhook_url": new_secret, "is_active": "on", "sort_order": "0"},
         )
         self.assertEqual(response.status_code, 302)
         hook = DiscordWebhook.objects.get(name="New Hook")
 
         response = self.client.post(
             self._url(DiscordWebhook, "change", hook.pk),
-            {"name": "New Hook", "webhook_url": new_secret + "-rotated", "is_active": "on"},
+            {"name": "New Hook", "webhook_url": new_secret + "-rotated", "is_active": "on", "sort_order": "0"},
         )
         self.assertEqual(response.status_code, 302)
 
@@ -1109,6 +1138,89 @@ class AdminTests(TestCase):
 
         audit_list = self.client.get(self._url(AuditLog, "changelist")).content.decode()
         self.assertNotIn("another-hidden-token", audit_list)
+
+    def test_ping_channel_roles_changed_in_admin_are_audited(self):
+        sig_a = PingRole.objects.get(name="Sig A")
+        sig_b = PingRole.objects.create(name="Sig B", role_id=5678)
+        data = {"name": "Ops Pings", "webhook_url": WEBHOOK_SECRET, "is_active": "on", "sort_order": "0"}
+        AuditLog.objects.all().delete()
+
+        response = self.client.post(
+            self._url(DiscordWebhook, "change", self.webhook.pk), {**data, "allowed_roles": [sig_a.pk, sig_b.pk]}
+        )
+        self.assertEqual(response.status_code, 302)
+        response = self.client.post(self._url(DiscordWebhook, "change", self.webhook.pk), {**data, "allowed_roles": [sig_b.pk]})
+        self.assertEqual(response.status_code, 302)
+
+        first, second = AuditLog.objects.filter(
+            action="configuration.update", object_type="DiscordWebhook", object_id=str(self.webhook.pk)
+        ).order_by("pk")
+        self.assertEqual(first.old_value["allowed_roles"], [])
+        self.assertEqual(first.new_value["allowed_roles"], sorted([sig_a.pk, sig_b.pk]))
+        self.assertEqual(second.old_value["allowed_roles"], sorted([sig_a.pk, sig_b.pk]))
+        self.assertEqual(second.new_value["allowed_roles"], [sig_b.pk])
+        self.assertEqual(second.new_value["webhook_url"], "***redacted***")
+
+    def test_admin_refuses_a_voice_link_with_log_in_details(self):
+        response = self.client.post(
+            self._url(CommsPreset, "add"),
+            {
+                "name": "Personal",
+                "channel_name": "",
+                "voice_url": "mumble://alice:s3cret@voice.example.com/Ops",
+                "description": "",
+                "is_active": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Remove the personal user name and password from the voice link.")
+        self.assertFalse(CommsPreset.objects.filter(name="Personal").exists())
+        self.assertFalse(AuditLog.objects.filter(object_type="CommsPreset").exists())
+
+    def restricted_channel(self):
+        sig_a = PingRole.objects.get(name="Sig A")
+        capitals = PingRole.objects.create(name="Capitals", role_id=777)
+        channel = DiscordWebhook.objects.create(name="Sig Pings", webhook_url=WEBHOOK_SECRET + "-sig")
+        channel.allowed_roles.set([sig_a])
+        return sig_a, capitals, channel
+
+    def assert_channel_still_restricted(self, sig_a, capitals, channel):
+        self.assertTrue(PingRole.objects.filter(pk=sig_a.pk).exists())
+        self.assertEqual(list(channel.allowed_roles.all()), [sig_a])
+        selection = MentionSelection(ROLES, (RoleRef(str(capitals.role_id), "Capitals"),))
+        self.assertEqual(validate_for_channel(selection, channel), ["Role Capitals is not allowed in Sig Pings."])
+        self.assertFalse(AuditLog.objects.filter(action="configuration.delete", object_type="PingRole").exists())
+
+    def test_admin_keeps_a_role_that_a_ping_channel_allows(self):
+        sig_a, capitals, channel = self.restricted_channel()
+
+        response = self.client.post(self._url(PingRole, "delete", sig_a.pk), {"post": "yes"}, follow=True)
+
+        self.assertRedirects(response, self._url(PingRole, "changelist"))
+        self.assertContains(response, "This role is allowed in the ping channels Sig Pings.")
+        self.assert_channel_still_restricted(sig_a, capitals, channel)
+
+    def test_admin_delete_selected_keeps_a_role_that_a_ping_channel_allows(self):
+        sig_a, capitals, channel = self.restricted_channel()
+        data = {"action": "delete_selected", "_selected_action": [sig_a.pk, capitals.pk]}
+
+        confirmation = self.client.post(self._url(PingRole, "changelist"), data)
+        response = self.client.post(self._url(PingRole, "changelist"), {**data, "post": "yes"})
+
+        self.assertContains(confirmation, "Sig A: This role is allowed in the ping channels Sig Pings.")
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(PingRole.objects.filter(pk=capitals.pk).exists())
+        self.assert_channel_still_restricted(sig_a, capitals, channel)
+
+    def test_admin_deletes_a_role_no_channel_allows(self):
+        capitals = PingRole.objects.create(name="Capitals", role_id=777)
+
+        response = self.client.post(self._url(PingRole, "delete", capitals.pk), {"post": "yes"})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(PingRole.objects.filter(pk=capitals.pk).exists())
+        self.assertTrue(AuditLog.objects.filter(action="configuration.delete", object_type="PingRole").exists())
 
     def test_new_default_template_audits_the_template_it_replaced(self):
         old_default = MessageTemplate.objects.get(name="Default Ping")

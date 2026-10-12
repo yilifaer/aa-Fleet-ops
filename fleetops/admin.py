@@ -1,12 +1,16 @@
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.contrib.admin.utils import unquote
 from django.db import transaction
+from django.shortcuts import redirect
 
 from fleetops.models import (
     AttendanceRecord,
     AuditLog,
     ChannelPreset,
+    CharacterAffiliation,
     CommsPreset,
     DiscordWebhook,
+    EveEntityName,
     FleetMemberEvent,
     FleetMemberState,
     FleetOperation,
@@ -18,9 +22,11 @@ from fleetops.models import (
     OperationAction,
     OperationActionAttempt,
     OperationRoleAssignment,
+    PingRole,
     PingTarget,
 )
 from fleetops.services.audit import audit
+from fleetops.services.mentions import role_delete_refusal
 
 
 def _audit_snapshot(obj):
@@ -36,6 +42,10 @@ def _audit_snapshot(obj):
             data[field.name] = value
         else:
             data[field.name] = str(value)
+    if obj.pk is not None:
+        # Many-to-many fields as primary keys, such as the roles a ping channel allows.
+        for field in obj._meta.many_to_many:
+            data[field.name] = sorted(getattr(obj, field.name).values_list("pk", flat=True))
     return data
 
 
@@ -49,11 +59,17 @@ class FleetOpsConfigAuditMixin:
             except obj.__class__.DoesNotExist:
                 pass
         super().save_model(request, obj, form, change)
+        obj._fleetops_audit_old = old
+
+    def save_related(self, request, form, formsets, change):
+        # Many-to-many values are saved here, after save_model(), so the audit entry is written now.
+        super().save_related(request, form, formsets, change)
+        obj = form.instance
         audit(
             request.user,
             "configuration.update" if change else "configuration.create",
             obj,
-            old,
+            getattr(obj, "_fleetops_audit_old", None),
             _audit_snapshot(obj),
         )
         # A new default template takes the flag from the previous one.
@@ -82,6 +98,14 @@ class FleetOpsConfigAuditMixin:
                 self.delete_model(request, obj)
 
 
+class ReadOnlyAdmin(admin.ModelAdmin):
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(FleetOpsSettings)
 class FleetOpsSettingsAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
     def has_add_permission(self, request):
@@ -105,18 +129,62 @@ class CommsPresetAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
 
 @admin.register(ChannelPreset)
 class ChannelPresetAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
-    list_display = ("name", "channel_type", "channel_value", "is_active")
+    list_display = ("name", "channel_type", "channel_value", "ingame_channel_id", "is_active")
     list_filter = ("channel_type", "is_active")
+
+
+@admin.register(PingRole)
+class PingRoleAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
+    list_display = ("name", "role_id", "is_active", "source", "missing_from_discord", "sort_order")
+    list_filter = ("is_active", "source", "missing_from_discord")
+
+    def has_delete_permission(self, request, obj=None):
+        # As on the FleetOps configuration page: a channel that loses its allowed roles may ping every role.
+        # Django checks this for every role of a single or "delete selected" delete.
+        if obj is not None and role_delete_refusal(obj):
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def delete_view(self, request, object_id, extra_context=None):
+        role = self.get_object(request, unquote(object_id))
+        refusal = role_delete_refusal(role) if role is not None else ""
+        if refusal:
+            self.message_user(request, refusal, messages.ERROR)
+            return redirect("admin:fleetops_pingrole_changelist")
+        return super().delete_view(request, object_id, extra_context)
+
+    def get_deleted_objects(self, objs, request):
+        # The "delete selected" confirmation says why a role cannot be deleted.
+        for role in objs:
+            refusal = role_delete_refusal(role)
+            if refusal:
+                self.message_user(request, f"{role.name}: {refusal}", messages.ERROR)
+        return super().get_deleted_objects(objs, request)
 
 
 @admin.register(DiscordWebhook)
 class DiscordWebhookAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
-    list_display = ("name", "is_active")
+    list_display = ("name", "is_active", "allow_everyone", "allow_here", "sort_order")
+    filter_horizontal = ("allowed_roles",)
 
 
 @admin.register(PingTarget)
-class PingTargetAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
+class PingTargetAdmin(FleetOpsConfigAuditMixin, ReadOnlyAdmin):
+    """Legacy ping targets; 0.1.0a6 converted them into ping channels and mentions."""
+
     list_display = ("name", "target_value", "webhook", "is_active")
+
+
+@admin.register(EveEntityName)
+class EveEntityNameAdmin(ReadOnlyAdmin):
+    list_display = ("id", "name", "category", "updated_at")
+    list_filter = ("category",)
+    search_fields = ("name",)
+
+
+@admin.register(CharacterAffiliation)
+class CharacterAffiliationAdmin(ReadOnlyAdmin):
+    list_display = ("character_id", "corporation_id", "alliance_id", "faction_id", "updated_at")
 
 
 @admin.register(MessageTemplate)

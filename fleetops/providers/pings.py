@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import requests
 
 from fleetops.models import DISCORD_WEBHOOK_URL_RE
+from fleetops.services.mentions import DISCORD_MESSAGE_LIMIT, SUPPRESS_EMBEDS, discord_length
 
 # The secret token is the path segment right after the numeric webhook id.
 WEBHOOK_TOKEN_RE = re.compile(r"/webhooks/\d+/([^/?#\s]+)")
@@ -24,17 +25,34 @@ def _redact(text: str, webhook_url: str) -> str:
     return text
 
 
-def send_discord_webhook(webhook_url: str, content: str) -> PingResult:
+def send_discord_webhook(webhook_url: str, content: str, allowed_mentions: dict | None = None) -> PingResult:
+    """Post ``content`` to a Discord webhook.
+
+    Only the mentions in ``allowed_mentions`` notify anybody; without it nobody is notified.
+    """
     webhook_url = (webhook_url or "").strip()
     if not webhook_url:
-        return PingResult(False, message="No Discord webhook is configured for this ping target.")
+        return PingResult(False, message="No Discord webhook is configured for this ping channel.")
     # Rows saved before the URL was validated may point anywhere; never send to them.
     if not DISCORD_WEBHOOK_URL_RE.fullmatch(webhook_url):
         return PingResult(
             False, message="The configured webhook URL is not a Discord webhook URL, so nothing was sent."
         )
+    length = discord_length(content)
+    if length > DISCORD_MESSAGE_LIMIT:
+        # Discord would reject it; never cut a ping silently.
+        return PingResult(
+            False,
+            message=f"The ping is {length} characters; Discord accepts at most {DISCORD_MESSAGE_LIMIT}. "
+            "Shorten the additional information.",
+        )
+    payload = {
+        "content": content,
+        "allowed_mentions": allowed_mentions or {"parse": []},
+        "flags": SUPPRESS_EMBEDS,
+    }
     try:
-        response = requests.post(webhook_url, json={"content": content}, timeout=15, allow_redirects=False)
+        response = requests.post(webhook_url, json=payload, timeout=15, allow_redirects=False)
     except (requests.exceptions.MissingSchema, requests.exceptions.InvalidSchema, requests.exceptions.InvalidURL):
         return PingResult(False, message="The configured Discord webhook URL is invalid.")
     except requests.RequestException as exc:

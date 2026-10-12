@@ -23,8 +23,10 @@ from fleetops.models import (
     FleetType,
     MessageTemplate,
     OperationAction,
+    PingRole,
     PingTarget,
 )
+from fleetops.providers import srp as srp_providers
 from fleetops.services.audit import audit
 from fleetops.services.history import prune_history
 from fleetops.services.messages import render_operation_messages
@@ -35,7 +37,7 @@ from . import factories as f
 WEBHOOK_SECRET = "Zq7-hunter2-webhook-token-0d9c"
 WEBHOOK_URL = f"https://discord.com/api/webhooks/112233445566/{WEBHOOK_SECRET}"
 
-SECTIONS = ["fleet-types", "comms", "channels", "webhooks", "ping-targets", "templates"]
+SECTIONS = ["fleet-types", "comms", "channels", "ping-channels", "ping-roles", "templates"]
 
 CONFIG_PERMS = f.MEMBER_PERMS + ["fleetops.manage_configuration"]
 NO_CONFIG_PERMS = [p for p in f.FC_LEAD_PERMS if p != "fleetops.manage_configuration"]
@@ -44,8 +46,8 @@ SECTION_MODELS = {
     "fleet-types": FleetType,
     "comms": CommsPreset,
     "channels": ChannelPreset,
-    "webhooks": DiscordWebhook,
-    "ping-targets": PingTarget,
+    "ping-channels": DiscordWebhook,
+    "ping-roles": PingRole,
     "templates": MessageTemplate,
 }
 
@@ -57,8 +59,8 @@ def create_sample_objects():
         "fleet-types": f.fleet_type("StratOp", "2.00"),
         "comms": CommsPreset.objects.create(name="Mumble", channel_name="Ops 1", voice_url="mumble://voice.example.com/ops1"),
         "channels": ChannelPreset.objects.create(name="Logi A", channel_type=ChannelPreset.ChannelType.LOGI, channel_value="LogiA"),
-        "webhooks": webhook,
-        "ping-targets": PingTarget.objects.create(name="Everyone", target_value="@everyone", webhook=webhook),
+        "ping-channels": webhook,
+        "ping-roles": PingRole.objects.create(name="Sig A", role_id=123456789012345678),
         "templates": MessageTemplate.objects.create(
             name="Short Ping", template_type=MessageTemplate.TemplateType.PING, content="{{ fc }} at {{ formup }}"
         ),
@@ -77,13 +79,8 @@ def create_payload(section, *, webhook=None):
             "is_active": "on",
         },
         "channels": {"name": "Boost A", "channel_type": "boost", "channel_value": "BoostA", "is_active": "on"},
-        "webhooks": {"name": "Ops Webhook", "webhook_url": WEBHOOK_URL, "is_active": "on"},
-        "ping-targets": {
-            "name": "Ops Ping",
-            "target_value": "@here",
-            "webhook": str(webhook.pk) if webhook else "",
-            "is_active": "on",
-        },
+        "ping-channels": {"name": "Ops Webhook", "webhook_url": WEBHOOK_URL, "is_active": "on", "sort_order": "0"},
+        "ping-roles": {"name": "Sig B", "role_id": "876543210987654321", "is_active": "on", "sort_order": "0"},
         "templates": {
             "name": "Compact MOTD",
             "template_type": "motd",
@@ -101,10 +98,10 @@ def edit_payload(section, obj):
         return {"name": obj.name, "channel_name": "Ops 2", "voice_url": obj.voice_url, "description": "", "is_active": "on"}
     if section == "channels":
         return {"name": obj.name, "channel_type": obj.channel_type, "channel_value": "LogiB", "is_active": "on"}
-    if section == "webhooks":
-        return {"name": "Renamed Webhook", "webhook_url": obj.webhook_url, "is_active": "on"}
-    if section == "ping-targets":
-        return {"name": obj.name, "target_value": "@here", "webhook": str(obj.webhook_id or ""), "is_active": "on"}
+    if section == "ping-channels":
+        return {"name": "Renamed Webhook", "webhook_url": obj.webhook_url, "is_active": "on", "sort_order": "0"}
+    if section == "ping-roles":
+        return {"name": "Sig Renamed", "role_id": str(obj.role_id), "is_active": "on", "sort_order": "0"}
     if section == "templates":
         return {"name": obj.name, "template_type": obj.template_type, "content": "{{ fc }} / {{ doctrine }}", "is_active": "on"}
     raise AssertionError(section)
@@ -304,8 +301,8 @@ class ConfigurationCrudTests(TestCase):
             "fleet-types": ("point_weight", "2.00", "3.25"),
             "comms": ("channel_name", "Ops 1", "Ops 2"),
             "channels": ("channel_value", "LogiA", "LogiB"),
-            "webhooks": ("name", "Main Pings", "Renamed Webhook"),
-            "ping-targets": ("target_value", "@everyone", "@here"),
+            "ping-channels": ("name", "Main Pings", "Renamed Webhook"),
+            "ping-roles": ("name", "Sig A", "Sig Renamed"),
             "templates": ("content", "{{ fc }} at {{ formup }}", "{{ fc }} / {{ doctrine }}"),
         }
         for section, obj in objects.items():
@@ -327,8 +324,7 @@ class ConfigurationCrudTests(TestCase):
 
     def test_delete_each_section_removes_object_and_audits(self):
         objects = create_sample_objects()
-        # Delete the ping target before its webhook so each object is removed independently.
-        for section in ["fleet-types", "comms", "channels", "ping-targets", "webhooks", "templates"]:
+        for section in ["fleet-types", "comms", "channels", "ping-roles", "ping-channels", "templates"]:
             obj = objects[section]
             model = SECTION_MODELS[section]
             with self.subTest(section=section):
@@ -466,21 +462,32 @@ class ConfigurationCrudTests(TestCase):
         self.assertTrue(duplicate.context["form"].errors)
         self.assertEqual(other_type.status_code, 302)
 
-    def test_ping_target_rejects_unknown_webhook(self):
-        response = self.client.post(
-            reverse("fleetops:configuration_add", args=["ping-targets"]),
-            {"name": "Ghost", "target_value": "@here", "webhook": "424242", "is_active": "on"},
+    def test_ping_targets_are_no_longer_configured_here(self):
+        target = PingTarget.objects.create(name="Legacy", target_value="@here")
+
+        self.assertEqual(self.client.get(reverse("fleetops:configuration_list", args=["ping-targets"])).status_code, 404)
+        self.assertEqual(self.client.get(reverse("fleetops:configuration_add", args=["ping-targets"])).status_code, 404)
+        self.assertEqual(
+            self.client.post(reverse("fleetops:configuration_delete", args=["ping-targets", target.pk])).status_code, 404
         )
+        self.assertTrue(PingTarget.objects.filter(pk=target.pk).exists())
 
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("webhook", response.context["form"].errors)
-        self.assertFalse(PingTarget.objects.exists())
+    def test_ping_channel_allowed_roles_are_audited_as_ids(self):
+        sig_a = PingRole.objects.create(name="Sig A", role_id=111)
+        sig_b = PingRole.objects.create(name="Sig B", role_id=222)
+        payload = {**create_payload("ping-channels"), "allow_here": "on", "allowed_roles": [str(sig_a.pk), str(sig_b.pk)]}
 
-    def test_ping_target_without_webhook_is_allowed(self):
-        response = self.client.post(reverse("fleetops:configuration_add", args=["ping-targets"]), create_payload("ping-targets"))
+        response = self.client.post(reverse("fleetops:configuration_add", args=["ping-channels"]), payload)
 
-        self.assertEqual(response.status_code, 302)
-        self.assertIsNone(PingTarget.objects.get(name="Ops Ping").webhook)
+        self.assertRedirects(response, reverse("fleetops:configuration_list", args=["ping-channels"]))
+        channel = DiscordWebhook.objects.get(name="Ops Webhook")
+        self.assertTrue(channel.allow_here)
+        self.assertFalse(channel.allow_everyone)
+        self.assertEqual(set(channel.allowed_roles.all()), {sig_a, sig_b})
+        entry = audit_entries("configuration.create", channel)[0]
+        self.assertEqual(sorted(entry.new_value["allowed_roles"]), sorted([sig_a.pk, sig_b.pk]))
+        listing = self.client.get(reverse("fleetops:configuration_list", args=["ping-channels"]))
+        self.assertContains(listing, "@Sig A, @Sig B")
 
     def test_unchecking_active_disables_item(self):
         comms = CommsPreset.objects.create(name="Old Comms")
@@ -520,6 +527,7 @@ class ConfigurationDeleteReferencedTests(TestCase):
             name="Short MOTD", template_type=MessageTemplate.TemplateType.MOTD, content="{{ fc }}"
         )
         self.boost = ChannelPreset.objects.create(name="Boost A", channel_type=ChannelPreset.ChannelType.BOOST, channel_value="BoostA")
+        self.target = PingTarget.objects.create(name="Everyone", target_value="@everyone", webhook=self.objects["ping-channels"])
         self.operation = f.create_operation(
             self.fc,
             status=FleetOperation.Status.CLOSED,
@@ -527,7 +535,9 @@ class ConfigurationDeleteReferencedTests(TestCase):
             comms=self.objects["comms"],
             logi_channel=self.objects["channels"],
             boost_channel=self.boost,
-            ping_target=self.objects["ping-targets"],
+            ping_target=self.target,
+            ping_channel=self.objects["ping-channels"],
+            ping_mention_mode="everyone",
             ping_template=self.objects["templates"],
             motd_template=self.motd,
             ping_text="Rendered ping",
@@ -569,7 +579,7 @@ class ConfigurationDeleteReferencedTests(TestCase):
             ("comms", self.objects["comms"]),
             ("channels", self.objects["channels"]),
             ("channels", self.boost),
-            ("ping-targets", self.objects["ping-targets"]),
+            ("ping-channels", self.objects["ping-channels"]),
             ("templates", self.objects["templates"]),
             ("templates", self.motd),
         ]:
@@ -583,23 +593,23 @@ class ConfigurationDeleteReferencedTests(TestCase):
         self.assertIsNone(self.operation.comms)
         self.assertIsNone(self.operation.logi_channel)
         self.assertIsNone(self.operation.boost_channel)
-        self.assertIsNone(self.operation.ping_target)
+        self.assertIsNone(self.operation.ping_channel)
+        self.assertEqual(self.operation.ping_channel_name, "Main Pings")
+        self.assertEqual(self.operation.ping_mention_mode, "everyone")
         self.assertIsNone(self.operation.ping_template)
         self.assertIsNone(self.operation.motd_template)
         self.assertEqual(self.operation.ping_text, "Rendered ping")
         self.assertEqual(self.operation.motd_text, "Rendered motd")
 
     def test_deleting_webhook_unlinks_ping_target(self):
-        target = self.objects["ping-targets"]
-
-        response = self._delete("webhooks", self.objects["webhooks"])
+        response = self._delete("ping-channels", self.objects["ping-channels"])
 
         self.assertEqual(response.status_code, 302)
-        target.refresh_from_db()
-        self.assertIsNone(target.webhook)
+        self.target.refresh_from_db()
+        self.assertIsNone(self.target.webhook)
 
     def test_operation_detail_still_renders_after_presets_are_deleted(self):
-        for section in ["comms", "channels", "ping-targets", "webhooks", "templates"]:
+        for section in ["comms", "channels", "ping-roles", "ping-channels", "templates"]:
             self._delete(section, self.objects[section])
         self.client.force_login(self.fc)
 
@@ -766,6 +776,98 @@ class SettingsFormTests(TestCase):
         self.assertIn("data_retention_days", form.errors)
 
 
+class FakeSrpProvider:
+    def __init__(self, key, installed=True, label=""):
+        self.key = key
+        self._installed = installed
+        if label:
+            self.label = label
+
+    def available(self):
+        if isinstance(self._installed, Exception):
+            raise self._installed
+        return self._installed
+
+    def create_for_operation(self, operation):
+        raise AssertionError("not used")
+
+
+class SrpProviderChoiceTests(TestCase):
+    def setUp(self):
+        # Only the providers registered by each test, so the result does not depend on other apps.
+        patcher = mock.patch.dict(srp_providers._PROVIDERS, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.admin = f.create_user(perms=CONFIG_PERMS)
+        self.client.force_login(self.admin)
+
+    def register(self, *providers):
+        for provider in providers:
+            srp_providers.register_srp_provider(provider)
+
+    def choices(self, stored="auto"):
+        f.settings(srp_provider=stored)
+        return FleetOpsSettingsForm(instance=FleetOpsSettings.get_solo()).fields["srp_provider"].choices
+
+    def test_automatic_and_every_registered_provider_with_its_state(self):
+        self.register(
+            FakeSrpProvider("allianceauth_builtin", installed=False),
+            FakeSrpProvider("zz_custom", installed=True, label="Custom SRP"),
+            FakeSrpProvider("aasrp", installed=True),
+        )
+
+        self.assertEqual(
+            self.choices(),
+            [
+                ("auto", "Automatic (aasrp, then Alliance Auth SRP)"),
+                ("aasrp", "aasrp (installed)"),
+                ("allianceauth_builtin", "Alliance Auth SRP (not installed)"),
+                ("zz_custom", "Custom SRP (installed)"),
+            ],
+        )
+
+    def test_provider_that_fails_its_check_counts_as_not_installed(self):
+        self.register(FakeSrpProvider("aasrp", installed=RuntimeError("broken")))
+
+        self.assertIn(("aasrp", "aasrp (not installed)"), self.choices())
+
+    def test_unknown_stored_value_stays_selectable(self):
+        self.register(FakeSrpProvider("allianceauth_builtin"))
+
+        self.assertEqual(self.choices("better_srp")[-1], ("better_srp", "better_srp (unknown provider)"))
+        form = FleetOpsSettingsForm(settings_payload(srp_provider="better_srp"), instance=FleetOpsSettings.get_solo())
+        self.assertTrue(form.is_valid(), form.errors)
+        form.save()
+        self.assertEqual(FleetOpsSettings.get_solo().srp_provider, "better_srp")
+
+    def test_old_aasrp_key_is_labelled(self):
+        self.register(FakeSrpProvider("aasrp"))
+
+        self.assertEqual(self.choices("aa_srp")[-1], ("aa_srp", "aa_srp (old name of aasrp)"))
+
+    def test_values_that_are_neither_registered_nor_stored_are_rejected(self):
+        self.register(FakeSrpProvider("allianceauth_builtin"))
+        f.settings(srp_provider="auto")
+
+        response = self.client.post(reverse("fleetops:configuration_settings"), settings_payload(srp_provider="better_srp"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("srp_provider", response.context["form"].errors)
+        self.assertEqual(FleetOpsSettings.get_solo().srp_provider, "auto")
+
+    def test_a_registered_provider_can_be_chosen_on_the_page(self):
+        self.register(FakeSrpProvider("aasrp", installed=False), FakeSrpProvider("allianceauth_builtin"))
+
+        page = self.client.get(reverse("fleetops:configuration_settings"))
+        response = self.client.post(reverse("fleetops:configuration_settings"), settings_payload(srp_provider="aasrp"))
+
+        self.assertContains(page, '<option value="aasrp">aasrp (not installed)</option>', html=True)
+        self.assertRedirects(response, reverse("fleetops:configuration_index"))
+        self.assertEqual(FleetOpsSettings.get_solo().srp_provider, "aasrp")
+        entry = AuditLog.objects.get(action="configuration.update", object_type="FleetOpsSettings")
+        self.assertEqual((entry.old_value["srp_provider"], entry.new_value["srp_provider"]), ("auto", "aasrp"))
+
+
 class FleetTypeWeightSnapshotTests(TestCase):
     def setUp(self):
         self.admin = f.create_user(perms=CONFIG_PERMS)
@@ -820,16 +922,14 @@ class WebhookSecretTests(TestCase):
     def setUp(self):
         self.admin = f.create_user(perms=CONFIG_PERMS + ["fleetops.view_audit_log"])
         self.client.force_login(self.admin)
-        self.client.post(reverse("fleetops:configuration_add", args=["webhooks"]), create_payload("webhooks"))
+        self.client.post(reverse("fleetops:configuration_add", args=["ping-channels"]), create_payload("ping-channels"))
         self.webhook = DiscordWebhook.objects.get(name="Ops Webhook")
-        self.client.post(
-            reverse("fleetops:configuration_add", args=["ping-targets"]), create_payload("ping-targets", webhook=self.webhook)
-        )
-        self.target = PingTarget.objects.get(name="Ops Ping")
+        self.target = PingTarget.objects.create(name="Ops Ping", target_value="@here", webhook=self.webhook)
+        self.role = PingRole.objects.create(name="Sig A", role_id=123456789012345678)
         rotated = f"{WEBHOOK_URL}-rotated"
         self.client.post(
-            reverse("fleetops:configuration_edit", args=["webhooks", self.webhook.pk]),
-            {"name": "Ops Webhook", "webhook_url": rotated, "is_active": "on"},
+            reverse("fleetops:configuration_edit", args=["ping-channels", self.webhook.pk]),
+            {"name": "Ops Webhook", "webhook_url": rotated, "is_active": "on", "sort_order": "0"},
         )
         self.webhook.refresh_from_db()
 
@@ -843,10 +943,10 @@ class WebhookSecretTests(TestCase):
 
     def test_audit_json_never_contains_webhook_url(self):
         spare = DiscordWebhook.objects.create(name="Spare", webhook_url=WEBHOOK_URL)
-        self.client.post(reverse("fleetops:configuration_delete", args=["webhooks", spare.pk]))
+        self.client.post(reverse("fleetops:configuration_delete", args=["ping-channels", spare.pk]))
 
         entries = AuditLog.objects.all()
-        self.assertGreaterEqual(entries.count(), 4)
+        self.assertGreaterEqual(entries.count(), 3)
         for entry in entries:
             payload = json.dumps([entry.old_value, entry.new_value, entry.reason])
             self.assertNotIn(WEBHOOK_SECRET, payload)
@@ -862,29 +962,29 @@ class WebhookSecretTests(TestCase):
         self.assertNoSecret(self.client.get(reverse("fleetops:audit_log")))
 
     def test_webhook_list_hides_url(self):
-        response = self.client.get(reverse("fleetops:configuration_list", args=["webhooks"]))
+        response = self.client.get(reverse("fleetops:configuration_list", args=["ping-channels"]))
         self.assertNoSecret(response)
         self.assertContains(response, "Ops Webhook")
 
-    def test_ping_target_pages_hide_url(self):
-        self.assertNoSecret(self.client.get(reverse("fleetops:configuration_list", args=["ping-targets"])))
-        self.assertNoSecret(self.client.get(reverse("fleetops:configuration_add", args=["ping-targets"])))
-        self.assertNoSecret(self.client.get(reverse("fleetops:configuration_edit", args=["ping-targets", self.target.pk])))
+    def test_ping_role_pages_hide_url(self):
+        self.assertNoSecret(self.client.get(reverse("fleetops:configuration_list", args=["ping-roles"])))
+        self.assertNoSecret(self.client.get(reverse("fleetops:configuration_add", args=["ping-roles"])))
+        self.assertNoSecret(self.client.get(reverse("fleetops:configuration_edit", args=["ping-roles", self.role.pk])))
 
     def test_configuration_index_and_settings_hide_url(self):
         self.assertNoSecret(self.client.get(reverse("fleetops:configuration_index")))
         self.assertNoSecret(self.client.get(reverse("fleetops:configuration_settings")))
 
     def test_webhook_edit_form_shows_url(self):
-        response = self.client.get(reverse("fleetops:configuration_edit", args=["webhooks", self.webhook.pk]))
+        response = self.client.get(reverse("fleetops:configuration_edit", args=["ping-channels", self.webhook.pk]))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, WEBHOOK_SECRET)
 
     def test_save_message_does_not_echo_url(self):
         response = self.client.post(
-            reverse("fleetops:configuration_edit", args=["webhooks", self.webhook.pk]),
-            {"name": "Ops Webhook", "webhook_url": WEBHOOK_URL, "is_active": "on"},
+            reverse("fleetops:configuration_edit", args=["ping-channels", self.webhook.pk]),
+            {"name": "Ops Webhook", "webhook_url": WEBHOOK_URL, "is_active": "on", "sort_order": "0"},
             follow=True,
         )
         self.assertNoSecret(response)
@@ -896,11 +996,13 @@ class WebhookSecretTests(TestCase):
         response = self.client.get(reverse("fleetops:start_fleet"))
 
         self.assertNoSecret(response)
-        self.assertContains(response, "Ops Ping")
+        self.assertContains(response, "Ops Webhook")
 
     def test_operation_detail_hides_url(self):
         fc = f.create_user(perms=f.FC_PERMS)
-        operation = f.create_operation(fc, status=FleetOperation.Status.CLOSED, ping_target=self.target)
+        operation = f.create_operation(
+            fc, status=FleetOperation.Status.CLOSED, ping_target=self.target, ping_channel=self.webhook
+        )
         self.client.force_login(fc)
 
         self.assertNoSecret(self.client.get(reverse("fleetops:operation_detail", args=[operation.uuid])))
@@ -909,7 +1011,11 @@ class WebhookSecretTests(TestCase):
         fc = f.create_user(perms=f.FC_PERMS)
         pilot = f.create_user(perms=f.MEMBER_PERMS)
         operation = f.create_operation(
-            fc, status=FleetOperation.Status.CLOSED, ping_target=self.target, ping_text="Form up"
+            fc,
+            status=FleetOperation.Status.CLOSED,
+            ping_target=self.target,
+            ping_channel=self.webhook,
+            ping_text="Form up",
         )
         f.add_attendance(operation, pilot)
         path = self.webhook.webhook_url.split("discord.com", 1)[1]

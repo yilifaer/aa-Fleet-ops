@@ -4,10 +4,16 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MaxValueValidator, MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models, transaction
 from django.template import Template, TemplateSyntaxError
 from django.utils import timezone
+
+from fleetops.validators import (  # noqa: F401 - VOICE_URL_SCHEMES re-exported
+    INGAME_CHANNEL_ID_RE,
+    VOICE_URL_SCHEMES,
+    validate_voice_url,
+)
 
 MIN_RETENTION_DAYS = 365
 MAX_RETENTION_DAYS = 36500
@@ -80,7 +86,7 @@ class FleetOpsSettings(models.Model):
     srp_provider = models.CharField(
         max_length=50,
         default="auto",
-        help_text="SRP provider key. 'auto' prefers Alliance Auth built-in SRP and allows future provider plugins.",
+        help_text="SRP provider key. 'auto' uses aasrp, then Alliance Auth SRP, then any other registered provider.",
     )
 
     class Meta:
@@ -129,9 +135,17 @@ class FleetType(models.Model):
 class CommsPreset(models.Model):
     name = models.CharField(max_length=100, unique=True)
     channel_name = models.CharField(max_length=255, blank=True)
-    voice_url = models.CharField(max_length=500, blank=True, help_text="Supports mumble://, https:// and other voice links.")
+    voice_url = models.CharField(
+        max_length=500,
+        blank=True,
+        validators=[validate_voice_url],
+        help_text="Supports mumble://, ts3server://, discord:// and https:// voice links. "
+        "Do not include a personal user name or password.",
+    )
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
+    # Public join links use this instead of the primary key, so they cannot be enumerated.
+    join_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
 
     class Meta:
         ordering = ["name"]
@@ -147,7 +161,12 @@ class ChannelPreset(models.Model):
 
     name = models.CharField(max_length=100)
     channel_type = models.CharField(max_length=20, choices=ChannelType.choices)
-    channel_value = models.CharField(max_length=255)
+    channel_value = models.CharField("Channel name", max_length=255, help_text="Channel name shown in the MOTD")
+    ingame_channel_id = models.CharField(
+        max_length=64,
+        blank=True,
+        validators=[RegexValidator(INGAME_CHANNEL_ID_RE, "Enter an in-game channel id such as player_<32 hex digits>.")],
+    )
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -160,19 +179,59 @@ class ChannelPreset(models.Model):
         return f"{self.get_channel_type_display()}: {self.name}"
 
 
+class PingRole(models.Model):
+    """A Discord role that FCs may mention in a ping."""
+
+    class Source(models.TextChoices):
+        MANUAL = "manual", "Manual"
+        DISCORD = "discord", "Synced from Discord"
+
+    name = models.CharField(max_length=100, help_text="Role name without the leading @.")
+    role_id = models.BigIntegerField(
+        unique=True,
+        validators=[MinValueValidator(1), MaxValueValidator(MAX_DATABASE_ID)],
+        help_text="Discord role ID.",
+    )
+    is_active = models.BooleanField(default=True, help_text="FCs can pick this role when they send a ping.")
+    source = models.CharField(max_length=10, choices=Source.choices, default=Source.MANUAL)
+    missing_from_discord = models.BooleanField(default=False)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort_order", "name"]
+
+    def __str__(self):
+        return f"@{self.name}"
+
+
 class DiscordWebhook(models.Model):
+    """A Discord channel that receives pings through its webhook."""
+
     name = models.CharField(max_length=100, unique=True)
     webhook_url = models.TextField(validators=[validate_discord_webhook_url])
     is_active = models.BooleanField(default=True)
+    allow_everyone = models.BooleanField(default=False, help_text="FCs may ping @everyone in this channel.")
+    allow_here = models.BooleanField(default=False, help_text="FCs may ping @here in this channel.")
+    allowed_roles = models.ManyToManyField(
+        PingRole,
+        blank=True,
+        related_name="channels",
+        help_text="Leave empty to allow every active role.",
+    )
+    sort_order = models.PositiveIntegerField(default=0)
 
     class Meta:
-        ordering = ["name"]
+        ordering = ["sort_order", "name"]
+        verbose_name = "Ping channel"
 
     def __str__(self):
         return self.name
 
 
 class PingTarget(models.Model):
+    """Legacy ping destination, replaced by ping channels and mentions. Kept for fleet history."""
+
     name = models.CharField(max_length=100, unique=True)
     target_value = models.CharField(max_length=255, blank=True)
     webhook = models.ForeignKey(DiscordWebhook, null=True, blank=True, on_delete=models.SET_NULL)
@@ -232,6 +291,7 @@ class MessageTemplate(models.Model):
 class FleetOperation(models.Model):
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"
+        SCHEDULED = "scheduled", "Scheduled"
         STARTING = "starting", "Starting"
         ACTIVE = "active", "Active"
         ENDING = "ending", "Ending"
@@ -244,7 +304,14 @@ class FleetOperation(models.Model):
         FLEET_GONE = "fleet_gone", "Fleet no longer exists or the FC left it"
         BOSS_HANDOVER = "boss_handover", "Fleet boss handed over"
 
+    class MentionMode(models.TextChoices):
+        NONE = "none", "No ping"
+        EVERYONE = "everyone", "@everyone"
+        HERE = "here", "@here"
+        ROLES = "roles", "Roles"
+
     # Fleets in these states own their ESI fleet; a second start for it returns the same record.
+    # Scheduled fleets have no ESI fleet yet.
     OPEN_STATUSES = (Status.STARTING, Status.ACTIVE, Status.ENDING)
 
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
@@ -270,7 +337,17 @@ class FleetOperation(models.Model):
     comms = models.ForeignKey(CommsPreset, null=True, blank=True, on_delete=models.SET_NULL)
     logi_channel = models.ForeignKey(ChannelPreset, null=True, blank=True, related_name="fleetops_logi_operations", on_delete=models.SET_NULL)
     boost_channel = models.ForeignKey(ChannelPreset, null=True, blank=True, related_name="fleetops_boost_operations", on_delete=models.SET_NULL)
+    # Legacy; new fleets store the ping channel and mention snapshot below.
     ping_target = models.ForeignKey(PingTarget, null=True, blank=True, on_delete=models.SET_NULL)
+    ping_channel = models.ForeignKey(
+        DiscordWebhook, null=True, blank=True, on_delete=models.SET_NULL, related_name="fleetops_operations"
+    )
+    ping_channel_name = models.CharField(max_length=100, blank=True)
+    ping_mention_mode = models.CharField(max_length=10, choices=MentionMode.choices, default=MentionMode.NONE)
+    # Snapshots: [{"id": "<role id>", "name": "Sig A"}] and
+    # [{"fit_id": 3, "fit": "DPS Moa", "ship_type_id": 623, "ship": "Moa"}].
+    ping_roles = models.JSONField(default=list, blank=True)
+    doctrine_fits = models.JSONField(default=list, blank=True)
     ping_template = models.ForeignKey(MessageTemplate, null=True, blank=True, related_name="fleetops_ping_operations", on_delete=models.SET_NULL)
     motd_template = models.ForeignKey(MessageTemplate, null=True, blank=True, related_name="fleetops_motd_operations", on_delete=models.SET_NULL)
 
@@ -555,6 +632,36 @@ class MonthlyFCStatistic(models.Model):
     class Meta:
         ordering = ["-total_points", "fc_user__username"]
         constraints = [models.UniqueConstraint(fields=["period", "fc_user"], name="fleetops_unique_monthly_fc_stat")]
+
+
+class EveEntityName(models.Model):
+    """ESI names for IDs Alliance Auth does not know (characters, corporations, alliances)."""
+
+    UNRESOLVED = "unresolved"
+
+    id = models.BigIntegerField(primary_key=True)
+    category = models.CharField(max_length=20, blank=True, help_text="ESI category, or \"unresolved\".")
+    name = models.CharField(max_length=255, blank=True)
+    updated_at = models.DateTimeField(db_index=True)
+
+    class Meta:
+        verbose_name = "EVE entity name"
+
+    def __str__(self):
+        return self.name or str(self.id)
+
+
+class CharacterAffiliation(models.Model):
+    """Corporation and alliance of characters Alliance Auth does not know, from ESI."""
+
+    character_id = models.BigIntegerField(primary_key=True)
+    corporation_id = models.BigIntegerField(null=True, blank=True)
+    alliance_id = models.BigIntegerField(null=True, blank=True)
+    faction_id = models.BigIntegerField(null=True, blank=True)
+    updated_at = models.DateTimeField(db_index=True)
+
+    def __str__(self):
+        return str(self.character_id)
 
 
 class AuditLog(models.Model):

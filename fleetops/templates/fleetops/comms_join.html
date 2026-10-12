@@ -1,0 +1,41 @@
+{% extends "public/base.html" %}
+{% block page_title %}Join {{ preset.name }}{% endblock page_title %}
+{% block extra_include %}
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-8 col-lg-6 col-xl-4">
+    <div class="card card-login border-secondary p-3">
+      <h4 class="text-center mb-1">Joining {{ preset.name }}…</h4>
+      {% if preset.channel_name %}<div class="text-center mb-3">{{ preset.channel_name }}</div>{% else %}<div class="mb-3"></div>{% endif %}
+      <a class="btn btn-primary w-100 mb-3" href="{{ voice_url }}" rel="noreferrer">Open in voice client</a>
+      <label class="form-label small" for="fleetops-voice-link">Voice link</label>
+      <div class="input-group mb-2">
+        <input id="fleetops-voice-link" type="text" class="form-control" value="{{ voice_url }}" readonly>
+        <button type="button" class="btn btn-outline-light" id="fleetops-copy-voice-link">Copy</button>
+      </div>
+      <div class="small">If your voice client does not open, install it, or copy the link and open it in the client.</div>
+    </div>
+  </div>
+</div>
+{{ voice_url|json_script:"fleetops-voice-url" }}
+<script>
+(() => {
+  const voiceUrl = JSON.parse(document.getElementById('fleetops-voice-url').textContent);
+  const input = document.getElementById('fleetops-voice-link');
+  const button = document.getElementById('fleetops-copy-voice-link');
+  button.addEventListener('click', () => {
+    const done = () => { button.textContent = 'Copied'; setTimeout(() => { button.textContent = 'Copy'; }, 1500); };
+    input.select();
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(input.value).then(done);
+    } else if (document.execCommand('copy')) {
+      done();
+    }
+  });
+  window.location.href = voiceUrl;
+})();
+</script>
+{% endblock %}

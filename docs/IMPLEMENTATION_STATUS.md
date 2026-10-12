@@ -1,4 +1,4 @@
-# Implementation Status — 0.1.0a5
+# Implementation Status — 0.1.0a6
 
 This file separates **implemented alpha behavior** from **product target**.
 
@@ -11,9 +11,12 @@ The presence of a feature in `FEATURES.md` does not by itself mean it has been p
 - Fleet Type presets and point weights
 - Comms presets
 - Logi / Boost channel presets
-- Ping targets and Discord webhook configuration
+- Ping channels (Discord webhooks with allowed mentions) and Ping roles with Discord role sync
 - FleetOps front-end Administration Center protected by `fleetops.manage_configuration`
-- Front-end CRUD for Fleet Types, Comms, Logi/Boost Channels, Webhooks, Ping Targets and Message Templates
+- Front-end CRUD for Fleet Types, Comms, Logi/Boost Channels, Ping Channels, Ping Roles and Message Templates
+- Pre pings and scheduled fleets (start, edit, cancel)
+- Public comms join page
+- Regenerate & Push MOTD on active fleets
 - Front-end General Settings editor; Django Admin remains IT/emergency only
 - Ping/MOTD templates
 - FC Form Up free-text input
@@ -38,7 +41,7 @@ The presence of a feature in `FEATURES.md` does not by itself mean it has been p
 - Optional SDE routing/proximity service
 - Test seed command
 - Basic calculation unit tests
-- SRP provider registry and best-effort built-in Alliance Auth SRP adapter
+- SRP provider registry with an aa-srp provider and a best-effort built-in Alliance Auth SRP adapter (`auto` uses aa-srp first)
 - FleetOperation SRP provider/reference/URL/error snapshot and non-blocking Fleet Start SRP action
 - Historical manual-attendance front-end with closed-fleet selection and repeated/manual multi-credit support
 - Personal/corporation/alliance 365-day attendance-history pages
@@ -101,7 +104,7 @@ Depending on test results and community feedback:
 
 ## Release rule
 
-`0.1.0a5` is an **alpha test build**.
+`0.1.0a6` is an **alpha test build**.
 
 It should not be advertised as production-ready until it has passed:
 

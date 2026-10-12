@@ -293,19 +293,34 @@ class SRPRegistryTests(IsolatedSRPRegistryMixin, TestCase):
 
         self.assertIn("community_srp", get_registered_srp_providers())
 
-    def test_auto_prefers_better_srp_then_aa_srp_then_builtin(self):
+    def test_auto_prefers_aasrp_then_builtin_then_other_providers(self):
         other = self.register(FakeSRPProvider("zeta_srp"))
         builtin = self.register(FakeSRPProvider("allianceauth_builtin"))
-        aa_srp = self.register(FakeSRPProvider("aa_srp"))
-        better = self.register(FakeSRPProvider("better_srp"))
+        aasrp = self.register(FakeSRPProvider("aasrp"))
 
-        self.assertIs(get_srp_provider("auto"), better)
-        better.is_available = False
-        self.assertIs(get_srp_provider("auto"), aa_srp)
-        aa_srp.is_available = False
+        self.assertIs(get_srp_provider("auto"), aasrp)
+        aasrp.is_available = False
         self.assertIs(get_srp_provider("auto"), builtin)
         builtin.is_available = False
         self.assertIs(get_srp_provider("auto"), other)
+
+    def test_better_srp_is_not_preferred_in_auto_mode(self):
+        # "better_srp" was never a real app; it is an ordinary provider key now.
+        better = self.register(FakeSRPProvider("better_srp"))
+        builtin = self.register(FakeSRPProvider("allianceauth_builtin"))
+
+        self.assertIs(get_srp_provider("auto"), builtin)
+        builtin.is_available = False
+        self.assertIs(get_srp_provider("auto"), better)
+
+    def test_stored_aa_srp_key_selects_the_aasrp_provider(self):
+        aasrp = self.register(FakeSRPProvider("aasrp"))
+        self.register(FakeSRPProvider("allianceauth_builtin"))
+
+        self.assertIs(get_srp_provider("aa_srp"), aasrp)
+        self.assertIs(get_srp_provider(" aa_srp "), aasrp)
+        aasrp.is_available = False
+        self.assertIsNone(get_srp_provider("aa_srp"))
 
     def test_auto_falls_back_to_first_available_registered_provider(self):
         self.register(FakeSRPProvider("first_srp", available=False))
@@ -315,7 +330,7 @@ class SRPRegistryTests(IsolatedSRPRegistryMixin, TestCase):
         self.assertIs(get_srp_provider("auto"), second)
 
     def test_auto_returns_none_when_every_provider_is_unavailable(self):
-        self.register(FakeSRPProvider("better_srp", available=False))
+        self.register(FakeSRPProvider("aasrp", available=False))
         self.register(FakeSRPProvider("zeta_srp", available=False))
 
         self.assertIsNone(get_srp_provider("auto"))
@@ -328,30 +343,46 @@ class SRPRegistryTests(IsolatedSRPRegistryMixin, TestCase):
         self.assertIs(get_srp_provider("  auto  "), provider)
 
     def test_explicit_key_selects_that_provider_only(self):
-        self.register(FakeSRPProvider("better_srp"))
+        self.register(FakeSRPProvider("aasrp"))
         chosen = self.register(FakeSRPProvider("zeta_srp"))
 
         self.assertIs(get_srp_provider("zeta_srp"), chosen)
         self.assertIs(get_srp_provider(" zeta_srp "), chosen)
 
     def test_explicit_unavailable_or_unknown_key_does_not_fall_back(self):
-        self.register(FakeSRPProvider("better_srp"))
+        self.register(FakeSRPProvider("aasrp"))
         self.register(FakeSRPProvider("zeta_srp", available=False))
 
         self.assertIsNone(get_srp_provider("zeta_srp"))
         self.assertIsNone(get_srp_provider("missing_srp"))
 
-    def test_create_srp_link_without_provider_reports_message(self):
+    def test_create_srp_link_with_a_provider_that_is_not_installed(self):
+        self.register(FakeSRPProvider("zeta_srp", available=False))
         fc = f.create_user(perms=f.FC_PERMS)
         operation = f.create_operation(fc)
 
-        result = create_srp_link(operation, "missing_srp")
+        for key in ("missing_srp", "zeta_srp", " zeta_srp "):
+            with self.subTest(key=key):
+                result = create_srp_link(operation, key)
 
-        self.assertFalse(result.created)
-        self.assertEqual(result.provider, "missing_srp")
-        self.assertEqual(result.reference, "")
-        self.assertEqual(result.url, "")
-        self.assertIn("No supported SRP provider", result.message)
+                self.assertFalse(result.created)
+                self.assertEqual(result.provider, key.strip())
+                self.assertEqual(result.reference, "")
+                self.assertEqual(result.url, "")
+                self.assertEqual(result.message, f"SRP provider '{key.strip()}' is not installed.")
+
+    def test_create_srp_link_in_auto_mode_without_any_provider(self):
+        self.register(FakeSRPProvider("zeta_srp", available=False))
+        fc = f.create_user(perms=f.FC_PERMS)
+        operation = f.create_operation(fc)
+
+        for key in ("auto", "", None):
+            with self.subTest(key=key):
+                result = create_srp_link(operation, key)
+
+                self.assertFalse(result.created)
+                self.assertEqual(result.provider, "auto")
+                self.assertEqual(result.message, "No supported SRP provider is available.")
 
     def test_create_srp_link_delegates_to_selected_provider(self):
         provider = self.register(FakeSRPProvider("zeta_srp"))
@@ -407,7 +438,7 @@ class BuiltinSRPProviderTests(TestCase):
             result = create_srp_link(self.operation, "allianceauth_builtin")
 
         self.assertFalse(result.created)
-        self.assertIn("No supported SRP provider", result.message)
+        self.assertEqual(result.message, "SRP provider 'allianceauth_builtin' is not installed.")
 
     def test_creates_srp_fleet_from_operation_details(self):
         model = fake_aa_srp_model()
@@ -524,7 +555,7 @@ class StartFleetSRPTests(IsolatedSRPRegistryMixin, PatchedStartFleetMixin, TestC
         self.assertEqual(action_of(operation, "srp_link").status, ActionStatus.SUCCESS)
 
     def test_configured_provider_key_is_used(self):
-        preferred = self.register(FakeSRPProvider("better_srp"))
+        preferred = self.register(FakeSRPProvider("aasrp"))
         configured = self.register(FakeSRPProvider("zeta_srp"))
         f.settings(srp_provider="zeta_srp")
 

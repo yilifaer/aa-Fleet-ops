@@ -6,7 +6,15 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 from kombu.exceptions import OperationalError as QueueError
 
-from fleetops.models import FleetOperation, FleetOpsSettings, OperationAction, OperationActionAttempt, end_reason_text
+from fleetops.models import (
+    AuditLog,
+    FleetOperation,
+    FleetOpsSettings,
+    OperationAction,
+    OperationActionAttempt,
+    end_reason_text,
+)
+from fleetops.providers.doctrines import doctrine_fits_snapshot
 from fleetops.providers.esi import FleetESIError, detect_character_fleet, set_fleet_motd
 from fleetops.providers.pings import send_discord_webhook
 from fleetops.providers.srp import create_srp_link
@@ -14,7 +22,16 @@ from fleetops.services.audit import audit
 from fleetops.services.attendance import set_operation_attendance_multiplier
 from fleetops.services.errors import log_failure, report_failure
 from fleetops.services.identity import character_label, get_owned_character
+from fleetops.services.mentions import (
+    MentionSelection,
+    allowed_mentions,
+    limit_mass_mentions,
+    selection_from_operation,
+    snapshot_roles,
+    validate_for_channel,
+)
 from fleetops.services.messages import render_messages
+from fleetops.services.names import queue_name_resolution, stale_character_ids, unnamed_character_ids
 from fleetops.services.tracking import sync_operation
 
 logger = get_extension_logger(__name__)
@@ -26,6 +43,10 @@ EndReason = FleetOperation.EndReason
 # interrupted (for example its web worker was killed) and no longer holds its ESI fleet.
 STARTING_ABANDONED_AFTER = timedelta(minutes=5)
 START_ABANDONED_MESSAGE = "The fleet start did not finish, so this operation was cancelled. Start the fleet again to track it."
+NOT_OWNED_MESSAGE = "Selected character is not owned by the current Alliance Auth user."
+NO_PING_CHANNEL = "No Discord channel selected; the ping is available to copy."
+PING_NOT_REQUESTED = "Form-up ping not requested."
+EMPTY_PING = "Not sent because the ping text is empty."
 
 
 def _record_attempt(obj):
@@ -67,17 +88,43 @@ def _keep_skipped(operation, action, message):
     return obj
 
 
-def _send_ping(operation):
-    target = operation.ping_target
-    webhook_url = target.webhook.webhook_url if target and target.webhook and target.webhook.is_active else ""
-    if not webhook_url:
-        return set_action(
-            operation, "discord_ping", False, "No active webhook configured. Ping remains available for manual copy."
-        )
-    if not operation.ping_text:
-        return set_action(operation, "discord_ping", False, "Not sent because the ping text is empty.")
-    result = send_discord_webhook(webhook_url, operation.ping_text)
-    return set_action(operation, "discord_ping", result.success, result.message)
+def _ping_channel_problem(operation, action):
+    """Record why nothing can be posted to the fleet's ping channel; None when something can."""
+    channel = operation.ping_channel
+    if channel is None:
+        return set_action(operation, action, None, NO_PING_CHANNEL)
+    if not channel.is_active:
+        return set_action(operation, action, False, f"Ping channel {channel.name} is disabled.")
+    return None
+
+
+def _post_to_ping_channel(operation, action, text, mentions):
+    if not text:
+        return set_action(operation, action, False, EMPTY_PING)
+    result = send_discord_webhook(operation.ping_channel.webhook_url, text, mentions)
+    return set_action(operation, action, result.success, result.message)
+
+
+def _send_ping(operation, *, action="discord_ping"):
+    """Post the stored ping to the fleet's ping channel, notifying exactly the stored mention."""
+    problem = _ping_channel_problem(operation, action)
+    if problem is not None:
+        return problem
+    selection = selection_from_operation(operation)
+    # The channel or the roles may have changed since the FC picked them.
+    errors = validate_for_channel(selection, operation.ping_channel)
+    if errors:
+        return set_action(operation, action, False, " ".join(errors))
+    text = limit_mass_mentions(operation.ping_text, selection)
+    return _post_to_ping_channel(operation, action, text, allowed_mentions(selection))
+
+
+def send_channel_notice(operation, action, text):
+    """Post ``text`` to the fleet's ping channel without notifying anybody."""
+    problem = _ping_channel_problem(operation, action)
+    if problem is not None:
+        return problem
+    return _post_to_ping_channel(operation, action, text, {"parse": []})
 
 
 def _update_motd(operation, user, character_id):
@@ -100,7 +147,7 @@ def _render_missing_text(operation, field):
         return True
     try:
         with transaction.atomic():
-            rendered = render_messages(operation)
+            rendered = render_messages(operation, pre_ping=operation.status == FleetOperation.Status.SCHEDULED)
             setattr(operation, field, rendered.ping if field == "ping_text" else rendered.motd)
             operation.save(update_fields=[field, "updated_at"])
     except Exception as exc:
@@ -155,78 +202,210 @@ def cancel_abandoned_starts(*, actor=None, esi_fleet_id=None, now=None):
     return cancelled
 
 
+def owned_fleet_character(user, character_id):
+    """The user's own character, or PermissionError."""
+    ownership = get_owned_character(user, int(character_id))
+    if ownership is None:
+        raise PermissionError(NOT_OWNED_MESSAGE)
+    return ownership.character
+
+
+def detect_fleet_boss(user, character):
+    """Read the character's fleet now and make sure it is the fleet boss.
+
+    A start trusts this read to take a fleet over from another boss, so it never comes from the
+    response cache.
+    """
+    detection = detect_character_fleet(user, character.character_id, fresh=True)
+    # Only the fleet boss can read and write the fleet. The boss may sit in any position, and
+    # a fleet commander who is not the boss cannot run the fleet.
+    if not detection.is_boss(character.character_id):
+        raise FleetESIError("NOT_FLEET_BOSS", not_boss_message(character.character_name, detection.fleet_boss_id))
+    return detection
+
+
+def fc_values(user, character):
+    main = getattr(getattr(user, "profile", None), "main_character", None)
+    return {
+        "fc_user": user,
+        "fc_character_id": character.character_id,
+        "fc_character_name": character.character_name,
+        "fc_main_character_id": getattr(main, "character_id", None),
+        "fc_main_character_name": getattr(main, "character_name", "") or "",
+    }
+
+
+def fleet_values(cleaned_data):
+    """Fleet settings from the start or scheduled fleet form, as model field values."""
+    fleet_type = cleaned_data["fleet_type"]
+    full_mode = cleaned_data.get("operation_mode", "full") == "full"
+    # Attendance-only fleets never post, so their ping is only ever copied.
+    channel = cleaned_data.get("ping_channel") if full_mode else None
+    selection = cleaned_data.get("mention_selection") or MentionSelection()
+    source = cleaned_data.get("doctrine_source", "") or "custom"
+    external_id = cleaned_data.get("doctrine_external_id", "") or ""
+    return {
+        "fleet_type": fleet_type,
+        "fleet_point_weight_snapshot": fleet_type.point_weight,
+        "doctrine_name": cleaned_data.get("doctrine_name", "") or "",
+        "doctrine_external_id": external_id,
+        "doctrine_source": source,
+        "doctrine_fits": doctrine_fits_snapshot(source, external_id),
+        "formup": cleaned_data["formup"],
+        "comms": cleaned_data.get("comms"),
+        "logi_channel": cleaned_data.get("logi_channel"),
+        "boost_channel": cleaned_data.get("boost_channel"),
+        "ping_channel": channel,
+        "ping_channel_name": channel.name if channel else "",
+        "ping_mention_mode": selection.mode,
+        "ping_roles": snapshot_roles(selection),
+        "ping_template": cleaned_data.get("ping_template"),
+        "motd_template": cleaned_data.get("motd_template"),
+        "additional_message": cleaned_data.get("additional_message", "") or "",
+        "scheduled_at": cleaned_data.get("scheduled_at"),
+        "send_ping": full_mode,
+    }
+
+
+def operation_values(cleaned_data, *, user, character) -> dict:
+    """Fields a start, a preview and a pre ping take from the start form."""
+    return {"created_by": user, **fc_values(user, character), **fleet_values(cleaned_data)}
+
+
+def build_unsaved_operation(user, cleaned_data) -> FleetOperation:
+    """The fleet the start form describes, unsaved, for previews and the checks before a start."""
+    character = owned_fleet_character(user, cleaned_data["fc_character_id"])
+    return FleetOperation(**operation_values(cleaned_data, user=user, character=character))
+
+
+def lock_fleet_starts():
+    """Serialise fleet starts on the settings row. Call inside a transaction.
+
+    Two requests for the same ESI fleet (two tabs, a resubmitted form, a new boss) then cannot
+    both create a record.
+    """
+    FleetOpsSettings.objects.select_for_update().get_or_create(pk=1)
+
+
+def _open_records(esi_fleet_id):
+    # A record whose boss handed the fleet over is closing and no longer owns it.
+    return (
+        FleetOperation.objects.filter(esi_fleet_id=esi_fleet_id, status__in=FleetOperation.OPEN_STATUSES)
+        .exclude(status=FleetOperation.Status.ENDING, end_reason=EndReason.BOSS_HANDOVER)
+        .order_by("pk")
+    )
+
+
+def claim_esi_fleet(detection, character, *, now):
+    """Find out who else tracks the ESI fleet before a start. Call under ``lock_fleet_starts``.
+
+    Returns ``(running, handed_over)``. ``running`` is the open record this FC character already
+    runs for the fleet; the start returns it instead of creating a second one. Otherwise ESI has
+    just confirmed ``character`` as the boss, so open records of other FC characters lost the
+    fleet: they end at ``now`` with a boss handover and stop counting as open. The rest of their
+    end runs in the background (``finish_handovers``). ``handed_over`` lists them with the status
+    each had.
+    """
+    records = list(_open_records(detection.fleet_id).select_for_update())
+    for record in records:
+        if record.fc_character_id == character.character_id:
+            return record, []
+    handed_over = []
+    for record in records:
+        old_status = record.status
+        record.status = FleetOperation.Status.ENDING
+        record.end_reason = EndReason.BOSS_HANDOVER
+        record.end_detail = character.character_name[:255]
+        # The record keeps the boss it lost the fleet to, as tracking does for a handover it observes.
+        record.fleet_boss_character_id = character.character_id
+        update_fields = ["status", "end_reason", "end_detail", "fleet_boss_character_id", "updated_at"]
+        # An end its FC requested earlier keeps that time.
+        if record.end_requested_at is None:
+            record.end_requested_at = now
+            update_fields.append("end_requested_at")
+        record.save(update_fields=update_fields)
+        handed_over.append((record, old_status))
+    return None, handed_over
+
+
+def finish_handovers(handed_over):
+    """Close the records a start took the fleet from; call after the start's transaction."""
+    for record, _old_status in handed_over:
+        _queue_end(record)
+
+
+def record_start(operation, actor, *, character, from_schedule, handed_over):
+    """The one ``fleet.start`` audit entry of a start, plus one entry per handover it caused."""
+    set_action(operation, "fleet_detection", True)
+    audit(
+        actor,
+        "fleet.start",
+        operation,
+        {"status": FleetOperation.Status.SCHEDULED} if from_schedule else None,
+        {
+            "status": operation.status,
+            "esi_fleet_id": operation.esi_fleet_id,
+            "fc_character_id": operation.fc_character_id,
+            "fleet_type": str(operation.fleet_type),
+            "operation_mode": "full" if operation.send_ping else "attendance_only",
+            "ping_channel": operation.ping_channel_name,
+            "ping_mention_mode": operation.ping_mention_mode,
+            "from_schedule": from_schedule,
+            "handed_over_from": [record.pk for record, _old_status in handed_over],
+        },
+    )
+    for record, old_status in handed_over:
+        audit(
+            actor,
+            "fleet.boss_handover",
+            record,
+            {"status": old_status},
+            {
+                "status": record.status,
+                "end_reason": record.end_reason,
+                "end_detail": record.end_detail,
+                "new_boss_character_id": character.character_id,
+                "new_operation_id": operation.pk,
+            },
+            reason=end_reason_text(record.end_reason, record.end_detail),
+        )
+
+
 def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None):
     request_id = request_id or uuid.uuid4()
     existing = FleetOperation.objects.filter(start_request_id=request_id).first()
     if existing:
         return existing
 
-    char_id = int(cleaned_data["fc_character_id"])
-    ownership = get_owned_character(user, char_id)
-    if ownership is None:
-        raise PermissionError("Selected character is not owned by the current Alliance Auth user.")
-    character = ownership.character
-    profile = getattr(user, "profile", None)
-    main = getattr(profile, "main_character", None)
-
-    detection = detect_character_fleet(user, char_id)
-    # Only the fleet boss can read and write the fleet. The boss may sit in any position, and
-    # a fleet commander who is not the boss cannot run the fleet.
-    if not detection.is_boss(char_id):
-        raise FleetESIError("NOT_FLEET_BOSS", not_boss_message(character.character_name, detection.fleet_boss_id))
-
-    fleet_type = cleaned_data["fleet_type"]
+    character = owned_fleet_character(user, cleaned_data["fc_character_id"])
+    detection = detect_fleet_boss(user, character)
     full_mode = cleaned_data.get("operation_mode", "full") == "full"
+    values = operation_values(cleaned_data, user=user, character=character)
     try:
         with transaction.atomic():
-            # The settings row serialises fleet starts, so two requests for the same ESI fleet
-            # (two tabs, a resubmitted form) cannot both create a record.
-            FleetOpsSettings.objects.select_for_update().get_or_create(pk=1)
+            lock_fleet_starts()
             existing = FleetOperation.objects.filter(start_request_id=request_id).first()
             if existing:
                 return existing
             # An interrupted start would otherwise hold this ESI fleet for good.
             cancel_abandoned_starts(actor=user, esi_fleet_id=detection.fleet_id)
-            running = (
-                FleetOperation.objects.filter(esi_fleet_id=detection.fleet_id, status__in=FleetOperation.OPEN_STATUSES)
-                .order_by("pk")
-                .first()
-            )
+            now = timezone.now()
+            running, handed_over = claim_esi_fleet(detection, character, now=now)
             if running:
                 running.already_tracked = True
                 return running
             operation = FleetOperation.objects.create(
                 start_request_id=request_id,
                 status=FleetOperation.Status.STARTING,
-                created_by=user,
-                fc_user=user,
-                fc_character_id=character.character_id,
-                fc_character_name=character.character_name,
-                fc_main_character_id=getattr(main, "character_id", None),
-                fc_main_character_name=getattr(main, "character_name", "") or "",
                 fleet_boss_character_id=detection.fleet_boss_id,
                 esi_fleet_id=detection.fleet_id,
-                fleet_type=fleet_type,
-                fleet_point_weight_snapshot=fleet_type.point_weight,
-                doctrine_name=cleaned_data.get("doctrine_name", "") or "",
-                doctrine_external_id=cleaned_data.get("doctrine_external_id", "") or "",
-                doctrine_source=cleaned_data.get("doctrine_source", "") or "custom",
-                formup=cleaned_data["formup"],
-                comms=cleaned_data.get("comms"),
-                logi_channel=cleaned_data.get("logi_channel"),
-                boost_channel=cleaned_data.get("boost_channel"),
-                ping_target=cleaned_data.get("ping_target"),
-                ping_template=cleaned_data.get("ping_template"),
-                motd_template=cleaned_data.get("motd_template"),
-                additional_message=cleaned_data.get("additional_message", "") or "",
-                scheduled_at=cleaned_data.get("scheduled_at"),
-                started_at=timezone.now(),
+                started_at=now,
                 tracking_enabled=True,
-                send_ping=full_mode,
                 attendance_multiplier=1,
                 is_manual=False,
+                **values,
             )
-            set_action(operation, "fleet_detection", True)
+            record_start(operation, user, character=character, from_schedule=False, handed_over=handed_over)
     except IntegrityError:
         # A concurrent submit of the same form created the operation first.
         existing = FleetOperation.objects.filter(start_request_id=request_id).first()
@@ -234,11 +413,21 @@ def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None
             raise
         return existing
 
-    # Every step below is best effort: failures are recorded and the fleet still becomes active.
+    finish_handovers(handed_over)
+    run_start_steps(operation, user=user, character_id=character.character_id, full_mode=full_mode)
+    operation.handed_over = [record for record, _old_status in handed_over]
+    return operation
+
+
+def run_start_steps(operation, *, user, character_id, full_mode, send_ping=True) -> None:
+    """Messages, ping, MOTD, tracking and SRP of a fleet whose record is Starting; then Active.
+
+    Every step is best effort: failures are recorded and the fleet still becomes active.
+    """
     messages_ready = False
     try:
         with transaction.atomic():
-            rendered = render_messages(operation)
+            rendered = render_messages(operation, actor=user)
             operation.ping_text = rendered.ping
             operation.motd_text = rendered.motd
             operation.save(update_fields=["ping_text", "motd_text", "updated_at"])
@@ -255,11 +444,14 @@ def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None
         set_action(operation, "discord_ping", False, NOT_RENDERED)
         set_action(operation, "motd_update", False, NOT_RENDERED)
     else:
-        try:
-            _send_ping(operation)
-        except Exception as exc:
-            set_action(operation, "discord_ping", False, report_failure(logger, "Discord ping", exc, operation))
-        _update_motd(operation, user, char_id)
+        if send_ping:
+            try:
+                _send_ping(operation)
+            except Exception as exc:
+                set_action(operation, "discord_ping", False, report_failure(logger, "Discord ping", exc, operation))
+        else:
+            set_action(operation, "discord_ping", None, PING_NOT_REQUESTED)
+        _update_motd(operation, user, character_id)
 
     try:
         sync_operation(operation)
@@ -286,8 +478,8 @@ def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None
 
     srp_fields = ["srp_provider", "srp_reference", "srp_url", "srp_error", "updated_at"]
     with transaction.atomic():
-        # A start that stalled for STARTING_ABANDONED_AFTER may have been cancelled meanwhile;
-        # it must not come back as a second active record for its ESI fleet.
+        # A start that stalled for STARTING_ABANDONED_AFTER may have been cancelled meanwhile, or a
+        # new boss took the fleet over; it must not come back as a second active record.
         current = FleetOperation.objects.select_for_update().only("status").get(pk=operation.pk)
         if current.status == FleetOperation.Status.STARTING:
             operation.status = FleetOperation.Status.ACTIVE
@@ -295,18 +487,19 @@ def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None
         else:
             operation.save(update_fields=srp_fields)
             operation.refresh_from_db()
-    return operation
 
 
 def retry_ping(operation):
+    # A fleet that has not started yet only has its pre ping.
+    action = "pre_ping" if operation.status == FleetOperation.Status.SCHEDULED else "discord_ping"
     if not operation.send_ping:
-        return _keep_skipped(operation, "discord_ping", _skipped_message(operation, "Discord ping"))
+        return _keep_skipped(operation, action, _skipped_message(operation, "Discord ping"))
     if not _render_missing_text(operation, "ping_text"):
-        return set_action(operation, "discord_ping", False, NOT_RENDERED)
+        return set_action(operation, action, False, NOT_RENDERED)
     try:
-        return _send_ping(operation)
+        return _send_ping(operation, action=action)
     except Exception as exc:
-        return set_action(operation, "discord_ping", False, report_failure(logger, "Discord ping", exc, operation))
+        return set_action(operation, action, False, report_failure(logger, "Discord ping", exc, operation))
 
 
 def retry_motd(operation):
@@ -339,6 +532,23 @@ def retry_srp(operation):
         return set_action(operation, "srp_link", False, operation.srp_error)
 
 
+def _status_before_end(operation):
+    """The status a fleet had before its end was requested; Ending only marks the request.
+
+    The end request and a handover at a new start record it in their audit entries.
+    """
+    entries = AuditLog.objects.filter(
+        object_type=FleetOperation.__name__,
+        object_id=str(operation.pk),
+        action__in=("fleet.end_request", "fleet.boss_handover"),
+    ).order_by("-pk")
+    for old_value in entries.values_list("old_value", flat=True):
+        status = old_value.get("status") if isinstance(old_value, dict) else None
+        if status and status != FleetOperation.Status.ENDING:
+            return status
+    return FleetOperation.Status.ACTIVE
+
+
 def end_fleet(operation, actor=None, automatic=False, attendance_multiplier=None, reason="", detail=""):
     """Close a fleet: final sync (manual ends only), attendance multiplier, member cleanup.
 
@@ -357,7 +567,10 @@ def end_fleet(operation, actor=None, automatic=False, attendance_multiplier=None
         if current.status in FINISHED_STATUSES or ending_elsewhere:
             operation.refresh_from_db()
             return operation
-        old_state = {"status": current.status, "tracking_enabled": current.tracking_enabled}
+        old_status = current.status
+        if old_status == FleetOperation.Status.ENDING:
+            old_status = _status_before_end(current)
+        old_state = {"status": old_status, "tracking_enabled": current.tracking_enabled}
         operation.refresh_from_db()
         operation.status = FleetOperation.Status.ENDING
         operation.end_reason = reason
@@ -386,6 +599,9 @@ def end_fleet(operation, actor=None, automatic=False, attendance_multiplier=None
         set_operation_attendance_multiplier(operation, attendance_multiplier, actor=actor)
         label = end_reason_text(reason, detail)
         ended_at = timezone.now()
+        if reason == EndReason.BOSS_HANDOVER and operation.end_requested_at:
+            # The fleet ended when the boss handed it over, even if this close runs later.
+            ended_at = min(ended_at, operation.end_requested_at)
         operation.tracking_enabled = False
         operation.ended_at = ended_at
         operation.status = FleetOperation.Status.CLOSED
@@ -398,19 +614,21 @@ def end_fleet(operation, actor=None, automatic=False, attendance_multiplier=None
         # Whoever was still in fleet left when it ended.
         operation.member_states.filter(is_active=True).update(is_active=False, left_at=ended_at)
         set_action(operation, "fleet_end", True, label)
-        audit(
-            actor,
-            "fleet.auto_end" if automatic else "fleet.end",
-            operation,
-            old_state,
-            {
-                "status": operation.status,
-                "tracking_enabled": operation.tracking_enabled,
-                "end_reason": reason,
-                "end_detail": detail,
-            },
-            reason=label,
-        )
+        new_state = {
+            "status": operation.status,
+            "tracking_enabled": operation.tracking_enabled,
+            "end_reason": reason,
+            "end_detail": detail,
+        }
+        if reason == EndReason.BOSS_HANDOVER:
+            # The detail is the new boss's name; keep the id too.
+            new_state["fleet_boss_character_id"] = operation.fleet_boss_character_id
+        audit(actor, "fleet.auto_end" if automatic else "fleet.end", operation, old_state, new_state, reason=label)
+    try:
+        # Tracking stops here, so members seen shortly before the end get one last lookup.
+        queue_name_resolution(operation.pk, stale_character_ids(unnamed_character_ids(operation.pk)), force=True)
+    except Exception as exc:
+        log_failure(logger, "Queueing the name lookup", exc, operation)
     return operation
 
 

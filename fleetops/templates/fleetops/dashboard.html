@@ -1,4 +1,5 @@
 {% extends "fleetops/base.html" %}
+{% load static fleetops_messages %}
 {% block fleetops_content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
@@ -65,6 +66,16 @@
   </div>
 </div>
 
+{% if scheduled_operations or perms.fleetops.start_fleet %}
+<div class="card mb-3" id="scheduled-fleets">
+  <div class="card-header d-flex justify-content-between"><strong>Scheduled Fleets</strong><span class="text-muted small">EVE time</span></div>
+  <div class="table-responsive"><table class="table table-hover table-sm mb-0 align-middle"><thead><tr><th>Fleet Time</th><th></th><th>Fleet</th><th>FC</th><th>Form Up</th><th>Ping channel</th><th></th></tr></thead><tbody>
+  {% for op in scheduled_operations %}<tr><td class="text-nowrap">{{ op.scheduled_at|eve_time }}</td><td class="text-nowrap small text-muted" data-countdown-utc="{{ op.scheduled_at|eve_time:'%Y-%m-%dT%H:%M:00Z' }}"></td><td>{{ op.fleet_type }}</td><td>{{ op.fc_character_name }}</td><td>{{ op.formup }}</td><td>{{ op.ping_channel_name|default:"Copy only" }}</td><td><a href="{% url 'fleetops:operation_detail' op.uuid %}">Open</a></td></tr>
+  {% empty %}<tr><td colspan="7" class="text-muted p-4">No scheduled fleets.</td></tr>{% endfor %}
+  </tbody></table></div>
+</div>
+{% endif %}
+
 <div class="row g-3">
   <div class="col-xl-8">
     <div class="card">
@@ -88,4 +99,5 @@
     </div>
   </div>
 </div>
+<script src="{% static 'fleetops/fleetops.js' %}"></script>
 {% endblock %}

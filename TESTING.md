@@ -77,6 +77,7 @@ python manage.py migrate fleetops
 python manage.py fleetops_seed --demo
 python manage.py collectstatic --noinput
 python manage.py fleetops_prune_history --dry-run
+python manage.py fleetops_refresh_names --dry-run
 ```
 
 Then verify `/fleetops/` loads for a user with `fleetops.basic_access`.

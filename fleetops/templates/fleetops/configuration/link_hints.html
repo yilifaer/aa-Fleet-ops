@@ -1,0 +1,12 @@
+{% if not public_views_enabled %}
+<div class="alert alert-warning">
+  <strong>Comms join links need an Alliance Auth login.</strong>
+  Pilots who are not logged in are sent to the login page first. To let them open the links without logging in, add <code>"fleetops"</code> to <code>APPS_WITH_PUBLIC_VIEWS</code> in <code>local.py</code> and restart Alliance Auth.
+</div>
+{% endif %}
+{% if not site_url_configured %}
+<div class="alert alert-warning">
+  <strong><code>SITE_URL</code> is empty.</strong>
+  Links in pings and MOTDs, such as comms join links, are site paths that do not open outside Alliance Auth. Set <code>SITE_URL</code> to the public https address of Alliance Auth.
+</div>
+{% endif %}

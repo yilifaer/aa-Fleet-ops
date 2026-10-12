@@ -1,32 +1,40 @@
 from django.apps import apps
+from django.utils import translation
+
+
+def sde_installed() -> bool:
+    return apps.is_installed("eve_sde")
 
 
 def _label(obj):
-    for attr in ("name", "name_en", "type_name", "solar_system_name"):
+    # django-eveonline-sde translates "name" into the active language; name_en is the English column.
+    for attr in ("name_en", "name", "type_name", "solar_system_name"):
         value = getattr(obj, attr, None)
         if value:
             return str(value)
     return ""
 
 
-def item_type_names(type_ids):
-    if not apps.is_installed("eve_sde"):
+def _names(model_name, ids):
+    """English names by id; {} when the SDE app is missing or cannot be read."""
+    if not sde_installed():
         return {}
     try:
-        model = apps.get_model("eve_sde", "ItemType")
-        return {obj.pk: _label(obj) for obj in model.objects.filter(pk__in=list(type_ids))}
+        model = apps.get_model("eve_sde", model_name)
+        # Stored names must not depend on the language of whoever triggered the lookup (a Chinese web
+        # request, or a Celery worker), so the lookup always runs in English.
+        with translation.override("en"):
+            return {obj.pk: _label(obj) for obj in model.objects.filter(pk__in=list(ids))}
     except Exception:
         return {}
+
+
+def item_type_names(type_ids):
+    return _names("ItemType", type_ids)
 
 
 def solar_system_names(system_ids):
-    if not apps.is_installed("eve_sde"):
-        return {}
-    try:
-        model = apps.get_model("eve_sde", "SolarSystem")
-        return {obj.pk: _label(obj) for obj in model.objects.filter(pk__in=list(system_ids))}
-    except Exception:
-        return {}
+    return _names("SolarSystem", system_ids)
 
 
 def stargate_edges():
@@ -36,7 +44,7 @@ def stargate_edges():
     Stargate.destination as SolarSystem foreign keys.  A small fallback is
     retained so FleetOps degrades cleanly with older/community SDE schemas.
     """
-    if not apps.is_installed("eve_sde"):
+    if not sde_installed():
         return {}
     try:
         model = apps.get_model("eve_sde", "Stargate")

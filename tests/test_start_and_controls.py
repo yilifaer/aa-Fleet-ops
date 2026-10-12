@@ -1,12 +1,13 @@
 """Capsule kick count, one record per ESI fleet, the start preview and manual fleet times."""
 
+import threading
 import uuid
 from datetime import datetime, timedelta, timezone as dt_timezone
 from unittest import mock
 
 from django.contrib.messages import get_messages
 from django.db import connection
-from django.test import TestCase, override_settings
+from django.test import TestCase, TransactionTestCase, override_settings, skipUnlessDBFeature
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
@@ -196,88 +197,19 @@ class OneRecordPerFleetTests(StartTestBase):
             message_texts(second),
         )
 
-    def test_start_during_a_boss_handover_explains_when_to_start_again(self):
-        f.create_operation(
-            f.create_user(perms=f.FC_PERMS, main_name="Old Boss"),
-            esi_fleet_id=FLEET_ID,
-            missing_reason=FleetOperation.EndReason.BOSS_HANDOVER,
-            missing_detail="Boss Main",
-            fleet_missing_count=1,
-        )
+    def test_running_record_of_the_same_fc_still_waiting_for_its_start(self):
+        f.create_operation(self.fc, esi_fleet_id=FLEET_ID, status=Status.STARTING)
         self.client.force_login(self.fc)
 
         response = self.post_start()
 
         self.assertEqual(FleetOperation.objects.count(), 1)
         self.assertIn(
-            f"ESI fleet {FLEET_ID} is already tracked by FleetOps (FC Old Boss). This is the running operation; "
-            "no new fleet was started. It ends automatically once the boss handover is confirmed; start the fleet "
-            "again after that.",
+            f"ESI fleet {FLEET_ID} is already tracked by FleetOps (FC Boss Main). This is the running operation; "
+            "no new fleet was started. Its start has not finished yet; if it was interrupted, start the fleet "
+            "again in about five minutes.",
             message_texts(response),
         )
-
-    def test_handover_hint_names_the_manual_end_when_auto_end_is_disabled(self):
-        f.settings(auto_end_enabled=False)
-        f.create_operation(
-            f.create_user(perms=f.FC_PERMS, main_name="Old Boss"),
-            esi_fleet_id=FLEET_ID,
-            missing_reason=FleetOperation.EndReason.BOSS_HANDOVER,
-            missing_detail="Boss Main",
-            fleet_missing_count=3,
-        )
-        self.client.force_login(self.fc)
-
-        response = self.post_start()
-
-        self.assertEqual(FleetOperation.objects.count(), 1)
-        [text] = message_texts(response)
-        self.assertEqual(
-            text,
-            f"ESI fleet {FLEET_ID} is already tracked by FleetOps (FC Old Boss). This is the running operation; "
-            "no new fleet was started. Automatic end is disabled, so it stays open until its FC or a fleet manager "
-            "ends it; start the fleet again after that.",
-        )
-        self.assertNotIn("ends automatically", text)
-
-    def test_new_boss_who_cannot_open_the_running_record_stays_on_the_start_page(self):
-        running, _new_boss, new_boss_char = self.handed_over_fleet()
-
-        response = self.post_start(new_boss_char)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "fleetops/start_fleet.html")
-        self.assertEqual(
-            response.context["form"].non_field_errors(),
-            [
-                f"ESI fleet {FLEET_ID} is already tracked by FleetOps (FC Old Boss). No new fleet was started. "
-                "It ends automatically once the boss handover is confirmed; start the fleet again after that."
-            ],
-        )
-        self.assertEqual(message_texts(response), [])
-        self.assertEqual(FleetOperation.objects.get().pk, running.pk)
-
-    def test_new_boss_without_a_handover_is_told_whom_to_ask(self):
-        running, _new_boss, new_boss_char = self.handed_over_fleet()
-        FleetOperation.objects.filter(pk=running.pk).update(missing_reason="", missing_detail="", fleet_missing_count=0)
-
-        response = self.post_start(new_boss_char)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(
-            response,
-            f"ESI fleet {FLEET_ID} is already tracked by FleetOps (FC Old Boss). No new fleet was started. "
-            "Ask its FC or a fleet manager to end it, then start the fleet again.",
-        )
-
-    def test_new_boss_who_can_open_the_running_record_is_redirected_to_it(self):
-        running, new_boss, new_boss_char = self.handed_over_fleet()
-        f.add_attendance(running, new_boss)
-
-        response = self.post_start(new_boss_char)
-
-        detail = reverse("fleetops:operation_detail", args=[running.uuid])
-        self.assertRedirects(response, detail)
-        self.assertIn("This is the running operation; no new fleet was started.", message_texts(response)[0])
 
     def test_start_racing_another_request_returns_the_other_record(self):
         competing = {}
@@ -304,6 +236,250 @@ class OneRecordPerFleetTests(StartTestBase):
         self.assertTrue(
             any("FOR UPDATE" in q["sql"] and "fleetops_fleetopssettings" in q["sql"] for q in queries.captured_queries)
         )
+
+    def test_boss_check_reads_the_fleet_without_the_response_cache(self):
+        with mock.patch.object(
+            operations_module, "detect_character_fleet", wraps=operations_module.detect_character_fleet
+        ) as detect:
+            self.start()
+
+        detect.assert_called_once_with(self.fc, self.fc_char.character_id, fresh=True)
+
+
+class BossHandoverAtStartTests(StartTestBase):
+    """A new boss that ESI confirms takes the fleet over from the record of another FC character."""
+
+    def old_boss_record(self, status=Status.ACTIVE, **extra):
+        old_boss = f.create_user(perms=f.FC_PERMS, main_name="Old Boss")
+        record = f.create_operation(old_boss, esi_fleet_id=FLEET_ID, status=status, **extra)
+        track(record, f.main_of(old_boss), ship_type_id=RIFTER)
+        return record
+
+    def test_new_boss_ends_the_old_record_and_starts_an_independent_one(self):
+        old = self.old_boss_record()
+
+        operation = self.start()
+
+        self.assertNotEqual(operation.pk, old.pk)
+        self.assertFalse(getattr(operation, "already_tracked", False))
+        self.assertEqual(operation.status, Status.ACTIVE)
+        self.assertEqual((operation.fc_user, operation.esi_fleet_id), (self.fc, FLEET_ID))
+        self.assertEqual(operation.handed_over, [old])
+        old.refresh_from_db()
+        self.assertEqual(old.status, Status.CLOSED)
+        self.assertEqual(old.end_reason, FleetOperation.EndReason.BOSS_HANDOVER)
+        self.assertEqual(old.end_detail, "Boss Main")
+        self.assertEqual(old.end_reason_text, "Ended automatically: fleet boss handed over to Boss Main")
+        # The old fleet ended when the new boss took it over.
+        self.assertEqual(old.ended_at, operation.started_at)
+        self.assertFalse(old.tracking_enabled)
+        self.assertFalse(old.member_states.filter(is_active=True).exists())
+        self.assertEqual(old.member_states.get().left_at, operation.started_at)
+
+    def test_both_records_are_audited(self):
+        old = self.old_boss_record()
+
+        operation = self.start()
+
+        handover = AuditLog.objects.get(action="fleet.boss_handover")
+        self.assertEqual((handover.actor, handover.object_id), (self.fc, str(old.pk)))
+        self.assertEqual(handover.old_value, {"status": Status.ACTIVE})
+        self.assertEqual(
+            handover.new_value,
+            {
+                "status": Status.ENDING,
+                "end_reason": "boss_handover",
+                "end_detail": "Boss Main",
+                "new_boss_character_id": self.fc_char.character_id,
+                "new_operation_id": operation.pk,
+            },
+        )
+        start = AuditLog.objects.get(action="fleet.start")
+        self.assertEqual(start.object_id, str(operation.pk))
+        self.assertEqual(start.new_value["handed_over_from"], [old.pk])
+        self.assertFalse(start.new_value["from_schedule"])
+        end = AuditLog.objects.get(action="fleet.auto_end")
+        self.assertEqual(end.object_id, str(old.pk))
+        # The status the fleet had before the handover, not the passing Ending state.
+        self.assertEqual(end.old_value["status"], Status.ACTIVE)
+        self.assertEqual(end.new_value["end_reason"], "boss_handover")
+
+    def test_every_open_status_of_another_fc_is_taken_over(self):
+        requested_at = timezone.now() - timedelta(minutes=1)
+        for status, extra in (
+            (Status.STARTING, {}),
+            (Status.ACTIVE, {"missing_reason": FleetOperation.EndReason.BOSS_HANDOVER, "fleet_missing_count": 2}),
+            (Status.ENDING, {"end_reason": "manual", "end_requested_at": requested_at, "end_requested_multiplier": 2}),
+        ):
+            with self.subTest(status=status):
+                FleetOperation.objects.all().delete()
+                old = self.old_boss_record(status=status, **extra)
+
+                operation = self.start()
+
+                self.assertNotEqual(operation.pk, old.pk)
+                self.assertEqual(operation.status, Status.ACTIVE)
+                old.refresh_from_db()
+                self.assertEqual(old.status, Status.CLOSED)
+                self.assertEqual(old.end_reason, FleetOperation.EndReason.BOSS_HANDOVER)
+                if status == Status.ENDING:
+                    # The end its FC requested keeps its time and multiplier.
+                    self.assertEqual(old.ended_at, requested_at)
+                    self.assertEqual(old.attendance_multiplier, 2)
+
+    def test_handover_works_with_automatic_end_disabled(self):
+        f.settings(auto_end_enabled=False)
+        old = self.old_boss_record()
+
+        operation = self.start()
+
+        old.refresh_from_db()
+        self.assertEqual(old.status, Status.CLOSED)
+        self.assertEqual(operation.status, Status.ACTIVE)
+
+    def test_handed_over_record_stops_owning_the_fleet_before_it_is_closed(self):
+        old = self.old_boss_record()
+
+        with mock.patch("fleetops.tasks.finish_fleet_end.delay") as delay:
+            operation = self.start()
+            again = self.start()
+
+        delay.assert_called_once_with(old.pk)
+        old.refresh_from_db()
+        self.assertEqual(old.status, Status.ENDING)
+        # The second start finds the new record, not the one that is still closing.
+        self.assertEqual(again.pk, operation.pk)
+        self.assertTrue(again.already_tracked)
+        self.assertEqual(FleetOperation.objects.count(), 2)
+
+    def test_two_starts_racing_for_the_fleet_create_one_record(self):
+        old = self.old_boss_record()
+        competing = {}
+        original = operations_module.detect_character_fleet
+
+        def other_tab_starts_meanwhile(user, character_id, fresh=False):
+            if "operation" not in competing:
+                competing["operation"] = None
+                competing["operation"] = self.start()
+            return original(user, character_id, fresh=fresh)
+
+        with mock.patch.object(operations_module, "detect_character_fleet", side_effect=other_tab_starts_meanwhile):
+            operation = self.start()
+
+        self.assertEqual(operation.pk, competing["operation"].pk)
+        self.assertTrue(operation.already_tracked)
+        self.assertEqual(set(FleetOperation.objects.values_list("pk", flat=True)), {old.pk, operation.pk})
+        self.assertEqual(AuditLog.objects.filter(action="fleet.start").count(), 1)
+        self.assertEqual(AuditLog.objects.filter(action="fleet.boss_handover").count(), 1)
+
+    def test_new_boss_who_cannot_open_the_old_record_starts_the_fleet(self):
+        old, new_boss, new_boss_char = self.handed_over_fleet()
+
+        response = self.post_start(new_boss_char)
+
+        operation = FleetOperation.objects.exclude(pk=old.pk).get()
+        self.assertEqual(operation.fc_user, new_boss)
+        self.assertRedirects(
+            response, reverse("fleetops:operation_detail", args=[operation.uuid]), fetch_redirect_response=False
+        )
+        self.assertEqual(
+            message_texts(response),
+            [
+                "Fleet operation started. Review individual step status below. The fleet boss was handed over to "
+                "you, so the previous operation (FC Old Boss) was ended."
+            ],
+        )
+        old.refresh_from_db()
+        self.assertEqual((old.status, old.end_detail), (Status.CLOSED, "New Boss"))
+
+    def test_new_boss_takes_over_without_an_observed_handover(self):
+        old, _new_boss, new_boss_char = self.handed_over_fleet()
+        FleetOperation.objects.filter(pk=old.pk).update(missing_reason="", missing_detail="", fleet_missing_count=0)
+
+        self.post_start(new_boss_char)
+
+        old.refresh_from_db()
+        self.assertEqual(old.status, Status.CLOSED)
+        self.assertEqual(FleetOperation.objects.filter(status=Status.ACTIVE).count(), 1)
+
+    def test_the_old_fc_cannot_take_the_fleet_back_without_the_boss_role(self):
+        _old, _new_boss, _new_boss_char = self.handed_over_fleet()
+        old_boss_char = f.create_character("Not Boss Anymore")
+        f.add_ownership(self.fc, old_boss_char)
+        f.add_token(self.fc, old_boss_char)
+        self.esi.put_in_fleet(old_boss_char, role="squad_member", boss=_new_boss_char)
+        self.client.force_login(self.fc)
+
+        response = self.post_start(old_boss_char)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(FleetOperation.objects.count(), 1)
+        self.assertContains(response, "Not Boss Anymore is not the fleet boss. The current boss is New Boss.")
+
+
+@skipUnlessDBFeature("has_select_for_update")
+class ConcurrentHandoverTests(FakeESIMixin, TransactionTestCase):
+    """Two requests of the new boss at the same moment, serialised by row locks (MariaDB, MySQL)."""
+
+    # Brings back the migrated rows (permissions, default templates) a flush removes.
+    serialized_rollback = True
+
+    def setUp(self):
+        super().setUp()
+        self.fc = f.create_user(perms=f.FC_PERMS, main_name="Boss Main")
+        self.fc_char = f.main_of(self.fc)
+        f.add_token(self.fc, self.fc_char)
+        self.fleet_type = f.fleet_type()
+        self.esi.put_in_fleet(self.fc_char)
+        self.esi.members[FLEET_ID] = [f.esi_member(self.fc_char)]
+        f.settings(srp_auto_create=False)
+        old_boss = f.create_user(perms=f.FC_PERMS, main_name="Old Boss")
+        self.old = f.create_operation(old_boss, esi_fleet_id=FLEET_ID)
+
+    def test_two_concurrent_starts_create_one_record_and_hand_over_once(self):
+        barrier = threading.Barrier(2, timeout=10)
+        original = operations_module.detect_character_fleet
+        results, errors = [], []
+
+        def detect_together(user, character_id, fresh=False):
+            detection = original(user, character_id, fresh=fresh)
+            # Both requests reach the start lock at the same time.
+            barrier.wait()
+            return detection
+
+        def start():
+            try:
+                results.append(
+                    start_fleet(
+                        user=self.fc,
+                        cleaned_data={
+                            "operation_mode": "attendance_only",
+                            "fc_character_id": str(self.fc_char.character_id),
+                            "fleet_type": self.fleet_type,
+                            "formup": "Jita",
+                        },
+                        request_id=uuid.uuid4(),
+                    ).pk
+                )
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                connection.close()
+
+        with mock.patch.object(operations_module, "detect_character_fleet", side_effect=detect_together):
+            threads = [threading.Thread(target=start) for _ in range(2)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(30)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(len(set(results)), 1)
+        self.assertEqual(FleetOperation.objects.exclude(pk=self.old.pk).count(), 1)
+        self.old.refresh_from_db()
+        self.assertEqual(self.old.end_reason, FleetOperation.EndReason.BOSS_HANDOVER)
+        self.assertEqual(AuditLog.objects.filter(action="fleet.start").count(), 1)
+        self.assertEqual(AuditLog.objects.filter(action="fleet.boss_handover").count(), 1)
 
 
 class AbandonedStartTests(StartTestBase):

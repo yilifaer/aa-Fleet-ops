@@ -28,6 +28,8 @@ esi = ESIClientProvider(
         "GetFleetsFleetIdWings",
         "PutFleetsFleetId",
         "DeleteFleetsFleetIdMembersMemberId",
+        "PostUniverseNames",
+        "PostCharactersAffiliation",
     ],
 )
 
@@ -46,6 +48,12 @@ CONNECTION_ERRORS = (ConnectionError, requests.ConnectionError, *(client.Transpo
 # Reason phrases for statuses that http.HTTPStatus does not know.
 REASON_PHRASES = {420: "Error limited"}
 MAX_ESI_ERROR_LENGTH = 120
+# ESI accepts at most this many IDs in one POST /universe/names/ or /characters/affiliation/ body.
+MAX_IDS_PER_POST = 1000
+# HTTP calls one name or affiliation lookup may make, including the splits that isolate invalid IDs.
+MAX_LOOKUP_CALLS = 25
+# Category of an ID ESI does not know (the same value as EveEntityName.UNRESOLVED).
+UNRESOLVED = "unresolved"
 
 
 class FleetESIError(RuntimeError):
@@ -189,6 +197,15 @@ def _write(operation):
     return operation.result(use_etag=False, use_cache=False, store_cache=False)
 
 
+def _post(operation):
+    """Send a POST operation to ESI, never answered from or stored in django-esi's response cache.
+
+    django-esi builds its cache key without the request body, so two POSTs with different bodies
+    would otherwise share one cached answer.
+    """
+    return operation.result(use_etag=False, use_cache=False, store_cache=False)
+
+
 def as_dict(value: Any) -> dict:
     if value is None:
         return {}
@@ -202,7 +219,8 @@ def as_dict(value: Any) -> dict:
     for key in (
         "fleet_id", "fleet_boss_id", "role", "squad_id", "wing_id", "character_id", "ship_type_id",
         "solar_system_id", "role_name", "takes_fleet_warp", "is_free_move",
-        "is_registered", "is_voice_enabled", "motd",
+        "is_registered", "is_voice_enabled", "motd", "id", "name", "category", "corporation_id",
+        "alliance_id", "faction_id",
     ):
         if hasattr(value, key):
             result[key] = getattr(value, key)
@@ -324,3 +342,102 @@ def kick_fleet_member(user, character_id: int, fleet_id: int, member_id: int) ->
         if status in (401, 403):
             raise _esi_failure("KICK_FORBIDDEN", "ESI denied permission to kick this fleet member", exc) from exc
         raise _esi_failure("KICK_ERROR", f"Could not kick fleet member {member_id}", exc) from exc
+
+
+class LookupBudget:
+    """The HTTP calls a bulk name or affiliation lookup may still make; one budget per run."""
+
+    def __init__(self, calls: int = MAX_LOOKUP_CALLS):
+        self.remaining = calls
+
+    def take(self) -> bool:
+        if self.remaining <= 0:
+            return False
+        self.remaining -= 1
+        return True
+
+
+def _unique_ids(ids) -> list[int]:
+    return list(dict.fromkeys(int(value) for value in ids if value))
+
+
+def _plain(value):
+    # Enum fields of the response models (such as the name category) carry their text in .value.
+    return getattr(value, "value", value)
+
+
+def _post_ids(make_operation, ids, budget, code, context):
+    """POST ``ids`` in chunks and return ``(rows, invalid_ids)``.
+
+    ESI rejects the whole request with a 404 when one of its IDs is invalid, so such a chunk is
+    split in halves until the invalid IDs are isolated. IDs still waiting when the budget runs out
+    are in neither result. Any other failure raises FleetESIError.
+    """
+    rows, invalid = [], []
+    pending = [ids[start : start + MAX_IDS_PER_POST] for start in range(0, len(ids), MAX_IDS_PER_POST)]
+    while pending and budget.take():
+        chunk = pending.pop(0)
+        try:
+            result = _post(make_operation(chunk))
+        except Exception as exc:
+            if _status_code(exc) != 404:
+                raise _esi_failure(code, context, exc) from exc
+            if len(chunk) == 1:
+                invalid.append(chunk[0])
+            else:
+                middle = len(chunk) // 2
+                pending[:0] = [chunk[:middle], chunk[middle:]]
+            continue
+        rows.extend(as_dict(row) for row in result or [])
+    if pending:
+        left = sum(len(chunk) for chunk in pending)
+        logger.info("FleetOps ESI lookup reached its call limit; %s IDs are left for a later run.", left)
+    return rows, invalid
+
+
+def resolve_names(ids, *, budget: LookupBudget | None = None) -> dict[int, tuple[str, str]]:
+    """Category and name of any EVE IDs (characters, corporations, alliances, types …).
+
+    Returns ``{id: (category, name)}``. IDs ESI does not know map to ``(UNRESOLVED, "")``; IDs left
+    when the budget runs out are missing.
+    """
+    ids = _unique_ids(ids)
+    if not ids:
+        return {}
+    rows, invalid = _post_ids(
+        lambda chunk: esi.client.Universe.PostUniverseNames(body=chunk),
+        ids,
+        budget if budget is not None else LookupBudget(),
+        "NAMES_ERROR",
+        "Could not look up names",
+    )
+    result = {entity_id: (UNRESOLVED, "") for entity_id in invalid}
+    for row in rows:
+        if row.get("id"):
+            result[int(row["id"])] = (str(_plain(row.get("category")) or ""), str(row.get("name") or ""))
+    return result
+
+
+def character_affiliations(ids, *, budget: LookupBudget | None = None) -> dict[int, dict | None]:
+    """Corporation, alliance and faction of characters.
+
+    Returns ``{character_id: {"corporation_id": …, "alliance_id": …, "faction_id": …}}``. Characters
+    ESI does not know map to None; characters left when the budget runs out are missing.
+    """
+    ids = _unique_ids(ids)
+    if not ids:
+        return {}
+    rows, invalid = _post_ids(
+        lambda chunk: esi.client.Character.PostCharactersAffiliation(body=chunk),
+        ids,
+        budget if budget is not None else LookupBudget(),
+        "AFFILIATION_ERROR",
+        "Could not look up character affiliations",
+    )
+    result = dict.fromkeys(invalid)
+    for row in rows:
+        if row.get("character_id"):
+            result[int(row["character_id"])] = {
+                key: int(row[key]) if row.get(key) else None for key in ("corporation_id", "alliance_id", "faction_id")
+            }
+    return result

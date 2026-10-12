@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aa-fleetops"
-version = "0.1.0a6.dev2"
+version = "0.1.0a6.dev3"
 description = "Fleet lifecycle management for Alliance Auth"
 readme = "README.md"
 requires-python = ">=3.10,<3.15"
@@ -40,8 +40,6 @@ include = ["fleetops*"]
 
 [tool.setuptools.package-data]
 fleetops = [
-  "templates/fleetops/*.html",
-  "templates/fleetops/configuration/*.html",
-  "static/fleetops/*.css",
-  "static/fleetops/*.js",
+  "templates/**/*.html",
+  "static/**/*",
 ]

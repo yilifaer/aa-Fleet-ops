@@ -9,7 +9,6 @@ from django.contrib import messages
 from django.contrib.auth.decorators import permission_required
 from django.core.paginator import Paginator
 from django.db.models import Count, IntegerField, OuterRef, Prefetch, Q, Subquery, Sum
-from django.db.models.deletion import ProtectedError
 from django.db.models.functions import Coalesce
 from django.forms.models import model_to_dict
 from django.http import Http404, JsonResponse
@@ -21,41 +20,32 @@ from esi.decorators import token_required
 
 from fleetops.constants import FLEET_SCOPES
 from fleetops.forms import (
-    ChannelPresetForm,
-    CommsPresetForm,
-    DiscordWebhookForm,
+    CancelScheduledFleetForm,
     EndFleetForm,
     FleetAttendanceMultiplierForm,
-    FleetOpsSettingsForm,
-    FleetTypeForm,
     HistoricalManualAttendanceForm,
     IncentivePeriodForm,
     ManualAttendanceForm,
     ManualFleetForm,
-    MessageTemplateForm,
     OperationRoleAssignmentForm,
     OperationEditForm,
-    PingTargetForm,
+    ScheduledFleetForm,
     StartFleetForm,
+    StartScheduledFleetForm,
 )
 from fleetops.models import (
     MAX_DATABASE_ID,
     MIN_RETENTION_DAYS,
     AttendanceRecord,
     AuditLog,
-    ChannelPreset,
-    CommsPreset,
-    DiscordWebhook,
     FleetOperation,
     FleetMemberState,
     FleetOpsSettings,
     FleetType,
     IncentivePeriod,
-    MessageTemplate,
     MonthlyFCStatistic,
     OperationActionAttempt,
     OperationRoleAssignment,
-    PingTarget,
 )
 from fleetops.providers.esi import FleetESIError, detect_character_fleet
 from fleetops.services.audit import audit
@@ -78,9 +68,12 @@ from fleetops.services.incentives import (
     set_waiver,
     unlock_period,
 )
+from fleetops.services.mentions import DISCORD_MESSAGE_LIMIT, mention_text, selection_from_operation
 from fleetops.services.messages import render_messages
 from fleetops.services.operations import (
+    build_unsaved_operation,
     create_manual_fleet,
+    fleet_values,
     not_boss_message,
     request_fleet_end,
     retry_motd,
@@ -90,6 +83,15 @@ from fleetops.services.operations import (
 )
 from fleetops.services.roles import add_role_assignment, delete_role_assignment
 from fleetops.services.routing import proximity_rows
+from fleetops.services.scheduling import (
+    CHANNEL_CHANGE_NEEDS_POST,
+    NOT_SCHEDULED_MESSAGE,
+    cancel_scheduled_fleet as cancel_scheduled_fleet_service,
+    is_pre_ping_record,
+    schedule_fleet,
+    start_scheduled_fleet as start_scheduled_fleet_service,
+    update_scheduled_fleet,
+)
 from fleetops.services.statistics import (
     attendance_history_queryset,
     corporation_statistics,
@@ -105,6 +107,10 @@ logger = get_extension_logger(__name__)
 ATTENDANCE_PROMPT_AFTER = timedelta(minutes=90)
 # Earlier attempts listed under each operation step.
 PREVIOUS_ATTEMPTS_SHOWN = 5
+# A scheduled fleet still not started this long after its time is shown as overdue.
+SCHEDULED_OVERDUE_AFTER = timedelta(hours=2)
+SCHEDULED_FLEETS_SHOWN = 20
+NOT_STARTED_MESSAGE = "This fleet has not started; the MOTD and the SRP link are set when it starts."
 HISTORY_PAGE_SIZE = 200
 AUDIT_PAGE_SIZE = 50
 
@@ -143,11 +149,19 @@ def _can_manage_operation(user, operation):
     )
 
 
+def _can_see_scheduled_fleets(user):
+    """FCs coordinate fleet times with each other; members do not see pre pings in FleetOps."""
+    return _can_view_all_fleets(user) or user.has_perm("fleetops.start_fleet")
+
+
 def _can_view_operation(user, operation):
     if _can_view_all_fleets(user):
         return True
     if not user.has_perm("fleetops.basic_access"):
         return False
+    if is_pre_ping_record(operation):
+        # A pre ping may have gone to a restricted channel.
+        return operation.fc_user_id == user.pk or user.has_perm("fleetops.start_fleet")
     if _is_credited_fc(user, operation):
         return True
     if operation.role_assignments.filter(auth_user=user).exists():
@@ -165,7 +179,7 @@ def _operation_for_user(request, operation_uuid, manage=False):
     operation = get_object_or_404(
         FleetOperation.objects.select_related(
             "fleet_type", "comms", "logi_channel", "boost_channel",
-            "ping_target__webhook", "fc_user",
+            "ping_target__webhook", "ping_channel", "fc_user",
         ),
         uuid=operation_uuid,
     )
@@ -247,9 +261,15 @@ def dashboard(request):
             | Q(role_assignments__auth_user=request.user, role_assignments__grants_fc_credit=True)
             | Q(attendance_records__auth_user=request.user, attendance_records__granted=True)
         )
-        .exclude(status=FleetOperation.Status.DRAFT)
+        .exclude(status__in=[FleetOperation.Status.DRAFT, FleetOperation.Status.SCHEDULED])
+        # A cancelled pre ping never ran.
+        .exclude(status=FleetOperation.Status.CANCELLED, started_at=None)
         .distinct()[:10]
     )
+    scheduled = FleetOperation.objects.filter(status=FleetOperation.Status.SCHEDULED)
+    if not _can_see_scheduled_fleets(request.user):
+        scheduled = scheduled.filter(fc_user=request.user)
+    scheduled = scheduled.select_related("fleet_type", "ping_channel").order_by("scheduled_at", "pk")
     now = timezone.now()
     fc = fc_statistics(request.user, now.year, now.month, include_active=True)
     metrics = dashboard_metrics(request.user)
@@ -258,6 +278,7 @@ def dashboard(request):
         "fleetops/dashboard.html",
         {
             "active_operations": active,
+            "scheduled_operations": scheduled[:SCHEDULED_FLEETS_SHOWN],
             "own_operations": own,
             "fc_stats": fc,
             "dashboard_cards": metrics["cards"],
@@ -268,60 +289,142 @@ def dashboard(request):
 
 
 def _already_tracked_text(operation, can_view):
-    """Why a start returned the operation that already tracks the same ESI fleet."""
+    """Why a start returned the operation that its FC character already runs for the same ESI fleet.
+
+    Records of other FC characters never get here: the new boss takes the fleet over.
+    """
     text = f"ESI fleet {operation.esi_fleet_id} is already tracked by FleetOps (FC {operation.fc_character_name})."
     text += " This is the running operation; no new fleet was started." if can_view else " No new fleet was started."
     if operation.status == FleetOperation.Status.STARTING:
         text += " Its start has not finished yet; if it was interrupted, start the fleet again in about five minutes."
-    elif operation.missing_reason == FleetOperation.EndReason.BOSS_HANDOVER:
-        if FleetOpsSettings.get_solo().auto_end_enabled:
-            text += " It ends automatically once the boss handover is confirmed; start the fleet again after that."
-        else:
-            text += (
-                " Automatic end is disabled, so it stays open until its FC or a fleet manager ends it; "
-                "start the fleet again after that."
-            )
     elif not can_view:
         text += " Ask its FC or a fleet manager to end it, then start the fleet again."
     return text
 
 
+def _handover_text(operation):
+    """The records a start ended because their boss handed the fleet over, for the start message."""
+    names = ", ".join(f"FC {record.fc_character_name}" for record in getattr(operation, "handed_over", []))
+    if not names:
+        return ""
+    return f" The fleet boss was handed over to you, so the previous operation ({names}) was ended."
+
+
+def _send_blockers(operation, *, actor, pre_ping):
+    """Problems that stop the ping of an unsaved fleet from being posted, e.g. a text Discord rejects.
+
+    Checked before a start, a pre ping or an edit, so nothing is changed. A ping that is only
+    copied is never blocked.
+    """
+    if operation.ping_channel is None or not operation.send_ping:
+        return []
+    try:
+        rendered = render_messages(operation, actor=actor, pre_ping=pre_ping)
+    except Exception as exc:
+        # The start records the rendering failure as one of its steps.
+        log_failure(logger, "Message check", exc)
+        return []
+    return list(rendered.blocking)
+
+
+def _form_errors_payload(form):
+    # The preview runs while the FC fills the form in, so an incomplete form is not an error.
+    missing = [
+        str(form[name].label)
+        for name, errors in form.errors.as_data().items()
+        if name in form.fields and any(error.code == "required" for error in errors)
+    ]
+    return JsonResponse({"ok": False, "missing": missing, "errors": form.errors.get_json_data()})
+
+
+def _preview_payload(operation, *, actor, pre_ping):
+    try:
+        rendered = render_messages(operation, actor=actor, pre_ping=pre_ping)
+    except Exception as exc:
+        log_failure(logger, "Message preview", exc)
+        return JsonResponse(
+            {"ok": False, "error": "The ping or MOTD template could not be rendered. Check the message templates."},
+            status=400,
+        )
+    sends = operation.ping_channel is not None and operation.send_ping
+    # A ping that is only copied is never blocked; render_messages lists its length as a warning.
+    warnings = [*rendered.errors, *rendered.warnings]
+    # Template problems only name the template and the error class, so they are safe to show.
+    return JsonResponse(
+        {
+            "ok": True,
+            "ping": rendered.ping,
+            "ping_display": rendered.ping_display or rendered.ping,
+            "motd": rendered.motd,
+            "warnings": warnings,
+            "blocking": list(rendered.blocking) if sends else [],
+            "ping_length": rendered.ping_length,
+            "motd_length": rendered.motd_length,
+        }
+    )
+
+
+def _start_page(request, form, operation=None):
+    return _render(
+        request,
+        "fleetops/start_fleet.html",
+        {
+            "form": form,
+            "operation": operation,
+            "channel_rules": form.channel_rules(),
+            "ping_limit": DISCORD_MESSAGE_LIMIT,
+            "eve_now": timezone.now(),
+        },
+    )
+
+
 @permission_required("fleetops.start_fleet", raise_exception=True)
 def start_fleet_view(request):
-    if request.method == "POST":
-        form = StartFleetForm(request.POST, user=request.user)
-        if form.is_valid():
-            try:
-                operation = start_fleet(
-                    user=request.user,
-                    cleaned_data=form.cleaned_data,
-                    request_id=form.cleaned_data["request_id"],
-                )
-            except (FleetESIError, PermissionError) as exc:
-                form.add_error(None, str(exc))
-            except Exception as exc:
-                log_failure(logger, "Fleet start", exc)
-                form.add_error(None, "Fleet start failed because of an unexpected error. Please try again or contact an administrator.")
-            else:
-                if not getattr(operation, "already_tracked", False):
-                    # A resubmitted form can return a start that was interrupted and cancelled;
-                    # its page says so.
-                    if operation.status != FleetOperation.Status.CANCELLED:
-                        messages.success(
-                            request,
-                            "Fleet operation started. Review individual step status below.",
-                        )
-                    return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
-                # After a boss handover the new boss may not be allowed to open the running record.
-                can_view = _can_view_operation(request.user, operation)
-                text = _already_tracked_text(operation, can_view)
-                if can_view:
-                    messages.info(request, text)
-                    return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
-                form.add_error(None, text)
-    else:
-        form = StartFleetForm(user=request.user, initial={"request_id": uuid.uuid4()})
-    return _render(request, "fleetops/start_fleet.html", {"form": form})
+    if request.method != "POST":
+        return _start_page(request, StartFleetForm(user=request.user, initial={"request_id": uuid.uuid4()}))
+    form = StartFleetForm(request.POST, user=request.user)
+    if not form.is_valid():
+        return _start_page(request, form)
+    data = form.cleaned_data
+    pre_ping = data["is_pre_ping"]
+    try:
+        blockers = _send_blockers(
+            build_unsaved_operation(request.user, data), actor=request.user, pre_ping=pre_ping
+        )
+        for problem in blockers:
+            form.add_error(None, problem)
+        if blockers:
+            return _start_page(request, form)
+        if pre_ping:
+            operation = schedule_fleet(user=request.user, cleaned_data=data, request_id=data["request_id"])
+        else:
+            operation = start_fleet(user=request.user, cleaned_data=data, request_id=data["request_id"])
+    except (FleetESIError, PermissionError) as exc:
+        form.add_error(None, str(exc))
+        return _start_page(request, form)
+    except Exception as exc:
+        log_failure(logger, "Fleet start", exc)
+        form.add_error(None, "Fleet start failed because of an unexpected error. Please try again or contact an administrator.")
+        return _start_page(request, form)
+
+    if operation.status == FleetOperation.Status.SCHEDULED:
+        messages.success(request, "Fleet scheduled. Start it from this page when it is time.")
+        return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+    if not getattr(operation, "already_tracked", False):
+        # A resubmitted form can return a start that was interrupted and cancelled; its page says so.
+        if operation.status != FleetOperation.Status.CANCELLED:
+            messages.success(
+                request, "Fleet operation started. Review individual step status below." + _handover_text(operation)
+            )
+        return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+    # After a boss handover the new boss may not be allowed to open the running record.
+    can_view = _can_view_operation(request.user, operation)
+    text = _already_tracked_text(operation, can_view)
+    if can_view:
+        messages.info(request, text)
+        return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+    form.add_error(None, text)
+    return _start_page(request, form)
 
 
 @permission_required("fleetops.start_fleet", raise_exception=True)
@@ -329,53 +432,14 @@ def start_fleet_view(request):
 def preview_fleet(request):
     form = StartFleetForm(request.POST, user=request.user)
     if not form.is_valid():
-        # The preview runs while the FC fills the form in, so an incomplete form is not an error.
-        missing = [
-            str(form[name].label)
-            for name, errors in form.errors.as_data().items()
-            if name in form.fields and any(error.code == "required" for error in errors)
-        ]
-        return JsonResponse({"ok": False, "missing": missing, "errors": form.errors.get_json_data()})
-    data = form.cleaned_data
-    ownership = get_owned_character(request.user, int(data["fc_character_id"]))
-    if ownership is None:
+        return _form_errors_payload(form)
+    try:
+        operation = build_unsaved_operation(request.user, form.cleaned_data)
+    except PermissionError:
         return JsonResponse(
             {"ok": False, "error": "Character is not owned by this user."}, status=403
         )
-    profile = getattr(request.user, "profile", None)
-    main = getattr(profile, "main_character", None)
-    op = FleetOperation(
-        uuid=uuid.uuid4(),
-        created_by=request.user,
-        fc_user=request.user,
-        fc_character_id=ownership.character.character_id,
-        fc_character_name=ownership.character.character_name,
-        fc_main_character_id=getattr(main, "character_id", None),
-        fc_main_character_name=getattr(main, "character_name", "") or "",
-        fleet_type=data["fleet_type"],
-        doctrine_name=data.get("doctrine_name", ""),
-        doctrine_external_id=data.get("doctrine_external_id", ""),
-        doctrine_source=data.get("doctrine_source", ""),
-        formup=data["formup"],
-        comms=data.get("comms"),
-        logi_channel=data.get("logi_channel"),
-        boost_channel=data.get("boost_channel"),
-        ping_target=data.get("ping_target"),
-        ping_template=data.get("ping_template"),
-        motd_template=data.get("motd_template"),
-        scheduled_at=data.get("scheduled_at"),
-        additional_message=data.get("additional_message", ""),
-    )
-    try:
-        rendered = render_messages(op)
-    except Exception as exc:
-        log_failure(logger, "Message preview", exc)
-        return JsonResponse(
-            {"ok": False, "error": "The ping or MOTD template could not be rendered. Check the message templates."},
-            status=400,
-        )
-    # Template problems only name the template and the error class, so they are safe to show.
-    return JsonResponse({"ok": True, "ping": rendered.ping, "motd": rendered.motd, "warnings": rendered.errors})
+    return _preview_payload(operation, actor=request.user, pre_ping=form.cleaned_data["is_pre_ping"])
 
 
 @permission_required("fleetops.start_fleet", raise_exception=True)
@@ -427,19 +491,29 @@ def fleet_operations_view(request):
     if month is not None and not (1 <= month <= 12):
         month = None
 
-    qs = FleetOperation.objects.exclude(status=FleetOperation.Status.DRAFT).select_related(
-        "fleet_type", "fc_user", "comms"
+    # Scheduled and cancelled pre pings have no start time; they are filed under their fleet time.
+    qs = (
+        FleetOperation.objects.exclude(status=FleetOperation.Status.DRAFT)
+        .select_related("fleet_type", "fc_user", "comms")
+        .annotate(fleet_time=Coalesce("started_at", "scheduled_at"))
     )
     if not _can_view_all_fleets(request.user):
-        qs = qs.filter(
+        visible = (
             Q(fc_user=request.user)
             | Q(role_assignments__auth_user=request.user)
             | Q(attendance_records__auth_user=request.user, attendance_records__granted=True)
-        ).distinct()
+        )
+        if _can_see_scheduled_fleets(request.user):
+            visible |= Q(
+                status__in=[FleetOperation.Status.SCHEDULED, FleetOperation.Status.CANCELLED],
+                started_at=None,
+                is_manual=False,
+            ) & ~Q(scheduled_at=None)
+        qs = qs.filter(visible).distinct()
 
-    qs = qs.filter(started_at__year=year)
+    qs = qs.filter(fleet_time__year=year)
     if month:
-        qs = qs.filter(started_at__month=month)
+        qs = qs.filter(fleet_time__month=month)
 
     fleet_type = request.GET.get("fleet_type", "").strip()
     status = request.GET.get("status", "").strip()
@@ -479,11 +553,12 @@ def fleet_operations_view(request):
     qs = qs.annotate(
         attendance_total=Coalesce(Subquery(attendance_total_subquery, output_field=IntegerField()), 0),
         tracked_members=Coalesce(Subquery(tracked_members_subquery, output_field=IntegerField()), 0),
-    ).order_by("-started_at", "-created_at")
+    ).order_by("-fleet_time", "-created_at")
 
     page = Paginator(qs, 50).get_page(request.GET.get("page"))
     for operation in page.object_list:
         operation.can_edit = _can_manage_operation(request.user, operation)
+        operation.is_pre_ping = is_pre_ping_record(operation)
     period = _period_choices(year, month or now.month)
     period.update(
         {
@@ -504,18 +579,24 @@ def fleet_operations_view(request):
     return _render(request, "fleetops/fleet_operations.html", period)
 
 
+EDITED_FIELDS = [
+    "fleet_type", "doctrine_name", "doctrine_source", "doctrine_external_id", "formup", "comms",
+    "logi_channel", "boost_channel", "ping_template", "motd_template", "additional_message",
+    "started_at", "ended_at",
+]
+
+
 @permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
 def edit_operation_view(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid, manage=True)
     if not _can_manage_operation(request.user, operation):
         raise Http404
-    old = model_to_dict(
-        operation,
-        fields=[
-            "fleet_type", "doctrine_name", "formup", "comms", "logi_channel",
-            "boost_channel", "additional_message", "started_at", "ended_at",
-        ],
-    )
+    if operation.status == FleetOperation.Status.SCHEDULED:
+        return redirect("fleetops:edit_scheduled_fleet", operation_uuid=operation.uuid)
+    if is_pre_ping_record(operation):
+        messages.info(request, "This scheduled fleet was cancelled before it started, so there is nothing to edit.")
+        return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+    old = model_to_dict(operation, fields=EDITED_FIELDS)
     if request.method == "POST":
         form = OperationEditForm(request.POST, instance=operation)
         if form.is_valid():
@@ -523,14 +604,13 @@ def edit_operation_view(request, operation_uuid):
             updated = form.save(commit=False)
             if fleet_type_changed:
                 updated.fleet_point_weight_snapshot = updated.fleet_type.point_weight
+            if updated.doctrine_name != old.get("doctrine_name"):
+                # A doctrine typed in by hand is no longer the Fittings doctrine and its fits.
+                updated.doctrine_source = "custom"
+                updated.doctrine_external_id = ""
+                updated.doctrine_fits = []
             updated.save()
-            new = model_to_dict(
-                updated,
-                fields=[
-                    "fleet_type", "doctrine_name", "formup", "comms", "logi_channel",
-                    "boost_channel", "additional_message", "started_at", "ended_at",
-                ],
-            )
+            new = model_to_dict(updated, fields=EDITED_FIELDS)
             audit(
                 request.user,
                 "operation.edit",
@@ -543,12 +623,21 @@ def edit_operation_view(request, operation_uuid):
             return redirect("fleetops:operation_detail", operation_uuid=updated.uuid)
     else:
         form = OperationEditForm(instance=operation)
-    return _render(request, "fleetops/operation_edit.html", {"operation": operation, "form": form})
+    return _render(
+        request,
+        "fleetops/operation_edit.html",
+        {
+            "operation": operation,
+            "form": form,
+            "eve_time": timezone.now(),
+            # Only changed times need the long fleet confirmation.
+            "stored_started_at": old["started_at"],
+            "stored_ended_at": old["ended_at"],
+        },
+    )
 
 
-@permission_required("fleetops.basic_access", raise_exception=True)
-def operation_detail(request, operation_uuid):
-    operation = _operation_for_user(request, operation_uuid)
+def _operation_steps(operation):
     actions = list(
         operation.actions.prefetch_related(
             Prefetch("history", queryset=OperationActionAttempt.objects.order_by("-created_at", "-pk"))
@@ -559,6 +648,47 @@ def operation_detail(request, operation_uuid):
         previous = list(step.history.all())[1:]
         step.previous_attempts = previous[:PREVIOUS_ATTEMPTS_SHOWN]
         step.older_attempt_count = max(0, len(previous) - PREVIOUS_ATTEMPTS_SHOWN)
+    return actions
+
+
+def _can_start_scheduled(user, operation):
+    # Only the FC who announced the fleet starts it.
+    return (
+        operation.status == FleetOperation.Status.SCHEDULED
+        and operation.fc_user_id == user.pk
+        and user.has_perm("fleetops.start_fleet")
+    )
+
+
+def _scheduled_fleet_page(request, operation, *, start_form=None):
+    scheduled = operation.status == FleetOperation.Status.SCHEDULED
+    can_manage = scheduled and _can_manage_operation(request.user, operation)
+    can_start = _can_start_scheduled(request.user, operation)
+    if can_start and start_form is None:
+        start_form = StartScheduledFleetForm(user=request.user, operation=operation)
+    return _render(
+        request,
+        "fleetops/scheduled_fleet.html",
+        {
+            "operation": operation,
+            "actions": _operation_steps(operation),
+            "is_scheduled": scheduled,
+            "overdue": scheduled and timezone.now() > operation.scheduled_at + SCHEDULED_OVERDUE_AFTER,
+            "can_start": can_start,
+            "can_manage": can_manage,
+            "start_form": start_form if can_start else None,
+            "cancel_form": CancelScheduledFleetForm() if can_manage else None,
+            "mention_label": mention_text(selection_from_operation(operation), display=True) or "No ping",
+        },
+    )
+
+
+@permission_required("fleetops.basic_access", raise_exception=True)
+def operation_detail(request, operation_uuid):
+    operation = _operation_for_user(request, operation_uuid)
+    if is_pre_ping_record(operation):
+        return _scheduled_fleet_page(request, operation)
+    actions = _operation_steps(operation)
     is_closed = operation.status == FleetOperation.Status.CLOSED
     # A closed fleet lists everyone who was tracked in it; an open one only the current members.
     members = operation.member_states.all() if is_closed else operation.member_states.filter(is_active=True)
@@ -639,12 +769,141 @@ def end_fleet_view(request, operation_uuid):
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
+@permission_required("fleetops.start_fleet", raise_exception=True)
+@require_POST
+def start_scheduled_fleet(request, operation_uuid):
+    operation = _operation_for_user(request, operation_uuid)
+    if operation.fc_user_id != request.user.pk:
+        raise Http404
+    if operation.status != FleetOperation.Status.SCHEDULED:
+        # A second click, or the fleet was cancelled meanwhile.
+        messages.info(request, f"This fleet is already {operation.get_status_display().lower()}.")
+        return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+    form = StartScheduledFleetForm(request.POST, user=request.user, operation=operation)
+    if not form.is_valid():
+        return _scheduled_fleet_page(request, operation, start_form=form)
+    try:
+        started = start_scheduled_fleet_service(
+            operation,
+            user=request.user,
+            character_id=int(form.cleaned_data["fc_character_id"]),
+            send_ping=form.cleaned_data["send_ping"],
+        )
+    except (FleetESIError, PermissionError) as exc:
+        form.add_error(None, str(exc))
+        return _scheduled_fleet_page(request, operation, start_form=form)
+    except Exception as exc:
+        log_failure(logger, "Scheduled fleet start", exc, operation)
+        form.add_error(None, "Fleet start failed because of an unexpected error. Please try again or contact an administrator.")
+        return _scheduled_fleet_page(request, operation, start_form=form)
+    if getattr(started, "already_tracked", False):
+        can_view = _can_view_operation(request.user, started)
+        text = _already_tracked_text(started, can_view) + " The scheduled fleet was not started."
+        if can_view:
+            messages.info(request, text)
+            return redirect("fleetops:operation_detail", operation_uuid=started.uuid)
+        form.add_error(None, text)
+        return _scheduled_fleet_page(request, operation, start_form=form)
+    if started.status in (FleetOperation.Status.ACTIVE, FleetOperation.Status.STARTING):
+        messages.success(
+            request, "Scheduled fleet started. Review individual step status below." + _handover_text(started)
+        )
+    else:
+        messages.info(request, f"This fleet is already {started.get_status_display().lower()}.")
+    return redirect("fleetops:operation_detail", operation_uuid=started.uuid)
+
+
+def _scheduled_for_manager(request, operation_uuid):
+    operation = _operation_for_user(request, operation_uuid, manage=True)
+    if not is_pre_ping_record(operation):
+        raise Http404
+    return operation
+
+
+def _edited_copy(operation, cleaned_data):
+    """The scheduled fleet with the edit form's values, unsaved."""
+    copy = FleetOperation.objects.select_related("ping_channel", "fleet_type").get(pk=operation.pk)
+    for name, value in fleet_values({**cleaned_data, "operation_mode": "full"}).items():
+        setattr(copy, name, value)
+    return copy
+
+
+@permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
+def edit_scheduled_fleet(request, operation_uuid):
+    operation = _scheduled_for_manager(request, operation_uuid)
+    if operation.status != FleetOperation.Status.SCHEDULED:
+        messages.info(request, NOT_SCHEDULED_MESSAGE)
+        return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+    if request.method != "POST":
+        return _start_page(request, ScheduledFleetForm(operation=operation, user=request.user), operation)
+    form = ScheduledFleetForm(request.POST, operation=operation, user=request.user)
+    # The edit page previews its messages through its own URL.
+    if request.POST.get("preview"):
+        if not form.is_valid():
+            return _form_errors_payload(form)
+        return _preview_payload(_edited_copy(operation, form.cleaned_data), actor=request.user, pre_ping=True)
+    if not form.is_valid():
+        return _start_page(request, form, operation)
+    data = form.cleaned_data
+    channel = data.get("ping_channel")
+    if channel is not None and channel.pk != operation.ping_channel_id and not data["send_update"]:
+        # A cancellation notice goes to the fleet's ping channel, which must have seen the pre ping.
+        form.add_error("send_update", CHANNEL_CHANGE_NEEDS_POST)
+        return _start_page(request, form, operation)
+    blockers = _send_blockers(_edited_copy(operation, data), actor=request.user, pre_ping=True)
+    for problem in blockers:
+        form.add_error(None, problem)
+    if blockers:
+        return _start_page(request, form, operation)
+    try:
+        updated = update_scheduled_fleet(
+            operation,
+            actor=request.user,
+            cleaned_data=data,
+            send_update=data["send_update"],
+            edit_token=data.get("edit_token"),
+        )
+    except ValueError as exc:
+        messages.info(request, str(exc))
+    else:
+        if updated.already_posted:
+            messages.info(request, "Scheduled fleet updated. The updated pre ping was already posted.")
+        elif data["send_update"]:
+            messages.success(request, "Scheduled fleet updated and the updated pre ping was posted.")
+        else:
+            messages.success(request, "Scheduled fleet updated. No new pre ping was posted.")
+    return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+
+
+@permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
+@require_POST
+def cancel_scheduled_fleet(request, operation_uuid):
+    operation = _scheduled_for_manager(request, operation_uuid)
+    form = CancelScheduledFleetForm(request.POST)
+    notify = form.is_valid() and form.cleaned_data["notify"]
+    operation = cancel_scheduled_fleet_service(operation, actor=request.user, notify=notify)
+    if not operation.cancelled:
+        messages.info(request, f"This fleet is already {operation.get_status_display().lower()}.")
+        return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+    notice = operation.actions.filter(action="cancel_notice").first() if notify else None
+    text = "Scheduled fleet cancelled."
+    if notice:
+        text += f" Cancellation notice: {notice.get_status_display()}."
+        if notice.error_message:
+            text += f" {notice.error_message}"
+    messages.success(request, text)
+    return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+
+
 @permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
 @require_POST
 def retry_ping_view(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid, manage=True)
     if not _can_manage_operation(request.user, operation):
         raise Http404
+    if operation.status == FleetOperation.Status.CANCELLED and is_pre_ping_record(operation):
+        messages.info(request, "This scheduled fleet was cancelled, so its pre ping is not posted again.")
+        return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     action = retry_ping(operation)
     detail = f" {action.error_message}" if action.error_message else ""
     messages.info(request, f"Ping retry: {action.get_status_display()}.{detail}")
@@ -657,6 +916,9 @@ def retry_motd_view(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid, manage=True)
     if not _can_manage_operation(request.user, operation):
         raise Http404
+    if is_pre_ping_record(operation):
+        messages.info(request, NOT_STARTED_MESSAGE)
+        return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     action = retry_motd(operation)
     detail = f" {action.error_message}" if action.error_message else ""
     messages.info(request, f"MOTD retry: {action.get_status_display()}.{detail}")
@@ -669,6 +931,9 @@ def retry_srp_view(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid, manage=True)
     if not _can_manage_operation(request.user, operation):
         raise Http404
+    if is_pre_ping_record(operation):
+        messages.info(request, NOT_STARTED_MESSAGE)
+        return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     action = retry_srp(operation)
     detail = f" {action.error_message}" if action.error_message else ""
     messages.info(request, f"SRP retry: {action.get_status_display()}.{detail}")
@@ -1146,239 +1411,3 @@ def audit_log_view(request):
     entries = AuditLog.objects.select_related("actor").order_by("-created_at", "-pk")
     page = Paginator(entries, AUDIT_PAGE_SIZE).get_page(request.GET.get("page"))
     return _render(request, "fleetops/audit_log.html", {"rows": page.object_list, "page": page})
-
-
-# ---------------------------------------------------------------------------
-# Front-end configuration center
-# ---------------------------------------------------------------------------
-
-CONFIG_SECTIONS = {
-    "fleet-types": {
-        "title": "Fleet Types",
-        "description": "Fleet categories and the FC point weight attached to each type.",
-        "model": FleetType,
-        "form": FleetTypeForm,
-        "columns": [
-            ("Name", "name"),
-            ("Short name", "short_name"),
-            ("Point weight", "point_weight"),
-            ("Active", "is_active"),
-            ("Sort", "sort_order"),
-        ],
-    },
-    "comms": {
-        "title": "Comms Presets",
-        "description": "Reusable voice/comms choices shown to FCs when starting a fleet.",
-        "model": CommsPreset,
-        "form": CommsPresetForm,
-        "columns": [
-            ("Name", "name"),
-            ("Channel", "channel_name"),
-            ("Voice link", "voice_url"),
-            ("Active", "is_active"),
-        ],
-    },
-    "channels": {
-        "title": "Logi / Boost Channels",
-        "description": "Reusable Logi and Boost channel choices shown on Fleet Start.",
-        "model": ChannelPreset,
-        "form": ChannelPresetForm,
-        "columns": [
-            ("Name", "name"),
-            ("Type", "channel_type"),
-            ("Value", "channel_value"),
-            ("Active", "is_active"),
-        ],
-    },
-    "webhooks": {
-        "title": "Discord Webhooks",
-        "description": "Discord destinations used by Ping Targets. Webhook secrets are only available to configuration managers.",
-        "model": DiscordWebhook,
-        "form": DiscordWebhookForm,
-        "columns": [
-            ("Name", "name"),
-            ("Active", "is_active"),
-        ],
-    },
-    "ping-targets": {
-        "title": "Ping Targets",
-        "description": "Reusable ping mentions/targets and their Discord destination.",
-        "model": PingTarget,
-        "form": PingTargetForm,
-        "columns": [
-            ("Name", "name"),
-            ("Target", "target_value"),
-            ("Webhook", "webhook"),
-            ("Active", "is_active"),
-        ],
-    },
-    "templates": {
-        "title": "Message Templates",
-        "description": "Ping and Fleet MOTD templates. Template variables are rendered when the fleet is prepared.",
-        "model": MessageTemplate,
-        "form": MessageTemplateForm,
-        "columns": [
-            ("Name", "name"),
-            ("Type", "template_type"),
-            ("Default", "is_default"),
-            ("Active", "is_active"),
-        ],
-    },
-}
-
-
-def _configuration_section(section):
-    config = CONFIG_SECTIONS.get(section)
-    if config is None:
-        raise Http404
-    return config
-
-
-def _configuration_snapshot(obj):
-    data = model_to_dict(obj)
-    # Never write Discord webhook secrets into FleetOps audit JSON.
-    if isinstance(obj, DiscordWebhook) and "webhook_url" in data:
-        data["webhook_url"] = "***redacted***" if data["webhook_url"] else ""
-    for key, value in list(data.items()):
-        if hasattr(value, "pk"):
-            data[key] = value.pk
-        elif not isinstance(value, (str, int, float, bool, type(None), list, dict)):
-            data[key] = str(value)
-    return data
-
-
-@permission_required("fleetops.manage_configuration", raise_exception=True)
-def configuration_index(request):
-    settings_obj = FleetOpsSettings.get_solo()
-    cards = [
-        {
-            "key": key,
-            "title": config["title"],
-            "description": config["description"],
-            "count": config["model"].objects.count(),
-        }
-        for key, config in CONFIG_SECTIONS.items()
-    ]
-    return _render(
-        request,
-        "fleetops/configuration/index.html",
-        {"settings_obj": settings_obj, "cards": cards},
-    )
-
-
-@permission_required("fleetops.manage_configuration", raise_exception=True)
-def configuration_settings(request):
-    obj = FleetOpsSettings.get_solo()
-    old = _configuration_snapshot(obj)
-    if request.method == "POST":
-        form = FleetOpsSettingsForm(request.POST, instance=obj)
-        if form.is_valid():
-            obj = form.save()
-            audit(
-                request.user,
-                "configuration.update",
-                obj,
-                old,
-                _configuration_snapshot(obj),
-                reason="Updated from FleetOps front-end administration",
-            )
-            messages.success(request, "FleetOps settings updated.")
-            return redirect("fleetops:configuration_index")
-    else:
-        form = FleetOpsSettingsForm(instance=obj)
-    return _render(
-        request,
-        "fleetops/configuration/settings_form.html",
-        {"form": form, "settings_obj": obj},
-    )
-
-
-@permission_required("fleetops.manage_configuration", raise_exception=True)
-def configuration_list(request, section):
-    config = _configuration_section(section)
-    objects = config["model"].objects.all()
-    rows = []
-    for obj in objects:
-        values = []
-        for label, field_name in config["columns"]:
-            value = getattr(obj, field_name)
-            if field_name == "channel_type" and hasattr(obj, "get_channel_type_display"):
-                value = obj.get_channel_type_display()
-            elif field_name == "template_type" and hasattr(obj, "get_template_type_display"):
-                value = obj.get_template_type_display()
-            values.append((label, value))
-        rows.append({"object": obj, "values": values})
-    return _render(
-        request,
-        "fleetops/configuration/list.html",
-        {"section": section, "config": config, "rows": rows},
-    )
-
-
-@permission_required("fleetops.manage_configuration", raise_exception=True)
-def configuration_edit(request, section, pk=None):
-    config = _configuration_section(section)
-    model = config["model"]
-    obj = get_object_or_404(model, pk=pk) if pk is not None else None
-    old = _configuration_snapshot(obj) if obj is not None else None
-    if request.method == "POST":
-        form = config["form"](request.POST, instance=obj)
-        if form.is_valid():
-            saved = form.save()
-            audit(
-                request.user,
-                "configuration.update" if obj is not None else "configuration.create",
-                saved,
-                old,
-                _configuration_snapshot(saved),
-                reason="Changed from FleetOps front-end administration",
-            )
-            # A new default template takes the flag from the previous one.
-            for demoted in getattr(saved, "demoted_defaults", ()):
-                new = _configuration_snapshot(demoted)
-                audit(
-                    request.user,
-                    "configuration.update",
-                    demoted,
-                    {**new, "is_default": True},
-                    new,
-                    reason="Default template replaced from FleetOps front-end administration",
-                )
-            messages.success(request, f"{config['title']} saved.")
-            return redirect("fleetops:configuration_list", section=section)
-    else:
-        form = config["form"](instance=obj)
-    return _render(
-        request,
-        "fleetops/configuration/form.html",
-        {"section": section, "config": config, "form": form, "object": obj},
-    )
-
-
-@permission_required("fleetops.manage_configuration", raise_exception=True)
-@require_POST
-def configuration_delete(request, section, pk):
-    config = _configuration_section(section)
-    obj = get_object_or_404(config["model"], pk=pk)
-    old = _configuration_snapshot(obj)
-    object_type = obj.__class__.__name__
-    object_id = str(obj.pk)
-    try:
-        obj.delete()
-    except ProtectedError:
-        messages.error(
-            request,
-            "This item is referenced by existing fleet data and cannot be deleted. Disable it instead.",
-        )
-    else:
-        AuditLog.objects.create(
-            actor=request.user,
-            action="configuration.delete",
-            object_type=object_type,
-            object_id=object_id,
-            old_value=old,
-            new_value=None,
-            reason="Deleted from FleetOps front-end administration",
-        )
-        messages.warning(request, f"{config['title']} item deleted.")
-    return redirect("fleetops:configuration_list", section=section)

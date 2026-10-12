@@ -29,10 +29,14 @@ The repository includes the full expected feature target and an explicit distinc
 - Fleet Type presets with configurable point weights managed from the FleetOps front-end Administration Center.
 - Doctrine integration with the installed `fittings` app when available, with `None / Custom` fallback.
 - **Form Up / Staging is free text entered by the FC for every fleet**.
-- Front-end administration for Comms, Logi/Boost channels, Ping targets and Discord webhooks; alliance managers do not need Django Admin access.
-- Editable Ping/MOTD templates.
+- Front-end administration for Comms, Logi/Boost channels, Ping channels and Ping roles; alliance managers do not need Django Admin access.
+- Editable Ping/MOTD templates (see [Message templates](#message-templates)).
 - Manual **Copy Ping / Copy MOTD** fallback regardless of automation status.
-- Discord webhook Ping with per-step success/failure status.
+- Discord webhook Ping with per-step success/failure status. The FC picks a **ping channel** and a **ping target** (No ping, `@everyone`, `@here` or ping roles); each channel decides which mentions it allows, and Discord is told exactly which mention may notify, so `@everyone` typed into the text never pings anybody. A ping over Discord's 2000-character limit is refused before anything is posted.
+- **Pre ping**: announce a fleet for a later EVE time (UTC) with a Discord timestamp in every reader's local time. FleetOps keeps a **Scheduled** fleet that only the scheduling FC can start later (with an optional form-up ping); managers can edit or cancel it, and a cancellation notice mentions nobody.
+- Public **comms join page** for `mumble://` and other voice links, so the comms link in Discord and in the in-game MOTD can be clicked; Logi/Boost channels link to the in-game channel.
+- **Regenerate & Push MOTD** on an active fleet after the templates, comms or doctrine changed.
+- Pilots without an Alliance Auth account are shown with their ESI name, corporation and alliance, a "Not in Alliance Auth" badge and EveWho/zKillboard links.
 - ESI MOTD update with per-step success/failure status.
 - Near-real-time active fleet member tracking. Fleet reads use django-esi response caching and always return the fleet data, also when it has not changed (ETags are not used for fleet reads).
 - Current fleet member state plus change events: Join, Leave, Rejoin, Ship, System, Role, Wing and Squad changes.
@@ -48,7 +52,7 @@ The repository includes the full expected feature target and an explicit distinc
 - End Fleet returns at once: the final sync, the attendance multiplier and the close run in a Celery task while the page shows "Ending…". A fleet that is still Ending after about five minutes (for example after a worker restart) is finished by the tracking beat.
 - Every operation step keeps its attempt history, so the reason of an earlier failure stays visible after a retry succeeds.
 - ESI errors are shown as a short status line such as `Could not read fleet members: ESI returned HTTP 503 (Service unavailable).`; the HTTP status and ESI's `x-esi-request-id` are logged.
-- Automatic SRP fleet/link creation through an SRP provider abstraction; current alpha includes a best-effort Alliance Auth built-in SRP adapter and a registration interface for future Better SRP/community providers.
+- Automatic SRP fleet/link creation through an SRP provider abstraction: aa-srp (`aasrp`) when installed, otherwise the Alliance Auth built-in SRP app, plus a registration interface for other SRP apps.
 - Front-end historical manual-attendance page for permitted FCs/admins, including closed fleets and multiple manual credits.
 - Manual fleet records take their start and end time in EVE time (UTC), whatever the site or browser time zone; the end time is required, must be after the start, and a fleet longer than 6 hours needs an extra confirmation.
 - At least 365-day attendance-history views for personal, corporation and alliance scopes, with optional current-alliance membership pruning.
@@ -145,10 +149,9 @@ This creates:
 - PCT = 0.50
 - StratOps = 1.00
 - CTA = 1.50
-- a `Manual / Copy Only` Ping target
 - default Ping and MOTD templates
 
-The demo command **does not create a Discord webhook or secret**.
+The demo command **does not create a ping channel, Discord webhook or secret**. Without a ping channel, Fleet Start offers the ping for copying.
 
 Restart the Alliance Auth web process, Celery worker and Celery beat using the normal method for your installation.
 
@@ -207,12 +210,12 @@ Grant `fleetops.manage_configuration` to the appropriate alliance management gro
 The FleetOps front-end Administration Center can configure:
 
 - Fleet Types
-- Comms Presets
-- Channel Presets (`Logi` / `Boost`)
-- Discord Webhooks
-- Ping Targets
+- Comms Presets (each with a public join link)
+- Logi / Boost Channels (paste the in-game channel link)
+- Ping Channels (Discord webhooks and the mentions each channel allows)
+- Ping Roles (Discord roles FCs may mention)
 - Message Templates
-- FleetOps Settings, including the **Incentive enabled** switch for FC incentives (off by default)
+- FleetOps Settings, including the **Incentive enabled** switch for FC incentives (off by default) and the SRP provider
 
 `Form Up` is intentionally **not** an administrator preset. Django Admin is retained as an IT/emergency interface only; normal FleetOps alliance administration is performed in the FleetOps front-end.
 
@@ -237,11 +240,13 @@ The selected FC character must currently be the Fleet Boss. ESI reports the boss
 - Choose Fleet Type.
 - Choose Doctrine or enter Custom.
 - Enter Form Up manually.
-- Select Comms / Logi / Boost / Ping Target as required.
-- Confirm Ping and MOTD previews. While required fields are still empty the preview lists what is missing and marks those fields.
+- Select Comms / Logi / Boost, the Ping channel and the Ping target as required.
+- Confirm Ping and MOTD previews. While required fields are still empty the preview lists what is missing and marks those fields. The counter shows the ping length against Discord's 2000-character limit.
 - Click **SEND PING & START FLEET**.
 
 The Operation page should show individual result states for fleet detection, Discord, MOTD and tracking.
+
+To announce a fleet for later, choose **Pre ping** under Fleet time, enter the EVE date and time (UTC) and click **SEND PRE PING & SCHEDULE FLEET**. No ESI fleet is needed yet. When it is time, open the scheduled fleet (dashboard → Scheduled Fleets), pick the fleet boss character and click Start; tick **Send a form-up ping now** to ping again.
 
 ## 6. Live tracking
 
@@ -269,7 +274,7 @@ Alt count does not change the denominator.
 
 ## SRP
 
-FleetOps can automatically create/link an SRP fleet at Fleet Start when a supported provider is available. `auto` currently tries the Alliance Auth built-in SRP adapter and is deliberately non-blocking: an SRP mismatch must not stop the FleetOperation from starting. See [`docs/SRP_PROVIDER.md`](docs/SRP_PROVIDER.md) for the provider interface intended for a future Better SRP app.
+FleetOps can automatically create/link an SRP fleet at Fleet Start when a supported provider is available and **SRP auto create** is on. `auto` tries aa-srp (`aasrp`) first, then the Alliance Auth built-in SRP app, and is deliberately non-blocking: an SRP mismatch must not stop the FleetOperation from starting. The aa-srp link is created for the FC and points back to the FleetOps fleet page. See [`docs/SRP_PROVIDER.md`](docs/SRP_PROVIDER.md) for the providers and the interface for other SRP apps.
 
 ## Attendance history
 
@@ -292,11 +297,110 @@ FC/fleet managers may assign Back Seat FC, Logi Anchor and Snowflake Member afte
 
 # Discord configuration
 
-Create a Discord webhook in FleetOps Administration → Discord Webhooks, then attach it to a Ping Target.
+Create a webhook in the Discord channel, then add it in FleetOps Administration → **Ping Channels**. The channel name is what FCs pick on Fleet Start. Per channel, choose whether `@everyone` and `@here` may be used and which ping roles are allowed (none ticked = every active role).
 
-Only Discord webhook URLs of the form `https://discord.com/api/webhooks/<id>/<token>` are accepted. The `ptb.discord.com`, `canary.discord.com` and `discordapp.com` hosts and an API version segment (`https://discord.com/api/v10/webhooks/<id>/<token>`) are accepted too. The URL is checked when it is saved and again before every send, so a webhook stored by an older FleetOps version that does not match is not used until its URL is fixed.
+Add the Discord roles FCs may mention under **Ping Roles**: paste the role ID (or `<@&id>`), or click **Sync roles from Discord** when the Alliance Auth Discord service is installed and `DISCORD_GUILD_ID` is set. Synced roles start inactive, so tick **Active** for the roles FCs may ping. Roles that disappear from Discord are marked "Not on Discord" and switched off. A role that a ping channel allows cannot be deleted; remove it from the channel or switch it off instead.
 
-A Ping Target without an active webhook is valid: the Discord step is marked failed/non-blocking and the Ping remains available to copy manually. This is useful for test environments.
+Discord only notifies a role when the role is **mentionable** (Discord server settings → Roles) or when the webhook may mention every role. FleetOps sends each ping with `allowed_mentions` naming exactly the selected target, so other `@everyone`, `@here` or `<@&id>` text in the ping does not notify anybody, and with link previews suppressed.
+
+Only Discord webhook URLs of the form `https://discord.com/api/webhooks/<id>/<token>` are accepted. The `ptb.discord.com`, `canary.discord.com` and `discordapp.com` hosts and an API version segment (`https://discord.com/api/v10/webhooks/<id>/<token>`) are accepted too. The URL is checked when it is saved and again before every send, so a webhook stored by an older FleetOps version that does not match is not used until its URL is fixed. Webhook URLs are never shown outside the ping channel form.
+
+Leaving the ping channel empty on Fleet Start ("No Discord message (copy only)") is valid: the Discord step is skipped and the Ping remains available to copy manually. This is useful for test environments.
+
+---
+
+# Links in pings and MOTDs
+
+Add these to your Alliance Auth `local.py`:
+
+```python
+# Lets pilots who are not logged in open comms join links.
+APPS_WITH_PUBLIC_VIEWS = ["fleetops"]
+```
+
+and make sure `SITE_URL` is the public https address of Alliance Auth (for example `SITE_URL = "https://auth.example.com"`). Links in pings and MOTDs are built from it; without it they are site paths that do not open outside Alliance Auth. FleetOps Administration shows a warning while either setting is missing.
+
+- **Comms:** a voice link such as `mumble://…` cannot be clicked in Discord or in game, so pings and MOTDs link to the preset's join page (`/fleetops/comms/<id>/join/`), which opens the voice client. `http`/`https` voice links are used directly. The join page is the only FleetOps page that works without a login, and only for active presets; **Issue a new join link** on the preset form makes the old link stop working. Do not put a personal user name or password in a voice link; FleetOps Administration removes them and Django Admin refuses them.
+- **Logi/Boost:** in game, right-click the channel and copy its link, then paste it into **In-game link** on the channel form. The MOTD then links the channel name to the in-game channel.
+- **Doctrine:** Fittings doctrines are linked to their Fittings page. Members need `fittings.access_fittings` to open it.
+
+---
+
+# Message templates
+
+Ping and MOTD templates use the Django template language. Both get the variables below; all values are plain text except `is_pre_ping`. Times are EVE time (UTC).
+
+| Variable | Value |
+|---|---|
+| `ping_mention` | The selected mention: `@everyone`, `@here`, the role mentions (`<@&id>`), or empty for No ping. Only this mention notifies anybody. |
+| `ping_target` | Same as `ping_mention` (kept for older templates). |
+| `ping_target_label`, `ping_target_name` | Who the ping is for: `all`, `online members`, the role names (`Sig A, Sig B`) or `this channel`. |
+| `ping_channel` | Name of the ping channel, or empty when the ping is only copied. |
+| `sender` | Main character of the user sending the message, else the FC's main, else the FC character. |
+| `fc` | FC (fleet boss) character name. |
+| `fc_main` | Main character of the FC. |
+| `fleet_type` | Fleet type name. |
+| `formup` | Form Up / Staging text. |
+| `doctrine` | Doctrine name, or `None / Custom`. |
+| `doctrine_name` | Doctrine name, or empty. |
+| `doctrine_url` | Link to the Fittings doctrine page, or empty for other doctrines. |
+| `doctrine_ships` | Hull of every fit of the Fittings doctrine in doctrine order, joined with ` > ` (for example `Moa > Moa > Osprey`). |
+| `doctrine_fits` | Fit names of the Fittings doctrine, joined with ` > `. |
+| `comms` | Comms preset name. |
+| `comms_channel` | Comms channel name of the preset. |
+| `comms_link` | Link to open the comms: the join page for voice client links, the link itself for `http`/`https`. |
+| `comms_voice_url` | The preset's voice link as stored, without a user name or password. |
+| `logi_channel`, `boost_channel` | Logi/Boost channel names. |
+| `logi_channel_link`, `boost_channel_link` | In-game channel links for the MOTD (`<a href="joinChannel:…">Name</a>`), or the plain name when no in-game link is set. |
+| `fleet_time` | `YYYY-MM-DD HH:MM EVE` for a pre-pinged fleet, otherwise `Now`. |
+| `fleet_time_eve` | `YYYY-MM-DD HH:MM EVE` for a pre-pinged fleet, otherwise empty. |
+| `fleet_time_unix` | Unix time of the fleet time, or empty. |
+| `fleet_time_discord` | Discord relative timestamp `<t:…:R>`, shown in each reader's local time, or empty. |
+| `is_pre_ping` | True for a pre ping (true/false, use with `{% if %}`). |
+| `sent_at` | Time the message was rendered, `YYYY-MM-DD HH:MM`. |
+| `additional_message` | The FC's additional information. |
+| `operation_id` | FleetOps operation id. |
+
+Template output is not HTML-escaped. The MOTD may use EVE's HTML-like tags; `{{ additional_message|linebreaksbr }}` keeps the FC's line breaks in game. If a template does not contain `{{ ping_mention }}` (or `{{ ping_target }}`) while a mention is selected, the preview warns that nobody will be notified. A broken template never blocks a start: FleetOps uses the built-in text and reports the problem.
+
+The built-in **Default Ping**:
+
+```django
+{% if ping_mention %}{{ ping_mention }}
+{% endif %}{% if additional_message %}{{ additional_message }}
+
+{% endif %}**FC Name:** {{ fc }}
+**Formup Location:** {{ formup }}
+**PAP Type:** {{ fleet_type }}
+{% if comms %}**Comms:** {% if comms_link %}[{{ comms }}]({{ comms_link }}){% else %}{{ comms }}{% endif %}
+{% endif %}{% if doctrine_name %}**Doctrine:** {% if doctrine_url %}[{{ doctrine_name }}]({{ doctrine_url }}){% else %}{{ doctrine_name }}{% endif %}{% if doctrine_ships %} ({{ doctrine_ships }}){% endif %}
+{% endif %}{% if is_pre_ping %}**Fleet Time:** {{ fleet_time_eve }} ({{ fleet_time_discord }})
+{% endif %}
+-# This was a FleetOps broadcast from {{ sender }} to {{ ping_target_label }} at {{ sent_at }} EVE
+```
+
+The built-in **Default MOTD** (one line):
+
+```django
+<font color="#bfffffff"><b>{{ fleet_type }}</b><br>FC: {{ fc }}<br>Form Up: {{ formup }}{% if doctrine_name %}<br>Doctrine: {% if doctrine_url %}<a href="{{ doctrine_url }}">{{ doctrine_name }}</a>{% else %}{{ doctrine_name }}{% endif %}{% if doctrine_ships %} ({{ doctrine_ships }}){% endif %}{% endif %}{% if comms %}<br>Comms: {% if comms_link %}<a href="{{ comms_link }}">{{ comms }}</a>{% else %}{{ comms }}{% endif %}{% endif %}{% if logi_channel %}<br>Logi: {{ logi_channel_link }}{% endif %}{% if boost_channel %}<br>Boost: {{ boost_channel_link }}{% endif %}{% if additional_message %}<br><br>{{ additional_message|linebreaksbr }}{% endif %}</font>
+```
+
+The MOTD gets a warning above 1000 characters, because the game may cut longer MOTDs.
+
+---
+
+# Upgrading to 0.1.0a6
+
+Read the upgrade notes in [`CHANGELOG.md`](CHANGELOG.md) before running `python manage.py migrate fleetops`. In short: Ping Targets become Ping channels and Ping roles (check each channel's mention switches and allowed roles afterwards), the Default Ping/MOTD templates are replaced only if they were never edited, pasted in-game channel links are split into name and link, and user names are removed from voice links. After the upgrade:
+
+- Add `APPS_WITH_PUBLIC_VIEWS = ["fleetops"]` and check `SITE_URL` (see [Links in pings and MOTDs](#links-in-pings-and-motds)).
+- Make the Discord roles FCs ping mentionable.
+- If comms presets were changed to `https://` pages only to make voice links clickable, switch them back to the `mumble://…` link; the join page does that now.
+- Replace hard-coded doctrine links in custom MOTD templates with `{{ doctrine_url }}`, or switch back to the Default MOTD.
+- MOTD templates now link the Logi/Boost channels with `{{ logi_channel_link }}` and `{{ boost_channel_link }}`; the upgrade switches `{{ logi_channel }}` and `{{ boost_channel }}` in every MOTD template to them. `{{ logi_channel }}` and `{{ boost_channel }}` are the plain channel names from this release on.
+- Change comms presets marked "Not a supported voice link" on the Comms Presets list (for example a bare `ts.example.com:9987`) to a `ts3server://…` or `mumble://…` link; until then pings and MOTDs show only the comms name.
+- Custom ping templates keep working: `{{ ping_target }}` now renders the mention selected on Fleet Start.
+- Run `python manage.py fleetops_refresh_names --dry-run`, then without `--dry-run`, if older fleets show ship or system names in another language.
 
 ---
 
@@ -304,7 +408,7 @@ A Ping Target without an active webhook is valid: the Discord step is marked fai
 
 `fittings` is optional. When an installed app with label `fittings` exposes a doctrine-like model, FleetOps attempts to list it in the Doctrine selector. If no supported doctrine model is found, `None / Custom` remains available and FleetOps continues normally.
 
-FleetOps stores the selected doctrine name/source on each operation so historical records do not depend on a doctrine continuing to exist later.
+FleetOps stores the selected doctrine name/source on each operation so historical records do not depend on a doctrine continuing to exist later. For Fittings doctrines it also stores the fits (fit name and hull, in doctrine order) when a fleet starts or is pre pinged, for the `doctrine_ships` and `doctrine_fits` template variables; **Regenerate & Push MOTD** reads them again. Ship and system names are always stored in English.
 
 ---
 

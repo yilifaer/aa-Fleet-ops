@@ -17,12 +17,14 @@ The FC workflow should be:
 3. Select Fleet Type.
 4. Select Doctrine from the installed Fittings / doctrine provider, or use Custom.
 5. Enter **Form Up / Staging manually for this fleet**.
-6. Select preconfigured Comms, Logi Channel, Boost Channel and Ping Target.
+6. Select preconfigured Comms, Logi Channel, Boost Channel, Ping channel and Ping target (No ping, `@everyone`, `@here` or Discord roles).
 7. Preview Ping and MOTD.
 8. Click **Send Ping & Start Fleet**.
 9. FleetOps sends the configured ping, sets MOTD when possible, links the ESI Fleet ID and starts tracking automatically.
 
 The FC must not need to open a second tracking page and select the character/fleet again.
+
+A fleet can also be announced ahead of time with a **Pre ping**: the FC enters the fleet time in EVE time (UTC), FleetOps posts the pre ping (with a Discord timestamp in each reader's local time) and keeps a scheduled fleet. When it is time, the same FC starts it from the scheduled fleet page, optionally with a form-up ping, and tracking starts then.
 
 ## 2. Character and Fleet Boss Selection
 
@@ -53,11 +55,11 @@ Alliance administrators configure reusable choices from a **FleetOps front-end A
 
 - Fleet Types
 - Fleet Type point weights
-- Comms + voice links
+- Comms + voice links (with a public join page for voice client links)
 - Logi Channels
-- Boost Channels
-- Ping Targets
-- Discord webhooks
+- Boost Channels (with in-game channel links)
+- Ping channels (Discord webhooks and the mentions each allows)
+- Ping roles (added by ID or synced from Discord)
 - Ping templates
 - MOTD templates
 - Attendance credit limit
@@ -72,6 +74,7 @@ Preferred behavior:
 - Read doctrines from Alliance Auth Fittings / a doctrine provider when available.
 - Offer `None / Custom` fallback.
 - Snapshot the selected doctrine name/source onto the FleetOperation so historical fleets remain readable if the external doctrine later changes or disappears.
+- Link Fittings doctrines in the Ping and MOTD and list the doctrine's hulls in doctrine order.
 
 ## 6. Manual Copy Fallback
 
@@ -310,9 +313,9 @@ All permissions must be enforced server-side.
 
 ## 20. SRP Integration
 
-When a FleetOperation starts, FleetOps should be able to create or link the corresponding fleet in the installed Alliance Auth SRP app and expose an **Open SRP** link from the operation page. SRP automation is non-blocking.
+When a FleetOperation starts, FleetOps should be able to create or link the corresponding fleet in the installed SRP app (aa-srp, or the Alliance Auth built-in SRP app) and expose an **Open SRP** link from the operation page. SRP automation is non-blocking and never creates a second link for the same fleet.
 
-SRP integration must use a provider boundary rather than hard-coding one app so a future **Better SRP** app can register its own provider without changing FleetOps core.
+SRP integration must use a provider boundary rather than hard-coding one app so other SRP apps can register their own provider without changing FleetOps core.
 
 ## 21. Historical Manual Attendance
 
@@ -388,3 +391,15 @@ Personal statistics should present selected-period attendance, unique fleets, FC
 - Member access to own participated fleet records.
 - Read-only all-fleet archive permission for FCs.
 - Recommended Member / Corp Management / FC / FC Lead permission bundles.
+
+## 0.1.0a6 additions
+
+- Pre ping with scheduled fleets: only the scheduling FC starts them; managers can edit or cancel them, and a cancellation notice mentions nobody.
+- Ping channels with per-channel `@everyone`/`@here`/role rules, Discord role sync, and exact Discord mentions: only the mention selected on Fleet Start can notify anybody.
+- New default Ping (broadcast format with sender footer) and MOTD (normal text colour, line breaks, comms/doctrine/channel links); Discord's 2000-character limit is enforced before posting.
+- Public comms join page for voice client links, and in-game channel links for Logi/Boost.
+- Regenerate & Push MOTD on an active fleet.
+- aa-srp provider, preferred in automatic mode.
+- Names, corporations and alliances of pilots without an Alliance Auth account from ESI, with a "Not in Alliance Auth" badge.
+- A new fleet boss confirmed by ESI ends the previous FC's record at once and starts an independent record.
+- Ship and system names always in English.
