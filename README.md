@@ -23,7 +23,8 @@ The repository includes the full expected feature target and an explicit distinc
 
 - Select any Alliance Auth-owned main or alt character as FC / Fleet Boss.
 - ESI fleet auto-detection from the selected character.
-- Fleet Boss validation (`fleet_commander`).
+- Fleet Boss validation from ESI's `fleet_boss_id`: the boss may sit in any fleet position, and a fleet commander who is not the boss is rejected with the name of the current boss.
+- One open record per ESI fleet: starting a fleet that is already tracked opens the running operation instead of creating a second one. A start that was interrupted holds its fleet for about five minutes at most; then its Starting record is cancelled and the fleet can be started again.
 - One `FleetOperation` linking Ping, MOTD, tracking, attendance, statistics and FC incentive data.
 - Fleet Type presets with configurable point weights managed from the FleetOps front-end Administration Center.
 - Doctrine integration with the installed `fittings` app when available, with `None / Custom` fallback.
@@ -43,13 +44,17 @@ The repository includes the full expected feature target and an explicit distinc
 - Alliance-wide corporation and FC statistics for users with `view_all_stats`.
 - FC monthly incentive calculation, eligibility threshold, weights, waiver, review/finalize/unlock.
 - 3-jump Fleet Proximity view when `eve_sde` Stargate data is available.
-- Automatic fleet end only after repeated confirmed `FLEET_NOT_FOUND`, not on transient ESI errors.
+- Automatic fleet end only after repeated unreadable polls, not on transient ESI errors. Each poll that gets a 404 checks the FC's own fleet: if the FC is still in the same fleet but someone else holds the boss role, it counts as a **boss handover**, otherwise as **fleet gone** (disbanded, or the FC left it). A successful read resets the count, so handing the boss back in time keeps the fleet open. Before ending, FleetOps reads the fleet once more and calls the end off if that read works. The fleet page warns while polls fail, and a closed fleet shows why it ended ("Ended manually", "Ended automatically: the fleet no longer exists or the FC left it", "Ended automatically: fleet boss handed over to <name>").
+- End Fleet returns at once: the final sync, the attendance multiplier and the close run in a Celery task while the page shows "Ending…". A fleet that is still Ending after about five minutes (for example after a worker restart) is finished by the tracking beat.
+- Every operation step keeps its attempt history, so the reason of an earlier failure stays visible after a retry succeeds.
+- ESI errors are shown as a short status line such as `Could not read fleet members: ESI returned HTTP 503 (Service unavailable).`; the HTTP status and ESI's `x-esi-request-id` are logged.
 - Automatic SRP fleet/link creation through an SRP provider abstraction; current alpha includes a best-effort Alliance Auth built-in SRP adapter and a registration interface for future Better SRP/community providers.
 - Front-end historical manual-attendance page for permitted FCs/admins, including closed fleets and multiple manual credits.
+- Manual fleet records take their start and end time in EVE time (UTC), whatever the site or browser time zone; the end time is required, must be after the start, and a fleet longer than 6 hours needs an extra confirmation.
 - At least 365-day attendance-history views for personal, corporation and alliance scopes, with optional current-alliance membership pruning.
 - Operational dashboard cards, recent participation, top tracked ships, active fleets and FC-month summary.
 - Post-creation/post-close special-role assignments: Back Seat FC, Logi Anchor and Snowflake Member. Assigned users who currently hold FleetOps FC permission receive FC fleet/point credit for that operation.
-- Active-fleet one-click **Kick all Capsules** control using the Fleet Boss ESI write token.
+- Active-fleet one-click **Kick all Capsules** control using the Fleet Boss ESI write token. The FC and the fleet boss are never kicked or counted on the button.
 
 ## Compatibility target
 
@@ -118,7 +123,9 @@ CELERYBEAT_SCHEDULE["fleetops_prune_history"] = {
 }
 ```
 
-FleetOps still respects its own admin-configured `tracking_interval`; the one-minute beat only decides when to check which operations are due.
+FleetOps still respects its own admin-configured `tracking_interval`; the one-minute beat only decides when to check which operations are due. The same beat also finishes fleets whose End Fleet task was lost (still Ending after about five minutes) and cancels starts that were interrupted (still Starting after about five minutes), so keep it running on every install.
+
+FleetOps logs through Alliance Auth's extension logger, so its warnings and errors appear in `extensions.log` (`allianceauth.services.hooks.get_extension_logger`).
 
 Run maintenance:
 
@@ -221,7 +228,7 @@ Click **Authorize / Refresh Fleet ESI** and authorize a character with the requi
 
 ## 4. Create an EVE fleet
 
-The selected FC character must currently be Fleet Boss / Fleet Commander. FleetOps will reject a selected character that is merely a squad/wing/fleet member.
+The selected FC character must currently be the Fleet Boss. ESI reports the boss in `fleet_boss_id`, and only the boss can read and write the fleet. The boss may sit in any position (squad member, wing commander or fleet commander); a character in the fleet commander position who is not the boss is rejected, and the message names the current boss.
 
 ## 5. Start Fleet
 
@@ -231,7 +238,7 @@ The selected FC character must currently be Fleet Boss / Fleet Commander. FleetO
 - Choose Doctrine or enter Custom.
 - Enter Form Up manually.
 - Select Comms / Logi / Boost / Ping Target as required.
-- Confirm Ping and MOTD previews.
+- Confirm Ping and MOTD previews. While required fields are still empty the preview lists what is missing and marks those fields.
 - Click **SEND PING & START FLEET**.
 
 The Operation page should show individual result states for fleet detection, Discord, MOTD and tracking.

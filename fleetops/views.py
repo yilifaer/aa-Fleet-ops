@@ -1,14 +1,14 @@
 import calendar
-import logging
 import uuid
 from datetime import timedelta
 
 from allianceauth.authentication.decorators import permissions_required
 from allianceauth.authentication.models import UserProfile
+from allianceauth.services.hooks import get_extension_logger
 from django.contrib import messages
 from django.contrib.auth.decorators import permission_required
 from django.core.paginator import Paginator
-from django.db.models import Count, IntegerField, OuterRef, Q, Subquery, Sum
+from django.db.models import Count, IntegerField, OuterRef, Prefetch, Q, Subquery, Sum
 from django.db.models.deletion import ProtectedError
 from django.db.models.functions import Coalesce
 from django.forms.models import model_to_dict
@@ -53,6 +53,7 @@ from fleetops.models import (
     IncentivePeriod,
     MessageTemplate,
     MonthlyFCStatistic,
+    OperationActionAttempt,
     OperationRoleAssignment,
     PingTarget,
 )
@@ -65,7 +66,7 @@ from fleetops.services.attendance import (
 )
 from fleetops.services.dashboard import dashboard_metrics
 from fleetops.services.errors import log_failure
-from fleetops.services.fleet_controls import kick_all_pods, pod_members
+from fleetops.services.fleet_controls import kick_all_pods, kickable_pod_members
 from fleetops.services.identity import get_owned_character
 from fleetops.services.history import current_member_user_ids
 from fleetops.services.incentives import (
@@ -78,7 +79,15 @@ from fleetops.services.incentives import (
     unlock_period,
 )
 from fleetops.services.messages import render_messages
-from fleetops.services.operations import create_manual_fleet, end_fleet, retry_motd, retry_ping, retry_srp, start_fleet
+from fleetops.services.operations import (
+    create_manual_fleet,
+    not_boss_message,
+    request_fleet_end,
+    retry_motd,
+    retry_ping,
+    retry_srp,
+    start_fleet,
+)
 from fleetops.services.roles import add_role_assignment, delete_role_assignment
 from fleetops.services.routing import proximity_rows
 from fleetops.services.statistics import (
@@ -88,11 +97,14 @@ from fleetops.services.statistics import (
     fc_statistics,
     member_statistics,
 )
+from fleetops.services.tracking import unreadable_fleet_warning
 
-logger = logging.getLogger(__name__)
+logger = get_extension_logger(__name__)
 
 # Fleets running longer than this get the 1x/2x/3x attendance prompt when ended.
 ATTENDANCE_PROMPT_AFTER = timedelta(minutes=90)
+# Earlier attempts listed under each operation step.
+PREVIOUS_ATTEMPTS_SHOWN = 5
 HISTORY_PAGE_SIZE = 200
 AUDIT_PAGE_SIZE = 50
 
@@ -255,6 +267,25 @@ def dashboard(request):
     )
 
 
+def _already_tracked_text(operation, can_view):
+    """Why a start returned the operation that already tracks the same ESI fleet."""
+    text = f"ESI fleet {operation.esi_fleet_id} is already tracked by FleetOps (FC {operation.fc_character_name})."
+    text += " This is the running operation; no new fleet was started." if can_view else " No new fleet was started."
+    if operation.status == FleetOperation.Status.STARTING:
+        text += " Its start has not finished yet; if it was interrupted, start the fleet again in about five minutes."
+    elif operation.missing_reason == FleetOperation.EndReason.BOSS_HANDOVER:
+        if FleetOpsSettings.get_solo().auto_end_enabled:
+            text += " It ends automatically once the boss handover is confirmed; start the fleet again after that."
+        else:
+            text += (
+                " Automatic end is disabled, so it stays open until its FC or a fleet manager ends it; "
+                "start the fleet again after that."
+            )
+    elif not can_view:
+        text += " Ask its FC or a fleet manager to end it, then start the fleet again."
+    return text
+
+
 @permission_required("fleetops.start_fleet", raise_exception=True)
 def start_fleet_view(request):
     if request.method == "POST":
@@ -272,11 +303,22 @@ def start_fleet_view(request):
                 log_failure(logger, "Fleet start", exc)
                 form.add_error(None, "Fleet start failed because of an unexpected error. Please try again or contact an administrator.")
             else:
-                messages.success(
-                    request,
-                    "Fleet operation started. Review individual step status below.",
-                )
-                return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+                if not getattr(operation, "already_tracked", False):
+                    # A resubmitted form can return a start that was interrupted and cancelled;
+                    # its page says so.
+                    if operation.status != FleetOperation.Status.CANCELLED:
+                        messages.success(
+                            request,
+                            "Fleet operation started. Review individual step status below.",
+                        )
+                    return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+                # After a boss handover the new boss may not be allowed to open the running record.
+                can_view = _can_view_operation(request.user, operation)
+                text = _already_tracked_text(operation, can_view)
+                if can_view:
+                    messages.info(request, text)
+                    return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+                form.add_error(None, text)
     else:
         form = StartFleetForm(user=request.user, initial={"request_id": uuid.uuid4()})
     return _render(request, "fleetops/start_fleet.html", {"form": form})
@@ -287,7 +329,13 @@ def start_fleet_view(request):
 def preview_fleet(request):
     form = StartFleetForm(request.POST, user=request.user)
     if not form.is_valid():
-        return JsonResponse({"ok": False, "errors": form.errors.get_json_data()}, status=400)
+        # The preview runs while the FC fills the form in, so an incomplete form is not an error.
+        missing = [
+            str(form[name].label)
+            for name, errors in form.errors.as_data().items()
+            if name in form.fields and any(error.code == "required" for error in errors)
+        ]
+        return JsonResponse({"ok": False, "missing": missing, "errors": form.errors.get_json_data()})
     data = form.cleaned_data
     ownership = get_owned_character(request.user, int(data["fc_character_id"]))
     if ownership is None:
@@ -332,7 +380,8 @@ def preview_fleet(request):
 
 @permission_required("fleetops.start_fleet", raise_exception=True)
 def detect_fleet(request, character_id):
-    if get_owned_character(request.user, character_id) is None:
+    ownership = get_owned_character(request.user, character_id)
+    if ownership is None:
         return JsonResponse(
             {"ok": False, "code": "NOT_OWNED", "message": "Character is not owned by this user."},
             status=403,
@@ -341,12 +390,15 @@ def detect_fleet(request, character_id):
         result = detect_character_fleet(request.user, character_id)
     except FleetESIError as exc:
         return JsonResponse({"ok": False, "code": exc.code, "message": str(exc)})
+    is_boss = result.is_boss(character_id)
     return JsonResponse(
         {
             "ok": True,
             "fleet_id": result.fleet_id,
             "role": result.role,
-            "is_fleet_boss": result.role == "fleet_commander",
+            "fleet_boss_id": result.fleet_boss_id,
+            "is_fleet_boss": is_boss,
+            "message": "" if is_boss else not_boss_message(ownership.character.character_name, result.fleet_boss_id),
         }
     )
 
@@ -497,8 +549,20 @@ def edit_operation_view(request, operation_uuid):
 @permission_required("fleetops.basic_access", raise_exception=True)
 def operation_detail(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid)
-    actions = operation.actions.all()
-    members = operation.member_states.filter(is_active=True).order_by("character_name")
+    actions = list(
+        operation.actions.prefetch_related(
+            Prefetch("history", queryset=OperationActionAttempt.objects.order_by("-created_at", "-pk"))
+        )
+    )
+    for step in actions:
+        # The latest attempt is the step's current result; the rest is shown underneath it.
+        previous = list(step.history.all())[1:]
+        step.previous_attempts = previous[:PREVIOUS_ATTEMPTS_SHOWN]
+        step.older_attempt_count = max(0, len(previous) - PREVIOUS_ATTEMPTS_SHOWN)
+    is_closed = operation.status == FleetOperation.Status.CLOSED
+    # A closed fleet lists everyone who was tracked in it; an open one only the current members.
+    members = operation.member_states.all() if is_closed else operation.member_states.filter(is_active=True)
+    members = members.order_by("character_name")
     assignable_members = operation.member_states.all().order_by("character_name")
     events = operation.member_events.all()[:100]
     attendance = operation.attendance_records.all()
@@ -506,13 +570,15 @@ def operation_detail(request, operation_uuid):
     unique_players = members.exclude(auth_user=None).values("auth_user_id").distinct().count()
     map_rows = proximity_rows(operation, 3)
     role_assignments = operation.role_assignments.select_related("auth_user", "assigned_by").all()
-    pods = pod_members(operation) if operation.status == FleetOperation.Status.ACTIVE else []
+    is_active = operation.status == FleetOperation.Status.ACTIVE
+    pods = kickable_pod_members(operation) if is_active else []
     settings = FleetOpsSettings.get_solo()
     end_reference = operation.ended_at or timezone.now()
     elapsed = end_reference - operation.started_at if operation.started_at else timedelta(0)
     duration_minutes = max(0, int(elapsed.total_seconds() // 60))
     stale = bool(
-        operation.last_esi_update
+        is_active
+        and operation.last_esi_update
         and (timezone.now() - operation.last_esi_update).total_seconds()
         > settings.stale_threshold
     )
@@ -533,6 +599,7 @@ def operation_detail(request, operation_uuid):
             "role_assignment_form": OperationRoleAssignmentForm(operation=operation),
             "pod_count": len(pods),
             "stale": stale,
+            "unreadable_warning": unreadable_fleet_warning(operation, settings) if is_active else "",
             "can_manage": _can_manage_operation(request.user, operation),
             "can_manage_attendance": _can_manage_attendance_operation(request.user, operation),
             "accepts_records": operation.status in RECORDABLE_STATUSES,
@@ -560,9 +627,15 @@ def end_fleet_view(request, operation_uuid):
             messages.error(request, "Attendance multiplier must be 1x, 2x or 3x. The fleet was not ended.")
             return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
         multiplier = form.cleaned_data["attendance_multiplier"]
-    # Without an explicit choice the fleet keeps its current multiplier.
-    operation = end_fleet(operation, actor=request.user, attendance_multiplier=multiplier)
-    messages.success(request, f"Fleet ended. Attendance finalized at {operation.attendance_multiplier}x.")
+    # Without an explicit choice the fleet keeps its current multiplier. The final sync and the
+    # attendance run in a background task, so the browser does not wait for ESI.
+    operation, requested = request_fleet_end(operation, actor=request.user, attendance_multiplier=multiplier)
+    if requested and operation.status == FleetOperation.Status.CLOSED:
+        messages.success(request, f"Fleet ended. Attendance finalized at {operation.attendance_multiplier}x.")
+    elif requested:
+        messages.info(request, "Ending the fleet. The final sync and attendance are being finished; this page updates when the fleet is closed.")
+    else:
+        messages.info(request, f"This fleet is already {operation.get_status_display().lower()}.")
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
@@ -634,8 +707,8 @@ def manual_fleet_view(request):
                 messages.success(request, "Manual fleet record created. Add attendance from the Attendance tab or Manual Attendance page.")
                 return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     else:
-        form = ManualFleetForm(initial={"started_at": timezone.now(), "ended_at": timezone.now()})
-    return _render(request, "fleetops/manual_fleet.html", {"form": form})
+        form = ManualFleetForm()
+    return _render(request, "fleetops/manual_fleet.html", {"form": form, "eve_time": timezone.now()})
 
 
 @permission_required("fleetops.basic_access", raise_exception=True)

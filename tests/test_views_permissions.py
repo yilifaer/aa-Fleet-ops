@@ -308,7 +308,9 @@ class FleetOpsViewTestCase(TestCase):
         self.kick = self.patch("fleetops.services.fleet_controls.kick_fleet_member")
         self.detect = self.patch(
             "fleetops.views.detect_character_fleet",
-            return_value=FleetDetectionResult(fleet_id=1_000_000_001, role="fleet_commander"),
+            side_effect=lambda user, character_id: FleetDetectionResult(
+                fleet_id=1_000_000_001, role="fleet_commander", fleet_boss_id=character_id
+            ),
         )
 
     def patch(self, target, **kwargs):

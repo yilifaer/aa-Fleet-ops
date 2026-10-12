@@ -26,6 +26,8 @@ from fleetops.providers.esi import FleetDetectionResult, FleetESIError
 from fleetops.providers.pings import _redact, send_discord_webhook
 from fleetops.providers.srp import AllianceAuthBuiltinSRPProvider, SRPLinkResult, register_srp_provider
 from fleetops.services.messages import render_messages, render_operation_messages
+from fleetops import views as views_module
+from fleetops.services import operations as operations_module
 from fleetops.services.operations import end_fleet, retry_motd, retry_ping, retry_srp, start_fleet
 
 from . import factories as f
@@ -270,7 +272,10 @@ class StartFleetSafetyTests(TestCase):
         webhook = DiscordWebhook.objects.create(name="Pings", webhook_url=WEBHOOK_URL)
         self.target = PingTarget.objects.create(name="Everyone", target_value="@everyone", webhook=webhook)
         patches = {
-            "detect": ("detect_character_fleet", FleetDetectionResult(fleet_id=FLEET_ID, role="fleet_commander")),
+            "detect": (
+                "detect_character_fleet",
+                FleetDetectionResult(fleet_id=FLEET_ID, role="fleet_commander", fleet_boss_id=self.fc_char.character_id),
+            ),
             "motd": ("set_fleet_motd", None),
             "sync": ("sync_operation", 0),
             "srp": (
@@ -376,7 +381,7 @@ class StartFleetSafetyTests(TestCase):
         error = RuntimeError(f"Failed posting to {WEBHOOK_URL}")
 
         with mock.patch("fleetops.views.start_fleet", side_effect=error), self.assertLogs(
-            "fleetops.views", "ERROR"
+            views_module.logger, "ERROR"
         ) as logs:
             response = self.client.post(reverse("fleetops:start_fleet"), self.view_payload())
 
@@ -397,7 +402,7 @@ class StartFleetSafetyTests(TestCase):
     def test_unexpected_discord_error_is_recorded_without_its_text(self):
         with mock.patch(
             "fleetops.services.operations.send_discord_webhook", side_effect=ValueError(f"bad url {WEBHOOK_URL}")
-        ), self.assertLogs("fleetops.services.operations", "ERROR") as logs:
+        ), self.assertLogs(operations_module.logger, "ERROR") as logs:
             operation = self.start()
 
         self.assertActive(operation)
@@ -414,7 +419,7 @@ class StartFleetSafetyTests(TestCase):
         self.mocks["motd"].side_effect = KeyError("access-token-123")
         self.mocks["sync"].side_effect = TypeError("refresh-token-456")
 
-        with self.assertLogs("fleetops.services.operations", "ERROR") as logs:
+        with self.assertLogs(operations_module.logger, "ERROR") as logs:
             operation = self.start()
 
         self.assertActive(operation)
@@ -439,7 +444,7 @@ class StartFleetSafetyTests(TestCase):
         message = "ESI denied permission to update the fleet MOTD."
         self.mocks["motd"].side_effect = FleetESIError("MOTD_FORBIDDEN", message)
 
-        with self.assertNoLogs("fleetops", "ERROR"):
+        with self.assertNoLogs(operations_module.logger, "ERROR"):
             operation = self.start()
 
         self.assertEqual(action(operation, "motd_update").error_message, message)
@@ -522,7 +527,7 @@ class StartFleetSafetyTests(TestCase):
 
         self.mocks["srp"].side_effect = write_then_fail
 
-        with self.assertLogs("fleetops.services.operations", "ERROR"):
+        with self.assertLogs(operations_module.logger, "ERROR"):
             operation = self.start()
 
         self.assertActive(operation)
@@ -547,7 +552,7 @@ class StartFleetSafetyTests(TestCase):
 
         def other_request_finishes_first(user, character_id):
             first["operation"] = f.create_operation(self.fc, start_request_id=request_id, esi_fleet_id=FLEET_ID)
-            return FleetDetectionResult(fleet_id=FLEET_ID, role="fleet_commander")
+            return FleetDetectionResult(fleet_id=FLEET_ID, role="fleet_commander", fleet_boss_id=character_id)
 
         self.mocks["detect"].side_effect = other_request_finishes_first
 
@@ -701,7 +706,7 @@ class RetrySafetyTests(TestCase):
         self.motd.side_effect = RuntimeError("secret-access-token")
         operation = f.create_operation(self.fc, motd_text="motd")
 
-        with self.assertLogs("fleetops.services.operations", "ERROR") as logs:
+        with self.assertLogs(operations_module.logger, "ERROR") as logs:
             result = retry_motd(operation)
 
         self.assertEqual(result.status, ActionStatus.FAILED)
@@ -714,7 +719,7 @@ class RetrySafetyTests(TestCase):
 
         with mock.patch(
             "fleetops.services.operations.send_discord_webhook", side_effect=ValueError(f"bad url {WEBHOOK_URL}")
-        ), self.assertLogs("fleetops.services.operations", "ERROR") as logs:
+        ), self.assertLogs(operations_module.logger, "ERROR") as logs:
             result = retry_ping(operation)
 
         self.assertEqual(result.status, ActionStatus.FAILED)
@@ -725,7 +730,7 @@ class RetrySafetyTests(TestCase):
         self.provider.create_for_operation = mock.Mock(side_effect=RuntimeError(f"posted to {WEBHOOK_URL}"))
         operation = f.create_operation(self.fc)
 
-        with self.assertLogs("fleetops.services.operations", "ERROR") as logs:
+        with self.assertLogs(operations_module.logger, "ERROR") as logs:
             result = retry_srp(operation)
 
         operation.refresh_from_db()
@@ -906,7 +911,11 @@ class EndFleetAuditTests(TestCase):
 
         entry = AuditLog.objects.get(action="fleet.end")
         self.assertEqual(entry.old_value, {"status": Status.STARTING, "tracking_enabled": False})
-        self.assertEqual(entry.new_value, {"status": Status.CLOSED, "tracking_enabled": False})
+        self.assertEqual(
+            entry.new_value,
+            {"status": Status.CLOSED, "tracking_enabled": False, "end_reason": "manual", "end_detail": ""},
+        )
+        self.assertEqual(entry.reason, "Ended manually")
 
     def test_automatic_end_of_an_active_fleet(self):
         operation = f.create_operation(self.fc)
@@ -922,7 +931,7 @@ class EndAndManualFleetErrorTests(TestCase):
         fc = f.create_user(perms=f.FC_PERMS)
         operation = f.create_operation(fc)
         with mock.patch("fleetops.services.operations.sync_operation", side_effect=RuntimeError(f"boom {WEBHOOK_URL}")):
-            with self.assertLogs("fleetops.services.operations", "ERROR") as logs:
+            with self.assertLogs(operations_module.logger, "ERROR") as logs:
                 end_fleet(operation, actor=fc)
 
         operation.refresh_from_db()
@@ -937,7 +946,7 @@ class EndAndManualFleetErrorTests(TestCase):
             "fleetops.services.operations.sync_operation",
             side_effect=FleetESIError("FLEET_NOT_FOUND", "Fleet no longer exists.", 404),
         ):
-            with self.assertNoLogs("fleetops.services.operations", "ERROR"):
+            with self.assertNoLogs(operations_module.logger, "ERROR"):
                 end_fleet(operation, actor=fc)
 
         operation.refresh_from_db()
@@ -956,7 +965,7 @@ class EndAndManualFleetErrorTests(TestCase):
             "notes": "",
         }
         with mock.patch("fleetops.views.create_manual_fleet", side_effect=RuntimeError(f"db error {WEBHOOK_URL}")):
-            with self.assertLogs("fleetops.views", "ERROR") as logs:
+            with self.assertLogs(views_module.logger, "ERROR") as logs:
                 response = self.client.post(reverse("fleetops:manual_fleet"), data)
 
         self.assertEqual(response.status_code, 200)

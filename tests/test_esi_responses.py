@@ -186,6 +186,7 @@ class FakeESIMixin:
         self.pilot_char = f.main_of(self.pilot)
         self.esi.character_fleets[self.fc_char.character_id] = {
             "fleet_id": FLEET_ID,
+            "fleet_boss_id": self.fc_char.character_id,
             "role": "fleet_commander",
             "squad_id": -1,
             "wing_id": -1,
@@ -662,6 +663,8 @@ class RecordedESI:
         self.routes = {}
         self.requests = []
         self.cache_seconds = 0
+        # Added to every error response, like ESI's own response headers.
+        self.error_headers = {}
 
     def send(self, request, *args, **kwargs):
         body = json.loads(request.content) if request.content else None
@@ -678,6 +681,12 @@ class RecordedESI:
                 return openapi_clients.Response(304, headers=headers, request=request)
         if status == 204:
             return openapi_clients.Response(204, headers=headers, request=request)
+        if status >= 400:
+            headers.update(self.error_headers)
+        if isinstance(payload, bytes):
+            # A gateway error page instead of an ESI JSON body.
+            headers["Content-Type"] = "text/html"
+            return openapi_clients.Response(status, content=payload, headers=headers, request=request)
         return openapi_clients.Response(status, json=payload, headers=headers, request=request)
 
     def requests_of(self, method):
@@ -789,6 +798,98 @@ class DjangoEsiOperationTests(TestCase):
 
         self.assertEqual([request[3]["motd"] for request in self.server.requests_of("PUT")], ["first", "second"])
         self.assertEqual(len(self.server.requests_of("DELETE")), 2)
+
+    def test_error_text_is_short_and_the_request_id_is_logged(self):
+        members = ("GET", f"/fleets/{FLEET_ID}/members")
+        self.server.error_headers = {"X-ESI-Request-ID": "esi-request-4711", "X-Private-Header": "header-secret-value"}
+        cases = (
+            (500, {"error": "Internal error occurred"}, "ESI returned HTTP 500 (Internal error occurred)."),
+            (404, {"error": "Fleet not found"}, "ESI returned HTTP 404 (Fleet not found)."),
+            (403, {"error": "Character is not in the fleet"}, "ESI returned HTTP 403 (Character is not in the fleet)."),
+        )
+        for status, body, description in cases:
+            with self.subTest(status=status):
+                cache.clear()
+                self.server.routes[members] = (status, body)
+                with self.assertLogs(esi_provider.logger, "WARNING") as logs, self.assertRaises(FleetESIError) as ctx:
+                    get_fleet_members(self.fc, self.fc_char.character_id, FLEET_ID)
+
+                self.assertEqual(str(ctx.exception), f"Could not read fleet members: {description}")
+                log = "\n".join(logs.output)
+                self.assertIn(f"HTTP status {status}", log)
+                self.assertIn("x-esi-request-id esi-request-4711", log)
+                for text in (str(ctx.exception), log):
+                    self.assertNotIn("header-secret-value", text)
+                    self.assertNotIn(self.token.access_token, text)
+                    self.assertNotIn(self.token.refresh_token, text)
+
+    def test_error_limit_answer_is_described_without_headers(self):
+        members = ("GET", f"/fleets/{FLEET_ID}/members")
+        self.server.error_headers = {"X-ESI-Request-ID": "esi-request-420", "X-RateLimit-Reset": "33"}
+        self.server.routes[members] = (420, {"error": "This software has exceeded the error limit for ESI."})
+
+        with self.assertLogs(esi_provider.logger, "WARNING") as logs, self.assertRaises(FleetESIError) as ctx:
+            get_fleet_members(self.fc, self.fc_char.character_id, FLEET_ID)
+
+        self.assertEqual(str(ctx.exception), "Could not read fleet members: ESI error limit reached; try again in 33 seconds.")
+        self.assertNotIn("esi-request-420", str(ctx.exception))
+        # django-esi raises ESIErrorLimitException; the 420 answer it handled stays in the chain.
+        log = "\n".join(logs.output)
+        self.assertIn(
+            "Could not read fleet members (ESIErrorLimitException, HTTP status 420, x-esi-request-id esi-request-420)", log
+        )
+        for text in (str(ctx.exception), log):
+            self.assertNotIn(self.token.access_token, text)
+            self.assertNotIn(self.token.refresh_token, text)
+
+    def test_request_id_of_a_gateway_error_page_is_logged(self):
+        members = ("GET", f"/fleets/{FLEET_ID}/members")
+        self.server.error_headers = {"X-ESI-Request-ID": "esi-request-502"}
+        self.server.routes[members] = (502, b"<html><body>502 Bad Gateway</body></html>")
+
+        # One attempt: django-esi would otherwise wait between its retries of a 502.
+        with mock.patch("esi.app_settings.ESI_SERVER_ERROR_MAX_RETRIES", 1), self.assertLogs(
+            esi_provider.logger, "WARNING"
+        ) as logs, self.assertRaises(FleetESIError) as ctx:
+            get_fleet_members(self.fc, self.fc_char.character_id, FLEET_ID)
+
+        self.assertEqual(str(ctx.exception), "Could not read fleet members: ESI returned HTTP 502 (Bad gateway).")
+        log = "\n".join(logs.output)
+        self.assertIn("HTTP status 502, x-esi-request-id esi-request-502", log)
+        self.assertNotIn("<html>", log)
+        for text in (str(ctx.exception), log):
+            self.assertNotIn(self.token.access_token, text)
+            self.assertNotIn(self.token.refresh_token, text)
+
+    def test_fresh_detection_skips_the_response_cache(self):
+        self.server.cache_seconds = 300
+        route = ("GET", f"/characters/{self.fc_char.character_id}/fleet")
+
+        detect_character_fleet(self.fc, self.fc_char.character_id)
+        detect_character_fleet(self.fc, self.fc_char.character_id)
+        self.assertEqual(len([r for r in self.server.requests if r[:2] == route]), 1)
+
+        self.server.routes[route] = (
+            200,
+            {"fleet_id": FLEET_ID, "fleet_boss_id": self.pilot_char.character_id, "role": "fleet_commander", "squad_id": -1, "wing_id": -1},
+        )
+        result = detect_character_fleet(self.fc, self.fc_char.character_id, fresh=True)
+
+        self.assertEqual(len([r for r in self.server.requests if r[:2] == route]), 2)
+        self.assertEqual(result.fleet_boss_id, self.pilot_char.character_id)
+
+    def test_detection_reports_the_fleet_boss(self):
+        boss_id = self.pilot_char.character_id
+        self.server.routes[("GET", f"/characters/{self.fc_char.character_id}/fleet")] = (
+            200,
+            {"fleet_id": FLEET_ID, "fleet_boss_id": boss_id, "role": "fleet_commander", "squad_id": -1, "wing_id": -1},
+        )
+
+        result = detect_character_fleet(self.fc, self.fc_char.character_id)
+
+        self.assertEqual(result.fleet_boss_id, boss_id)
+        self.assertFalse(result.is_boss(self.fc_char.character_id))
+        self.assertTrue(result.is_boss(boss_id))
 
     def test_error_statuses_are_mapped(self):
         members = ("GET", f"/fleets/{FLEET_ID}/members")

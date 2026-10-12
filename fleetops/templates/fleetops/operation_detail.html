@@ -1,4 +1,5 @@
 {% extends "fleetops/base.html" %}
+{% load tz %}
 {% block fleetops_content %}
 <div class="d-flex justify-content-between align-items-start mb-3 gap-3 flex-wrap">
   <div>
@@ -12,14 +13,19 @@
       {% if attendance_prompt_eligible %}
         <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#endFleetModal">End Fleet</button>
       {% else %}
-        <form method="post" action="{% url 'fleetops:end_fleet' operation.uuid %}">{% csrf_token %}<input type="hidden" name="attendance_multiplier" value="{{ operation.attendance_multiplier }}"><button class="btn btn-danger">End Fleet</button></form>
+        <form method="post" action="{% url 'fleetops:end_fleet' operation.uuid %}" class="end-fleet-form">{% csrf_token %}<input type="hidden" name="attendance_multiplier" value="{{ operation.attendance_multiplier }}"><button class="btn btn-danger">End Fleet</button></form>
       {% endif %}
+    {% elif operation.status == 'ending' %}
+      <button class="btn btn-danger" disabled>Ending…</button>
     {% endif %}
   </div>
 </div>
 
+{% if operation.status == 'ending' %}<div class="alert alert-info" id="fleet-ending"><strong>Ending…</strong> The final fleet sync and attendance are being finished. This page refreshes until the fleet is closed.</div>{% endif %}
+{% if operation.status == 'closed' and operation.end_reason %}<div class="alert alert-secondary">{{ operation.end_reason_text }}{% if operation.ended_at %} · {{ operation.ended_at|utc|date:"Y-m-d H:i" }} EVE{% endif %}</div>{% endif %}
 {% if stale %}<div class="alert alert-warning"><strong>STALE DATA</strong> — last successful ESI update {{ operation.last_esi_update }}.</div>{% endif %}
-{% if operation.last_error %}<div class="alert alert-warning">{{ operation.last_error }}</div>{% endif %}
+{% if unreadable_warning %}<div class="alert alert-warning" id="fleet-unreadable">{{ unreadable_warning }}</div>
+{% elif operation.last_error and operation.status != 'closed' %}<div class="alert alert-warning">{{ operation.last_error }}</div>{% endif %}
 {% if operation.srp_error %}<div class="alert alert-warning"><strong>SRP:</strong> {{ operation.srp_error }}</div>{% endif %}
 
 <div class="row g-3 mb-3">
@@ -42,6 +48,12 @@
               <span class="badge bg-{% if a.status == 'success' %}success{% elif a.status == 'failed' %}danger{% elif a.status == 'skipped' %}secondary{% else %}warning text-dark{% endif %}">{{ a.get_status_display }}</span>
               <span class="small text-muted">attempt {{ a.attempts }}</span>
               {% if a.error_message %}<div class="small text-muted mt-1 text-break">{{ a.error_message }}</div>{% endif %}
+              {% if a.previous_attempts %}
+                <div class="small mt-2 border-top pt-1 step-history"><span class="text-muted">Previous attempts</span>
+                  {% for attempt in a.previous_attempts %}<div class="text-break"><span class="badge bg-{% if attempt.status == 'success' %}success{% elif attempt.status == 'failed' %}danger{% else %}secondary{% endif %}">{{ attempt.get_status_display }}</span> <span class="text-muted">{{ attempt.created_at|date:"Y-m-d H:i:s" }}</span>{% if attempt.message %} — {{ attempt.message }}{% endif %}</div>{% endfor %}
+                  {% if a.older_attempt_count %}<div class="text-muted">and {{ a.older_attempt_count }} older attempt{{ a.older_attempt_count|pluralize }}</div>{% endif %}
+                </div>
+              {% endif %}
             </div></div>
           {% empty %}<div class="text-muted">No action records.</div>{% endfor %}
         </div>
@@ -82,7 +94,7 @@
   <div class="card-body d-flex justify-content-between align-items-center gap-3 flex-wrap">
     <div>
       <strong>Kick all capsule members</strong>
-      <div class="small text-muted">Uses the stored Fleet Boss ESI write token. The FC character itself is never targeted.</div>
+      <div class="small text-muted">Uses the stored Fleet Boss ESI write token. The FC and the fleet boss are never targeted or counted.</div>
     </div>
     <form method="post" action="{% url 'fleetops:kick_capsules' operation.uuid %}" onsubmit="return confirm('Kick all currently detected capsule members from this fleet?');">
       {% csrf_token %}
@@ -204,7 +216,7 @@
 <div class="modal fade" id="endFleetModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog"><div class="modal-content">
     <div class="modal-header"><h5 class="modal-title">End Fleet & Finalize Attendance</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-    <form method="post" action="{% url 'fleetops:end_fleet' operation.uuid %}">{% csrf_token %}
+    <form method="post" action="{% url 'fleetops:end_fleet' operation.uuid %}" class="end-fleet-form">{% csrf_token %}
       <div class="modal-body">
         <p>This fleet has been running for approximately <strong>{{ duration_minutes }} minutes</strong>.</p>
         <p>Select the attendance credit to apply before closing the fleet.</p>
@@ -219,6 +231,13 @@
 
 <script>
 document.querySelectorAll('.copy').forEach(b=>b.addEventListener('click',()=>navigator.clipboard.writeText(document.getElementById(b.dataset.id).textContent)));
-{% if operation.status == 'active' %}setTimeout(()=>location.reload(),60000);{% endif %}
+document.querySelectorAll('.end-fleet-form').forEach(form=>form.addEventListener('submit',event=>{
+  // One click is enough: the end runs in the background and a second submit would only wait for it.
+  if(form.dataset.submitted){ event.preventDefault(); return; }
+  form.dataset.submitted='1';
+  const button=form.querySelector('button:not([data-bs-dismiss])');
+  if(button){ button.disabled=true; button.textContent='Ending…'; }
+}));
+{% if operation.status == 'active' %}setTimeout(()=>location.reload(),60000);{% elif operation.status == 'ending' %}setTimeout(()=>location.reload(),5000);{% endif %}
 </script>
 {% endblock %}

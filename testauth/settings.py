@@ -64,8 +64,10 @@ CACHES = {
 }
 SESSION_ENGINE = "django.contrib.sessions.backends.db"
 
-CELERY_TASK_ALWAYS_EAGER = True
-CELERY_TASK_EAGER_PROPAGATES = True
+# Alliance Auth's Celery app reads the old-style setting names (no CELERY_ namespace),
+# so these are the names that make tasks run eagerly in the tests.
+CELERY_ALWAYS_EAGER = True
+CELERY_EAGER_PROPAGATES_EXCEPTIONS = True
 BROKER_URL = "memory://"
 
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]

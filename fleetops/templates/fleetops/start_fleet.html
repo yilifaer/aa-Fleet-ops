@@ -31,6 +31,7 @@
     <div class="col-12"><div class="card"><div class="card-header"><strong>Additional Information</strong></div><div class="card-body">{{ form.additional_message }}</div></div></div>
     <div class="col-lg-6"><div class="card h-100"><div class="card-header d-flex justify-content-between"><strong>Ping Preview</strong><button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy="#ping-preview">Copy Ping</button></div><div class="card-body"><pre id="ping-preview" class="preview-box">Complete the form to render a preview.</pre></div></div></div>
     <div class="col-lg-6"><div class="card h-100"><div class="card-header d-flex justify-content-between"><strong>MOTD Preview</strong><button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy="#motd-preview">Copy MOTD</button></div><div class="card-body"><pre id="motd-preview" class="preview-box">Complete the form to render a preview.</pre></div></div></div>
+    <div class="col-12 d-none" id="preview-missing"><div class="alert alert-info mb-0" role="status"></div></div>
     <div class="col-12 d-none" id="preview-warnings"><div class="alert alert-warning mb-0" role="status"></div></div>
   </div>
   <div class="d-grid mt-3"><button class="btn btn-primary btn-lg" id="fleet-start-submit" type="submit">SEND PING &amp; START FLEET</button></div>
@@ -45,7 +46,12 @@
  const submitButton = document.getElementById('fleet-start-submit');
  const modeRadios = form.querySelectorAll('input[name="operation_mode"]');
  const previewWarnings = document.getElementById('preview-warnings');
+ const previewMissing = document.getElementById('preview-missing');
+ const pingPreview = document.getElementById('ping-preview');
+ const motdPreview = document.getElementById('motd-preview');
+ const PREVIEW_DELAY = 400;
  let previewTimer;
+ let previewRequest = 0;
  function updateMode(){
    const selected = form.querySelector('input[name="operation_mode"]:checked');
    const attendanceOnly = selected && selected.value === 'attendance_only';
@@ -56,7 +62,7 @@
    if(!char.value){ detect.textContent='Select a character to detect its current ESI fleet.'; return; }
    detect.textContent='Checking fleet…';
    const url = `{% url 'fleetops:detect_fleet' 999999 %}`.replace('999999', char.value);
-   try { const r=await fetch(url); const d=await r.json(); detect.textContent=d.ok ? `✓ Fleet ${d.fleet_id} — role: ${d.role}${d.is_fleet_boss?' — Fleet Boss':''}` : `⚠ ${d.message}`; detect.className=d.ok&&d.is_fleet_boss?'form-text text-success':'form-text text-warning'; }
+   try { const r=await fetch(url); const d=await r.json(); detect.textContent=d.ok ? (d.is_fleet_boss ? `✓ Fleet ${d.fleet_id} — role: ${d.role} — Fleet Boss` : `⚠ Fleet ${d.fleet_id} — ${d.message}`) : `⚠ ${d.message}`; detect.className=d.ok&&d.is_fleet_boss?'form-text text-success':'form-text text-warning'; }
    catch(e){ detect.textContent='⚠ Fleet detection request failed.'; }
  }
  function showWarnings(list){
@@ -64,12 +70,32 @@
    previewWarnings.firstElementChild.replaceChildren(...items);
    previewWarnings.classList.toggle('d-none', !items.length);
  }
+ function markFields(errors){
+   form.querySelectorAll('.is-invalid').forEach(field=>field.classList.remove('is-invalid'));
+   Object.keys(errors||{}).forEach(name=>{ const field=form.querySelector(`[name="${name}"]`); if(field && field.type!=='hidden'){ field.classList.add('is-invalid'); } });
+ }
+ function showMissing(missing, errors){
+   let text = '';
+   if((missing||[]).length){ text = `Missing: ${missing.join(', ')}`; }
+   else if(Object.keys(errors||{}).length){ text = 'Check the highlighted fields.'; }
+   previewMissing.firstElementChild.textContent = text;
+   previewMissing.classList.toggle('d-none', !text);
+   markFields(errors);
+ }
  async function preview(){
    const body = new FormData(form);
-   try { const r=await fetch(form.dataset.previewUrl,{method:'POST',body}); const d=await r.json(); if(d.ok){document.getElementById('ping-preview').textContent=d.ping; document.getElementById('motd-preview').textContent=d.motd; showWarnings(d.warnings);} else if(d.error){document.getElementById('ping-preview').textContent=d.error; document.getElementById('motd-preview').textContent=d.error; showWarnings([]);} }
+   const current = ++previewRequest;
+   try {
+     const r=await fetch(form.dataset.previewUrl,{method:'POST',body}); const d=await r.json();
+     if(current !== previewRequest){ return; }
+     if(d.ok){ pingPreview.textContent=d.ping; motdPreview.textContent=d.motd; showWarnings(d.warnings); showMissing([], {}); }
+     else if(d.missing || d.errors){ pingPreview.textContent='Complete the form to render a preview.'; motdPreview.textContent=pingPreview.textContent; showWarnings([]); showMissing(d.missing, d.errors); }
+     else if(d.error){ pingPreview.textContent=d.error; motdPreview.textContent=d.error; showWarnings([]); showMissing([], {}); }
+   }
    catch(e){}
  }
- function queuePreview(){ clearTimeout(previewTimer); previewTimer=setTimeout(preview,350); }
+ // Wait until the FC stops typing instead of sending a request for every character.
+ function queuePreview(){ clearTimeout(previewTimer); previewTimer=setTimeout(preview,PREVIEW_DELAY); }
  char.addEventListener('change',()=>{detectFleet();queuePreview();}); doctrine.addEventListener('change',()=>{toggleCustom();queuePreview();});
  modeRadios.forEach(x=>x.addEventListener('change',()=>{updateMode();queuePreview();}));
  form.querySelectorAll('input,select,textarea').forEach(x=>x.addEventListener('input',queuePreview));

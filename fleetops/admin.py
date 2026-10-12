@@ -16,6 +16,7 @@ from fleetops.models import (
     MessageTemplate,
     MonthlyFCStatistic,
     OperationAction,
+    OperationActionAttempt,
     OperationRoleAssignment,
     PingTarget,
 )
@@ -133,6 +134,7 @@ class FleetOperationAdmin(admin.ModelAdmin):
 
 
 admin.site.register(OperationAction)
+admin.site.register(OperationActionAttempt)
 admin.site.register(OperationRoleAssignment)
 admin.site.register(FleetMemberState)
 admin.site.register(FleetMemberEvent)

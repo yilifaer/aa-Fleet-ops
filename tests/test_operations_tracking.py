@@ -60,11 +60,14 @@ from fleetops.services.operations import (
     start_fleet,
 )
 from fleetops.services.tracking import sync_operation
+from fleetops import tasks as tasks_module
 from fleetops.tasks import schedule_active_fleet_tracking, track_operation
 
 from . import factories as f
 
 FLEET_ID = 1_045_000_000_001
+# A fleet boss Alliance Auth does not know.
+UNKNOWN_BOSS_ID = 2_119_000_001
 WEBHOOK_URL = "https://discord.com/api/webhooks/123456/webhook-secret-token"
 
 Status = FleetOperation.Status
@@ -123,13 +126,23 @@ class FakeFleetsAPI:
     def _request(self, outcome, key):
         return FakeRequest(outcome, self.etags, key)
 
-    def put_in_fleet(self, character, fleet_id=FLEET_ID, role="fleet_commander"):
+    def put_in_fleet(self, character, fleet_id=FLEET_ID, role="fleet_commander", boss=None):
+        """GET /characters/{id}/fleet/ as of ESI 2025-11-06: it always names the fleet boss.
+
+        ``boss`` is the boss character (or its id); by default the character is boss when it
+        sits in the fleet commander position and an unknown pilot is boss otherwise.
+        """
+        if boss is None:
+            boss_id = character.character_id if role == "fleet_commander" else UNKNOWN_BOSS_ID
+        else:
+            boss_id = getattr(boss, "character_id", boss)
+        in_squad = role == "squad_member" or role == "squad_commander"
         self.character_fleets[character.character_id] = {
+            "fleet_boss_id": boss_id,
             "fleet_id": fleet_id,
-            "fleet_boss_id": character.character_id if role == "fleet_commander" else None,
             "role": role,
-            "squad_id": -1,
-            "wing_id": -1,
+            "squad_id": 3_000_001 if in_squad else -1,
+            "wing_id": -1 if role == "fleet_commander" else 2_000_001,
         }
 
     def calls_of(self, kind):
@@ -611,7 +624,9 @@ class StartFleetValidationTests(StartFleetTestBase):
 
         error = self.assert_start_rejected("NOT_FLEET_BOSS")
 
-        self.assertIn("wing_commander", str(error))
+        self.assertEqual(
+            str(error), f"Boss Main is not the fleet boss. The current boss is character {UNKNOWN_BOSS_ID}."
+        )
 
     def test_esi_server_error_during_detection(self):
         self.esi.character_fleets[self.fc_char.character_id] = http_error(502)
@@ -639,11 +654,14 @@ class StartFleetIdempotencyTests(StartFleetTestBase):
         self.assertEqual(len(self.esi.put_calls), 1)
         self.assertEqual(OperationAction.objects.get(operation=first, action="discord_ping").attempts, 1)
 
-    def test_different_request_ids_create_separate_operations(self):
-        self.start()
-        self.start()
+    def test_different_request_ids_for_the_same_esi_fleet_return_the_running_operation(self):
+        first = self.start()
+        second = self.start()
 
-        self.assertEqual(FleetOperation.objects.count(), 2)
+        self.assertEqual(second.pk, first.pk)
+        self.assertTrue(second.already_tracked)
+        self.assertEqual(FleetOperation.objects.count(), 1)
+        self.assertEqual(self.discord_post.call_count, 1)
 
     def test_double_submit_through_view_creates_one_operation(self):
         self.client.force_login(self.fc)
@@ -677,7 +695,7 @@ class StartFleetIdempotencyTests(StartFleetTestBase):
         def detect_while_other_request_commits(user, character_id):
             # The other request finishes while this one waits on ESI fleet detection.
             competing["operation"] = f.create_operation(self.fc, start_request_id=request_id, esi_fleet_id=FLEET_ID)
-            return FleetDetectionResult(fleet_id=FLEET_ID, role="fleet_commander")
+            return FleetDetectionResult(fleet_id=FLEET_ID, role="fleet_commander", fleet_boss_id=character_id)
 
         with mock.patch("fleetops.services.operations.detect_character_fleet", side_effect=detect_while_other_request_commits):
             try:
@@ -706,7 +724,7 @@ class StartFleetViewErrorTests(StartFleetTestBase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "not fleet_commander")
+        self.assertContains(response, f"Boss Main is not the fleet boss. The current boss is character {UNKNOWN_BOSS_ID}.")
         self.assertFalse(FleetOperation.objects.exists())
 
 
@@ -1135,7 +1153,8 @@ class TrackOperationTaskTests(TrackingTestBase):
         self.assertIsNotNone(self.operation.ended_at)
         end_action = action(self.operation, "fleet_end")
         self.assertEqual(end_action.status, ActionStatus.SUCCESS)
-        self.assertEqual(end_action.error_message, "Automatic")
+        self.assertEqual(end_action.error_message, "Ended automatically: the fleet no longer exists or the FC left it")
+        self.assertEqual(self.operation.end_reason, FleetOperation.EndReason.FLEET_GONE)
         entry = AuditLog.objects.get(action="fleet.auto_end")
         self.assertIsNone(entry.actor)
         self.assertEqual(entry.object_id, str(self.operation.pk))
@@ -1211,7 +1230,7 @@ class TrackOperationTaskTests(TrackingTestBase):
 
     def test_unexpected_error_is_recorded_without_ending_the_fleet(self):
         with mock.patch("fleetops.tasks.sync_operation", side_effect=ValueError("bad payload")), self.assertLogs(
-            "fleetops.tasks", "ERROR"
+            tasks_module.logger, "ERROR"
         ) as logs:
             self.assertEqual(track_operation(self.operation.pk), "error")
 
@@ -1286,11 +1305,16 @@ class EndFleetTests(TrackingTestBase):
         )
         end_action = action(self.operation, "fleet_end")
         self.assertEqual(end_action.status, ActionStatus.SUCCESS)
-        self.assertEqual(end_action.error_message, "Manual")
+        self.assertEqual(end_action.error_message, "Ended manually")
+        self.assertEqual(self.operation.end_reason, FleetOperation.EndReason.MANUAL)
         self.assertEqual(audit_actions(self.operation), ["attendance.multiplier", "fleet.end"])
         entry = AuditLog.objects.get(action="fleet.end")
         self.assertEqual(entry.actor, self.fc)
-        self.assertEqual(entry.new_value, {"status": Status.CLOSED, "tracking_enabled": False})
+        self.assertEqual(
+            entry.new_value,
+            {"status": Status.CLOSED, "tracking_enabled": False, "end_reason": "manual", "end_detail": ""},
+        )
+        self.assertEqual(entry.reason, "Ended manually")
 
     def test_multiplier_skips_manual_and_capped_rows(self):
         manual = f.add_attendance(self.operation, self.pilot, source=AttendanceRecord.Source.MANUAL, value=1)

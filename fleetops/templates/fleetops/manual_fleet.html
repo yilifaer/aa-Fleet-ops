@@ -1,4 +1,5 @@
 {% extends "fleetops/base.html" %}
+{% load tz %}
 {% block fleetops_content %}
 <div class="d-flex justify-content-between align-items-start mb-3 gap-2 flex-wrap">
   <div><h2 class="mb-1">Add Manual Fleet</h2><div class="text-muted">Create a historical fleet record without ESI tracking or a Discord ping.</div></div>
@@ -6,18 +7,52 @@
 </div>
 <div class="alert alert-info">The current user's main character is recorded as FC. After creating the fleet, use <strong>Manual Attendance</strong> or the fleet Attendance tab to add participants/credits.</div>
 <div class="card"><div class="card-body">
-<form method="post">{% csrf_token %}
+<form method="post" id="manual-fleet-form">{% csrf_token %}
   {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
   <div class="row g-3">
     <div class="col-md-4">{{ form.fleet_type.label_tag }}{{ form.fleet_type }}{{ form.fleet_type.errors }}</div>
     <div class="col-md-4">{{ form.doctrine_name.label_tag }}{{ form.doctrine_name }}{{ form.doctrine_name.errors }}</div>
     <div class="col-md-4">{{ form.formup.label_tag }}{{ form.formup }}{{ form.formup.errors }}</div>
+    <div class="col-12"><div class="form-text">Enter both times in EVE time (UTC), not your local time. Current EVE time: <strong id="eve-time-now">{{ eve_time|utc|date:"Y-m-d H:i" }}</strong></div></div>
     <div class="col-md-4">{{ form.started_at.label_tag }}{{ form.started_at }}{{ form.started_at.errors }}</div>
-    <div class="col-md-4">{{ form.ended_at.label_tag }}{{ form.ended_at }}{{ form.ended_at.errors }}</div>
+    <div class="col-md-4">{{ form.ended_at.label_tag }}{{ form.ended_at }}{{ form.ended_at.errors }}<div class="form-text" id="manual-fleet-duration"></div></div>
     <div class="col-md-4">{{ form.attendance_multiplier.label_tag }}{{ form.attendance_multiplier }}{{ form.attendance_multiplier.errors }}</div>
+    <div class="col-12{% if not form.confirm_long_fleet.errors and not form.confirm_long_fleet.value %} d-none{% endif %}" id="confirm-long-fleet-wrap">
+      <div class="form-check">{{ form.confirm_long_fleet }} <label class="form-check-label" for="{{ form.confirm_long_fleet.id_for_label }}">{{ form.confirm_long_fleet.label }}</label></div>
+      {{ form.confirm_long_fleet.errors }}
+    </div>
     <div class="col-12">{{ form.notes.label_tag }}{{ form.notes }}{{ form.notes.errors }}</div>
   </div>
   <button class="btn btn-primary mt-3">Create Manual Fleet</button>
 </form>
 </div></div>
+<script>
+(() => {
+ const started = document.getElementById('{{ form.started_at.id_for_label }}');
+ const ended = document.getElementById('{{ form.ended_at.id_for_label }}');
+ const duration = document.getElementById('manual-fleet-duration');
+ const confirmWrap = document.getElementById('confirm-long-fleet-wrap');
+ const now = document.getElementById('eve-time-now');
+ const LONG_FLEET_MINUTES = 6 * 60;
+ // The inputs hold EVE time, so they are read as UTC whatever the browser's time zone is.
+ function asUtc(value){ return value ? Date.parse(value.length === 16 ? `${value}:00Z` : `${value}Z`) : NaN; }
+ function showNow(){ now.textContent = new Date().toISOString().slice(0, 16).replace('T', ' '); }
+ function showDuration(){
+   const minutes = Math.round((asUtc(ended.value) - asUtc(started.value)) / 60000);
+   duration.className = 'form-text';
+   if(Number.isNaN(minutes)){ duration.textContent = ''; return; }
+   if(minutes <= 0){ duration.textContent = 'End Time must be after Start Time.'; duration.className = 'form-text text-danger'; return; }
+   const hours = Math.floor(minutes / 60);
+   const text = hours ? `${hours} h ${String(minutes % 60).padStart(2, '0')} min` : `${minutes} min`;
+   duration.textContent = `Duration: ${text}`;
+   if(minutes > LONG_FLEET_MINUTES){
+     duration.textContent += ' — longer than 6 hours, please confirm below.';
+     duration.className = 'form-text text-warning';
+     confirmWrap.classList.remove('d-none');
+   }
+ }
+ [started, ended].forEach(input => input.addEventListener('input', showDuration));
+ showNow(); setInterval(showNow, 30000); showDuration();
+})();
+</script>
 {% endblock %}

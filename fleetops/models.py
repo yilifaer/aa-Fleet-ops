@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models, transaction
 from django.template import Template, TemplateSyntaxError
+from django.utils import timezone
 
 MIN_RETENTION_DAYS = 365
 MAX_RETENTION_DAYS = 36500
@@ -238,6 +239,14 @@ class FleetOperation(models.Model):
         CANCELLED = "cancelled", "Cancelled"
         ERROR = "error", "Error"
 
+    class EndReason(models.TextChoices):
+        MANUAL = "manual", "Ended manually"
+        FLEET_GONE = "fleet_gone", "Fleet no longer exists or the FC left it"
+        BOSS_HANDOVER = "boss_handover", "Fleet boss handed over"
+
+    # Fleets in these states own their ESI fleet; a second start for it returns the same record.
+    OPEN_STATUSES = (Status.STARTING, Status.ACTIVE, Status.ENDING)
+
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     start_request_id = models.UUIDField(null=True, blank=True, unique=True, editable=False)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT, db_index=True)
@@ -293,7 +302,28 @@ class FleetOperation(models.Model):
     last_esi_update = models.DateTimeField(null=True, blank=True)
     tracking_enabled = models.BooleanField(default=False)
     fleet_missing_count = models.PositiveIntegerField(default=0)
+    missing_reason = models.CharField(
+        max_length=20,
+        choices=EndReason.choices,
+        blank=True,
+        help_text="Why the latest tracking poll could not read the fleet. Cleared by a successful read.",
+    )
+    missing_detail = models.CharField(max_length=255, blank=True)
     last_error = models.TextField(blank=True)
+
+    end_requested_at = models.DateTimeField(null=True, blank=True)
+    end_requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fleetops_end_requests",
+    )
+    end_requested_multiplier = models.PositiveIntegerField(
+        null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(3)]
+    )
+    end_reason = models.CharField(max_length=20, choices=EndReason.choices, blank=True)
+    end_detail = models.CharField(max_length=255, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -304,6 +334,21 @@ class FleetOperation(models.Model):
 
     def __str__(self):
         return f"{self.fleet_type} — {self.fc_character_name} ({self.uuid})"
+
+    @property
+    def end_reason_text(self):
+        return end_reason_text(self.end_reason, self.end_detail)
+
+
+def end_reason_text(reason, detail=""):
+    """How the end of a fleet is shown on its page, in the archive and in the audit log."""
+    if reason == FleetOperation.EndReason.MANUAL:
+        return "Ended manually"
+    if reason == FleetOperation.EndReason.FLEET_GONE:
+        return "Ended automatically: the fleet no longer exists or the FC left it"
+    if reason == FleetOperation.EndReason.BOSS_HANDOVER:
+        return f"Ended automatically: fleet boss handed over to {detail or 'another character'}"
+    return ""
 
 
 class OperationAction(models.Model):
@@ -326,6 +371,21 @@ class OperationAction(models.Model):
 
     def __str__(self):
         return f"{self.operation_id}: {self.action} {self.status}"
+
+
+class OperationActionAttempt(models.Model):
+    """One run of an operation step; the step itself only keeps the latest result."""
+
+    action = models.ForeignKey(OperationAction, on_delete=models.CASCADE, related_name="history")
+    status = models.CharField(max_length=20, choices=OperationAction.Status.choices)
+    message = models.TextField(blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return f"{self.action_id}: {self.status} at {self.created_at}"
 
 
 class FleetMemberState(models.Model):

@@ -47,6 +47,7 @@ from fleetops.services.fleet_controls import (
     kick_all_pods,
     pod_members,
 )
+from fleetops.services import operations as operations_module
 from fleetops.services.operations import retry_srp, start_fleet
 from fleetops.services.roles import add_role_assignment, delete_role_assignment
 from fleetops.services.routing import proximity_rows, systems_within_jumps
@@ -151,7 +152,9 @@ class PatchedStartFleetMixin:
         self.type_obj = f.fleet_type("Roam", "2.00")
         targets = {
             "detect_character_fleet": mock.Mock(
-                return_value=FleetDetectionResult(fleet_id=FLEET_ID, role="fleet_commander")
+                return_value=FleetDetectionResult(
+                    fleet_id=FLEET_ID, role="fleet_commander", fleet_boss_id=self.fc_char.character_id
+                )
             ),
             "set_fleet_motd": mock.Mock(),
             "sync_operation": mock.Mock(),
@@ -480,7 +483,7 @@ class StartFleetSRPTests(IsolatedSRPRegistryMixin, PatchedStartFleetMixin, TestC
     def test_provider_exception_is_captured_and_fleet_still_starts(self):
         provider = self.register(FakeSRPProvider("zeta_srp", error=RuntimeError("SRP database is locked")))
 
-        with self.assertLogs("fleetops.services.operations", "ERROR") as logs:
+        with self.assertLogs(operations_module.logger, "ERROR") as logs:
             operation = self.start()
 
         operation.refresh_from_db()

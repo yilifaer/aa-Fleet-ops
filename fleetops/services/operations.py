@@ -1,23 +1,35 @@
-import logging
 import uuid
+from datetime import timedelta
 
+from allianceauth.services.hooks import get_extension_logger
 from django.db import IntegrityError, transaction
 from django.utils import timezone
+from kombu.exceptions import OperationalError as QueueError
 
-from fleetops.models import FleetOperation, FleetOpsSettings, OperationAction
+from fleetops.models import FleetOperation, FleetOpsSettings, OperationAction, OperationActionAttempt, end_reason_text
 from fleetops.providers.esi import FleetESIError, detect_character_fleet, set_fleet_motd
 from fleetops.providers.pings import send_discord_webhook
 from fleetops.providers.srp import create_srp_link
 from fleetops.services.audit import audit
 from fleetops.services.attendance import set_operation_attendance_multiplier
-from fleetops.services.errors import report_failure
-from fleetops.services.identity import get_owned_character
+from fleetops.services.errors import log_failure, report_failure
+from fleetops.services.identity import character_label, get_owned_character
 from fleetops.services.messages import render_messages
 from fleetops.services.tracking import sync_operation
 
-logger = logging.getLogger(__name__)
+logger = get_extension_logger(__name__)
 
 NOT_RENDERED = "Not sent because the fleet messages could not be rendered."
+FINISHED_STATUSES = (FleetOperation.Status.CLOSED, FleetOperation.Status.CANCELLED)
+EndReason = FleetOperation.EndReason
+# A start moves its record forward within seconds. One that has not moved for this long was
+# interrupted (for example its web worker was killed) and no longer holds its ESI fleet.
+STARTING_ABANDONED_AFTER = timedelta(minutes=5)
+START_ABANDONED_MESSAGE = "The fleet start did not finish, so this operation was cancelled. Start the fleet again to track it."
+
+
+def _record_attempt(obj):
+    OperationActionAttempt.objects.create(action=obj, status=obj.status, message=obj.error_message)
 
 
 def set_action(operation, action, success, error=""):
@@ -30,7 +42,12 @@ def set_action(operation, action, success, error=""):
         obj.status = OperationAction.Status.SUCCESS if success else OperationAction.Status.FAILED
     obj.error_message = str(error or "")[:4000]
     obj.save()
+    _record_attempt(obj)
     return obj
+
+
+def not_boss_message(character_name, boss_id):
+    return f"{character_name} is not the fleet boss. The current boss is {character_label(boss_id)}."
 
 
 def _skipped_message(operation, step):
@@ -40,11 +57,13 @@ def _skipped_message(operation, step):
 
 def _keep_skipped(operation, action, message):
     """Return the record of a step this fleet never performs, without attempting it."""
-    obj, _created = OperationAction.objects.get_or_create(
+    obj, created = OperationAction.objects.get_or_create(
         operation=operation,
         action=action,
         defaults={"status": OperationAction.Status.SKIPPED, "error_message": message},
     )
+    if created:
+        _record_attempt(obj)
     return obj
 
 
@@ -103,6 +122,39 @@ def _apply_srp_result(operation, srp):
     operation.srp_error = "" if srp.created else srp.message
 
 
+def cancel_abandoned_starts(*, actor=None, esi_fleet_id=None, now=None):
+    """Cancel operations whose start was interrupted and never finished; returns how many."""
+    cutoff = (now or timezone.now()) - STARTING_ABANDONED_AFTER
+    stale = FleetOperation.objects.filter(status=FleetOperation.Status.STARTING, updated_at__lt=cutoff)
+    if esi_fleet_id is not None:
+        stale = stale.filter(esi_fleet_id=esi_fleet_id)
+    cancelled = 0
+    for pk in stale.values_list("pk", flat=True):
+        with transaction.atomic():
+            operation = FleetOperation.objects.select_for_update().get(pk=pk)
+            # The start may have finished since the query above.
+            if operation.status != FleetOperation.Status.STARTING or operation.updated_at >= cutoff:
+                continue
+            old_state = {"status": operation.status, "tracking_enabled": operation.tracking_enabled}
+            ended_at = timezone.now()
+            operation.status = FleetOperation.Status.CANCELLED
+            operation.tracking_enabled = False
+            operation.ended_at = ended_at
+            operation.last_error = START_ABANDONED_MESSAGE
+            operation.save(update_fields=["status", "tracking_enabled", "ended_at", "last_error", "updated_at"])
+            operation.member_states.filter(is_active=True).update(is_active=False, left_at=ended_at)
+            audit(
+                actor,
+                "fleet.start_abandoned",
+                operation,
+                old_state,
+                {"status": operation.status, "tracking_enabled": False},
+                reason=START_ABANDONED_MESSAGE,
+            )
+        cancelled += 1
+    return cancelled
+
+
 def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None):
     request_id = request_id or uuid.uuid4()
     existing = FleetOperation.objects.filter(start_request_id=request_id).first()
@@ -118,17 +170,31 @@ def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None
     main = getattr(profile, "main_character", None)
 
     detection = detect_character_fleet(user, char_id)
-    # ESI uses fleet_commander for the fleet boss / FC role.
-    if detection.role != "fleet_commander":
-        raise FleetESIError(
-            "NOT_FLEET_BOSS",
-            f"Selected character is in fleet with role '{detection.role}', not fleet_commander.",
-        )
+    # Only the fleet boss can read and write the fleet. The boss may sit in any position, and
+    # a fleet commander who is not the boss cannot run the fleet.
+    if not detection.is_boss(char_id):
+        raise FleetESIError("NOT_FLEET_BOSS", not_boss_message(character.character_name, detection.fleet_boss_id))
 
     fleet_type = cleaned_data["fleet_type"]
     full_mode = cleaned_data.get("operation_mode", "full") == "full"
     try:
         with transaction.atomic():
+            # The settings row serialises fleet starts, so two requests for the same ESI fleet
+            # (two tabs, a resubmitted form) cannot both create a record.
+            FleetOpsSettings.objects.select_for_update().get_or_create(pk=1)
+            existing = FleetOperation.objects.filter(start_request_id=request_id).first()
+            if existing:
+                return existing
+            # An interrupted start would otherwise hold this ESI fleet for good.
+            cancel_abandoned_starts(actor=user, esi_fleet_id=detection.fleet_id)
+            running = (
+                FleetOperation.objects.filter(esi_fleet_id=detection.fleet_id, status__in=FleetOperation.OPEN_STATUSES)
+                .order_by("pk")
+                .first()
+            )
+            if running:
+                running.already_tracked = True
+                return running
             operation = FleetOperation.objects.create(
                 start_request_id=request_id,
                 status=FleetOperation.Status.STARTING,
@@ -138,7 +204,7 @@ def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None
                 fc_character_name=character.character_name,
                 fc_main_character_id=getattr(main, "character_id", None),
                 fc_main_character_name=getattr(main, "character_name", "") or "",
-                fleet_boss_character_id=character.character_id,
+                fleet_boss_character_id=detection.fleet_boss_id,
                 esi_fleet_id=detection.fleet_id,
                 fleet_type=fleet_type,
                 fleet_point_weight_snapshot=fleet_type.point_weight,
@@ -218,8 +284,17 @@ def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None
             operation.srp_error = report_failure(logger, "SRP creation", exc, operation)[:4000]
             set_action(operation, "srp_link", False, operation.srp_error)
 
-    operation.status = FleetOperation.Status.ACTIVE
-    operation.save(update_fields=["status", "last_error", "srp_provider", "srp_reference", "srp_url", "srp_error", "updated_at"])
+    srp_fields = ["srp_provider", "srp_reference", "srp_url", "srp_error", "updated_at"]
+    with transaction.atomic():
+        # A start that stalled for STARTING_ABANDONED_AFTER may have been cancelled meanwhile;
+        # it must not come back as a second active record for its ESI fleet.
+        current = FleetOperation.objects.select_for_update().only("status").get(pk=operation.pk)
+        if current.status == FleetOperation.Status.STARTING:
+            operation.status = FleetOperation.Status.ACTIVE
+            operation.save(update_fields=["status", "last_error", *srp_fields])
+        else:
+            operation.save(update_fields=srp_fields)
+            operation.refresh_from_db()
     return operation
 
 
@@ -264,33 +339,143 @@ def retry_srp(operation):
         return set_action(operation, "srp_link", False, operation.srp_error)
 
 
-def end_fleet(operation, actor=None, automatic=False, attendance_multiplier=None):
-    if operation.status in (FleetOperation.Status.CLOSED, FleetOperation.Status.CANCELLED):
+def end_fleet(operation, actor=None, automatic=False, attendance_multiplier=None, reason="", detail=""):
+    """Close a fleet: final sync (manual ends only), attendance multiplier, member cleanup.
+
+    An automatic end comes right after a confirming read, so it does not sync again.
+    Ending a closed or cancelled fleet does nothing.
+    """
+    if operation.status in FINISHED_STATUSES:
         return operation
-    old_state = {"status": operation.status, "tracking_enabled": operation.tracking_enabled}
-    operation.status = FleetOperation.Status.ENDING
-    operation.save(update_fields=["status", "updated_at"])
-    try:
-        sync_operation(operation)
-    except Exception as exc:
-        # Best effort: a fleet that is already gone must still close.
-        report_failure(logger, "Final fleet sync", exc, operation)
-    if attendance_multiplier is None:
-        attendance_multiplier = operation.attendance_multiplier or 1
-    set_operation_attendance_multiplier(operation, attendance_multiplier, actor=actor)
-    operation.tracking_enabled = False
-    operation.ended_at = timezone.now()
-    operation.status = FleetOperation.Status.CLOSED
-    operation.save(update_fields=["tracking_enabled", "ended_at", "status", "updated_at"])
-    set_action(operation, "fleet_end", True, "Automatic" if automatic else "Manual")
-    audit(
-        actor,
-        "fleet.auto_end" if automatic else "fleet.end",
-        operation,
-        old_state,
-        {"status": operation.status, "tracking_enabled": operation.tracking_enabled},
-    )
+    reason = reason or (EndReason.FLEET_GONE if automatic else EndReason.MANUAL)
+    detail = (detail or "")[:255]
+    with transaction.atomic():
+        current = FleetOperation.objects.select_for_update().get(pk=operation.pk)
+        # Closed meanwhile, or an end requested from the fleet page is already finishing it
+        # (for example while a tracking poll that still saw the fleet Active was running).
+        ending_elsewhere = current.status == FleetOperation.Status.ENDING and operation.status != current.status
+        if current.status in FINISHED_STATUSES or ending_elsewhere:
+            operation.refresh_from_db()
+            return operation
+        old_state = {"status": current.status, "tracking_enabled": current.tracking_enabled}
+        operation.refresh_from_db()
+        operation.status = FleetOperation.Status.ENDING
+        operation.end_reason = reason
+        operation.end_detail = detail
+        update_fields = ["status", "end_reason", "end_detail", "updated_at"]
+        if operation.end_requested_at is None:
+            operation.end_requested_at = timezone.now()
+            operation.end_requested_by = actor
+            update_fields += ["end_requested_at", "end_requested_by"]
+        operation.save(update_fields=update_fields)
+    if not automatic:
+        try:
+            sync_operation(operation)
+        except Exception as exc:
+            # Best effort: a fleet that is already gone must still close.
+            report_failure(logger, "Final fleet sync", exc, operation)
+
+    with transaction.atomic():
+        # Another worker may have closed the fleet meanwhile (recovery of a slow end).
+        if FleetOperation.objects.select_for_update().get(pk=operation.pk).status in FINISHED_STATUSES:
+            operation.refresh_from_db()
+            return operation
+        operation.refresh_from_db()
+        if attendance_multiplier is None:
+            attendance_multiplier = operation.attendance_multiplier or 1
+        set_operation_attendance_multiplier(operation, attendance_multiplier, actor=actor)
+        label = end_reason_text(reason, detail)
+        ended_at = timezone.now()
+        operation.tracking_enabled = False
+        operation.ended_at = ended_at
+        operation.status = FleetOperation.Status.CLOSED
+        operation.last_error = label if automatic else ""
+        operation.save(
+            update_fields=[
+                "tracking_enabled", "ended_at", "status", "last_error", "fleet_missing_count", "updated_at",
+            ]
+        )
+        # Whoever was still in fleet left when it ended.
+        operation.member_states.filter(is_active=True).update(is_active=False, left_at=ended_at)
+        set_action(operation, "fleet_end", True, label)
+        audit(
+            actor,
+            "fleet.auto_end" if automatic else "fleet.end",
+            operation,
+            old_state,
+            {
+                "status": operation.status,
+                "tracking_enabled": operation.tracking_enabled,
+                "end_reason": reason,
+                "end_detail": detail,
+            },
+            reason=label,
+        )
     return operation
+
+
+def request_fleet_end(operation, *, actor, attendance_multiplier=None):
+    """Record a manual end request and finish it in the background.
+
+    Returns ``(operation, requested)``; ``requested`` is False when the fleet was already
+    ending or closed, so a double click never ends a fleet twice.
+    """
+    with transaction.atomic():
+        current = FleetOperation.objects.select_for_update().get(pk=operation.pk)
+        if current.status in FINISHED_STATUSES or current.status == FleetOperation.Status.ENDING:
+            return current, False
+        old_status = current.status
+        current.status = FleetOperation.Status.ENDING
+        current.end_requested_at = timezone.now()
+        current.end_requested_by = actor
+        current.end_requested_multiplier = attendance_multiplier
+        current.end_reason = EndReason.MANUAL
+        current.end_detail = ""
+        current.save(
+            update_fields=[
+                "status", "end_requested_at", "end_requested_by", "end_requested_multiplier",
+                "end_reason", "end_detail", "updated_at",
+            ]
+        )
+        audit(
+            actor,
+            "fleet.end_request",
+            current,
+            {"status": old_status},
+            {
+                "status": current.status,
+                "attendance_multiplier": attendance_multiplier or current.attendance_multiplier,
+            },
+        )
+    _queue_end(current)
+    current.refresh_from_db()
+    return current, True
+
+
+def _queue_end(operation):
+    from fleetops.tasks import finish_fleet_end
+
+    try:
+        finish_fleet_end.delay(operation.pk)
+    except QueueError as exc:
+        # Without a reachable queue the end is finished in this request instead.
+        log_failure(logger, "Queueing the fleet end", exc, operation)
+        finish_requested_end(operation)
+
+
+def finish_requested_end(operation):
+    """Finish a fleet whose end was requested or interrupted; does nothing unless it is Ending."""
+    if operation.status != FleetOperation.Status.ENDING:
+        return operation
+    automatic = operation.end_reason in (EndReason.FLEET_GONE, EndReason.BOSS_HANDOVER)
+    return end_fleet(
+        operation,
+        actor=operation.end_requested_by,
+        automatic=automatic,
+        attendance_multiplier=operation.end_requested_multiplier,
+        reason=operation.end_reason or EndReason.MANUAL,
+        detail=operation.end_detail,
+    )
 
 
 def create_manual_fleet(*, user, cleaned_data: dict):

@@ -1,6 +1,9 @@
+from datetime import datetime, timedelta, timezone as dt_timezone
+
 from allianceauth.authentication.models import CharacterOwnership
 from django import forms
 from django.db.models import Q
+from django.utils import timezone
 
 from fleetops.models import (
     MAX_DATABASE_ID,
@@ -116,15 +119,40 @@ class FleetAttendanceMultiplierForm(EndFleetForm):
     pass
 
 
+class EveDateTimeField(forms.DateTimeField):
+    """A date and time in EVE time (UTC), whatever the site TIME_ZONE or the browser's time zone."""
+
+    widget = forms.DateTimeInput(format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"})
+
+    def to_python(self, value):
+        # A value without an offset is read as UTC instead of the active time zone.
+        with timezone.override(dt_timezone.utc):
+            return super().to_python(value)
+
+    def prepare_value(self, value):
+        if isinstance(value, datetime) and timezone.is_aware(value):
+            return timezone.make_naive(value, dt_timezone.utc)
+        return value
+
+
+def format_duration(delta):
+    minutes = int(delta.total_seconds() // 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours} h {minutes:02d} min" if hours else f"{minutes} min"
+
+
 class ManualFleetForm(forms.Form):
+    # Longer fleets are usually a mistyped date or time, so they need a confirmation.
+    LONG_FLEET = timedelta(hours=6)
+
     fleet_type = forms.ModelChoiceField(queryset=FleetType.objects.none())
     doctrine_name = forms.CharField(max_length=255, required=False)
     formup = forms.CharField(label="Form Up / Staging", max_length=255)
-    started_at = forms.DateTimeField(
-        label="Start Time", widget=forms.DateTimeInput(attrs={"type": "datetime-local"})
-    )
-    ended_at = forms.DateTimeField(
-        label="End Time", required=False, widget=forms.DateTimeInput(attrs={"type": "datetime-local"})
+    started_at = EveDateTimeField(label="Start Time — EVE time (UTC)")
+    ended_at = EveDateTimeField(label="End Time — EVE time (UTC)")
+    confirm_long_fleet = forms.BooleanField(
+        label="This fleet really ran for more than 6 hours",
+        required=False,
     )
     attendance_multiplier = forms.TypedChoiceField(
         choices=[(1, "1x attendance"), (2, "2x attendance"), (3, "3x attendance")],
@@ -137,7 +165,9 @@ class ManualFleetForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.fields["fleet_type"].queryset = FleetType.objects.filter(is_active=True)
         for field in self.fields.values():
-            if isinstance(field.widget, forms.Select):
+            if isinstance(field.widget, forms.CheckboxInput):
+                field.widget.attrs["class"] = "form-check-input"
+            elif isinstance(field.widget, forms.Select):
                 field.widget.attrs["class"] = "form-select"
             else:
                 field.widget.attrs["class"] = "form-control"
@@ -146,8 +176,15 @@ class ManualFleetForm(forms.Form):
         data = super().clean()
         started = data.get("started_at")
         ended = data.get("ended_at")
-        if started and ended and ended < started:
-            raise forms.ValidationError("End Time cannot be earlier than Start Time.")
+        if started and ended:
+            if ended <= started:
+                self.add_error("ended_at", "End Time must be after Start Time.")
+            elif ended - started > self.LONG_FLEET and not data.get("confirm_long_fleet"):
+                self.add_error(
+                    "confirm_long_fleet",
+                    f"This fleet would last {format_duration(ended - started)}. "
+                    "Check the times, or tick this box if the fleet really ran for more than 6 hours.",
+                )
         return data
 
 

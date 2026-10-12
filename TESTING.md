@@ -17,7 +17,7 @@ python manage.py makemigrations fleetops --check --dry-run
 python runtests.py
 ```
 
-`python runtests.py` runs all of `tests` on an in-memory SQLite database. To run one module, pass it as an argument:
+`python runtests.py` runs all of `tests` on an in-memory SQLite database. Celery tasks run eagerly (in the test process), so for example End Fleet closes the fleet within the request. To run one module, pass it as an argument:
 
 ```bash
 python runtests.py tests.test_attendance
@@ -83,10 +83,10 @@ Then verify `/fleetops/` loads for a user with `fleetops.basic_access`.
 
 ## Required real-EVE scenarios
 
-1. FC character with valid read/write scopes and Fleet Commander role.
+1. FC character with valid read/write scopes that is the Fleet Boss, once in the fleet commander position and once as a squad member or wing commander.
 2. Alt character under the same Auth user.
 3. Character not in fleet.
-4. Character in fleet but not Fleet Commander.
+4. Character in the fleet commander position that is not the Fleet Boss: Start Fleet is rejected and names the current boss.
 5. Read scope missing.
 6. Write scope missing: tracking may work but MOTD must fail non-fatally.
 7. Discord webhook success.
@@ -96,7 +96,7 @@ Then verify `/fleetops/` loads for a user with `fleetops.basic_access`.
 11. Attendance cap with multiple characters on one Auth user.
 12. Manual attendance correction.
 13. End Fleet.
-14. Repeated ESI fleet-not-found auto-end.
+14. Repeated ESI fleet-not-found auto-end: disband the fleet (ends as "the fleet no longer exists or the FC left it"), and in a second fleet hand the boss role to another pilot (the fleet page warns about the handover, handing the boss back in time keeps the fleet open, otherwise it ends as "fleet boss handed over to <name>").
 15. Monthly FC calculation, waiver, finalize and unlock (tick **Incentive enabled** in FleetOps Administration → General Settings first; it is off by default).
 16. Built-in SRP available: Fleet Start should create/link SRP without blocking the fleet if SRP fails.
 17. Manual attendance permission: FC can add multiple credits to a closed fleet; another FC cannot edit that fleet unless separately credited/admin.

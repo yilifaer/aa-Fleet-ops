@@ -11,6 +11,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from fleetops import views as views_module
 from fleetops.models import (
     AttendanceRecord,
     AuditLog,
@@ -789,7 +790,7 @@ class PreviewErrorTests(TestCase):
         error = RuntimeError(f"Failed posting to https://discord.com/api/webhooks/1/{WEBHOOK_SECRET}")
 
         with mock.patch("fleetops.views.render_messages", side_effect=error), self.assertLogs(
-            "fleetops.views", "ERROR"
+            views_module.logger, "ERROR"
         ) as logs:
             response = self.client.post(
                 reverse("fleetops:preview_fleet"),

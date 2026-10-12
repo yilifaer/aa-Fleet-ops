@@ -33,6 +33,16 @@ def get_owned_character(user, character_id: int):
     )
 
 
+def character_label(character_id) -> str:
+    """Name of a character Alliance Auth knows, otherwise ``character <id>``."""
+    if not character_id:
+        return "unknown"
+    name = (
+        EveCharacter.objects.filter(character_id=character_id).values_list("character_name", flat=True).first()
+    )
+    return name or f"character {character_id}"
+
+
 def identity_for_character_id(character_id: int) -> CharacterIdentity:
     char = EveCharacter.objects.filter(character_id=character_id).first()
     ownership = (

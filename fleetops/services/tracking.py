@@ -1,11 +1,17 @@
+from allianceauth.services.hooks import get_extension_logger
 from django.db import transaction
 from django.utils import timezone
 
-from fleetops.models import FleetMemberEvent, FleetMemberState
-from fleetops.providers.esi import FleetESIError, get_fleet_members
+from fleetops.models import FleetMemberEvent, FleetMemberState, FleetOperation
+from fleetops.providers.esi import FleetESIError, detect_character_fleet, get_fleet_members
 from fleetops.services.attendance import ensure_automatic_attendance
-from fleetops.services.identity import resolve_many
+from fleetops.services.errors import report_failure
+from fleetops.services.identity import character_label, resolve_many
 from fleetops.services.sde import item_type_names, solar_system_names
+
+logger = get_extension_logger(__name__)
+
+EndReason = FleetOperation.EndReason
 
 
 def _event(operation, state, event_type, old_value="", new_value=""):
@@ -20,6 +26,11 @@ def _event(operation, state, event_type, old_value="", new_value=""):
 
 
 def sync_operation(operation):
+    """Read the fleet members from ESI and record joins, leaves, changes and attendance.
+
+    Returns the number of members, or None when the fleet was closed or cancelled while
+    ESI was being read; nothing is written then.
+    """
     if not operation.esi_fleet_id:
         raise FleetESIError("NO_FLEET_ID", "Operation has no ESI fleet ID.")
     now = timezone.now()
@@ -30,9 +41,20 @@ def sync_operation(operation):
     system_names = solar_system_names({m.get("solar_system_id") for m in members if m.get("solar_system_id")})
 
     incoming = {int(m["character_id"]): m for m in members if m.get("character_id")}
-    existing = {s.character_id: s for s in operation.member_states.all()}
 
     with transaction.atomic():
+        # The close of a fleet locks the same row, so a poll whose ESI read was still running
+        # when the fleet ended cannot put its pilots back in fleet afterwards.
+        current = (
+            FleetOperation.objects.select_for_update()
+            .only("status", "attendance_multiplier")
+            .get(pk=operation.pk)
+        )
+        if current.status not in FleetOperation.OPEN_STATUSES:
+            return None
+        operation.attendance_multiplier = current.attendance_multiplier
+        existing = {s.character_id: s for s in operation.member_states.all()}
+
         # Missing active pilots leave.
         for cid, state in existing.items():
             if state.is_active and cid not in incoming:
@@ -97,6 +119,60 @@ def sync_operation(operation):
 
         operation.last_esi_update = now
         operation.fleet_missing_count = 0
+        operation.missing_reason = ""
+        operation.missing_detail = ""
         operation.last_error = ""
-        operation.save(update_fields=["last_esi_update", "fleet_missing_count", "last_error", "updated_at"])
+        operation.save(
+            update_fields=[
+                "last_esi_update", "fleet_missing_count", "missing_reason", "missing_detail", "last_error", "updated_at",
+            ]
+        )
     return len(incoming)
+
+
+def observe_unreadable_fleet(operation):
+    """Find out why the FC token got a 404 for the fleet.
+
+    Only the fleet boss can read a fleet, so a 404 means either the fleet is gone (disbanded,
+    or the FC left it) or the FC handed the boss role to someone else. Returns
+    ``(reason, detail)``, or None when the check itself failed and the poll proves nothing.
+    """
+    try:
+        detection = detect_character_fleet(operation.fc_user, operation.fc_character_id, fresh=True)
+    except FleetESIError as exc:
+        if exc.code == "NOT_IN_FLEET":
+            return EndReason.FLEET_GONE, ""
+        return None
+    except Exception as exc:
+        report_failure(logger, "Fleet boss check", exc, operation)
+        return None
+    if detection.fleet_id == operation.esi_fleet_id and detection.fleet_boss_id and not detection.is_boss(
+        operation.fc_character_id
+    ):
+        return EndReason.BOSS_HANDOVER, character_label(detection.fleet_boss_id)
+    return EndReason.FLEET_GONE, ""
+
+
+def unreadable_fleet_message(reason, detail=""):
+    if reason == EndReason.BOSS_HANDOVER:
+        return f"Fleet boss handed over to {detail or 'another character'}."
+    return "The fleet could not be read: it no longer exists or the FC left it."
+
+
+def unreadable_fleet_warning(operation, settings):
+    """Warning for an active fleet whose latest polls could not read it, or an empty string."""
+    if not (operation.fleet_missing_count and operation.missing_reason):
+        return ""
+    count = operation.fleet_missing_count
+    checks = f"Unreadable checks in a row: {count}."
+    if operation.missing_reason == EndReason.BOSS_HANDOVER:
+        what = f"Fleet boss handed over to {operation.missing_detail or 'another character'}"
+        unless = "unless the boss is returned"
+    else:
+        what = "The fleet could not be read: it no longer exists or the FC left it"
+        unless = "unless it can be read again"
+    if not settings.auto_end_enabled:
+        return f"{what} — automatic end is disabled, so this fleet stays open until it is ended manually. {checks}"
+    remaining = max(settings.auto_end_missing_count - count, 1)
+    plural = "" if remaining == 1 else "s"
+    return f"{what} — this fleet will end automatically after {remaining} more check{plural} {unless}. {checks}"

@@ -4,7 +4,10 @@
 
 ### Upgrade notes
 
-- Run `python manage.py migrate fleetops` after upgrading; this release adds migrations `0005` and `0006`.
+- Run `python manage.py migrate fleetops` after upgrading; this release adds migrations `0005`, `0006` and `0007`.
+- Migration `0007` adds the end reason and end request fields to fleets and a history table for operation steps. It copies the latest result of every existing step into that history, labels closed fleets as ended manually or automatically from their recorded end step, and marks pilots that older versions left "in fleet" on closed fleets as having left when the fleet ended. Step messages and fleet errors that older versions stored as django-esi's full error text (with every response header) are shortened to the new form, for example `Could not update fleet MOTD: ESI returned HTTP 403 (Forbidden).`; audit log entries are left as they were. Its data steps are not undone when migrating back.
+- End Fleet now finishes in a Celery task, and the `fleetops.tasks.schedule_active_fleet_tracking` beat also completes ends whose task was lost and cancels starts that were interrupted. Keep the Celery worker and beat running; without a reachable broker the end is finished in the web request as before.
+- FleetOps now logs through Alliance Auth's extension logger, so its messages appear in `extensions.log` instead of only on stderr.
 - Keep the django-esi release that matches your Alliance Auth: django-esi 9 for Alliance Auth 5.4 and older, django-esi 10 for Alliance Auth 5.5.
 - FC incentive pages and calculations now follow the **Incentive enabled** setting in FleetOps Administration → General Settings. It is off by default on new installs. On existing installs that already have incentive periods, `python manage.py migrate fleetops` turns it on automatically; if you want FC incentives but have not created a period yet, tick it yourself.
 - When a Discord ping failed with a connection error, 0.1.0a1–0.1.0a5 could store the webhook token in the fleet's error message, where anyone who could open the fleet could read it. An upgrade step removes these tokens. If a ping failed with a connection error on one of those versions, replace that webhook (delete it in Discord, create a new one and save its URL in FleetOps), because the old token may already have been seen.
@@ -13,6 +16,16 @@
 
 ### Fixed
 
+- The fleet boss is now taken from ESI's `fleet_boss_id` instead of the fleet position. A boss sitting as squad member or wing commander can start a fleet, and a character in the fleet commander position that is not the boss is rejected with the name of the current boss.
+- Handing the boss role to another pilot during a tracked fleet is no longer reported as "Fleet no longer exists." When a fleet read gets a 404, FleetOps checks the FC's own fleet and records either a boss handover or a fleet that is gone (disbanded, or the FC left it). Both count towards the automatic end, a successful read resets the count (so handing the boss back in time keeps the fleet open), and the fleet page shows which case it is and how many checks are left. A failed check is not counted.
+- Before ending a fleet automatically, FleetOps reads it once more and keeps it open if that read works. The automatic end itself no longer runs another sync.
+- A fleet that ends keeps a consistent state: the missing-fleet counter is saved, the last error is the end reason for automatic ends and empty for manual ends, and every pilot still marked as in fleet is marked as having left at the end time. Closed fleets no longer show the active-fleet warnings. A tracking poll that was still reading ESI when the fleet ended no longer puts pilots back in fleet, adds attendance or stores an error on the closed fleet.
+- Starting a fleet whose ESI fleet already has a Starting, Active or Ending record opens that record instead of creating a second one, also from a second browser tab or with a new request id. A start that was interrupted (for example a web worker killed mid-start) holds its fleet for about five minutes at most: after that the next start or the tracking beat cancels the stuck Starting record (audited as `fleet.start_abandoned`) and the fleet can be started again. A user who may not open the running record, such as a new boss after a handover, stays on the start page with an explanation, and the handover hint says when automatic end is disabled.
+- ESI errors no longer show django-esi's exception text, which includes every response header. Steps and pages show a short line such as `Could not read fleet members: ESI returned HTTP 503 (Service unavailable).`, and the log gets the HTTP status and `x-esi-request-id`, also for the 420 error limit and for gateway error pages that are not JSON.
+- The Kick Capsules button counts exactly the pilots that would be kicked: the FC and the fleet boss are never counted or kicked, and the button is disabled when nobody would be kicked. Unexpected kick errors are stored without their text.
+- The Start Fleet preview answers an incomplete form with HTTP 200, lists the missing fields and marks them, instead of returning HTTP 400; preview requests wait 400 ms after the last change.
+- End Fleet no longer keeps the browser waiting for the final ESI sync (the request could time out while the fleet still ended). The button disables itself and shows "Ending…", the request only records the end, and a background task runs the final sync, applies the attendance multiplier and closes the fleet. Repeated clicks do nothing and every end request is audited. If the worker is killed during the end task, the tracking beat finishes the fleet after about five minutes.
+- Manual fleet times are labelled and read as EVE time (UTC), whatever the site or browser time zone. The end time is required and must be after the start, the page shows the current EVE time and the duration, and a fleet longer than 6 hours needs an extra confirmation.
 - Fleet tracking, fleet detection and MOTD updates no longer fail when ESI data is unchanged since the last read (django-esi ETag/304 handling).
 - MOTD updates now send the request body in the form django-esi expects; previously every MOTD write was rejected.
 - A failed tracking poll now waits for the configured tracking interval before retrying, so the auto-end window is no longer shortened.
@@ -42,6 +55,12 @@
 
 - Supports django-esi 9 and 10, so Alliance Auth 5.5 can be installed alongside FleetOps.
 - Added a Django test suite that runs against SQLite and MariaDB.
+- Every operation step keeps its attempts (status, short message, time). The fleet page lists earlier attempts under each step, so a failure stays visible after a retry succeeds.
+- Fleets record why they ended (manual, fleet gone, boss handover). The fleet page, the fleet archive and the audit entry show it, and the end request is audited separately (`fleet.end_request`).
+- FleetOps logs through `allianceauth.services.hooks.get_extension_logger`.
+- A closed fleet lists every pilot that was tracked in it on its Members tab.
+- The fleet detection endpoint returns `fleet_boss_id` and a message naming the boss when the selected character is not the boss.
+- The test settings now really run Celery tasks eagerly.
 
 ## 0.1.0a5
 

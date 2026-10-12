@@ -42,6 +42,7 @@ from fleetops.models import (
     MessageTemplate,
     MonthlyFCStatistic,
     OperationAction,
+    OperationActionAttempt,
     OperationRoleAssignment,
     PingTarget,
 )
@@ -948,7 +949,8 @@ class AdminTests(TestCase):
         CommsPreset.objects.create(name="Comms", voice_url="mumble://voice.example.com")
         ChannelPreset.objects.create(name="Logi", channel_type="logi", channel_value="logi-ch")
         cls.operation = f.create_operation(cls.fc, type_obj=cls.fleet_type, ping_target=cls.target)
-        OperationAction.objects.create(operation=cls.operation, action="ping", status="failed", error_message="boom")
+        step = OperationAction.objects.create(operation=cls.operation, action="ping", status="failed", error_message="boom")
+        OperationActionAttempt.objects.create(action=step, status="failed", message="boom")
         FleetMemberState.objects.create(
             operation=cls.operation,
             character_id=1,

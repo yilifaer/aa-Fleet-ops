@@ -123,11 +123,12 @@ class StartFleetPatchesMixin:
     """Replaces every external call made while starting or managing a fleet."""
 
     def patch_externals(self, *, role="fleet_commander", fleet_id=FLEET_ID):
+        def detect(user, character_id):
+            # The selected character is the fleet boss, as ESI reports it in fleet_boss_id.
+            return FleetDetectionResult(fleet_id=fleet_id, role=role, fleet_boss_id=character_id)
+
         patchers = {
-            "detect": mock.patch(
-                "fleetops.services.operations.detect_character_fleet",
-                return_value=FleetDetectionResult(fleet_id=fleet_id, role=role),
-            ),
+            "detect": mock.patch("fleetops.services.operations.detect_character_fleet", side_effect=detect),
             "motd": mock.patch("fleetops.services.operations.set_fleet_motd"),
             "sync": mock.patch("fleetops.services.operations.sync_operation", return_value=0),
             "srp": mock.patch(
@@ -1021,8 +1022,12 @@ class EsiTokenOwnershipTests(StartFleetPatchesMixin, TestCase):
 
     def test_preview_rejects_foreign_character(self):
         response = self.client.post(reverse("fleetops:preview_fleet"), self.start_data(self.other_char))
-        self.assertEqual(response.status_code, 400)
-        self.assertFalse(response.json()["ok"])
+        # The preview answers an incomplete or invalid form with 200 and no rendered text.
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["ok"])
+        self.assertIn("fc_character_id", payload["errors"])
+        self.assertNotIn("ping", payload)
 
     def test_start_form_lists_only_own_characters(self):
         response = self.client.get(reverse("fleetops:start_fleet"))
@@ -1046,7 +1051,10 @@ class EsiTokenOwnershipTests(StartFleetPatchesMixin, TestCase):
     def test_tokens_are_never_echoed_to_the_browser(self):
         self.esi.client.Fleets.GetCharactersCharacterIdFleet.return_value.result.return_value = {
             "fleet_id": FLEET_ID,
+            "fleet_boss_id": self.fc_char.character_id,
             "role": "fleet_commander",
+            "squad_id": -1,
+            "wing_id": -1,
         }
         pages = [
             self.client.get(reverse("fleetops:start_fleet")),

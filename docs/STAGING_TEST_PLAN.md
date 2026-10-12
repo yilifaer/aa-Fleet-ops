@@ -15,9 +15,10 @@ Do not share the production database, Redis, Discord webhook or EVE SSO applicat
 ## Stage 2 — Fleet detection
 
 - selected character not in fleet
-- selected character in fleet but not appropriate boss/commander role
-- selected character is Fleet Boss/Commander
+- selected character in the fleet commander position but not the Fleet Boss (rejected; the message names the boss)
+- selected character is the Fleet Boss while sitting as squad member, wing commander or fleet commander (accepted)
 - confirm detected Fleet ID and member count
+- during a tracked fleet, hand the boss role to another pilot: the fleet page warns about the handover and the remaining checks; hand it back in time (fleet stays open) or let it end ("fleet boss handed over to <name>")
 
 ## Stage 3 — Start Fleet
 
