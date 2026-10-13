@@ -30,6 +30,7 @@ from fleetops.models import (
     ShipFunction,
     ShipFunctionRule,
     SpecialRole,
+    StatisticsTarget,
 )
 from fleetops.providers import srp as srp_providers
 from fleetops.services.audit import audit
@@ -58,6 +59,8 @@ SECTION_MODELS = {
 }
 # Sections of the PAP rules; tests/test_pap_routes.py covers their pages.
 PAP_SECTION_MODELS = {"multiplier-tiers": MultiplierTier, "special-roles": SpecialRole}
+# The Monthly Targets section; tests/test_statistics_targets.py covers its pages.
+STATISTICS_SECTION_MODELS = {"statistics-targets": StatisticsTarget}
 # Sections of the Fleet tab; tests/test_fleet_page.py covers their pages.
 FLEET_SECTION_MODELS = {
     "ship-functions": ShipFunction,
@@ -137,6 +140,8 @@ def settings_payload(**overrides):
         "history_alliance_ids": "",
         "srp_auto_create": "on",
         "srp_provider": "auto",
+        "leaderboard_size": "20",
+        "leaderboard_visibility": "members",
         "fleet_live_refresh_seconds": "15",
         "bridge_excluded_group_ids": DEFAULT_BRIDGE_EXCLUDED_GROUP_IDS,
     }
@@ -232,7 +237,7 @@ class ConfigurationAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         cards = {card["key"]: card["count"] for card in response.context["cards"]}
-        models = {**SECTION_MODELS, **PAP_SECTION_MODELS, **FLEET_SECTION_MODELS}
+        models = {**SECTION_MODELS, **PAP_SECTION_MODELS, **STATISTICS_SECTION_MODELS, **FLEET_SECTION_MODELS}
         self.assertEqual(set(cards), set(models))
         for section, model in models.items():
             self.assertEqual(cards[section], model.objects.count(), section)

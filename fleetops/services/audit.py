@@ -17,6 +17,21 @@ def audit(actor, action, obj, old_value=None, new_value=None, reason=""):
     )
 
 
+def audit_event(actor, action, object_type, object_id, new_value=None, reason=""):
+    """An audit entry for something that is not a stored object, such as a statistics export.
+
+    ``object_id`` is cut to the length of the column; callers must not pass secrets in any argument.
+    """
+    return AuditLog.objects.create(
+        actor=actor,
+        action=action,
+        object_type=object_type,
+        object_id=str(object_id)[:100],
+        new_value=new_value,
+        reason=reason,
+    )
+
+
 def config_snapshot(obj):
     """JSON-safe snapshot of a configuration object for ``configuration.*`` audit entries.
 

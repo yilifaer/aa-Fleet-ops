@@ -5,14 +5,18 @@ from fleetops import (
     views,
     views_config,
     views_controls,
+    views_exports,
     views_fleet_actions,
     views_fleet_manage,
     views_fleet_state,
     views_fleet_tools,
+    views_history,
     views_links,
+    views_members,
     views_pap,
     views_presets,
     views_records,
+    views_statistics,
 )
 
 app_name = "fleetops"
@@ -39,16 +43,16 @@ urlpatterns = [
     path("operations/<uuid:operation_uuid>/roles/add/", views.add_operation_role, name="add_operation_role"),
     path("operations/roles/<int:pk>/delete/", views.delete_operation_role, name="delete_operation_role"),
     path("operations/<uuid:operation_uuid>/kick-capsules/", views.kick_capsules_view, name="kick_capsules"),
-    path("statistics/me/", views.my_statistics_view, name="my_statistics"),
-    path("statistics/corporation/", views.corporation_statistics_view, name="corporation_statistics"),
-    path("statistics/corporation/<int:corporation_id>/", views.corporation_statistics_detail_view, name="corporation_statistics_detail"),
-    path("statistics/corporations/", views.all_corporation_statistics_view, name="all_corporation_statistics"),
-    path("statistics/fcs/", views.all_fc_statistics_view, name="all_fc_statistics"),
-    path("statistics/fcs/<int:user_id>/", views.fc_statistics_detail_view, name="fc_statistics_detail"),
+    path("statistics/me/", views_statistics.my_statistics_view, name="my_statistics"),
+    path("statistics/corporation/", views_statistics.corporation_statistics_view, name="corporation_statistics"),
+    path("statistics/corporation/<int:corporation_id>/", views_statistics.corporation_statistics_detail_view, name="corporation_statistics_detail"),
+    path("statistics/corporations/", views_statistics.all_corporation_statistics_view, name="all_corporation_statistics"),
+    path("statistics/fcs/", views_statistics.all_fc_statistics_view, name="all_fc_statistics"),
+    path("statistics/fcs/<int:user_id>/", views_statistics.fc_statistics_detail_view, name="fc_statistics_detail"),
     path("attendance/manual/", views.manual_attendance_view, name="manual_attendance"),
-    path("attendance/history/me/", views.attendance_history_me, name="attendance_history_me"),
-    path("attendance/history/corporation/", views.attendance_history_corporation, name="attendance_history_corporation"),
-    path("attendance/history/alliance/", views.attendance_history_alliance, name="attendance_history_alliance"),
+    path("attendance/history/me/", views_history.attendance_history_me, name="attendance_history_me"),
+    path("attendance/history/corporation/", views_history.attendance_history_corporation, name="attendance_history_corporation"),
+    path("attendance/history/alliance/", views_history.attendance_history_alliance, name="attendance_history_alliance"),
     path("attendance/<uuid:operation_uuid>/add/", views.add_manual_attendance, name="add_manual_attendance"),
     path("attendance/<int:pk>/delete/", views.delete_manual_attendance, name="delete_manual_attendance"),
     path("audit/", views.audit_log_view, name="audit_log"),
@@ -108,6 +112,16 @@ urlpatterns += [
     path("operations/<uuid:operation_uuid>/fleet/invite/", views_fleet_tools.invite_view, name="fleet_invite"),
     path("operations/<uuid:operation_uuid>/fleet/template/", views_fleet_tools.apply_template_view, name="fleet_apply_template"),
     path("operations/<uuid:operation_uuid>/fleet/classify/", views_fleet_tools.classify_view, name="fleet_classify"),
+]
+
+# Member lists, leaderboard, member details and exports of the statistics.
+urlpatterns += [
+    path("statistics/members/", views_members.alliance_members_view, name="alliance_members"),
+    path("statistics/members/<int:user_id>/", views_members.member_detail_view, name="member_detail"),
+    path("statistics/corporation/members/", views_members.corporation_members_view, name="corporation_members"),
+    path("statistics/corporation/<int:corporation_id>/members/", views_members.corporation_members_view, name="corporation_members_detail"),
+    path("statistics/leaderboard/", views_members.leaderboard_view, name="leaderboard"),
+    path("statistics/export/<slug:dataset>/", views_exports.export_view, name="export"),
 ]
 
 # Public page; it must stay the last pattern. Alliance Auth stops adding its login check at the first

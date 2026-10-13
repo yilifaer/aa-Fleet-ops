@@ -1,4 +1,4 @@
-{% load fleetops_operation %}
+{% load fleetops_operation fleetops_messages %}
 <div class="row g-3 mb-3">
   <div class="col-lg-8">
     <div class="card h-100">
@@ -16,7 +16,7 @@
               {% if a.error_message %}<div class="small text-muted mt-1 text-break">{{ a.error_message }}</div>{% endif %}
               {% if a.previous_attempts %}
                 <div class="small mt-2 border-top pt-1 step-history"><span class="text-muted">Previous attempts</span>
-                  {% for attempt in a.previous_attempts %}<div class="text-break"><span class="badge bg-{% if attempt.status == 'success' %}success{% elif attempt.status == 'failed' %}danger{% else %}secondary{% endif %}">{{ attempt.get_status_display }}</span> <span class="text-muted">{{ attempt.created_at|date:"Y-m-d H:i:s" }}</span>{% if attempt.message %} — {{ attempt.message }}{% endif %}</div>{% endfor %}
+                  {% for attempt in a.previous_attempts %}<div class="text-break"><span class="badge bg-{% if attempt.status == 'success' %}success{% elif attempt.status == 'failed' %}danger{% else %}secondary{% endif %}">{{ attempt.get_status_display }}</span> <span class="text-muted">{{ attempt.created_at|eve_time:"%Y-%m-%d %H:%M:%S" }}</span>{% if attempt.message %} — {{ attempt.message }}{% endif %}</div>{% endfor %}
                   {% if a.older_attempt_count %}<div class="text-muted">and {{ a.older_attempt_count }} older attempt{{ a.older_attempt_count|pluralize }}</div>{% endif %}
                 </div>
               {% endif %}

@@ -7,11 +7,14 @@ from decimal import Decimal
 from unittest import mock
 
 import requests
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
-from django.test import Client, TestCase
+from django.http import Http404
+from django.test import Client, RequestFactory, TestCase
 from django.urls import resolve, reverse
 from django.utils import timezone
 
+from fleetops import views_members, views_statistics
 from fleetops.models import (
     AttendanceRecord,
     AuditLog,
@@ -55,6 +58,9 @@ NOT_ALLOWED = 405
 HIDDEN = "hidden"  # object-level isolation: 403 or 404 are both acceptable
 
 ROLES = ("member", "corp", "fc", "lead")
+# A member with view_all_stats and nothing else. Only the statistics rows name this role; the rows of the
+# other routes do not, and the statistics manager's matrix skips them.
+STATS = "stats"
 
 Case = namedtuple("Case", "label method url data expected")
 
@@ -170,12 +176,15 @@ class FleetOpsViewTestCase(TestCase):
         cls.other_fc = f.create_user("otherfc", perms=f.FC_PERMS)
         cls.lead = f.create_user("fclead", perms=f.FC_LEAD_PERMS)
         cls.no_perms = f.create_user("noperms")
+        cls.stats_manager = f.create_user("statsmanager", perms=f.MEMBER_PERMS + ["fleetops.view_all_stats"])
+        cls.no_main = f.create_user("nomain", perms=f.MEMBER_PERMS, with_main=False)
         cls.outsider = f.create_user("outsider", perms=f.MEMBER_PERMS, corporation=f.OTHER_CORP)
         cls.users = {
             "member": cls.member,
             "corp": cls.corp_manager,
             "fc": cls.fc,
             "lead": cls.lead,
+            STATS: cls.stats_manager,
         }
 
         cls.fc_main = f.main_of(cls.fc)
@@ -421,23 +430,25 @@ class PermissionMatrixTests(FleetOpsViewTestCase):
             Case("edit_operation credited", "get",
                  r("fleetops:edit_operation", args=[self.credited_closed.uuid]), None,
                  {"member": DENIED, "corp": DENIED, "fc": OK, "lead": OK}),
-            Case("my_statistics", "get", r("fleetops:my_statistics"), None, dict.fromkeys(ROLES, OK)),
+            Case("my_statistics", "get", r("fleetops:my_statistics"), None, {**dict.fromkeys(ROLES, OK), STATS: OK}),
             Case("corporation_statistics", "get", r("fleetops:corporation_statistics"), None,
-                 {"member": DENIED, "corp": OK, "fc": DENIED, "lead": OK}),
+                 {"member": DENIED, "corp": OK, "fc": DENIED, "lead": OK, STATS: DENIED}),
             Case("corporation_statistics_detail", "get",
-                 r("fleetops:corporation_statistics_detail", args=[f.DEFAULT_CORP[0]]), None, member_only),
-            Case("all_corporation_statistics", "get", r("fleetops:all_corporation_statistics"), None, member_only),
-            Case("all_fc_statistics", "get", r("fleetops:all_fc_statistics"), None, member_only),
+                 r("fleetops:corporation_statistics_detail", args=[f.DEFAULT_CORP[0]]), None,
+                 {**member_only, STATS: OK}),
+            Case("all_corporation_statistics", "get", r("fleetops:all_corporation_statistics"), None,
+                 {**member_only, STATS: OK}),
+            Case("all_fc_statistics", "get", r("fleetops:all_fc_statistics"), None, {**member_only, STATS: OK}),
             Case("fc_statistics_detail", "get", r("fleetops:fc_statistics_detail", args=[self.fc.pk]), None,
-                 {"member": HIDDEN, "corp": HIDDEN, "fc": OK, "lead": OK}),
+                 {"member": HIDDEN, "corp": HIDDEN, "fc": OK, "lead": OK, STATS: OK}),
             Case("manual_attendance", "get", r("fleetops:manual_attendance"), None,
                  {"member": DENIED, "corp": DENIED, "fc": OK, "lead": OK}),
             Case("attendance_history_me", "get", r("fleetops:attendance_history_me"), None,
-                 dict.fromkeys(ROLES, OK)),
+                 {**dict.fromkeys(ROLES, OK), STATS: OK}),
             Case("attendance_history_corporation", "get", r("fleetops:attendance_history_corporation"), None,
-                 {"member": DENIED, "corp": OK, "fc": DENIED, "lead": OK}),
+                 {"member": DENIED, "corp": OK, "fc": DENIED, "lead": OK, STATS: DENIED}),
             Case("attendance_history_alliance", "get", r("fleetops:attendance_history_alliance"), None,
-                 member_only),
+                 {**member_only, STATS: OK}),
             Case("audit_log", "get", r("fleetops:audit_log"), None, member_only),
             Case("incentive_review", "get", r("fleetops:incentive_review"), None, member_only),
             Case("configuration_index", "get", r("fleetops:configuration_index"), None, member_only),
@@ -519,7 +530,84 @@ class PermissionMatrixTests(FleetOpsViewTestCase):
         ]
         cases += self.pap_rule_cases(own_and_other, member_only, lead_post)
         cases += self.fleet_tab_cases(lead_post)
+        cases += self.statistics_cases()
         return cases
+
+    def statistics_cases(self):
+        """Member lists, leaderboard, member details and exports of the statistics."""
+        r = reverse
+        unknown_corporation = 2_999_999
+        stats_pages = {"member": DENIED, "corp": DENIED, "fc": DENIED, "lead": OK, STATS: OK}
+        corporation_pages = {"member": DENIED, "corp": OK, "fc": DENIED, "lead": OK, STATS: DENIED}
+        everyone = {**dict.fromkeys(ROLES, OK), STATS: OK}
+        nobody = dict.fromkeys((*ROLES, STATS), HIDDEN)
+        csv = {"format": "csv"}
+
+        def member_detail(label, target, expected):
+            return Case(f"member_detail {label}", "get", r("fleetops:member_detail", args=[target.pk]), None, expected)
+
+        def export(label, dataset, expected, **params):
+            return Case(f"export {label}", "get", r("fleetops:export", args=[dataset]), {**csv, **params}, expected)
+
+        return [
+            Case("alliance_members", "get", r("fleetops:alliance_members"), None, stats_pages),
+            Case("alliance_members inactive", "get", r("fleetops:alliance_members"),
+                 {"status": "inactive", "sort": "pap", "q": "main", "corporation": str(f.OTHER_CORP[0])}, stats_pages),
+            Case("alliance_members invalid filters", "get", r("fleetops:alliance_members"),
+                 {"status": "zzz", "sort": "-;--", "page": "abc", "corporation": "x", "year": "99999", "month": "13"},
+                 stats_pages),
+            Case("corporation_members", "get", r("fleetops:corporation_members"), None, corporation_pages),
+            Case("corporation_members inactive", "get", r("fleetops:corporation_members"),
+                 {"status": "inactive", "q": "main"}, corporation_pages),
+            Case("corporation_members_detail own", "get",
+                 r("fleetops:corporation_members_detail", args=[f.DEFAULT_CORP[0]]), None, stats_pages),
+            Case("corporation_members_detail other", "get",
+                 r("fleetops:corporation_members_detail", args=[f.OTHER_CORP[0]]), None, stats_pages),
+            Case("corporation_members_detail unknown", "get",
+                 r("fleetops:corporation_members_detail", args=[unknown_corporation]), None,
+                 {"member": DENIED, "corp": DENIED, "fc": DENIED, "lead": HIDDEN, STATS: HIDDEN}),
+            # Members see themselves; a corporation manager sees the members of the own corporation.
+            Case("member_detail self", "get", lambda user: r("fleetops:member_detail", args=[user.pk]), None,
+                 dict.fromkeys((*ROLES, STATS), REDIRECT)),
+            member_detail("same corporation", self.member,
+                          {"member": REDIRECT, "corp": OK, "fc": HIDDEN, "lead": OK, STATS: OK}),
+            member_detail("other corporation", self.outsider,
+                          {"member": HIDDEN, "corp": HIDDEN, "fc": HIDDEN, "lead": OK, STATS: OK}),
+            member_detail("without a main", self.no_main, nobody),
+            Case("member_detail unknown", "get", r("fleetops:member_detail", args=[99_999_999]), None, nobody),
+            # Default setting: everybody with FleetOps access sees the leaderboard.
+            Case("leaderboard", "get", r("fleetops:leaderboard"), None, everyone),
+            Case("leaderboard corporation", "get", r("fleetops:leaderboard"),
+                 {"corporation": str(f.OTHER_CORP[0])}, everyone),
+            export("corporations", "corporations", stats_pages),
+            export("corporations xlsx", "corporations", stats_pages, **{"format": "xlsx"}),
+            export("corporations sorted", "corporations", stats_pages, sort="-average", year="2026", month="3"),
+            export("members alliance", "members", stats_pages),
+            export("members filtered", "members", stats_pages, status="inactive", q="main", sort="pap"),
+            export("members own corporation", "members",
+                   {"member": DENIED, "corp": OK, "fc": DENIED, "lead": OK, STATS: OK},
+                   corporation=str(f.DEFAULT_CORP[0])),
+            export("members other corporation", "members",
+                   {"member": DENIED, "corp": HIDDEN, "fc": DENIED, "lead": OK, STATS: OK},
+                   corporation=str(f.OTHER_CORP[0])),
+            export("member-fleets", "member-fleets",
+                   {"member": OK, "corp": OK, "fc": HIDDEN, "lead": OK, STATS: OK}, user=str(self.member.pk)),
+            export("member-fleets other corporation", "member-fleets",
+                   {"member": HIDDEN, "corp": HIDDEN, "fc": HIDDEN, "lead": OK, STATS: OK},
+                   user=str(self.outsider.pk)),
+            export("member-fleets without a user", "member-fleets", nobody),
+            export("fcs", "fcs", stats_pages),
+            export("attendance me", "attendance", everyone, scope="me"),
+            export("attendance corporation", "attendance", corporation_pages, scope="corporation"),
+            export("attendance alliance", "attendance", stats_pages, scope="alliance"),
+            export("attendance month", "attendance", stats_pages, scope="alliance", year="2026", month="3"),
+            export("incentives", "incentives",
+                   {"member": DENIED, "corp": DENIED, "fc": DENIED, "lead": OK, STATS: DENIED},
+                   period=str(self.period.pk)),
+            export("unknown dataset", "no-such-dataset", nobody),
+            export("unsupported format", "corporations", nobody, **{"format": "pdf"}),
+            Case("export without format", "get", r("fleetops:export", args=["corporations"]), None, nobody),
+        ]
 
     def fleet_tab_cases(self, lead_post):
         r = reverse
@@ -645,6 +733,8 @@ class PermissionMatrixTests(FleetOpsViewTestCase):
         user = self.users[role]
         client = self.client_for(user)
         for case in self.cases():
+            if role not in case.expected:
+                continue
             with self.subTest(role=role, case=case.label):
                 response = self.perform(client, case, user)
                 self.assert_expected(response, case.expected[role], f"{role}: {case.label}")
@@ -684,6 +774,9 @@ class PermissionMatrixTests(FleetOpsViewTestCase):
     def test_fc_lead_matrix(self):
         self.run_matrix("lead")
 
+    def test_statistics_manager_matrix(self):
+        self.run_matrix(STATS)
+
     def test_post_only_endpoints_reject_get(self):
         client = self.client_for(self.lead)
         for case in self.cases():
@@ -700,6 +793,106 @@ class PermissionMatrixTests(FleetOpsViewTestCase):
         self.other_active.refresh_from_db()
         self.assertEqual(self.other_active.status, ACTIVE)
         self.kick.assert_not_called()
+
+
+class StatisticsRouteTests(FleetOpsViewTestCase):
+    """Access rules of the member, leaderboard and export routes beyond the matrix."""
+
+    def get(self, user, name, *args, **params):
+        return self.client_for(user).get(reverse(f"fleetops:{name}", args=args), params)
+
+    def call(self, view, user, *args):
+        """Run a view for ``user`` without the Alliance Auth URL checks (users without a main never reach it)."""
+        request = RequestFactory().get("/fleetops/statistics/")
+        request.user = user
+        return view(request, *args)
+
+    def test_corporation_manager_without_a_main_has_no_own_corporation(self):
+        nomad = f.create_user("nomad", perms=f.CORP_MANAGEMENT_PERMS, with_main=False)
+
+        with self.assertRaises(Http404):
+            self.call(views_members.corporation_members_view, nomad)
+        with self.assertRaises(Http404):
+            self.call(views_statistics.corporation_statistics_view, nomad)
+
+    def test_users_without_a_main_are_sent_to_the_dashboard(self):
+        nomad = f.create_user("nomad", perms=f.CORP_MANAGEMENT_PERMS, with_main=False)
+
+        response = self.get(nomad, "alliance_members")
+
+        self.assertEqual((response.status_code, response["Location"]), (302, "/dashboard/"))
+
+    def test_member_detail_of_oneself_goes_to_my_statistics_with_the_month(self):
+        response = self.get(self.member, "member_detail", self.member.pk, year="2025", month="7")
+
+        self.assertRedirects(
+            response, reverse("fleetops:my_statistics") + "?year=2025&month=7", fetch_redirect_response=False
+        )
+
+    def test_member_detail_of_oneself_uses_the_current_month_by_default(self):
+        response = self.get(self.member, "member_detail", self.member.pk, year="oops")
+
+        year, month = timezone.now().year, timezone.now().month
+        self.assertRedirects(
+            response, reverse("fleetops:my_statistics") + f"?year={year}&month={month}", fetch_redirect_response=False
+        )
+
+    def test_member_detail_is_for_members_of_the_population_only(self):
+        disabled = f.member("disabled", perms=f.MEMBER_PERMS, active=False)
+        biomassed = f.member("biomassed", perms=f.MEMBER_PERMS, corporation=f.DOOMHEIM_CORP)
+
+        for user in (disabled, biomassed, self.no_main):
+            with self.subTest(user=user.username):
+                self.assertEqual(self.get(self.lead, "member_detail", user.pk).status_code, 404)
+                self.assertEqual(self.get(self.stats_manager, "member_detail", user.pk).status_code, 404)
+
+    def test_departed_members_have_no_page(self):
+        f.settings(history_alliance_ids=str(f.DEFAULT_ALLIANCE[0]))
+        departed = f.member("departed", perms=f.MEMBER_PERMS, alliance=f.FOREIGN_ALLIANCE)
+
+        self.assertEqual(self.get(self.lead, "member_detail", departed.pk).status_code, 404)
+        self.assertEqual(self.get(self.lead, "member_detail", self.member.pk).status_code, 200)
+
+    def test_corporation_manager_does_not_open_another_corporations_members(self):
+        self.assertEqual(self.get(self.corp_manager, "member_detail", self.outsider.pk).status_code, 404)
+        self.assertEqual(self.get(self.corp_manager, "member_detail", self.member.pk).status_code, 200)
+        self.assertEqual(
+            self.get(self.corp_manager, "corporation_members_detail", f.OTHER_CORP[0]).status_code, 403
+        )
+
+    def test_leaderboard_visibility_setting(self):
+        expected = {
+            "members": {self.member: 200, self.fc: 200, self.corp_manager: 200, self.stats_manager: 200, self.lead: 200},
+            "managers": {self.member: 403, self.fc: 403, self.corp_manager: 200, self.stats_manager: 200, self.lead: 200},
+        }
+        for visibility, statuses in expected.items():
+            f.settings(leaderboard_visibility=visibility)
+            for user, status in statuses.items():
+                with self.subTest(visibility=visibility, user=user.username):
+                    self.assertEqual(self.get(user, "leaderboard").status_code, status)
+
+    def test_corporation_manager_without_a_corporation_has_no_leaderboard_when_it_is_for_managers_only(self):
+        f.settings(leaderboard_visibility="managers")
+        nomad = f.create_user("nomad", perms=f.CORP_MANAGEMENT_PERMS, with_main=False)
+
+        with self.assertRaises(PermissionDenied):
+            self.call(views_members.leaderboard_view, nomad)
+
+    def test_exports_are_get_only(self):
+        client = self.client_for(self.lead)
+        url = reverse("fleetops:export", args=["corporations"])
+
+        for method in ("post", "put", "patch", "delete"):
+            with self.subTest(method=method):
+                self.assertEqual(getattr(client, method)(url, {"format": "csv"}).status_code, 405)
+
+    def test_navigation_flag_matches_the_leaderboard_access(self):
+        for visibility, member_sees in (("members", True), ("managers", False)):
+            f.settings(leaderboard_visibility=visibility)
+            with self.subTest(visibility=visibility):
+                response = self.get(self.member, "fleet_operations")
+                self.assertEqual(response.context["leaderboard_visible"], member_sees)
+                self.assertEqual(self.get(self.corp_manager, "fleet_operations").context["leaderboard_visible"], True)
 
 
 class ObjectIsolationTests(FleetOpsViewTestCase):

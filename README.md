@@ -49,9 +49,11 @@ The repository includes the full expected feature target and an explicit distinc
 - Per-fleet statistics inclusion: exclude a test fleet, and leave fleets shorter than the **Minimum fleet duration** out of statistics and incentives.
 - Personal **start presets** on Fleet Start.
 - Optional aa-charlink integration for the fleet and PAP link scopes.
-- Member statistics.
-- Corporation statistics where **Average Attendance = Total Granted Attendance / Main Character Count**.
-- Alliance-wide corporation and FC statistics for users with `view_all_stats`.
+- Member statistics, a PAP rank and the monthly minimum on **My Statistics**.
+- Corporation statistics where **Average PAP = the corporation's total PAP / its main characters**, with a monthly target per month (green, amber or red).
+- Alliance-wide corporation, member, inactive-member and FC statistics for users with `view_all_stats`; a corporation manager sees the members of the own corporation.
+- A PAP leaderboard of the alliance and of the own corporation.
+- Excel and CSV exports of the corporations, members, member fleets, FC statistics, PAP history and FC incentive pages, and a PAP history with a month filter.
 - FC monthly incentive calculation, eligibility threshold, weights, waiver, review/finalize/unlock.
 - 3-jump Fleet Proximity view when `eve_sde` Stargate data is available.
 - Automatic fleet end only after repeated unreadable polls, not on transient ESI errors. Each poll that gets a 404 checks the FC's own fleet: if the FC is still in the same fleet but someone else holds the boss role, it counts as a **boss handover**, otherwise as **fleet gone** (disbanded, or the FC left it). A successful read resets the count, so handing the boss back in time keeps the fleet open. Before ending, FleetOps reads the fleet once more and calls the end off if that read works. The fleet page warns while polls fail, and a closed fleet shows why it ended ("Ended manually", "Ended automatically: the fleet no longer exists or the FC left it", "Ended automatically: fleet boss handed over to <name>").
@@ -277,15 +279,7 @@ Confirm the Members tab shows **Time in fleet** growing with each poll and that 
 
 ## 8. Statistics
 
-Corporation average attendance is intentionally simple:
-
-```text
-Corporation Average Attendance
-= Corporation Total Granted Attendance
-/ Corporation Main Character Count
-```
-
-Alt count does not change the denominator.
+Open **My Statistics** and the corporation pages for a month with PAP (see [Statistics](#statistics) for the rules). Set a **Monthly Target** (FleetOps Administration → Monthly Targets) and check that a finished month is green or red and the running month amber or green; open **Inactive** as a corporation manager (own corporation only), the **Leaderboard** as a member, and download an Excel and a CSV file.
 
 ---
 
@@ -297,7 +291,7 @@ FleetOps can automatically create/link an SRP fleet at Fleet Start when a suppor
 
 ## Attendance history
 
-`data_retention_days` must be between 365 and 36500 days. Configure `history_alliance_ids` in FleetOps Administration if departed Alliance Auth users should immediately disappear from history/statistics. Run/schedule:
+`data_retention_days` must be between 365 and 36500 days. Configure **Member alliance IDs** (`history_alliance_ids`) in FleetOps Administration if departed Alliance Auth users should immediately disappear from history/statistics. Run/schedule:
 
 ```bash
 python manage.py fleetops_prune_history --dry-run
@@ -459,6 +453,58 @@ A fleet counts in member, corporation and FC statistics and in FC incentives whe
 
 Every change is audited as `fleet.stats_mode`; the fleet archive marks fleets that do not count with "Not counted".
 
+## Statistics
+
+Every statistics page and export follows one set of rules.
+
+- **Months are EVE months.** A month runs from the 1st 00:00 UTC to the 1st 00:00 UTC of the next month, whatever `TIME_ZONE` Alliance Auth uses and whatever time zone the browser has. A fleet belongs to the month it started in; a fleet that starts at 23:30 UTC on the 31st and ends after midnight counts in the month it started. All displayed times are EVE time.
+- **PAP counts** when it is granted, approved and the fleet is closed, approved and not excluded (see [Counting in statistics](#counting-in-statistics)). Active, waiting, rejected, excluded and too short fleets never count; management pages show how many fleets were left out of the month.
+- **Statistics are on the main character.** PAP earned by an alt belongs to the main of its owner, also when the alt is in another corporation or alliance.
+- **Members** are active Alliance Auth users with a main character that is not in Doomheim (biomassed). When **Member alliance IDs** is set, their main must be in one of those alliances. Alts never count as members, and a member's corporation is the corporation of the current main. Disabled accounts, users without a main and biomassed mains are not members; departed members disappear from every page and export.
+- **Corporation total** = the PAP earned while the main was in the corporation (the corporation at PAP time). **Average PAP** = that total divided by the corporation's current main characters, alts not counted. PAP earned in corporations without members (left the alliance, NPC corporations) is listed in one **Other corporations** row, so the figures add up to the alliance total.
+- **Member lists** (members, inactive, leaderboard per corporation) show the current members of a corporation with all their PAP of the month. A member who changed corporation in the month appears with all their PAP in the new corporation's list, while the old corporation's total keeps the PAP earned there.
+- **Rank**: competition ranking by the member's PAP (1, 2, 2, 4); members without PAP have no rank.
+- **Member alliance IDs** (FleetOps Administration → General Settings, formerly "History alliance IDs"): set it to your alliance ID (comma-separated for several). With it empty every Alliance Auth user with a main character counts as a member and the corporation overview shows a hint; with it set, only your alliance's members count and the history of departed members can be pruned.
+
+### Monthly Targets
+
+FleetOps Administration → **Monthly Targets** holds, per month, the **corporation average target** (average PAP per main character a corporation needs, empty = no target) and the **member minimum PAP** (default 1, 0 = nobody is listed as inactive). An entry applies from its month until the next entry, so setting a target for the future never recolours finished months; edit the older entry to change the past. Without an entry there is no corporation status and the member minimum is 1.
+
+A corporation meets the target when its total PAP is at least the target times its mains (exact arithmetic, no rounding). The colours follow the same rule for corporations and members:
+
+| | Reached | Not reached |
+|---|---|---|
+| Month still running | green: **Target met** / **OK** | amber: **Not reached yet** / **Below minimum so far** |
+| Finished month | green | red: **Below target** / **Below minimum** |
+
+The label is always written out; the colour is never the only signal. A future month has no status.
+
+### Pages
+
+| Page | Who | What |
+|---|---|---|
+| **My Statistics** | everyone with FleetOps access | personal totals, the monthly minimum (OK or below), the PAP rank when the leaderboard is visible to you |
+| **Corporation** (Statistics, Members, Inactive, History) | `view_corp_stats` (own corporation) | total PAP, average against the target, mains with PAP, members below the minimum, PAP per fleet type; the members of the corporation with their PAP; the inactive list |
+| **Alliance → All Corps** | `view_all_stats` | every corporation with status, sortable; links to each corporation's page and members; fleets not counted this month |
+| **Alliance → Members / Inactive** | `view_all_stats` | all members of the alliance, filter by corporation, status and name |
+| **Alliance → FC Stats** | `view_all_stats` | fleets and FC points (fleet type weight times PAP multiplier) per FC |
+| **Member page** | `view_all_stats`, `view_corp_stats` for the own corporation, the member | the fleets of the month, characters used, ranks; fleet links need `view_all_fleets` or `manage_fleets` |
+| **Leaderboard** | see below | top places of the month for the alliance and for one corporation |
+
+Members and inactive lists have 100 rows per page; filters, sorting and the month stay when you page or change the month. **Inactive** is the members list with the members below the member minimum.
+
+### Leaderboard
+
+**Leaderboard places** (3 to 100, default 20) in General Settings sets how many places are shown; members tied on the last place are all shown, and a viewer outside the shown places sees their own rank. **Leaderboard visibility** chooses who sees it: **Everyone with FleetOps access** (default) shows the alliance board and the viewer's own corporation board; **Statistics managers only** limits it to `view_corp_stats` (own corporation) and `view_all_stats` (the alliance and any corporation). Without access the menu entry is hidden and the page answers 403.
+
+### Exports
+
+Corporations, members, a member's fleets, FC statistics, PAP history and FC incentive periods have **Excel** and **CSV** buttons. A file holds what the page shows for the same month and filters. CSV is UTF-8 with a byte order mark, so Excel and WPS read Chinese names without an import dialog; text that starts with `=`, `+`, `-` or `@` is written with a leading apostrophe. The Excel file needs no add-on and carries an **About** sheet (dataset, scope, month, export time in EVE time, who exported, filters, target, member minimum and the counting rule). Files stop at 200000 rows with a note on the last row. Permissions: corporations and FC statistics need `view_all_stats`; members need `view_all_stats`, or `view_corp_stats` for the own corporation; the PAP history needs the permission of its page (own, corporation, alliance); incentive periods need `manage_incentives`. Every download is audited as `statistics.export`.
+
+### PAP history
+
+My History, the corporation history and the alliance history list the PAP rows within the retention period with a month filter (**All retained**, a month, previous and next month); paging, the month and the export links stay together. A corporation history lists the PAP earned while the main was in the corporation.
+
 ## Approvals
 
 Manual fleets, manual PAP rows, pasted rosters and PAP-link fleets created by users without `fleetops.manage_fleets` are "Pending FC lead approval" and do not count until approved; an FC lead's own entries are approved at once. FC leads find them under **Approvals** (with a count in the menu) and on the fleet page. A rejection needs a note; approving a fleet can approve its waiting PAP rows with it. When an FC changes the times of an approved fleet, ESI-tracked fleets included, or the fleet type of an approved manual or PAP-link fleet, it goes back to pending: the multiplier tiers and the minimum fleet duration are measured from the times. The Approvals page marks tracked fleets with "Times edited" and shows the multiplier of closed fleets. FCs can delete their own manual PAP until it is approved; approved rows are deleted by FC leads.
@@ -566,6 +612,8 @@ The PAP rules (see [PAP rules](#pap-rules)) change how PAP and FC points are cou
 - Enable the three `esi-location.*` scopes in your EVE SSO application for PAP links, and add `"fleetops"` literally to `INSTALLED_APPS` if you use aa-charlink.
 - Exclude old test fleets from statistics with **Do not count** on their fleet pages; **Minimum fleet duration** applies only to fleets that close after it is set.
 - Ping channel webhook URLs are no longer shown; keep a copy of a URL elsewhere if you need it.
+- Statistics are counted in EVE time (UTC) from this release; totals of months with fleets near midnight UTC on the edge of a month can differ from earlier versions. Disabled accounts, users without a main and biomassed mains no longer count as members.
+- Set **Member alliance IDs** in General Settings and add your first **Monthly Targets** (see [Statistics](#statistics)).
 
 ---
 

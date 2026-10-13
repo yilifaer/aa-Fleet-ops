@@ -52,3 +52,11 @@ class PackageDataTests(SimpleTestCase):
         self.assertTrue(any(path.name == "form.html" and path.parent.name == "configuration" for path in files))
         missing = sorted(str(path.relative_to(PACKAGE_DIR)) for path in files if path not in packaged)
         self.assertEqual(missing, [], "Files not covered by [tool.setuptools.package-data]")
+
+    def test_statistics_templates_are_packaged(self):
+        packaged = packaged_files(package_data_globs())
+        folder = PACKAGE_DIR / "templates" / "fleetops" / "statistics"
+        templates = {path.resolve() for path in folder.glob("*.html")}
+
+        self.assertTrue({"_tabs.html", "_status_badge.html", "_export_buttons.html"} <= {p.name for p in templates})
+        self.assertEqual(templates - packaged, set())

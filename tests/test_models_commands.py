@@ -990,6 +990,7 @@ class AdminTests(TestCase):
         FleetStartPreset.objects.create(owner=cls.fc, name="Roam", values={"fields": {"formup": "Jita"}})
         period = IncentivePeriod.objects.create(year=2026, month=9)
         MonthlyFCStatistic.objects.create(period=period, fc_user=cls.fc)
+        f.statistics_target(2026, 9, "2.50")
         AuditLog.objects.create(
             actor=cls.fc,
             action="configuration.update",
@@ -1062,6 +1063,8 @@ class AdminTests(TestCase):
             "minimum_fleet_minutes": 0,
             "pap_link_minutes": 30,
             "bridge_excluded_group_ids": "30,485",
+            "leaderboard_size": 20,
+            "leaderboard_visibility": "members",
             "fleet_live_refresh_seconds": 15,
         }
         url = self._url(FleetOpsSettings, "change", 1)

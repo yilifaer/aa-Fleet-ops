@@ -20,6 +20,7 @@ from fleetops.forms_config import (
     FleetTypeForm,
     MessageTemplateForm,
     PingRoleForm,
+    StatisticsTargetForm,
 )
 from fleetops.forms_fleet import FleetStructureTemplateForm, ShipFunctionForm, ShipFunctionRuleForm
 from fleetops.forms_pap import MultiplierTierForm
@@ -38,6 +39,7 @@ from fleetops.models import (
     ShipFunction,
     ShipFunctionRule,
     SpecialRole,
+    StatisticsTarget,
 )
 from fleetops.services import discord_roles, links
 from fleetops.services.audit import audit, cascaded_config_rows, config_snapshot
@@ -69,6 +71,19 @@ CONFIG_SECTIONS = {
         "columns": [
             ("Longer than (minutes)", "threshold_minutes"),
             ("PAP multiplier", "multiplier"),
+        ],
+    },
+    "statistics-targets": {
+        "title": "Monthly Targets",
+        "description": "Corporation average PAP target and member minimum. Each entry applies from its month "
+        "(EVE time) until the next entry.",
+        "model": StatisticsTarget,
+        "form": StatisticsTargetForm,
+        "columns": [
+            ("From", "effective_from"),
+            ("Corporation average target", "corporation_average_target"),
+            ("Member minimum PAP", "member_minimum_pap"),
+            ("Note", "note"),
         ],
     },
     "special-roles": {

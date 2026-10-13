@@ -34,6 +34,7 @@ from fleetops.models import (
     ShipFunction,
     ShipFunctionRule,
     SpecialRole,
+    StatisticsTarget,
 )
 from fleetops.services.fleet_rules import normalize_wings
 
@@ -65,6 +66,9 @@ FC_LEAD_PERMS = [
 
 DEFAULT_CORP = (2_000_001, "Test Corp One")
 OTHER_CORP = (2_000_002, "Test Corp Two")
+# Characters in this corporation were biomassed.
+DOOMHEIM_CORP = (1_000_001, "Doomheim")
+THIRD_CORP = (2_000_003, "Test Corp Three")
 DEFAULT_ALLIANCE = (3_000_001, "Test Alliance")
 FOREIGN_ALLIANCE = (3_000_999, "Foreign Alliance")
 
@@ -119,6 +123,36 @@ def create_user(
         add_ownership(user, main)
     if perms:
         user = AuthUtils.add_permissions_to_user_by_name(perms, user)
+    return user
+
+
+def member(
+    username: str | None = None,
+    *,
+    corporation: tuple[int, str] = DEFAULT_CORP,
+    alliance: tuple[int, str] | None = DEFAULT_ALLIANCE,
+    active: bool = True,
+    perms: list[str] | None = None,
+    main_name: str | None = None,
+    with_main: bool = True,
+    joined=None,
+):
+    """A user as the statistics see members: main character in a corporation and alliance, account active or not.
+
+    ``corporation=DOOMHEIM_CORP`` makes a biomassed main, ``with_main=False`` a user without any main.
+    """
+    user = create_user(
+        username, perms=perms, main_name=main_name, corporation=corporation, alliance=alliance, with_main=with_main
+    )
+    changed = []
+    if not active:
+        user.is_active = False
+        changed.append("is_active")
+    if joined is not None:
+        user.date_joined = joined
+        changed.append("date_joined")
+    if changed:
+        user.save(update_fields=changed)
     return user
 
 
@@ -251,6 +285,11 @@ def create_operation(
     return FleetOperation.objects.create(**defaults)
 
 
+def closed_operation(fc_user, started_at=None, **extra) -> FleetOperation:
+    """A closed fleet that counts in the statistics; it ends an hour after it started unless ``ended_at`` is given."""
+    return create_operation(fc_user, status=FleetOperation.Status.CLOSED, started_at=started_at, **extra)
+
+
 def create_scheduled_operation(fc_user, scheduled_at=None, **extra) -> FleetOperation:
     """A pre-pinged fleet waiting for its FC to start it (``scheduled_at`` defaults to an hour ahead)."""
     return create_operation(
@@ -334,6 +373,19 @@ def special_role(name: str | None = None, *, key: str = "", grants_fc_credit: bo
         setattr(role, field, value)
     role.save()
     return role
+
+
+def statistics_target(
+    year: int, month: int, average: str | Decimal | None = None, *, minimum: int = 1, note: str = ""
+) -> StatisticsTarget:
+    """A monthly target that applies from ``year``-``month``; ``average`` None = no corporation target."""
+    return StatisticsTarget.objects.create(
+        year=year,
+        month=month,
+        corporation_average_target=None if average is None else Decimal(str(average)),
+        member_minimum_pap=minimum,
+        note=note,
+    )
 
 
 def owner_of(character_id: int):

@@ -12,8 +12,8 @@ FleetOps permissions are designed to be assigned through normal Alliance Auth gr
 | `fleetops.view_all_fleets` | Read the full fleet archive and open all Fleet Operation records, including scheduled fleets, the member list of running fleets and their Fleet tab (read-only). Does not grant edit/control rights. |
 | `fleetops.create_manual_fleet` | Create a manual/historical fleet record without ESI tracking. |
 | `fleetops.manage_fleets` | Manage every Fleet Operation, regardless of FC, including editing and cancelling any scheduled fleet and fleet management on the Fleet tab of any running fleet. It does not allow starting another FC's scheduled fleet. FC lead rights of the PAP rules: approve or reject manual fleets, manual PAP, pasted rosters, PAP-link fleets and edited fleet times (the user's own entries and edits are approved at once); set a PAP multiplier beyond the duration rule with a written reason; count a fleet in statistics anyway or undo an exclusion; delete approved manual PAP. |
-| `fleetops.view_corp_stats` | View the user's own corporation statistics and corporation attendance history. |
-| `fleetops.view_all_stats` | View alliance-wide corporation and FC statistics/history. Statistics only: opening Fleet Operation records needs `view_all_fleets` or `manage_fleets`. |
+| `fleetops.view_corp_stats` | View the user's own corporation: statistics, members, inactive members, member pages, PAP history and the exports of that corporation. See [Statistics](#statistics). |
+| `fleetops.view_all_stats` | View alliance-wide statistics: every corporation, the alliance members and inactive pages, every member page, FC statistics, PAP history, the leaderboard and all statistics exports. Statistics only: opening Fleet Operation records needs `view_all_fleets` or `manage_fleets`. |
 | `fleetops.manage_attendance` | Add manual PAP (by name, ID or pasted roster) and delete the user's own entries until an FC lead approved them, recalculate PAP and change the PAP multiplier of closed fleets within the duration rule, on fleets the user is allowed to manage; with `manage_fleets`, applies alliance-wide and any entry can be deleted. |
 | `fleetops.manage_incentives` | Manage monthly FC incentive periods, waivers, recalculation, finalization and unlock. The FC Incentive pages are only available while **Incentive enabled** is ticked in FleetOps Administration → General Settings, which is off by default on new installs. |
 | `fleetops.manage_configuration` | Use FleetOps front-end Administration for fleet types, comms presets, Logi/Boost channels, ping channels, ping roles (including **Sync roles from Discord**), PAP multiplier tiers, special roles, ship functions and their rules, fleet structure templates, templates and settings. Classify a ship from the composition of a fleet the user can open. |
@@ -29,6 +29,7 @@ Capabilities:
 
 - View own attendance / fleet participation records.
 - View own attendance history.
+- See the PAP leaderboard of the alliance and of their own corporation (the default of **Leaderboard visibility**), their monthly minimum and their rank on My Statistics.
 - Open Fleet Operations in which the member has a granted attendance record or assigned special role, and running fleets the member is tracked in or registered for by PAP link (seeing only their own characters until the fleet closes).
 - See "PAP in running fleets" on the dashboard and My Statistics.
 - Register their own characters through a PAP link.
@@ -43,8 +44,11 @@ Member permissions plus:
 Capabilities:
 
 - Everything a Member can do.
-- View own corporation monthly statistics.
-- View own corporation historical attendance.
+- View own corporation monthly statistics against the monthly target.
+- View the members of the own corporation, the inactive list and the page of each member of the own corporation.
+- View the own corporation's PAP history.
+- Download the members and the PAP history of the own corporation as Excel or CSV.
+- A corporation manager never sees another corporation's members, member pages or exports. The pages that need `view_all_stats` (the alliance members list, and a corporation's page or members list by its ID, including the own corporation's) answer 403; the member page of another corporation and its members or member-fleets export answer 404.
 
 ### FC
 
@@ -96,6 +100,29 @@ Grant **all FleetOps permissions**:
 - `fleetops.view_audit_log`
 
 Capabilities include all fleet operations, all statistics, attendance management, approvals, multiplier overrides, FC incentives (once **Incentive enabled** is ticked in the FleetOps settings), configuration, and audit review.
+
+## Statistics
+
+| Action | Who |
+|---|---|
+| My Statistics, My History, the monthly minimum and the rank card | `fleetops.basic_access`. |
+| Leaderboard | `fleetops.basic_access` and **Leaderboard visibility**: with **Everyone with FleetOps access** (default) every user sees the alliance board and the board of their own corporation, `view_all_stats` also any corporation's board; with **Statistics managers only** `view_corp_stats` sees the own corporation's board and `view_all_stats` the alliance and any corporation. A user without access gets 403 and no menu entry. The rank card on My Statistics follows the same setting. |
+| Own corporation: Statistics, Members, Inactive, History | `fleetops.view_corp_stats`. A user without a main character gets 404. |
+| One member's page | The member (redirected to My Statistics), `view_corp_stats` for members whose main is in the own corporation, `view_all_stats` for every member. Members outside the statistics (no main, disabled account, departed from the member alliances) have no page (404). Fleet links on it need `view_all_fleets` or `manage_fleets`. |
+| Alliance: All Corps, any corporation's page and members list, Members, Inactive, FC Stats, PAP History | `fleetops.view_all_stats`. |
+| Monthly Targets, Leaderboard places, Leaderboard visibility, Member alliance IDs | `fleetops.manage_configuration`. Every change is audited. |
+
+Exports (`/fleetops/statistics/export/<dataset>/?format=xlsx|csv`):
+
+| Dataset | Who |
+|---|---|
+| `corporations`, `fcs` | `view_all_stats` |
+| `members` | `view_all_stats` for the alliance or any corporation (`corporation=<id>`); `view_corp_stats` only with the own corporation's ID, any other corporation is 404 |
+| `member-fleets` | whoever may open that member's page (`user=<id>`), otherwise 404 |
+| `attendance` (PAP history) | `scope=me`: `basic_access`; `scope=corporation`: `view_corp_stats` (own corporation); `scope=alliance`: `view_all_stats` |
+| `incentives` | `manage_incentives`, while **Incentive enabled** is ticked |
+
+An unknown dataset or format is 404, only GET is accepted, responses are private and not cached, and every download is audited as `statistics.export` (dataset, scope, month, format and the validated filters; no tokens or secrets).
 
 ## Scheduled fleets (pre pings)
 

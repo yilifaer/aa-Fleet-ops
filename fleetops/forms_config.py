@@ -5,7 +5,7 @@ import uuid
 from urllib.parse import urlsplit
 
 from django import forms
-from django.core.exceptions import ValidationError
+from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
 
 from fleetops.models import (
     MAX_DATABASE_ID,
@@ -17,10 +17,12 @@ from fleetops.models import (
     MessageTemplate,
     PingRole,
     PingTarget,
+    StatisticsTarget,
     validate_discord_webhook_url,
 )
 from fleetops.providers.srp import get_registered_srp_providers
 from fleetops.services.links import extract_ingame_channel_id, extract_link_text, strip_url_userinfo
+from fleetops.services.periods import MONTH_NAMES, current_year_month
 
 SRP_AUTO = "auto"
 SRP_AUTO_LABEL = "Automatic (aasrp, then Alliance Auth SRP)"
@@ -65,7 +67,11 @@ class FleetOpsSettingsForm(forms.ModelForm):
             "Apply to fleets that start after a change; running and closed fleets keep their rules.",
             ["multiplier_mode", "pap_minimum_minutes", "attendance_limit"],
         ),
-        ("Statistics", "", ["minimum_fleet_minutes"]),
+        (
+            "Statistics",
+            "Corporation targets and the member minimum are set under Monthly Targets.",
+            ["minimum_fleet_minutes", "history_alliance_ids", "leaderboard_size", "leaderboard_visibility"],
+        ),
         ("PAP links", "", ["pap_link_minutes"]),
         (
             "Fleet tab",
@@ -86,6 +92,8 @@ class FleetOpsSettingsForm(forms.ModelForm):
             "pap_minimum_minutes",
             "attendance_limit",
             "minimum_fleet_minutes",
+            "leaderboard_size",
+            "leaderboard_visibility",
             "pap_link_minutes",
             "tracking_interval",
             "stale_threshold",
@@ -143,6 +151,35 @@ class FleetTypeForm(forms.ModelForm):
     class Meta:
         model = FleetType
         fields = ["name", "short_name", "point_weight", "is_active", "sort_order"]
+
+
+class StatisticsTargetForm(forms.ModelForm):
+    """A monthly target; it applies from its month (EVE time) until the next entry."""
+
+    month = forms.TypedChoiceField(
+        label="Month",
+        coerce=int,
+        choices=[(number, name) for number, name in enumerate(MONTH_NAMES, start=1)],
+    )
+
+    class Meta:
+        model = StatisticsTarget
+        fields = ["year", "month", "corporation_average_target", "member_minimum_pap", "note"]
+        labels = {"year": "Year"}
+        help_texts = {
+            "year": "The target applies from the first day of this month (EVE time) until the next entry.",
+        }
+        error_messages = {NON_FIELD_ERRORS: {"unique_together": "A target for this month already exists."}}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.pk is None:
+            # A new entry starts with the month that is running now in EVE time.
+            year, month = current_year_month()
+            if self.initial.get("year") is None:
+                self.initial["year"] = year
+            if self.initial.get("month") is None:
+                self.initial["month"] = month
 
 
 class CommsPresetForm(forms.ModelForm):
@@ -330,6 +367,7 @@ class MessageTemplateForm(forms.ModelForm):
 
 for _form_class in (
     FleetTypeForm,
+    StatisticsTargetForm,
     CommsPresetForm,
     ChannelPresetForm,
     DiscordWebhookForm,

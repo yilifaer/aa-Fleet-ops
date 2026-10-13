@@ -951,6 +951,8 @@ class PruneHistoryTests(TestCase):
             "data_retention_days": retention_days,
             "history_alliance_ids": "",
             "srp_provider": "auto",
+            "leaderboard_size": 20,
+            "leaderboard_visibility": "members",
             "fleet_live_refresh_seconds": 15,
             "bridge_excluded_group_ids": DEFAULT_BRIDGE_EXCLUDED_GROUP_IDS,
         }

@@ -1,9 +1,7 @@
-import calendar
 import uuid
 from datetime import timedelta
 
 from allianceauth.authentication.decorators import permissions_required
-from allianceauth.authentication.models import UserProfile
 from allianceauth.services.hooks import get_extension_logger
 from django.contrib import messages
 from django.contrib.auth.decorators import permission_required
@@ -38,7 +36,6 @@ from fleetops.forms import (
 from fleetops.forms_presets import PRESET_FORM_PREFIX, PresetSaveForm
 from fleetops.models import (
     MAX_DATABASE_ID,
-    MIN_RETENTION_DAYS,
     AttendanceRecord,
     AuditLog,
     FleetOperation,
@@ -65,7 +62,6 @@ from fleetops.services.dashboard import dashboard_metrics
 from fleetops.services.errors import log_failure
 from fleetops.services.fleet_controls import CAPSULES, KickRefused, kick_members
 from fleetops.services.identity import get_owned_character
-from fleetops.services.history import current_member_user_ids
 from fleetops.services.incentives import (
     INCENTIVES_DISABLED_MESSAGE,
     WAIVER_LOCKED_MESSAGE,
@@ -96,7 +92,18 @@ from fleetops.services.operations import (
     retry_srp,
     start_fleet,
 )
-from fleetops.services.periods import month_bounds
+from fleetops.services.periods import (
+    MAX_YEAR,
+    MIN_YEAR,
+    MONTH_NAMES,
+    current_year_month,
+    month_bounds,
+    month_ref,
+    parse_year_month,
+    shift_month,
+    year_bounds,
+    year_month_of,
+)
 from fleetops.services.presets import load_preset, save_last_used
 from fleetops.services.review import can_delete_manual_row, is_approver, pending_approval_count
 from fleetops.services.roles import add_role_assignment, delete_role_assignment
@@ -111,13 +118,8 @@ from fleetops.services.scheduling import (
     start_scheduled_fleet as start_scheduled_fleet_service,
     update_scheduled_fleet,
 )
-from fleetops.services.statistics import (
-    attendance_history_queryset,
-    corporation_statistics,
-    fc_operations_queryset,
-    fc_statistics,
-    member_statistics,
-)
+from fleetops.services.stats_access import leaderboard_visible
+from fleetops.services.statistics import fc_statistics
 from fleetops.services.tracking import unreadable_fleet_warning
 
 logger = get_extension_logger(__name__)
@@ -128,8 +130,9 @@ PREVIOUS_ATTEMPTS_SHOWN = 5
 SCHEDULED_OVERDUE_AFTER = timedelta(hours=2)
 SCHEDULED_FLEETS_SHOWN = 20
 NOT_STARTED_MESSAGE = "This fleet has not started; the MOTD and the SRP link are set when it starts."
-HISTORY_PAGE_SIZE = 200
 AUDIT_PAGE_SIZE = 50
+# The query parameters a month selector sets itself.
+PERIOD_PARAMS = ("year", "month", "page")
 # Step messages are written for the fleet page (short ESI texts, error classes), so audit entries may keep them.
 RETRY_AUDIT_MESSAGE_LENGTH = 500
 PENDING_MULTIPLIERS_SHOWN = 20
@@ -144,6 +147,7 @@ def _render(request, template_name, context=None):
         request.user.has_perm("fleetops.manage_incentives")
         and FleetOpsSettings.get_solo().incentive_enabled
     )
+    context["leaderboard_visible"] = leaderboard_visible(request.user)
     if is_approver(request.user):
         context["pending_approval_count"] = pending_approval_count()
     return render(request, template_name, context)
@@ -232,38 +236,72 @@ def _operation_for_user(request, operation_uuid, manage=False):
 
 
 def _year_month(request):
-    now = timezone.now()
-    try:
-        year = int(request.GET.get("year", now.year))
-        month = int(request.GET.get("month", now.month))
-    except (TypeError, ValueError):
-        return now.year, now.month
-    if month < 1 or month > 12 or year < 2003 or year > 2200:
-        return now.year, now.month
-    return year, month
+    """The EVE month a page shows: ``?year=&month=``, else the current month."""
+    return parse_year_month(request.GET)
 
 
 def _period_choices(year, month):
-    now = timezone.now()
+    now_year = current_year_month()[0]
     earliest = (
         FleetOperation.objects.exclude(started_at=None)
         .order_by("started_at")
         .values_list("started_at", flat=True)
         .first()
     )
-    first_year = earliest.year if earliest else now.year
-    first_year = max(2003, min(first_year, now.year))
-    years = list(range(now.year, first_year - 1, -1))
+    first_year = year_month_of(earliest)[0] if earliest else now_year
+    first_year = max(MIN_YEAR, min(first_year, now_year))
+    years = list(range(now_year, first_year - 1, -1))
     if year not in years:
         years.append(year)
         years.sort(reverse=True)
-    months = [(i, calendar.month_name[i]) for i in range(1, 13)]
+    months = list(enumerate(MONTH_NAMES, start=1))
     return {"year_options": years, "month_options": months, "selected_year": year, "selected_month": month}
 
 
-def _period_render_context(year, month, **kwargs):
+def _neighbour_period(year, month, delta):
+    """The month before (-1) or after (+1) as ``{"year", "month", "label"}``; None past the ends.
+
+    There is no link to a month that has not begun in EVE time.
+    """
+    neighbour = shift_month(year, month, delta)
+    if not MIN_YEAR <= neighbour[0] <= MAX_YEAR:
+        return None
+    if delta > 0 and neighbour > current_year_month():
+        return None
+    return {"year": neighbour[0], "month": neighbour[1], "label": f"{neighbour[0]:04d}-{neighbour[1]:02d}"}
+
+
+def _preserved_params(request, names):
+    """``(name, value)`` pairs of the page's filters, kept as hidden inputs by the month selector."""
+    if request is None:
+        return []
+    return [
+        (name, value)
+        for name in names
+        if name not in PERIOD_PARAMS
+        for value in request.GET.getlist(name)
+        if value
+    ]
+
+
+def _period_render_context(year, month, *, request=None, preserve=(), **kwargs):
+    """Context of a page with a month selector.
+
+    ``preserve`` names the query parameters (filters, sort) the selector submits again together with the
+    new month; they are read from ``request``. ``month_ref`` tells whether the month is running, finished
+    or still to come, and ``previous_period`` / ``next_period`` feed the previous and next month links.
+    """
     context = _period_choices(year, month)
-    context.update({"year": year, "month": month})
+    context.update(
+        {
+            "year": year,
+            "month": month,
+            "month_ref": month_ref(year, month),
+            "previous_period": _neighbour_period(year, month, -1),
+            "next_period": _neighbour_period(year, month, 1),
+            "preserved_params": _preserved_params(request, preserve),
+        }
+    )
     context.update(kwargs)
     return context
 
@@ -307,8 +345,7 @@ def dashboard(request):
     if not _can_see_scheduled_fleets(request.user):
         scheduled = scheduled.filter(fc_user=request.user)
     scheduled = scheduled.select_related("fleet_type", "ping_channel").order_by("scheduled_at", "pk")
-    now = timezone.now()
-    fc = fc_statistics(request.user, now.year, now.month, include_active=True)
+    fc = fc_statistics(request.user, *current_year_month(), include_active=True)
     metrics = dashboard_metrics(request.user)
     # Fleets that ended without the FC's multiplier choice, such as after an automatic end.
     pending_multipliers = (
@@ -586,13 +623,13 @@ def authorize_esi(request, token):
 
 @permission_required("fleetops.basic_access", raise_exception=True)
 def fleet_operations_view(request):
-    now = timezone.now()
+    current_year, current_month = current_year_month()
     try:
-        year = int(request.GET.get("year", now.year))
+        year = int(request.GET.get("year", current_year))
     except (TypeError, ValueError):
-        year = now.year
-    if year < 2003 or year > 2200:
-        year = now.year
+        year = current_year
+    if year < MIN_YEAR or year > MAX_YEAR:
+        year = current_year
     month_raw = request.GET.get("month", "")
     try:
         month = int(month_raw) if month_raw else None
@@ -617,9 +654,9 @@ def fleet_operations_view(request):
             ) & ~Q(scheduled_at=None)
         qs = qs.filter(visible).distinct()
 
-    qs = qs.filter(fleet_time__year=year)
-    if month:
-        qs = qs.filter(fleet_time__month=month)
+    # The archive is filed by EVE time, whatever TIME_ZONE the site uses.
+    start, end = month_bounds(year, month) if month else year_bounds(year)
+    qs = qs.filter(fleet_time__gte=start, fleet_time__lt=end)
 
     fleet_type = request.GET.get("fleet_type", "").strip()
     status = request.GET.get("status", "").strip()
@@ -667,7 +704,7 @@ def fleet_operations_view(request):
         operation.can_edit = _can_manage_operation(request.user, operation)
         operation.is_pre_ping = is_pre_ping_record(operation)
         operation.count_reason = "" if operation.is_pre_ping else operation_count_reason(operation, settings)
-    period = _period_choices(year, month or now.month)
+    period = _period_choices(year, month or current_month)
     period.update(
         {
             "year": year,
@@ -1222,133 +1259,6 @@ def manual_fleet_view(request):
     )
 
 
-@permission_required("fleetops.basic_access", raise_exception=True)
-def my_statistics_view(request):
-    from fleetops.views_pap import live_pap_rows
-
-    year, month = _year_month(request)
-    stats = member_statistics(request.user, year, month)
-    return _render(
-        request,
-        "fleetops/my_statistics.html",
-        _period_render_context(year, month, stats=stats, live_pap_rows=live_pap_rows(request.user)),
-    )
-
-
-@permission_required("fleetops.view_corp_stats", raise_exception=True)
-def corporation_statistics_view(request):
-    profile = getattr(request.user, "profile", None)
-    main = getattr(profile, "main_character", None)
-    if not main or not main.corporation_id:
-        raise Http404
-    year, month = _year_month(request)
-    stats = corporation_statistics(main.corporation_id, year, month)
-    stats["corporation_name"] = main.corporation_name
-    return _render(
-        request,
-        "fleetops/corporation_statistics.html",
-        _period_render_context(year, month, stats=stats, own_corporation=True),
-    )
-
-
-@permission_required("fleetops.view_all_stats", raise_exception=True)
-def corporation_statistics_detail_view(request, corporation_id):
-    year, month = _year_month(request)
-    corp_name = (
-        UserProfile.objects.filter(main_character__corporation_id=corporation_id)
-        .exclude(main_character=None)
-        .values_list("main_character__corporation_name", flat=True)
-        .first()
-    )
-    if not corp_name:
-        raise Http404
-    stats = corporation_statistics(corporation_id, year, month)
-    stats["corporation_name"] = corp_name
-    return _render(
-        request,
-        "fleetops/corporation_statistics.html",
-        _period_render_context(year, month, stats=stats, own_corporation=False),
-    )
-
-
-@permission_required("fleetops.view_all_stats", raise_exception=True)
-def all_corporation_statistics_view(request):
-    year, month = _year_month(request)
-    corps = (
-        UserProfile.objects.exclude(main_character=None)
-        .exclude(main_character__corporation_id=None)
-        .values("main_character__corporation_id", "main_character__corporation_name")
-        .distinct()
-        .order_by("main_character__corporation_name")
-    )
-    rows = []
-    for corp in corps:
-        stat = corporation_statistics(corp["main_character__corporation_id"], year, month)
-        stat["corporation_name"] = corp["main_character__corporation_name"] or str(stat["corporation_id"])
-        rows.append(stat)
-    return _render(
-        request,
-        "fleetops/all_corporation_statistics.html",
-        _period_render_context(year, month, rows=rows),
-    )
-
-
-@permission_required("fleetops.view_all_stats", raise_exception=True)
-def all_fc_statistics_view(request):
-    year, month = _year_month(request)
-    operation_qs = counted_operations(FleetOperation.objects.filter(started_at__year=year, started_at__month=month))
-    user_ids = set(operation_qs.values_list("fc_user_id", flat=True))
-    user_ids.update(
-        OperationRoleAssignment.objects.filter(
-            operation__in=operation_qs, grants_fc_credit=True
-        ).exclude(auth_user=None).values_list("auth_user_id", flat=True)
-    )
-    member_ids = current_member_user_ids()
-    if member_ids is not None:
-        user_ids &= member_ids
-    # Reuse the same definition shown to individual FCs.
-    from django.contrib.auth import get_user_model
-
-    users = get_user_model().objects.filter(pk__in=user_ids).select_related("profile__main_character")
-    rows = []
-    for user in users:
-        stat = fc_statistics(user, year, month)
-        stat["user"] = user
-        rows.append(stat)
-    rows.sort(key=lambda r: (-r["total_points"], -r["fleet_count"], r["user"].username))
-    return _render(
-        request,
-        "fleetops/all_fc_statistics.html",
-        _period_render_context(year, month, rows=rows),
-    )
-
-
-@permission_required("fleetops.basic_access", raise_exception=True)
-def fc_statistics_detail_view(request, user_id):
-    from django.contrib.auth import get_user_model
-
-    if request.user.pk != user_id and not request.user.has_perm("fleetops.view_all_stats"):
-        raise Http404
-    user = get_object_or_404(
-        get_user_model().objects.select_related("profile__main_character"), pk=user_id
-    )
-    year, month = _year_month(request)
-    stat = fc_statistics(user, year, month)
-    operations = fc_operations_queryset(user, year, month).select_related("fleet_type").order_by("-started_at")
-    return _render(
-        request,
-        "fleetops/fc_statistics_detail.html",
-        _period_render_context(
-            year,
-            month,
-            stat=stat,
-            fc_user=user,
-            operations=operations,
-            can_open_fleets=user.pk == request.user.pk or _can_view_all_fleets(request.user),
-        ),
-    )
-
-
 def _incentive_page(request, year, month, *, period=None, form=None, edit_form=None):
     """The incentive page of a month: the create form, or the period with its edit form."""
     if period is None and form is None:
@@ -1367,6 +1277,9 @@ def _incentive_page(request, year, month, *, period=None, form=None, edit_form=N
             year,
             month,
             period=period,
+            fc_statistics=(
+                period.fc_statistics.select_related("fc_user__profile__main_character") if period is not None else []
+            ),
             form=form,
             edit_form=edit_form,
             pending_multiplier_operations=list(pending.select_related("fleet_type")[:PENDING_MULTIPLIERS_SHOWN]),
@@ -1646,55 +1559,6 @@ def manual_attendance_view(request):
             "roster_fleets": manageable_attendance_operations(request.user)[:200],
             "needs_approval": not is_approver(request.user),
         },
-    )
-
-
-def _history_context(request, queryset, title, scope_label, retention_days):
-    page = Paginator(queryset, HISTORY_PAGE_SIZE).get_page(request.GET.get("page"))
-    return {
-        "rows": page.object_list,
-        "page": page,
-        "title": title,
-        "scope_label": scope_label,
-        "total": queryset.aggregate(total=Sum("attendance_value"))["total"] or 0,
-        "retention_days": retention_days,
-        "can_open_fleets": _can_view_all_fleets(request.user),
-    }
-
-
-@permission_required("fleetops.basic_access", raise_exception=True)
-def attendance_history_me(request):
-    retention_days = max(MIN_RETENTION_DAYS, FleetOpsSettings.get_solo().data_retention_days)
-    rows = attendance_history_queryset(user=request.user, days=retention_days)
-    return _render(
-        request,
-        "fleetops/attendance_history.html",
-        _history_context(request, rows, "My Attendance History", "Personal", retention_days),
-    )
-
-
-@permission_required("fleetops.view_corp_stats", raise_exception=True)
-def attendance_history_corporation(request):
-    main = getattr(getattr(request.user, "profile", None), "main_character", None)
-    if not main or not main.corporation_id:
-        raise Http404
-    retention_days = max(MIN_RETENTION_DAYS, FleetOpsSettings.get_solo().data_retention_days)
-    rows = attendance_history_queryset(corporation_id=main.corporation_id, days=retention_days)
-    return _render(
-        request,
-        "fleetops/attendance_history.html",
-        _history_context(request, rows, f"{main.corporation_name} Attendance History", "Corporation", retention_days),
-    )
-
-
-@permission_required("fleetops.view_all_stats", raise_exception=True)
-def attendance_history_alliance(request):
-    retention_days = max(MIN_RETENTION_DAYS, FleetOpsSettings.get_solo().data_retention_days)
-    rows = attendance_history_queryset(alliance=True, days=retention_days)
-    return _render(
-        request,
-        "fleetops/attendance_history.html",
-        _history_context(request, rows, "Alliance Attendance History", "Alliance", retention_days),
     )
 
 

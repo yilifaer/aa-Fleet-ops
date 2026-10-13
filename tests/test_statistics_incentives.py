@@ -1,13 +1,14 @@
 """Tests for member/corporation/FC statistics, FC incentives and dashboard metrics."""
 
 import random
-import unittest
 from datetime import date, datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 from unittest import mock
 from zoneinfo import ZoneInfo
 
+from django.db import connection
 from django.test import TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -193,8 +194,6 @@ class MonthBoundsTests(TestCase):
         self.assertTrue(timezone.is_aware(end))
         self.assertEqual(end - start, timedelta(days=28))
 
-    # Known issue: month bounds follow the active Django time zone instead of UTC (EVE time)
-    @unittest.expectedFailure
     def test_bounds_stay_utc_when_a_local_time_zone_is_active(self):
         with timezone.override(ZoneInfo("Europe/Berlin")):
             start, end = month_bounds(2026, 4)
@@ -302,8 +301,6 @@ class CorporationStatisticsTests(TestCase):
 
         self.assertEqual(stats["total_attendance"], 1)
 
-    # Known issue: month bounds follow the active Django time zone instead of UTC (EVE time)
-    @unittest.expectedFailure
     @override_settings(TIME_ZONE="Europe/Berlin")
     def test_month_is_utc_even_with_local_site_time_zone(self):
         late = closed_op(self.fc, utc(2026, 3, 31, 23, 30))
@@ -409,6 +406,17 @@ class MemberStatisticsTests(TestCase):
     def test_hidden_when_main_left_configured_alliances(self):
         f.settings(history_alliance_ids=str(f.FOREIGN_ALLIANCE[0]))
         self.assertEqual(member_statistics(self.pilot, 2026, 3)["total"], 0)
+
+    def test_queries_do_not_grow_with_the_number_of_pap_rows(self):
+        with CaptureQueriesContext(connection) as small:
+            member_statistics(self.pilot, 2026, 3)
+        for index in range(12):
+            operation = closed_op(self.fc, utc(2026, 3, 19 + index % 10, 20), type_obj=self.roam)
+            f.add_attendance(operation, self.pilot, self.alt)
+        with CaptureQueriesContext(connection) as large:
+            stats = member_statistics(self.pilot, 2026, 3)
+        self.assertEqual(stats["unique_fleets"], 15)
+        self.assertEqual(len(small), len(large))
 
     def test_page_renders_breakdowns_for_selected_month(self):
         add_state(self.op3, self.pilot, self.alt, ship_type_id=17738, ship_type_name="Machariel")
@@ -668,10 +676,10 @@ class StatisticsViewTests(TestCase):
     def test_view_all_stats_sees_every_corporation(self):
         response = self.get(self.lead, "all_corporation_statistics", year=2025, month=3)
         self.assertEqual(response.status_code, 200)
-        rows = {r["corporation_id"]: r for r in response.context["rows"]}
+        rows = {r.corporation_id: r for r in response.context["overview"].rows}
         self.assertEqual(set(rows), {f.DEFAULT_CORP[0], f.OTHER_CORP[0]})
-        self.assertEqual(rows[f.OTHER_CORP[0]]["total_attendance"], 1)
-        self.assertEqual(rows[f.OTHER_CORP[0]]["average_attendance"], 1)
+        self.assertEqual(rows[f.OTHER_CORP[0]].total_pap, 1)
+        self.assertEqual(rows[f.OTHER_CORP[0]].average, Decimal("1.00"))
 
         response = self.get(self.lead, "corporation_statistics_detail", f.OTHER_CORP[0], year=2025, month=3)
         self.assertEqual(response.status_code, 200)
@@ -691,15 +699,15 @@ class StatisticsViewTests(TestCase):
         response = self.get(self.lead, "all_fc_statistics", year=2025, month=3)
 
         self.assertEqual(response.status_code, 200)
-        rows = [(r["user"].username, r["fleet_count"], r["total_points"]) for r in response.context["rows"]]
-        self.assertEqual(rows, [("cofc", 3, 6.0), ("fc", 1, 2.0)])
+        rows = [(r.user.username, r.fleets, r.points) for r in response.context["rows"]]
+        self.assertEqual(rows, [("cofc", 3, Decimal("6.00")), ("fc", 1, Decimal("2.00"))])
 
     def test_all_fc_statistics_skips_draft_and_cancelled_only_fcs(self):
         idle = f.create_user("idle", perms=f.FC_PERMS)
         f.create_operation(idle, status=Status.DRAFT, started_at=utc(2025, 3, 2))
         f.create_operation(idle, status=Status.CANCELLED, started_at=utc(2025, 3, 3))
         response = self.get(self.lead, "all_fc_statistics", year=2025, month=3)
-        self.assertEqual([r["user"] for r in response.context["rows"]], [self.fc])
+        self.assertEqual([r.user for r in response.context["rows"]], [self.fc])
 
     def test_all_fc_statistics_requires_view_all_stats(self):
         self.assertEqual(self.get(self.fc, "all_fc_statistics").status_code, 403)
@@ -722,6 +730,183 @@ class StatisticsViewTests(TestCase):
 
     def test_fc_detail_unknown_user_is_404(self):
         self.assertEqual(self.get(self.lead, "fc_statistics_detail", 987_654).status_code, 404)
+
+
+# ---------------------------------------------------------------------------
+# My Statistics: monthly minimum and rank
+# ---------------------------------------------------------------------------
+
+
+class MyStatisticsAssessmentTests(TestCase):
+    """The minimum card follows the month colour rule; the rank card follows the leaderboard setting."""
+
+    def setUp(self):
+        self.fc = f.member("fc", perms=f.FC_PERMS)
+        self.strat = f.fleet_type("StratOp", "2.00")
+        self.alice = f.member("alice", perms=f.MEMBER_PERMS)
+        self.bob = f.member("bob", perms=f.MEMBER_PERMS)
+        self.carol = f.member("carol", perms=f.MEMBER_PERMS, corporation=f.OTHER_CORP)
+        self.dave = f.member("dave", perms=f.MEMBER_PERMS)
+        self.idle = f.member("idle", perms=f.MEMBER_PERMS)
+        self.op = closed_op(self.fc, utc(2026, 3, 5, 19), type_obj=self.strat)
+        # alice 5, carol 3, bob 3 (one PAP on an alt), dave 1: places 1, 2, 2, 4.
+        f.add_attendance(self.op, self.alice, value=5)
+        f.add_attendance(self.op, self.carol, value=3)
+        f.add_attendance(self.op, self.bob, value=2)
+        f.add_attendance(self.op, self.bob, f.add_alt(self.bob, "Bob Alt", corporation=f.THIRD_CORP), value=1)
+        f.add_attendance(self.op, self.dave, value=1)
+
+    def page(self, user, now=utc(2026, 4, 2, 12), **params):
+        patcher = mock.patch("django.utils.timezone.now", return_value=now)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.client.force_login(user)
+        return self.client.get(reverse("fleetops:my_statistics"), {"year": 2026, "month": 3, **params})
+
+    def test_default_minimum_is_one_pap(self):
+        response = self.page(self.dave)
+
+        self.assertEqual(response.context["minimum"], 1)
+        self.assertEqual(response.context["minimum_status"], "ok")
+        self.assertContains(response, "Monthly minimum")
+        self.assertContains(response, "1 PAP")
+
+    def test_reached_minimum_is_green(self):
+        f.statistics_target(2026, 1, minimum=4)
+
+        response = self.page(self.alice)
+
+        self.assertEqual(response.context["minimum_status"], "ok")
+        self.assertContains(response, "text-bg-success")
+        self.assertContains(response, "4 PAP")
+
+    def test_the_minimum_itself_is_enough(self):
+        f.statistics_target(2026, 1, minimum=3)
+
+        self.assertEqual(self.page(self.bob).context["minimum_status"], "ok")
+
+    def test_below_the_minimum_in_a_finished_month_is_red(self):
+        f.statistics_target(2026, 1, minimum=4)
+
+        response = self.page(self.dave)
+
+        self.assertEqual(response.context["minimum_status"], "below")
+        self.assertContains(response, "Below minimum")
+        self.assertNotContains(response, "Below minimum so far")
+        self.assertContains(response, "text-bg-danger")
+        self.assertContains(response, "3 more were needed")
+
+    def test_below_the_minimum_in_the_running_month_is_amber(self):
+        f.statistics_target(2026, 1, minimum=4)
+
+        response = self.page(self.dave, now=utc(2026, 3, 20, 12))
+
+        self.assertEqual(response.context["minimum_status"], "below_so_far")
+        self.assertContains(response, "Below minimum so far")
+        self.assertContains(response, "text-bg-warning")
+        self.assertNotContains(response, "text-bg-danger")
+        self.assertContains(response, "3 more to reach the minimum this month")
+
+    def test_reaching_the_minimum_in_the_running_month_is_green(self):
+        f.statistics_target(2026, 1, minimum=4)
+
+        response = self.page(self.alice, now=utc(2026, 3, 20, 12))
+
+        self.assertEqual(response.context["minimum_status"], "ok")
+        self.assertNotContains(response, "text-bg-warning")
+
+    def test_no_minimum_when_it_is_zero(self):
+        f.statistics_target(2026, 1, minimum=0)
+
+        response = self.page(self.idle)
+
+        self.assertEqual(response.context["minimum_status"], "none")
+        self.assertContains(response, "No member minimum applies to this month.")
+
+    def test_future_month_has_no_status(self):
+        f.statistics_target(2026, 1, minimum=4)
+
+        response = self.page(self.dave, now=utc(2026, 2, 1, 12))
+
+        self.assertEqual(response.context["minimum_status"], "none")
+        self.assertIsNone(response.context["rank_card"])
+
+    def test_rank_among_the_alliance_with_shared_places(self):
+        expected = {self.alice: (1, 4), self.carol: (2, 4), self.bob: (2, 4), self.dave: (4, 4)}
+        for user, (rank, of) in expected.items():
+            with self.subTest(user=user.username):
+                card = self.page(user).context["rank_card"]
+                self.assertEqual((card["rank"], card["of"], card["scope"]), (rank, of, "alliance"))
+
+    def test_rank_card_text_and_link(self):
+        response = self.page(self.bob)
+
+        self.assertContains(response, "PAP rank")
+        self.assertContains(response, "#2 of 4")
+        self.assertContains(response, "alliance members with PAP this month")
+        self.assertContains(response, reverse("fleetops:leaderboard"))
+
+    def test_no_rank_without_pap(self):
+        response = self.page(self.idle)
+
+        self.assertIsNone(response.context["rank_card"])
+        self.assertNotContains(response, "PAP rank")
+
+    def test_pap_of_non_members_does_not_make_places(self):
+        gone = f.member("gone", perms=f.MEMBER_PERMS)
+        f.add_attendance(self.op, gone, value=50)
+        gone.is_active = False
+        gone.save(update_fields=["is_active"])
+
+        card = self.page(self.alice).context["rank_card"]
+
+        self.assertEqual((card["rank"], card["of"]), (1, 4))
+
+    def test_managers_only_setting_hides_the_rank_from_members(self):
+        f.settings(leaderboard_visibility="managers")
+
+        response = self.page(self.bob)
+
+        self.assertIsNone(response.context["rank_card"])
+        self.assertNotContains(response, "PAP rank")
+
+    def test_managers_only_setting_ranks_a_corporation_manager_in_the_corporation(self):
+        f.settings(leaderboard_visibility="managers")
+        manager = f.create_user("manager", perms=f.CORP_MANAGEMENT_PERMS)
+        f.add_attendance(self.op, manager, value=4)
+
+        response = self.page(manager)
+
+        # Corporation A has alice 5, manager 4, bob 3 and dave 1.
+        card = response.context["rank_card"]
+        self.assertEqual((card["rank"], card["of"], card["scope"]), (2, 4, "corporation"))
+        self.assertContains(response, "members of your corporation")
+
+    def test_managers_only_setting_ranks_a_statistics_manager_in_the_alliance(self):
+        f.settings(leaderboard_visibility="managers")
+        lead = f.create_user("lead", perms=f.MEMBER_PERMS + ["fleetops.view_all_stats"], corporation=f.THIRD_CORP)
+        f.add_attendance(self.op, lead, value=4)
+
+        card = self.page(lead).context["rank_card"]
+
+        self.assertEqual((card["rank"], card["of"], card["scope"]), (2, 5, "alliance"))
+
+    def test_corporation_managers_see_the_alliance_rank_by_default(self):
+        manager = f.create_user("manager", perms=f.CORP_MANAGEMENT_PERMS)
+        f.add_attendance(self.op, manager, value=4)
+
+        self.assertEqual(self.page(manager).context["rank_card"]["scope"], "alliance")
+
+    def test_queries_do_not_grow_with_the_number_of_members(self):
+        self.page(self.bob)
+        with CaptureQueriesContext(connection) as small:
+            self.page(self.bob)
+        for index in range(12):
+            f.add_attendance(self.op, f.member(f"extra{index}", perms=f.MEMBER_PERMS), value=1 + index)
+        with CaptureQueriesContext(connection) as large:
+            response = self.page(self.bob)
+        self.assertEqual(response.context["rank_card"]["of"], 16)
+        self.assertEqual(len(small), len(large))
 
 
 # ---------------------------------------------------------------------------
@@ -1249,6 +1434,32 @@ class DashboardMetricsTests(TestCase):
         self.assertEqual(card["month"], 1)
         self.assertEqual(card["last30"], 6)
 
+    @override_settings(TIME_ZONE="Pacific/Auckland")
+    def test_the_month_is_the_eve_month_whatever_the_site_time_zone(self):
+        # 20:00 EVE on May 31 is already June 1 in Auckland.
+        late_may = closed_op(self.fc, utc(2026, 5, 31, 19), type_obj=self.stratop)
+        early_june = closed_op(self.fc, utc(2026, 6, 1, 0, 30), type_obj=self.stratop)
+        f.add_attendance(late_may, self.pilot, value=2)
+        f.add_attendance(early_june, self.pilot, value=7)
+
+        with mock.patch("django.utils.timezone.now", return_value=utc(2026, 5, 31, 20)):
+            may = dashboard_metrics(self.pilot)["cards"][0]
+        with mock.patch("django.utils.timezone.now", return_value=utc(2026, 6, 1, 0, 45)):
+            june = dashboard_metrics(self.pilot)["cards"][0]
+
+        self.assertEqual(may["month"], 2)
+        self.assertEqual(june["month"], 7)
+
+    def test_the_cards_need_one_query_however_many_types_there_are(self):
+        with CaptureQueriesContext(connection) as two_types:
+            dashboard_metrics(self.pilot)
+        FleetType.objects.create(name="Mining", sort_order=3)
+        FleetType.objects.create(name="Home Defense", sort_order=4)
+        with CaptureQueriesContext(connection) as four_types:
+            cards = dashboard_metrics(self.pilot)["cards"]
+        self.assertEqual(len(cards), 4)
+        self.assertEqual(len(two_types), len(four_types))
+
     def test_cards_limited_to_four_active_types_in_sort_order(self):
         FleetType.objects.create(name="Inactive", is_active=False, sort_order=0)
         FleetType.objects.create(name="Mining", sort_order=3)
@@ -1388,6 +1599,19 @@ class DashboardViewTests(TestCase):
         self.assertEqual(fc_stats["breakdown"]["StratOp"]["count"], 2)
         self.assertContains(response, "5.00")
 
+    @override_settings(TIME_ZONE="Asia/Shanghai")
+    def test_the_fc_month_and_the_times_are_eve_time(self):
+        # 23:30 EVE on April 30 is May 1 in Shanghai; that fleet belongs to April, not to the current month.
+        closed_op(self.fc, utc(2026, 4, 30, 23, 30), type_obj=self.stratop)
+        closed_op(self.fc, utc(2026, 5, 1, 0, 30), type_obj=self.stratop)
+
+        response, _ = self.active_for(self.fc)
+
+        # The running fleet and the fleet of May 1 (EVE).
+        self.assertEqual(response.context["fc_stats"]["fleet_count"], 2)
+        self.assertContains(response, "EVE month")
+        self.assertContains(response, "<th>EVE time</th>", html=False)
+
     def test_dashboard_cards_rendered(self):
         f.add_attendance(self.mine, self.pilot, value=2)
         # PAP counts once its fleet has closed.
@@ -1395,4 +1619,4 @@ class DashboardViewTests(TestCase):
         response, _ = self.active_for(self.pilot)
         cards = response.context["dashboard_cards"]
         self.assertEqual(cards[0]["month"], 3)
-        self.assertContains(response, "StratOp attendance this month")
+        self.assertContains(response, "StratOp PAP this month")

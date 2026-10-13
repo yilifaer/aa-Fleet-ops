@@ -104,6 +104,10 @@ class FleetOpsSettings(models.Model):
         FC = "fc", "FC chooses when ending"
         AUTO = "auto", "Automatic by fleet duration"
 
+    class LeaderboardVisibility(models.TextChoices):
+        MEMBERS = "members", "Everyone with FleetOps access"
+        MANAGERS = "managers", "Statistics managers only"
+
     attendance_limit = models.PositiveIntegerField(
         "PAP characters per player",
         null=True,
@@ -148,10 +152,27 @@ class FleetOpsSettings(models.Model):
         help_text="Attendance/event history retention in days. Minimum 365 days, maximum 36500 days (100 years).",
     )
     history_alliance_ids = models.CharField(
+        "Member alliance IDs",
         max_length=500,
         blank=True,
         validators=[validate_alliance_ids],
-        help_text="Comma-separated alliance IDs whose current members may appear in attendance history. Empty disables membership pruning.",
+        help_text="Comma-separated alliance IDs. When set, statistics, leaderboards and history only include users "
+        "whose main character is currently in one of these alliances, and departed members' history can be pruned. "
+        "Empty = every Alliance Auth user with a main character.",
+    )
+    leaderboard_size = models.PositiveSmallIntegerField(
+        "Leaderboard places",
+        default=20,
+        validators=[MinValueValidator(3), MaxValueValidator(100)],
+        help_text="Places shown on PAP leaderboards. Members tied on the last place are all shown.",
+    )
+    leaderboard_visibility = models.CharField(
+        "Leaderboard visibility",
+        max_length=10,
+        choices=LeaderboardVisibility.choices,
+        default=LeaderboardVisibility.MEMBERS,
+        help_text="Who sees the PAP leaderboard. Everyone with FleetOps access sees the alliance board and their "
+        "own corporation's board; statistics managers see the boards their statistics permission covers.",
     )
     srp_auto_create = models.BooleanField(
         default=True,
@@ -1113,6 +1134,41 @@ class IncentivePeriod(models.Model):
 
     def __str__(self):
         return f"{self.year}-{self.month:02d}"
+
+
+class StatisticsTarget(models.Model):
+    """The corporation PAP target and member minimum that apply from a month (EVE time) until the next entry."""
+
+    year = models.PositiveIntegerField(validators=[MinValueValidator(2003), MaxValueValidator(2200)])
+    month = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(12)])
+    corporation_average_target = models.DecimalField(
+        "Corporation average target",
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0"))],
+        help_text="Average PAP per main character a corporation needs in a month. Empty = no target.",
+    )
+    member_minimum_pap = models.PositiveIntegerField(
+        "Member minimum PAP",
+        default=1,
+        validators=[MaxValueValidator(10000)],
+        help_text="Members with less PAP than this in a month are listed as inactive. 0 = nobody is listed.",
+    )
+    note = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        ordering = ["-year", "-month"]
+        verbose_name = "monthly target"
+        constraints = [models.UniqueConstraint(fields=["year", "month"], name="fleetops_unique_statistics_target")]
+
+    @property
+    def effective_from(self):
+        return f"{self.year}-{self.month:02d}"
+
+    def __str__(self):
+        return f"From {self.effective_from}"
 
 
 class MonthlyFCStatistic(models.Model):

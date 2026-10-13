@@ -1,0 +1,41 @@
+{% load fleetops_messages fleetops_stats %}
+<div class="table-responsive">
+  <table class="table table-hover table-sm align-middle mb-0 fleetops-member-table">
+    <thead>
+      <tr>
+        <th scope="col">Rank</th>
+        <th scope="col" aria-sort="{{ sort_state.name }}"><a class="link-body-emphasis text-decoration-none" href="{% querystring sort=sort_next.name page=None %}">Main{% if sort_state.name == "ascending" %} &uarr;{% elif sort_state.name == "descending" %} &darr;{% endif %}</a></th>
+        {% if show_corporation_column %}<th scope="col" aria-sort="{{ sort_state.corporation }}"><a class="link-body-emphasis text-decoration-none" href="{% querystring sort=sort_next.corporation page=None %}">Corporation{% if sort_state.corporation == "ascending" %} &uarr;{% endif %}</a></th>{% endif %}
+        <th scope="col" class="text-end" aria-sort="{{ sort_state.pap }}"><a class="link-body-emphasis text-decoration-none" href="{% querystring sort=sort_next.pap page=None %}">PAP{% if sort_state.pap == "ascending" %} &uarr;{% elif sort_state.pap == "descending" %} &darr;{% endif %}</a></th>
+        <th scope="col" class="text-end" aria-sort="{{ sort_state.fleets }}"><a class="link-body-emphasis text-decoration-none" href="{% querystring sort=sort_next.fleets page=None %}">Fleets{% if sort_state.fleets == "ascending" %} &uarr;{% elif sort_state.fleets == "descending" %} &darr;{% endif %}</a></th>
+        {% for fleet_type in shown_types %}<th scope="col" class="text-end">{{ fleet_type }}</th>{% endfor %}
+        {% if has_other %}<th scope="col" class="text-end">Other</th>{% endif %}
+        <th scope="col" class="text-end">Characters used</th>
+        <th scope="col">Last PAP (EVE)</th>
+        <th scope="col">Registered (EVE)</th>
+        <th scope="col">Status</th>
+        <th scope="col"><span class="visually-hidden">Details</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr class="{{ item.row.status|status_row_class }}{% if item.is_viewer %} table-active{% endif %}">
+        <td>{% if item.row.rank %}<span class="fleetops-rank">{{ item.row.rank }}</span>{% else %}<span class="text-muted">&mdash;</span>{% endif %}</td>
+        <td><a class="fw-semibold text-decoration-none" href="{% url 'fleetops:member_detail' item.row.user_id %}?year={{ year }}&amp;month={{ month }}">{{ item.row.main_character_name }}</a>{% if item.is_viewer %} <span class="badge text-bg-primary">You</span>{% endif %}</td>
+        {% if show_corporation_column %}<td title="{{ item.row.corporation_name }}">{% if item.row.corporation_ticker %}[{{ item.row.corporation_ticker }}]{% else %}{{ item.row.corporation_name }}{% endif %}</td>{% endif %}
+        <td class="text-end"><strong>{{ item.row.pap }}</strong></td>
+        <td class="text-end">{{ item.row.fleets }}</td>
+        {% for value in item.cells %}<td class="text-end">{% if value %}{{ value }}{% else %}<span class="text-muted">&ndash;</span>{% endif %}</td>{% endfor %}
+        {% if has_other %}<td class="text-end">{% if item.other %}{{ item.other }}{% else %}<span class="text-muted">&ndash;</span>{% endif %}</td>{% endif %}
+        <td class="text-end">{{ item.row.characters }}</td>
+        <td>{% if item.row.last_pap_at %}{{ item.row.last_pap_at|eve_time }}{% else %}<span class="text-muted">&mdash;</span>{% endif %}</td>
+        <td>{{ item.row.registered_at|eve_time:"%Y-%m-%d" }}</td>
+        <td>{% include "fleetops/statistics/_status_badge.html" with status=item.row.status %}</td>
+        <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:member_detail' item.row.user_id %}?year={{ year }}&amp;month={{ month }}">Details</a></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="20" class="text-muted p-4">{% if status == "inactive" %}Nobody is below the member minimum.{% elif query or status == "active" %}No members match the filter.{% else %}No members found.{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

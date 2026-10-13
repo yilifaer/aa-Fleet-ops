@@ -7,7 +7,7 @@ from datetime import timezone as dt_timezone
 
 from django.db.models import Count, Max, Q
 from django.template.loader import render_to_string
-from django.utils import formats, timezone
+from django.utils import timezone
 
 from fleetops import __version__
 from fleetops.models import AuditLog, FleetOperation, FleetOpsSettings, FleetStructureTemplate, ShipFunction
@@ -24,6 +24,7 @@ from fleetops.services.fleet_rules import (
     NO_UNIT,
     squad_index,
 )
+from fleetops.services.periods import format_eve
 
 # How often the Fleet tab asks for a new state while it is shown.
 POLL_SECONDS = 10
@@ -425,10 +426,10 @@ def _iso(value):
 
 
 def stat_text(value) -> str:
-    """A time as the fleet page's header cards show it (the page's {{ value }} output)."""
+    """A time as the fleet page's header cards show it: EVE time, as the page renders it."""
     if value is None:
         return "—"
-    return str(formats.localize(timezone.template_localtime(value)))
+    return f"{format_eve(value, '%Y-%m-%d %H:%M:%S')} EVE"
 
 
 def state_payload(request, operation, *, known_version=None) -> dict:

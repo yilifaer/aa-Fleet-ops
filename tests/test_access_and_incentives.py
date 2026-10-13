@@ -160,7 +160,7 @@ class ClosedFleetCreditTests(TestCase):
         overview = self.client.get(reverse("fleetops:all_fc_statistics"), {"year": 2026, "month": 3})
         detail = self.client.get(reverse("fleetops:fc_statistics_detail", args=[self.fc.pk]), {"year": 2026, "month": 3})
 
-        self.assertEqual([(r["user"], r["fleet_count"]) for r in overview.context["rows"]], [(self.fc, 1)])
+        self.assertEqual([(r.user, r.fleets) for r in overview.context["rows"]], [(self.fc, 1)])
         self.assertEqual(list(detail.context["operations"]), [closed])
         self.assertEqual(detail.context["stat"]["fleet_count"], 1)
 
@@ -380,7 +380,7 @@ class DepartedMemberStatisticsTests(TestCase):
         overview = self.client.get(reverse("fleetops:all_fc_statistics"), params)
         detail = self.client.get(reverse("fleetops:fc_statistics_detail", args=[self.departed_fc.pk]), params)
 
-        self.assertEqual([r["user"] for r in overview.context["rows"]], [self.member_fc])
+        self.assertEqual([r.user for r in overview.context["rows"]], [self.member_fc])
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(detail.context["stat"]["fleet_count"], 0)
         self.assertEqual(list(detail.context["operations"]), [])
@@ -532,7 +532,7 @@ class EndFleetTests(TestCase):
 # ---------------------------------------------------------------------------
 
 
-@mock.patch("fleetops.views.HISTORY_PAGE_SIZE", 2)
+@mock.patch("fleetops.views_history.HISTORY_PAGE_SIZE", 2)
 class AttendanceHistoryPagingTests(TestCase):
     BAD_PAGES = ("abc", "0", "-1", "1.5", "999", "")
 

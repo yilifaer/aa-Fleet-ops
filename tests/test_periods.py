@@ -15,12 +15,17 @@ from fleetops.services import periods
 from fleetops.services.periods import (
     DISCORD_TIMESTAMP_STYLES,
     EVE_CLOCK_PATTERN,
+    MAX_YEAR,
+    MIN_YEAR,
+    MONTH_NAMES,
     current_year_month,
     discord_timestamp,
     eve_now,
     format_eve,
     month_bounds,
+    month_name,
     month_ref,
+    parse_year_month,
     parse_eve_clock,
     parse_eve_date,
     parse_eve_datetime,
@@ -462,3 +467,62 @@ class UtcDayTests(TestCase):
                 FleetOperation.objects.filter(started_at__gte=start, started_at__lt=end).values_list("pk", flat=True)
             )
         self.assertEqual(selected, {self.late.pk, self.early.pk})
+
+
+class MonthNameTests(SimpleTestCase):
+    def test_english_names(self):
+        self.assertEqual(len(MONTH_NAMES), 12)
+        self.assertEqual(month_name(1), "January")
+        self.assertEqual(month_name(10), "October")
+        self.assertEqual(month_name(12), "December")
+
+    def test_names_ignore_the_active_language(self):
+        with translation.override("zh-hans"):
+            self.assertEqual(month_name(3), "March")
+
+
+class ParseYearMonthTests(SimpleTestCase):
+    NOW = utc(2026, 10, 12, 19)
+
+    def parse(self, **params):
+        with frozen_now(self.NOW):
+            return parse_year_month(params)
+
+    def test_year_and_month(self):
+        self.assertEqual(self.parse(year="2025", month="3"), (2025, 3))
+
+    def test_missing_values_mean_the_current_month(self):
+        self.assertEqual(self.parse(), (2026, 10))
+
+    def test_only_one_value_keeps_the_current_value_of_the_other(self):
+        self.assertEqual(self.parse(month="3"), (2026, 3))
+        self.assertEqual(self.parse(year="2025"), (2025, 10))
+
+    def test_unreadable_or_out_of_range_values_mean_the_current_month(self):
+        for params in (
+            {"year": "abc", "month": "3"},
+            {"year": "2025", "month": "x"},
+            {"year": "2025", "month": "0"},
+            {"year": "2025", "month": "13"},
+            {"year": str(MIN_YEAR - 1), "month": "3"},
+            {"year": str(MAX_YEAR + 1), "month": "3"},
+            {"year": "", "month": ""},
+            {"year": "1.5", "month": "3"},
+        ):
+            with self.subTest(params=params):
+                self.assertEqual(self.parse(**params), (2026, 10))
+
+    def test_range_edges(self):
+        self.assertEqual(self.parse(year=str(MIN_YEAR), month="1"), (MIN_YEAR, 1))
+        self.assertEqual(self.parse(year=str(MAX_YEAR), month="12"), (MAX_YEAR, 12))
+
+    def test_explicit_default(self):
+        self.assertEqual(parse_year_month({}, default=(2024, 2)), (2024, 2))
+        self.assertEqual(parse_year_month({"year": "x"}, default=(2024, 2)), (2024, 2))
+
+    def test_current_month_follows_eve_time_not_the_site_zone(self):
+        late = utc(2026, 10, 31, 23, 30)
+        with override_settings(TIME_ZONE="Asia/Shanghai"), frozen_now(late):
+            self.assertEqual(parse_year_month({}), (2026, 10))
+        self.assertEqual(MIN_YEAR, 2003)
+        self.assertEqual(MAX_YEAR, 2200)

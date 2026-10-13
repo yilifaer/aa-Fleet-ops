@@ -83,9 +83,19 @@ Tracking should resume from server-side tasks and should not depend on the brows
 
 Use known test numbers and verify:
 
-`Average Attendance = Total Granted Attendance / Main Character Count`
+`Average PAP = Total PAP / Main Character Count`
 
-Alt count must not change the denominator.
+Alt count must not change the denominator. Statistics are on the main character: PAP of an alt in another corporation or alliance counts for its main.
+
+Then check the rest of the statistics with a month that has real PAP:
+
+- Set **Member alliance IDs** in General Settings and add a **Monthly Target** (a corporation average and a member minimum).
+- All Corps for a finished month: corporations at or above the target times their mains are green, the others red; for the running month below target is amber "Not reached yet" and reached is green.
+- Members and Inactive as a corporation manager: only the own corporation is listed, a corporation's members page by ID (`/statistics/corporation/<id>/members/`) answers 403 and another corporation's member page answers 404; as a `view_all_stats` user the whole alliance.
+- Leaderboard as a plain member, then switch **Leaderboard visibility** to statistics managers only: the menu entry disappears and the page answers 403.
+- A fleet that started shortly before or after midnight UTC on the edge of a month counts in its EVE month and shows its EVE time, whatever the site's time zone.
+- Download Excel and CSV of the members and corporations pages and open them in Excel or WPS: Chinese names are intact, the header row is bold and frozen, the About sheet is there, and the numbers equal the page.
+- PAP history: choose a month, page through it, use previous/next month and **All retained**; the month stays in the links.
 
 ## Stage 9 — FC incentives
 

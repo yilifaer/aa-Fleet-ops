@@ -46,7 +46,7 @@ The presence of a feature in `FEATURES.md` does not by itself mean it has been p
 - Historical manual-attendance front-end with closed-fleet selection and repeated/manual multi-credit support
 - Personal/corporation/alliance 365-day attendance-history pages
 - Configurable retention (minimum 365 days) and current-alliance membership pruning service/task/management command
-- Dashboard attendance cards, top tracked ships, recent participations and FC-month summary
+- Dashboard PAP cards, top tracked ships, recent participations and FC-month summary
 - Back Seat FC / Logi Anchor / Snowflake role assignments on active or closed operations
 - FC-credit snapshot for special-role assignments, from the role's **Gives FC credit** switch
 - ESI kick-member provider call; single-member kick, kick outside a system and Kick Capsules with a named, tickable pilot list

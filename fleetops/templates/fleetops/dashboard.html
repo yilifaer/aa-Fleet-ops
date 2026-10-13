@@ -5,7 +5,7 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
     <h2 class="mb-0">Fleet Operations</h2>
-    <div class="text-muted">Fleet activity, attendance and recent operations</div>
+    <div class="text-muted">Fleet activity, PAP and recent operations (times in EVE time)</div>
   </div>
   {% if perms.fleetops.start_fleet %}<a class="btn btn-primary" href="{% url 'fleetops:start_fleet' %}">Start Fleet</a>{% endif %}
 </div>
@@ -25,14 +25,14 @@
     <div class="fleetops-metric fleetops-metric-{{ forloop.counter }}">
       <div class="fleetops-metric-value">{{ card.month }}</div>
       <div>
-        <div class="fleetops-metric-title">{{ card.fleet_type }} attendance this month</div>
+        <div class="fleetops-metric-title">{{ card.fleet_type }} PAP this month</div>
         <div class="small"><strong>{{ card.last30 }}</strong> last 30 days</div>
         <div class="small"><strong>{{ card.last90 }}</strong> last 90 days</div>
       </div>
     </div>
   </div>
   {% empty %}
-  <div class="col-12"><div class="alert alert-secondary mb-0">Create Fleet Types to populate dashboard attendance cards.</div></div>
+  <div class="col-12"><div class="alert alert-secondary mb-0">Create Fleet Types to populate the dashboard PAP cards.</div></div>
   {% endfor %}
 </div>
 
@@ -55,20 +55,20 @@
   </div>
   <div class="col-xl-6">
     <div class="card h-100">
-      <div class="card-header d-flex justify-content-between"><strong>Last Participations</strong><a class="small" href="{% url 'fleetops:attendance_history_me' %}">Attendance history</a></div>
+      <div class="card-header d-flex justify-content-between"><strong>Last Participations</strong><a class="small" href="{% url 'fleetops:attendance_history_me' %}">PAP history</a></div>
       <div class="table-responsive">
         <table class="table table-sm table-hover mb-0 align-middle">
-          <thead><tr><th>Time</th><th>Attendance</th><th>Fleet</th><th>Type</th><th></th></tr></thead>
+          <thead><tr><th>EVE time</th><th>PAP</th><th>Fleet</th><th>Type</th><th></th></tr></thead>
           <tbody>
             {% for row in recent_participations %}
             <tr>
-              <td>{{ row.operation.started_at|date:"d M Y H:i" }} EVE</td>
+              <td>{{ row.operation.started_at|eve_time }} EVE</td>
               <td><strong>{{ row.attendance }}</strong></td>
               <td>{{ row.operation.fc_character_name }}{% if row.operation.doctrine_name %} · {{ row.operation.doctrine_name }}{% endif %}</td>
               <td><span class="badge bg-secondary">{{ row.operation.fleet_type }}</span></td>
               <td><a href="{% url 'fleetops:operation_detail' row.operation.uuid %}">Open</a></td>
             </tr>
-            {% empty %}<tr><td colspan="5" class="text-muted p-4">No attendance yet.</td></tr>{% endfor %}
+            {% empty %}<tr><td colspan="5" class="text-muted p-4">No PAP yet.</td></tr>{% endfor %}
           </tbody>
         </table>
       </div>
@@ -92,7 +92,7 @@
       <div class="card-header"><strong>Active Fleets</strong></div>
       <div class="card-body p-0">
         <div class="table-responsive"><table class="table table-hover mb-0"><thead><tr><th>Fleet</th><th>FC</th><th>Members</th><th>Last ESI</th><th></th></tr></thead><tbody>
-        {% for op in active_operations %}<tr><td>{{ op.fleet_type }}</td><td>{{ op.fc_character_name }}</td><td>{{ op.active_member_count }}</td><td>{{ op.last_esi_update|default:"—" }}</td><td><a href="{% url 'fleetops:operation_detail' op.uuid %}">Open</a></td></tr>
+        {% for op in active_operations %}<tr><td>{{ op.fleet_type }}</td><td>{{ op.fc_character_name }}</td><td>{{ op.active_member_count }}</td><td>{% if op.last_esi_update %}{{ op.last_esi_update|eve_time }} EVE{% else %}—{% endif %}</td><td><a href="{% url 'fleetops:operation_detail' op.uuid %}">Open</a></td></tr>
         {% empty %}<tr><td colspan="5" class="text-muted p-4">No active fleets.</td></tr>{% endfor %}
         </tbody></table></div>
       </div>
@@ -100,7 +100,7 @@
   </div>
   <div class="col-xl-4">
     <div class="card">
-      <div class="card-header"><strong>My FC Month</strong></div>
+      <div class="card-header d-flex justify-content-between"><strong>My FC Month</strong><span class="text-muted small">EVE month</span></div>
       <div class="card-body">
         <div class="display-6">{{ fc_stats.fleet_count }}</div><div class="text-muted">FC credited fleets, closed and active</div>
         <hr><div class="d-flex justify-content-between"><span>FC Points</span><strong>{{ fc_stats.total_points|floatformat:2 }}</strong></div>

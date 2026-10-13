@@ -1,0 +1,6 @@
+{% load fleetops_stats %}<div class="btn-group btn-group-sm fleetops-export" role="group" aria-label="Export">
+{% if export_period %}  <a class="btn btn-outline-secondary" href="{% url 'fleetops:export' dataset %}?format=xlsx&amp;period={{ export_period|urlencode }}">Excel</a>
+  <a class="btn btn-outline-secondary" href="{% url 'fleetops:export' dataset %}?format=csv&amp;period={{ export_period|urlencode }}">CSV</a>
+{% else %}  <a class="btn btn-outline-secondary" href="{% export_url dataset 'xlsx' export_params %}">Excel</a>
+  <a class="btn btn-outline-secondary" href="{% export_url dataset 'csv' export_params %}">CSV</a>
+{% endif %}</div>

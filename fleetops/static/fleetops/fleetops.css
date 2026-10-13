@@ -16,6 +16,14 @@
 @media(max-width:768px){.fleetops-metric-value{font-size:2rem;min-width:52px}.fleetops-ship-grid{grid-template-columns:repeat(2,minmax(100px,1fr))}}
 
 .fleetops-period-selector{padding:.9rem;border:1px solid var(--bs-border-color);border-radius:.5rem;background:var(--bs-tertiary-bg)}
+/* Bootstrap gives each select of an input group the same 1% width and lets it grow, which cuts "September" and "All retained"; size them by their text. */
+.fleetops-period-selector .input-group>.form-select{width:auto;flex:0 0 auto}
 .fleetops-daily-row{display:flex;align-items:center;gap:1rem;margin:.55rem 0}.fleetops-daily-row>span{width:60px;flex:0 0 60px;font-variant-numeric:tabular-nums}
 .fleetops .table td,.fleetops .table th{vertical-align:middle}
 .fleetops [data-countdown-utc],.fleetops #eve-clock,.fleetops #ping-length,.fleetops #motd-length{font-variant-numeric:tabular-nums}
+
+/* Statistics: a row shows its status in the colour of its left edge; the status text is always shown as well. */
+.fleetops .table>tbody>tr.fleetops-status-row-met>:first-child{border-left:4px solid var(--bs-success)}
+.fleetops .table>tbody>tr.fleetops-status-row-missed>:first-child{border-left:4px solid var(--bs-danger)}
+.fleetops .table>tbody>tr.fleetops-status-row-progress>:first-child{border-left:4px solid var(--bs-warning)}
+.fleetops-rank{display:inline-block;min-width:2.5ch;text-align:right;font-weight:600;font-variant-numeric:tabular-nums}

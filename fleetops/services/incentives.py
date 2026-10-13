@@ -1,14 +1,16 @@
-from collections import defaultdict
-from decimal import Decimal
-
 from django.db import transaction
 from django.utils import timezone
 
-from fleetops.models import FleetOperation, FleetOpsSettings, FleetType, IncentivePeriod, MonthlyFCStatistic
-from fleetops.services.counting import counted_operations
-from fleetops.services.history import current_member_user_ids
-from fleetops.services.statistics import month_bounds
 from fleetops.calculations import calculate_payouts
+from fleetops.models import FleetOperation, FleetOpsSettings, FleetType, IncentivePeriod, MonthlyFCStatistic
+from fleetops.services.history import current_member_user_ids
+from fleetops.services.statistics import (
+    credited_operations,
+    fc_breakdown,
+    fc_points,
+    group_operations_by_fc,
+    month_bounds,
+)
 
 
 INCENTIVES_DISABLED_MESSAGE = "FC incentives are disabled in the FleetOps settings."
@@ -43,44 +45,24 @@ def rebuild_period(period: IncentivePeriod):
     _ensure_enabled()
     if period.status == IncentivePeriod.Status.FINALIZED:
         raise IncentiveError("Finalized periods must be unlocked before recalculation.")
-    start, end = month_bounds(period.year, period.month)
     # Closed, approved fleets that are not excluded from the statistics; manual fleets are created Closed.
-    operations = list(
-        counted_operations(FleetOperation.objects.filter(started_at__gte=start, started_at__lt=end))
-        .select_related("fc_user", "fleet_type")
-        .prefetch_related("role_assignments")
-    )
-    member_ids = current_member_user_ids()
-    grouped = defaultdict(list)
-    for op in operations:
-        credited_user_ids = {op.fc_user_id}
-        credited_user_ids.update(
-            assignment.auth_user_id
-            for assignment in op.role_assignments.all()
-            if assignment.grants_fc_credit and assignment.auth_user_id
-        )
-        if member_ids is not None:
-            credited_user_ids &= member_ids
-        for user_id in credited_user_ids:
-            grouped[user_id].append(op)
+    grouped = group_operations_by_fc(credited_operations(period.year, period.month), current_member_user_ids())
 
     existing_waivers = {row.fc_user_id: row.waived for row in period.fc_statistics.all()}
     rows = []
     for user_id, ops in grouped.items():
         # FC points: the fleet type weight times the PAP multiplier (1x while the choice is pending).
-        points = sum((op.fc_points for op in ops), Decimal("0"))
-        breakdown = defaultdict(lambda: {"count": 0, "points": 0.0})
-        for op in ops:
-            key = str(op.fleet_type)
-            breakdown[key]["count"] += 1
-            breakdown[key]["points"] += float(op.fc_points)
+        breakdown = {
+            name: {"count": entry["count"], "points": float(entry["points"])}
+            for name, entry in fc_breakdown(ops).items()
+        }
         rows.append({
             "user_id": user_id,
             "fleet_count": len(ops),
-            "points": points,
+            "points": fc_points(ops),
             "eligible": len(ops) >= period.minimum_fleets,
             "waived": existing_waivers.get(user_id, False),
-            "breakdown": dict(breakdown),
+            "breakdown": breakdown,
         })
     payouts = calculate_payouts(period.budget, rows)
     with transaction.atomic():

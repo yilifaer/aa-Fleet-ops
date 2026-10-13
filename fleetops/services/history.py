@@ -25,6 +25,18 @@ def retention_cutoff(days, *, now=None):
     return (now or timezone.now()) - timedelta(days=days)
 
 
+def month_retention_days(ref, settings_obj=None):
+    """The retention window in days when PAP of the month may already be removed, else None.
+
+    PAP older than the window is pruned, so a month that starts before the cutoff can be incomplete.
+    """
+    settings_obj = settings_obj or FleetOpsSettings.get_solo()
+    cutoff = retention_cutoff(settings_obj.data_retention_days)
+    if cutoff is None or ref.start >= cutoff:
+        return None
+    return max(MIN_RETENTION_DAYS, settings_obj.data_retention_days)
+
+
 def configured_alliance_ids(settings_obj=None) -> set[int]:
     settings_obj = settings_obj or FleetOpsSettings.get_solo()
     result = set()
@@ -39,24 +51,32 @@ def configured_alliance_ids(settings_obj=None) -> set[int]:
     return result
 
 
-def current_member_user_ids(settings_obj=None):
+def current_member_profiles(settings_obj=None):
+    """Profiles whose main character is in a configured member alliance; None when no alliance is configured.
+
+    A queryset, so callers can use it as a subquery (``.values("user_id")``) instead of a Python id list.
+    """
     alliance_ids = configured_alliance_ids(settings_obj)
     if not alliance_ids:
         return None
-    return set(
-        UserProfile.objects.filter(main_character__alliance_id__in=alliance_ids)
-        .exclude(main_character=None)
-        .values_list("user_id", flat=True)
-    )
+    return UserProfile.objects.filter(main_character__alliance_id__in=alliance_ids)
+
+
+def current_member_user_ids(settings_obj=None):
+    """The user IDs behind :func:`current_member_profiles` as a set, for checks of single users."""
+    profiles = current_member_profiles(settings_obj)
+    if profiles is None:
+        return None
+    return set(profiles.values_list("user_id", flat=True))
 
 
 def apply_current_membership_filter(qs, settings_obj=None):
-    user_ids = current_member_user_ids(settings_obj)
-    if user_ids is None:
+    profiles = current_member_profiles(settings_obj)
+    if profiles is None:
         return qs
     # Unmapped historical characters cannot be proven to have left the alliance,
     # so they remain until the retention window expires.
-    return qs.filter(Q(auth_user_id__in=user_ids) | Q(auth_user__isnull=True))
+    return qs.filter(Q(auth_user_id__in=profiles.values("user_id")) | Q(auth_user__isnull=True))
 
 
 def prune_history(*, dry_run: bool = False) -> dict:
@@ -72,10 +92,10 @@ def prune_history(*, dry_run: bool = False) -> dict:
     result["old_attendance"] = old_attendance.count()
     result["old_events"] = old_events.count()
 
-    user_ids = current_member_user_ids(settings_obj)
+    profiles = current_member_profiles(settings_obj)
     left_qs = AttendanceRecord.objects.none()
-    if user_ids is not None:
-        left_qs = AttendanceRecord.objects.exclude(auth_user=None).exclude(auth_user_id__in=user_ids)
+    if profiles is not None:
+        left_qs = AttendanceRecord.objects.exclude(auth_user=None).exclude(auth_user_id__in=profiles.values("user_id"))
         if cutoff is not None:
             # Expired rows are already counted above; keep the two totals disjoint.
             left_qs = left_qs.exclude(operation__started_at__lt=cutoff)
@@ -84,6 +104,6 @@ def prune_history(*, dry_run: bool = False) -> dict:
     if not dry_run:
         old_attendance.delete()
         old_events.delete()
-        if user_ids is not None:
+        if profiles is not None:
             left_qs.delete()
     return result

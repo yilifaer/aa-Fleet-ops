@@ -1,0 +1,57 @@
+{% extends "fleetops/base.html" %}
+{% block fleetops_content %}
+<div class="mb-3"><h2 class="mb-1">PAP Leaderboard</h2><div class="text-muted">{{ month_ref.label }}</div></div>
+{% if show_tabs %}{% include "fleetops/statistics/_tabs.html" %}{% endif %}
+{% include "fleetops/month_selector.html" %}
+{% if retention_days %}<div class="small text-muted mb-2">PAP older than {{ retention_days }} days is removed, so this month may be incomplete.</div>{% endif %}
+{% if corporations %}
+<form method="get" class="row g-2 align-items-end mb-3">
+  <input type="hidden" name="year" value="{{ year }}">
+  <input type="hidden" name="month" value="{{ month }}">
+  <div class="col-sm-auto">
+    <label class="form-label mb-1" for="fleetops-leaderboard-corporation">Corporation board</label>
+    <select class="form-select" id="fleetops-leaderboard-corporation" name="corporation">
+      {% if corporation_id is None %}<option value="" selected>Choose a corporation</option>{% endif %}
+      {% for id, name in corporations %}<option value="{{ id }}"{% if id == corporation_id %} selected{% endif %}>{{ name }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="col-sm-auto"><button class="btn btn-primary" type="submit">Show</button></div>
+</form>
+{% endif %}
+<div class="row g-3">
+  {% for entry in boards %}
+  {% with board=entry.board %}
+  <div class="col-xl-6">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between flex-wrap gap-2">
+        <strong>{{ entry.title }}</strong>
+        <span class="small text-muted">{{ board.ranked_count }} member{{ board.ranked_count|pluralize }} with PAP</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+          <thead><tr><th scope="col">Rank</th><th scope="col">Main</th>{% if board.corporation_id is None %}<th scope="col">Corporation</th>{% endif %}<th scope="col" class="text-end">PAP</th><th scope="col" class="text-end">Fleets</th></tr></thead>
+          <tbody>
+            {% for item in entry.items %}
+            <tr{% if item.is_viewer %} class="table-active"{% endif %}>
+              <td><span class="fleetops-rank">{{ item.row.rank }}</span></td>
+              <td>{% if item.link %}<a class="fw-semibold text-decoration-none" href="{% url 'fleetops:member_detail' item.row.user_id %}?year={{ year }}&amp;month={{ month }}">{{ item.row.main_character_name }}</a>{% else %}<span class="fw-semibold">{{ item.row.main_character_name }}</span>{% endif %}{% if item.is_viewer %} <span class="badge text-bg-primary">You</span>{% endif %}</td>
+              {% if board.corporation_id is None %}<td title="{{ item.row.corporation_name }}">{% if item.row.corporation_ticker %}[{{ item.row.corporation_ticker }}]{% else %}{{ item.row.corporation_name }}{% endif %}</td>{% endif %}
+              <td class="text-end"><strong>{{ item.row.pap }}</strong></td>
+              <td class="text-end">{{ item.row.fleets }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="text-muted p-4">Nobody has PAP in this month yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if board.viewer_row %}
+      <div class="card-footer">Your rank: <strong>#{{ board.viewer_row.rank }}</strong> of {{ board.ranked_count }} &middot; {{ board.viewer_row.pap }} PAP in {{ board.viewer_row.fleets }} fleet{{ board.viewer_row.fleets|pluralize }}{% if entry.viewer_link %} &middot; <a href="{% url 'fleetops:member_detail' board.viewer_row.user_id %}?year={{ year }}&amp;month={{ month }}">My statistics</a>{% endif %}</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endwith %}
+  {% endfor %}
+</div>
+<p class="small text-muted mt-3 mb-0">The top places of the month by PAP; members tied on the last place are all shown. PAP of alts counts for the main character. A corporation board lists the current members of the corporation.</p>
+{% endblock %}

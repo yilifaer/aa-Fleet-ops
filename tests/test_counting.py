@@ -104,7 +104,7 @@ class CountedFleetsTests(TestCase):
 
         page = self.client.get(reverse("fleetops:all_fc_statistics"), {"year": 2026, "month": 3})
 
-        users = [row["user"] for row in page.context["rows"]]
+        users = [row.user for row in page.context["rows"]]
         self.assertEqual(users, [self.fc])
 
     def test_reasons(self):

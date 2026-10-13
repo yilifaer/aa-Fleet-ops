@@ -1,9 +1,10 @@
 from dataclasses import dataclass
 
-from allianceauth.authentication.models import CharacterOwnership, UserProfile
+from allianceauth.authentication.models import CharacterOwnership
 from allianceauth.eveonline.models import EveCharacter
 
 from fleetops.models import EveEntityName
+from fleetops.services import population
 from fleetops.services.names import cached_identities, placeholder_name
 
 
@@ -130,4 +131,5 @@ def resolve_many(character_ids: list[int]) -> dict[int, CharacterIdentity]:
 
 
 def corporation_main_count(corporation_id: int) -> int:
-    return UserProfile.objects.filter(main_character__corporation_id=corporation_id).exclude(main_character=None).count()
+    """Mains of a corporation in the statistics population (see ``services.population``)."""
+    return population.corporation_main_count(corporation_id)

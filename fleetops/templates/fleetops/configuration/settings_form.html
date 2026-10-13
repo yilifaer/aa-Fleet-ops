@@ -18,6 +18,7 @@
       {% endif %}
     {% endfor %}
     {% if title == "PAP rules" %}<div class="small"><a href="{% url 'fleetops:configuration_list' 'multiplier-tiers' %}">PAP multiplier tiers</a> · <a href="{% url 'fleetops:configuration_list' 'special-roles' %}">Special roles</a></div>{% endif %}
+    {% if title == "Statistics" %}<div class="small"><a href="{% url 'fleetops:configuration_list' 'statistics-targets' %}">Monthly Targets</a></div>{% endif %}
   </div></div>
   {% endfor %}
   <div class="d-flex gap-2"><button class="btn btn-primary">Save Settings</button><a class="btn btn-outline-secondary" href="{% url 'fleetops:configuration_index' %}">Cancel</a></div>

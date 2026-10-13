@@ -2,22 +2,43 @@
 {% block fleetops_content %}
 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
   <div>
-    <h2 class="mb-1">{{ stats.corporation_name }}</h2>
-    <div class="text-muted">Corporation attendance statistics · {{ year }}-{{ month|stringformat:"02d" }}</div>
+    <h2 class="mb-1">{{ corporation_name }}</h2>
+    <div class="text-muted">Corporation PAP statistics &middot; {{ month_ref.label }} (EVE time)</div>
   </div>
-  {% if not own_corporation and perms.fleetops.view_all_stats %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:all_corporation_statistics' %}?year={{ year }}&month={{ month }}">Back to all corporations</a>{% endif %}
+  <div class="d-flex gap-2 align-items-start flex-wrap">
+    {% include "fleetops/statistics/_export_buttons.html" with dataset="members" %}
+    {% if not own_corporation and perms.fleetops.view_all_stats %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:all_corporation_statistics' %}?year={{ year }}&amp;month={{ month }}">Back to all corporations</a>{% endif %}
+  </div>
 </div>
+{% include "fleetops/statistics/_tabs.html" %}
 {% include "fleetops/month_selector.html" %}
+{% if retention_days %}<div class="small text-muted mb-2">PAP older than {{ retention_days }} days is removed, so this month may be incomplete.</div>{% endif %}
+{% if not stats.main_character_count %}
+<div class="alert alert-warning">
+  {% if own_corporation %}Your corporation{% else %}This corporation{% endif %} has no main characters in scope{% if alliance_filter_configured %}: it is not in the configured member alliances, or its mains have left them{% endif %}.
+</div>
+{% endif %}
+{% if stats.target.rule is None %}
+<div class="alert alert-secondary">
+  No monthly target applies to this month, so there is no status and members are listed below a minimum of {{ stats.target.minimum }} PAP.
+  {% if perms.fleetops.manage_configuration %}<a href="{% url 'fleetops:configuration_list' 'statistics-targets' %}">Set monthly targets</a>.{% endif %}
+</div>
+{% endif %}
 <div class="row g-3 mb-3">
-  <div class="col-lg-4"><div class="stat-card"><span>Main Characters</span><strong>{{ stats.main_character_count }}</strong><small class="text-muted">Current AA mains in this corporation</small></div></div>
-  <div class="col-lg-4"><div class="stat-card"><span>Total Attendance</span><strong>{{ stats.total_attendance }}</strong><small class="text-muted">Granted attendance during selected month</small></div></div>
-  <div class="col-lg-4"><div class="stat-card"><span>Average Attendance</span><strong>{{ stats.average_attendance|floatformat:2 }}</strong><small class="text-muted">Total attendance ÷ main characters</small></div></div>
+  <div class="col-xl col-md-4 col-sm-6"><div class="stat-card"><span>Main characters</span><strong>{{ stats.main_character_count }}</strong><small class="text-muted">Current mains in this corporation; alts are not counted</small></div></div>
+  <div class="col-xl col-md-4 col-sm-6"><div class="stat-card"><span>Total PAP</span><strong>{{ stats.total_pap }}</strong><small class="text-muted">{{ stats.fleets }} fleet{{ stats.fleets|pluralize }}, earned while the main was in this corporation</small></div></div>
+  <div class="col-xl col-md-4 col-sm-6"><div class="stat-card"><span>Average PAP per main</span><strong>{{ stats.average }} {% include "fleetops/statistics/_status_badge.html" with status=stats.status %}</strong><small class="text-muted">{% if stats.target.average is not None %}Target {{ stats.target.average|floatformat:2 }} per main{% if stats.target_pap is not None %} ({{ stats.target_pap|floatformat:"-2" }} PAP){% if stats.status == "met" %}, reached{% elif stats.missing_pap %}, {{ stats.missing_pap }} PAP {% if month_ref.is_current %}to go{% else %}short{% endif %}{% endif %}{% endif %}{% else %}No target set{% endif %}</small></div></div>
+  <div class="col-xl col-md-4 col-sm-6"><div class="stat-card"><span>Mains with PAP</span><strong>{{ stats.mains_with_pap }} / {{ stats.main_character_count }}</strong><small class="text-muted">{% widthratio stats.mains_with_pap stats.main_character_count 100 %}% of the mains</small></div></div>
+  <div class="col-xl col-md-4 col-sm-6"><div class="stat-card"><span>Below minimum</span><strong>{% if stats.target.minimum %}{% if stats.mains_below_minimum %}<a href="{% if tab_corporation_id %}{% url 'fleetops:corporation_members_detail' tab_corporation_id %}{% else %}{% url 'fleetops:corporation_members' %}{% endif %}?year={{ year }}&amp;month={{ month }}&amp;status=inactive">{{ stats.mains_below_minimum }}</a>{% else %}0{% endif %}{% else %}&mdash;{% endif %}</strong><small class="text-muted">{% if stats.target.minimum %}Mains with less than {{ stats.target.minimum }} PAP{% if month_ref.is_current %} so far{% endif %}{% else %}No member minimum this month{% endif %}</small></div></div>
 </div>
 <div class="card">
-  <div class="card-header"><strong>Fleet Type Breakdown</strong></div>
-  <div class="table-responsive"><table class="table table-hover mb-0 align-middle"><thead><tr><th>Fleet Type</th><th class="text-end">Total Attendance</th><th class="text-end">Average / Main</th></tr></thead><tbody>
-  {% for name,value in stats.breakdown.items %}<tr><td>{{ name }}</td><td class="text-end"><strong>{{ value }}</strong></td><td class="text-end">{% for k,v in stats.breakdown_average.items %}{% if k == name %}{{ v|floatformat:2 }}{% endif %}{% endfor %}</td></tr>{% empty %}<tr><td colspan="3" class="text-muted p-4">No attendance in this month.</td></tr>{% endfor %}
+  <div class="card-header"><strong>Fleet type breakdown</strong></div>
+  <div class="table-responsive"><table class="table table-hover mb-0 align-middle"><thead><tr><th>Fleet type</th><th class="text-end">Total PAP</th><th class="text-end">Average / main</th></tr></thead><tbody>
+  {% for name,value in stats.breakdown.items %}<tr><td>{{ name }}</td><td class="text-end"><strong>{{ value }}</strong></td><td class="text-end">{% for k,v in stats.breakdown_average.items %}{% if k == name %}{{ v|floatformat:2 }}{% endif %}{% endfor %}</td></tr>{% empty %}<tr><td colspan="3" class="text-muted p-4">No PAP in this month.</td></tr>{% endfor %}
   </tbody></table></div>
 </div>
-<p class="text-muted mt-3 mb-0">Average Attendance = Corporation Total Attendance ÷ Main Character Count.</p>
+<div class="text-muted small mt-3">
+  Average = total PAP &divide; main characters. The total counts PAP earned while the main was in this corporation. The mains are its current members, and the counts of mains with PAP and below the minimum use each member's PAP in any corporation{% if stats.member_pap != stats.total_pap %} (the current mains earned {{ stats.member_pap }} PAP){% endif %}.
+  Green: the target is reached. Amber: not reached yet while the month runs. Red: a finished month below the target.
+</div>
 {% endblock %}

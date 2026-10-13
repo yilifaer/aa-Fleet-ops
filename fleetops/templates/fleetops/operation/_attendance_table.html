@@ -1,4 +1,4 @@
-{% load fleetops_pap %}
+{% load fleetops_pap fleetops_messages %}
 {% if operation.status == 'active' or operation.status == 'ending' %}
 <div class="d-flex justify-content-between align-items-end flex-wrap gap-2 mb-2">
   <h5 class="mb-0">PAP preview</h5>
@@ -39,7 +39,7 @@
     <td>{{ r.attendance_value }}</td>
     <td>{% if r.review_status == 'pending' %}<span class="badge bg-warning text-dark">Pending approval</span>{% elif r.review_status == 'rejected' %}<span class="badge bg-danger" title="{{ r.review_note }}">Rejected</span>{% elif r.granted %}<span class="badge bg-success">Granted</span>{% if r.extra_value %} <span class="badge bg-info text-dark">Merged (+{{ r.extra_value }})</span>{% endif %}{% elif r.replaced %}<span class="badge bg-secondary">Replaced</span>{% elif r.capped %}<span class="badge bg-warning text-dark">Capped (limit)</span>{% elif r.below_minimum %}<span class="badge bg-secondary">Below minimum</span>{% elif r.correction == 'merge' %}<span class="badge bg-info text-dark">Merged into tracked PAP</span>{% else %}<span class="badge bg-secondary">Not granted</span>{% endif %}</td>
     <td>{{ r.tracked_seconds|minutes|default:"—" }}</td>
-    <td>{{ r.first_seen|default:"—" }}</td><td>{{ r.last_seen|default:"—" }}</td>
+    <td>{{ r.first_seen|eve_time|default:"—" }}</td><td>{{ r.last_seen|eve_time|default:"—" }}</td>
     <td>{% if r.pk in deletable_row_ids %}<form method="post" action="{% url 'fleetops:delete_manual_attendance' r.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">Delete</button></form>{% endif %}</td>
   </tr>{% empty %}<tr><td colspan="10">No attendance records.</td></tr>{% endfor %}</tbody>
 </table></div>

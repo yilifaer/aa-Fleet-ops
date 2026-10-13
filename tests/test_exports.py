@@ -495,7 +495,7 @@ class XlsxExportTests(SimpleTestCase):
         about = [
             ("Dataset", "Members"),
             ("Month (EVE)", "2026-10"),
-            ("Generated at (EVE)", datetime(2026, 10, 12, 8, 15, tzinfo=timezone.utc)),
+            ("Exported at (EVE)", datetime(2026, 10, 12, 8, 15, tzinfo=timezone.utc)),
             ("Target", Decimal("4.50")),
             ("Filters", ""),
         ]

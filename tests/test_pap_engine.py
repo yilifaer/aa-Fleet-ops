@@ -626,7 +626,7 @@ class RuleSnapshotTests(EngineTestBase):
 
 
 class AltCreditTests(EngineTestBase):
-    """PAP and statistics always go to the main of the character's owner (owner decision)."""
+    """PAP and statistics always go to the main of the character's owner."""
 
     def test_alt_in_another_corporation_and_alliance_is_credited_to_the_main(self):
         alt = f.add_alt(self.pilot, "Far Alt", corporation=f.OTHER_CORP, alliance=f.FOREIGN_ALLIANCE)

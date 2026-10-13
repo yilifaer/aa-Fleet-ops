@@ -19,6 +19,26 @@ EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 EVE_DATETIME_FORMAT = "%Y-%m-%d %H:%M"
 
+# The years a month selector and a monthly target accept.
+MIN_YEAR = 2003
+MAX_YEAR = 2200
+
+# English month names for month selectors; the C library's locale must not decide what the page says.
+MONTH_NAMES = (
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+)
+
 # Shared by the form field and the HTML ``pattern`` attribute of the time input.
 EVE_CLOCK_PATTERN = r"([01]\d|2[0-3]):[0-5]\d"
 _CLOCK_RE = re.compile(EVE_CLOCK_PATTERN, re.ASCII)
@@ -39,6 +59,10 @@ def to_utc(value: datetime | None) -> datetime | None:
 
 def eve_now() -> datetime:
     return timezone.now().astimezone(UTC)
+
+
+def month_name(month: int) -> str:
+    return MONTH_NAMES[month - 1]
 
 
 def shift_month(year: int, month: int, delta: int) -> tuple[int, int]:
@@ -66,6 +90,22 @@ def year_month_of(value: datetime) -> tuple[int, int]:
 
 def current_year_month(now: datetime | None = None) -> tuple[int, int]:
     return year_month_of(timezone.now() if now is None else now)
+
+
+def parse_year_month(params, default: tuple[int, int] | None = None) -> tuple[int, int]:
+    """The EVE month in ``year`` and ``month`` query parameters.
+
+    A missing, unreadable or out-of-range value gives ``default`` (the current month) for both numbers.
+    """
+    default = current_year_month() if default is None else default
+    try:
+        year = int(params.get("year", default[0]))
+        month = int(params.get("month", default[1]))
+    except (TypeError, ValueError):
+        return default
+    if not 1 <= month <= 12 or not MIN_YEAR <= year <= MAX_YEAR:
+        return default
+    return year, month
 
 
 @dataclass(frozen=True, slots=True)

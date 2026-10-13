@@ -33,6 +33,7 @@ from fleetops.models import (
     ShipFunction,
     ShipFunctionRule,
     SpecialRole,
+    StatisticsTarget,
 )
 from fleetops.services.audit import audit, cascaded_config_rows
 from fleetops.services.mentions import role_delete_refusal
@@ -197,6 +198,11 @@ class SpecialRoleAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
     list_display = ("name", "key", "grants_fc_credit", "is_active", "sort_order")
     list_filter = ("grants_fc_credit", "is_active")
     readonly_fields = ("key",)
+
+
+@admin.register(StatisticsTarget)
+class StatisticsTargetAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
+    list_display = ("effective_from", "corporation_average_target", "member_minimum_pap", "note")
 
 
 @admin.register(CommsPreset)

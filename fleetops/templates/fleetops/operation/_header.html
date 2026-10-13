@@ -1,4 +1,4 @@
-{% load tz %}
+{% load tz fleetops_messages %}
 <div class="d-flex justify-content-between align-items-start mb-3 gap-3 flex-wrap">
   <div>
     <h2 class="mb-1">{{ operation.fleet_type }} <span class="badge bg-{% if operation.status == 'active' %}success{% elif operation.status == 'closed' %}secondary{% else %}warning text-dark{% endif %}">{{ operation.get_status_display }}</span></h2>
@@ -26,7 +26,7 @@
 
 {% if operation.status == 'ending' %}<div class="alert alert-info" id="fleet-ending"><strong>Ending…</strong> The final fleet sync and attendance are being finished. This page refreshes until the fleet is closed.</div>{% endif %}
 {% if operation.status == 'closed' and operation.end_reason %}<div class="alert alert-secondary">{{ operation.end_reason_text }}{% if operation.ended_at %} · {{ operation.ended_at|utc|date:"Y-m-d H:i" }} EVE{% endif %}</div>{% endif %}
-{% if stale %}<div class="alert alert-warning"><strong>STALE DATA</strong> — last successful ESI update {{ operation.last_esi_update }}.</div>{% endif %}
+{% if stale %}<div class="alert alert-warning"><strong>STALE DATA</strong> — last successful ESI update {{ operation.last_esi_update|eve_time:"%Y-%m-%d %H:%M:%S" }} EVE.</div>{% endif %}
 {% if unreadable_warning %}<div class="alert alert-warning" id="fleet-unreadable">{{ unreadable_warning }}</div>
 {% elif operation.last_error and operation.status != 'closed' %}<div class="alert alert-warning">{{ operation.last_error }}</div>{% endif %}
 {% if operation.srp_error %}<div class="alert alert-warning"><strong>SRP:</strong> {{ operation.srp_error }}</div>{% endif %}
@@ -36,5 +36,5 @@
   <div class="col-md-2"><div class="stat-card"><span>Players</span><strong>{{ unique_players }}</strong></div></div>
   <div class="col-md-2"><div class="stat-card"><span>Attendance</span><strong>{{ attendance_total }}</strong><div class="small text-muted">{{ operation.attendance_multiplier }}x PAP multiplier{% if operation.multiplier_pending %} (choice pending){% endif %}</div></div></div>
   <div class="col-md-3"><div class="stat-card"><span>Form Up</span><strong class="small">{{ operation.formup }}</strong></div></div>
-  <div class="col-md-3"><div class="stat-card"><span>Last ESI</span><strong class="small" id="stat-last-esi">{{ operation.last_esi_update|default:"—" }}</strong></div></div>
+  <div class="col-md-3"><div class="stat-card"><span>Last ESI</span><strong class="small" id="stat-last-esi">{% if operation.last_esi_update %}{{ operation.last_esi_update|eve_time:"%Y-%m-%d %H:%M:%S" }} EVE{% else %}—{% endif %}</strong></div></div>
 </div>
