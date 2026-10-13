@@ -1,0 +1,53 @@
+{% extends "fleetops/base.html" %}
+{% load fleetops_messages %}
+{% block fleetops_content %}
+<div class="mb-3"><h2 class="mb-1">PAP Link</h2><div class="text-muted">{{ operation.fleet_type }} · FC {{ operation.fc_character_name }}{% if operation.formup %} · Form up {{ operation.formup }}{% endif %}{% if operation.doctrine_name %} · {{ operation.doctrine_name }}{% endif %}</div></div>
+{% if pending_review %}<div class="alert alert-info" id="pap-link-review">This fleet is waiting for FC lead approval; its PAP counts once it is approved.</div>
+{% elif rejected_review %}<div class="alert alert-warning" id="pap-link-review">An FC lead rejected this fleet, so its PAP does not count.</div>{% endif %}
+{% if link_open %}
+<div class="alert alert-success" id="pap-link-open">Open until <strong>{{ link.expires_at|eve_time }} EVE</strong> <span class="text-muted" id="pap-link-countdown" data-seconds="{{ seconds_left }}"></span>{% if link.require_online %}<div>Characters must be logged in to the game when they register.</div>{% endif %}</div>
+{% elif link_state == "revoked" %}<div class="alert alert-secondary" id="pap-link-closed">The FC closed this PAP link; it no longer accepts registrations.</div>
+{% elif link_state == "expired" %}<div class="alert alert-secondary" id="pap-link-closed">This PAP link expired at {{ link.expires_at|eve_time }} EVE; it no longer accepts registrations.</div>
+{% else %}<div class="alert alert-secondary" id="pap-link-closed">This fleet no longer accepts registrations.</div>{% endif %}
+
+<div class="card"><div class="card-header"><strong>Your characters</strong></div><div class="card-body">
+  <form method="post" id="pap-register-form">{% csrf_token %}
+    <div class="table-responsive"><table class="table table-sm align-middle">
+      <thead><tr><th></th><th>Character</th><th>Corporation</th><th>ESI login</th><th>Status</th></tr></thead>
+      <tbody>{% for c in characters %}<tr>
+        <td>{% if c.eligible %}<input class="form-check-input" type="checkbox" name="character_ids" value="{{ c.id }}" id="pap-character-{{ c.id }}">{% endif %}</td>
+        <td><label for="pap-character-{{ c.id }}">{{ c.name }}</label>{% if c.is_main %} <span class="badge bg-secondary">Main</span>{% endif %}</td>
+        <td>{{ c.corporation|default:"—" }}</td>
+        <td>{% if c.has_token %}<span class="badge bg-success">Ready</span>{% else %}<span class="badge bg-warning text-dark">Login needed</span>{% endif %}</td>
+        <td>{% if c.registered %}<span class="badge bg-success">Registered</span>{% elif not c.has_token %}<span class="small text-muted">Use Add a character to log in with it.</span>{% endif %}</td>
+      </tr>{% empty %}<tr><td colspan="5" class="text-muted">You have no characters in Alliance Auth yet.</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% if link_open %}
+    <div class="d-flex gap-2 flex-wrap">
+      <button class="btn btn-primary" type="submit"{% if not any_eligible %} disabled{% endif %}>Register selected characters</button>
+      <a class="btn btn-outline-primary" href="{% url 'fleetops:pap_link_authorize' link.code %}" id="pap-link-add-character">Add a character (EVE login)</a>
+    </div>
+    {% endif %}
+  </form>
+  <div class="small text-muted mt-3" id="pap-link-rules">
+    Registered characters get PAP when the fleet's PAP is finalized, whatever their time in fleet.
+    {% if character_limit %}The limit of {{ character_limit }} character{{ character_limit|pluralize }} per player applies when PAP is granted.{% endif %}
+    At most {{ max_per_submit }} characters are registered at once. Add a character logs you in with EVE to read its location, ship and online status.
+  </div>
+</div></div>
+{% if link_open %}
+<script>
+(function(){
+  const el=document.getElementById('pap-link-countdown');
+  let left=parseInt(el.dataset.seconds,10);
+  const show=()=>{
+    if(left<=0){ el.textContent='(closed; reload the page)'; return; }
+    const minutes=Math.floor(left/60), seconds=left%60;
+    el.textContent=`(closes in ${minutes} min ${String(seconds).padStart(2,'0')} s)`;
+  };
+  show();
+  const timer=setInterval(()=>{ left-=1; show(); if(left<=0){ clearInterval(timer); } },1000);
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -7,7 +7,7 @@ from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from fleetops.models import FleetOperation, OperationAction
+from fleetops.models import AuditLog, FleetOperation, OperationAction
 from fleetops.providers.doctrines import doctrine_fits_snapshot
 from fleetops.services.audit import audit
 from fleetops.services.errors import report_failure
@@ -62,6 +62,8 @@ EDITABLE_FIELDS = (
 )
 # Foreign keys among them; the audit lists their primary keys.
 _RELATIONS = {"fleet_type", "comms", "logi_channel", "boost_channel", "ping_channel", "ping_template", "motd_template"}
+# The steps a start runs, as listed in its audit entry.
+START_STEPS = ("fleet_detection", "message_render", "discord_ping", "motd_update", "tracking_start", "srp_link")
 
 
 def is_pre_ping_record(operation) -> bool:
@@ -249,8 +251,33 @@ def start_scheduled_fleet(operation, *, user, character_id, send_ping: bool) -> 
     run_start_steps(
         current, user=user, character_id=character.character_id, full_mode=current.send_ping, send_ping=send_ping
     )
+    record_start_steps(current)
     current.handed_over = [record for record, _old_status in handed_over]
     return current
+
+
+def record_start_steps(operation):
+    """Add the result of each start step to the start's one ``fleet.start`` audit entry.
+
+    The entry is written when the start claims the ESI fleet, before the steps run. A start that
+    is still running (a resubmitted form returns it) and an entry that already lists its steps
+    are left as they are, so later retries never rewrite what the start did.
+    """
+    if operation.status == Status.STARTING:
+        return
+    entry = (
+        AuditLog.objects.filter(action="fleet.start", object_type="FleetOperation", object_id=str(operation.pk))
+        .order_by("-pk")
+        .first()
+    )
+    if entry is None or not isinstance(entry.new_value, dict) or "steps" in entry.new_value:
+        return
+    results = dict(operation.actions.filter(action__in=START_STEPS).values_list("action", "status"))
+    entry.new_value = {
+        **entry.new_value,
+        "steps": {step: results[step] for step in START_STEPS if step in results},
+    }
+    entry.save(update_fields=["new_value"])
 
 
 def cancel_scheduled_fleet(operation, *, actor, notify: bool) -> FleetOperation:

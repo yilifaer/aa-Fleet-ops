@@ -102,8 +102,8 @@ Then verify `/fleetops/` loads for a user with `fleetops.basic_access`.
 16. Built-in SRP available: Fleet Start should create/link SRP without blocking the fleet if SRP fails.
 17. Manual attendance permission: FC can add multiple credits to a closed fleet; another FC cannot edit that fleet unless separately credited/admin.
 18. Attendance history: personal/corp/alliance views show up to configured retention; a departed mapped member is filtered/pruned when membership filtering is enabled.
-19. Assign Back Seat FC / Logi Anchor / Snowflake on active and closed fleets; an assigned user with `fleetops.start_fleet` receives FC credit.
-20. Capsule cleanup: place pod/capsule members in an active EVE fleet and verify one-click kick removes all detected pods except the Fleet Boss.
+19. Assign Back Seat FC / Logi Anchor / Snowflake on active and closed fleets; FC credit follows the role's **Gives FC credit** switch for any pilot in Alliance Auth, with no `fleetops.start_fleet` needed (Back Seat FC gives credit by default; a role with the switch off gives none).
+20. Kicks: place pod/capsule members in an active EVE fleet; **Kick Capsules** lists the capsule pilots by name and kicks only the ticked ones. Also kick a single member and use **Kick outside system…** (the FC's system preselected, untick members to spare them). More than 10 kicks run on the Celery worker; the FC and the Fleet Boss are never targeted.
 21. Dashboard renders metric cards, top ships, recent participation and active-fleet data with both light/dark AA themes.
 
 ## Bug report data

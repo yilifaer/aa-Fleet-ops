@@ -915,9 +915,12 @@ class EndFleetAuditTests(TestCase):
         entry = AuditLog.objects.get(action="fleet.end")
         self.assertEqual(entry.old_value, {"status": Status.STARTING, "tracking_enabled": False})
         self.assertEqual(
-            entry.new_value,
+            {key: entry.new_value[key] for key in ("status", "tracking_enabled", "end_reason", "end_detail")},
             {"status": Status.CLOSED, "tracking_enabled": False, "end_reason": "manual", "end_detail": ""},
         )
+        # The PAP the close granted is part of the entry.
+        self.assertEqual(entry.new_value["attendance_multiplier"], 1)
+        self.assertEqual(entry.new_value["pap"]["granted"], 0)
         self.assertEqual(entry.reason, "Ended manually")
 
     def test_automatic_end_of_an_active_fleet(self):

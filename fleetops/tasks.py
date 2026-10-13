@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from fleetops.models import FleetOperation, FleetOpsSettings
 from fleetops.providers.esi import FleetESIError
+from fleetops.services.audit import audit
 from fleetops.services.errors import log_failure, report_failure
 from fleetops.services.names import apply_names_to_operation, resolve_and_store
 from fleetops.services.operations import cancel_abandoned_starts, end_fleet, finish_requested_end
@@ -15,22 +16,33 @@ from fleetops.services.tracking import observe_unreadable_fleet, sync_operation,
 
 logger = get_extension_logger(__name__)
 
-# Only a successful sync sets last_esi_update, so the scheduler also remembers each poll attempt.
+# The beat remembers when it queued each poll and paces the next one from that time, so a worker
+# that picks polls up late does not stretch the interval. Only a successful sync sets
+# last_esi_update; it paces the polls only when the cache lost the queue time.
 POLL_ATTEMPT_TIMEOUT = 24 * 60 * 60
-# Polls are recorded by the worker, a little after the beat that queued them. Without some
-# slack the next beat finds the poll just short of the interval and skips it, so a 60 s
-# interval would poll every 120 s. Must stay below the 30 s minimum interval.
+# Beats do not run exactly on the second, so a poll queued a little less than one interval ago
+# is due. Must stay below the 30 s minimum interval.
 POLL_SLACK_SECONDS = 10
+# Tracking audit entries keep the stored short error text, which never holds an exception message.
+TRACKING_AUDIT_MESSAGE_LENGTH = 500
 # A fleet still Ending after this long lost its end task (worker restart); the beat finishes it.
 ENDING_RECOVERY_AFTER = timedelta(minutes=5)
 # A worker killed during the end task leaves its lock behind, so the lock must expire before the
 # recovery is due. A slow end that outlives its lock is harmless: end_fleet re-checks the locked
 # row before each phase, so a second run never closes the fleet twice.
 END_LOCK_TIMEOUT = 4 * 60
+# One kick batch per fleet at a time; a second batch retries until the first is done.
+KICK_LOCK_TIMEOUT = 10 * 60
+KICK_RETRY_SECONDS = 30
 
 
 def _poll_attempt_key(operation_id):
     return f"fleetops:track:attempt:{operation_id}"
+
+
+def _poll_queued_key(operation_id):
+    # Set while a queued poll waits for a worker, so a backlog never gets a second poll queued.
+    return f"fleetops:track:queued:{operation_id}"
 
 
 @shared_task
@@ -47,15 +59,20 @@ def schedule_active_fleet_tracking():
             tracking_enabled=True,
         ).only("pk", "last_esi_update")
     )
-    attempts = cache.get_many([_poll_attempt_key(operation.pk) for operation in operations])
+    keys = [_poll_attempt_key(operation.pk) for operation in operations]
+    keys += [_poll_queued_key(operation.pk) for operation in operations]
+    cached = cache.get_many(keys)
     queued = 0
     for operation in operations:
-        polls = [operation.last_esi_update, attempts.get(_poll_attempt_key(operation.pk))]
-        last_poll = max((poll for poll in polls if poll is not None), default=None)
+        if _poll_queued_key(operation.pk) in cached:
+            continue
+        last_poll = cached.get(_poll_attempt_key(operation.pk), operation.last_esi_update)
         if last_poll is not None:
             age = (now - last_poll).total_seconds()
             if age < settings.tracking_interval - POLL_SLACK_SECONDS:
                 continue
+        cache.set(_poll_attempt_key(operation.pk), now, timeout=POLL_ATTEMPT_TIMEOUT)
+        cache.set(_poll_queued_key(operation.pk), now, timeout=2 * settings.tracking_interval)
         track_operation.delay(operation.pk)
         queued += 1
     _recover_stuck_ends(now)
@@ -74,6 +91,7 @@ def _recover_stuck_ends(now):
 
 @shared_task(bind=True, autoretry_for=(), max_retries=0)
 def track_operation(self, operation_id):
+    cache.delete(_poll_queued_key(operation_id))
     settings = FleetOpsSettings.get_solo()
     lock_timeout = max(55, min(settings.tracking_interval, 300))
     lock_key = f"fleetops:track:{operation_id}"
@@ -85,20 +103,57 @@ def track_operation(self, operation_id):
             return "missing"
         if operation.status != FleetOperation.Status.ACTIVE or not operation.tracking_enabled:
             return "inactive"
-        cache.set(_poll_attempt_key(operation.pk), timezone.now(), timeout=POLL_ATTEMPT_TIMEOUT)
+        # A poll the beat did not queue paces the next one too, but never moves the beat's queue time.
+        cache.add(_poll_attempt_key(operation.pk), timezone.now(), timeout=POLL_ATTEMPT_TIMEOUT)
+        previous_error = operation.last_error
         try:
             count = sync_operation(operation)
         except FleetESIError as exc:
             if exc.code == "FLEET_NOT_FOUND":
-                return _unreadable_fleet(operation, settings)
-            return exc.code if _save_if_active(operation, last_error=str(exc)[:4000]) else "inactive"
+                return _unreadable_fleet(operation, settings, had_error=bool(previous_error))
+            error = str(exc)[:4000]
+            if not _save_if_active(operation, last_error=error):
+                return "inactive"
+            _audit_tracking_error(operation, bool(previous_error), exc.code, error)
+            return exc.code
         except Exception as exc:
             error = report_failure(logger, "Fleet tracking", exc, operation)[:4000]
-            return "error" if _save_if_active(operation, last_error=error) else "inactive"
+            if not _save_if_active(operation, last_error=error):
+                return "inactive"
+            _audit_tracking_error(operation, bool(previous_error), "ERROR", error)
+            return "error"
         # None means the fleet was ended while its members were being read.
-        return "inactive" if count is None else count
+        if count is None:
+            return "inactive"
+        if previous_error:
+            _audit_tracking_recovered(operation, previous_error, count)
+        return count
     finally:
         cache.delete(lock_key)
+
+
+def _audit_tracking_error(operation, had_error, code, message):
+    """Audit the first failed poll after a good one; repeated failures add no entries."""
+    if had_error:
+        return
+    audit(
+        None,
+        "fleet.tracking_error",
+        operation,
+        None,
+        {"code": code, "message": message[:TRACKING_AUDIT_MESSAGE_LENGTH]},
+    )
+
+
+def _audit_tracking_recovered(operation, previous_error, count):
+    """Audit the first good poll after failures."""
+    audit(
+        None,
+        "fleet.tracking_recovered",
+        operation,
+        {"last_error": previous_error[:TRACKING_AUDIT_MESSAGE_LENGTH]},
+        {"members": count},
+    )
 
 
 def _save_if_active(operation, **fields):
@@ -115,13 +170,16 @@ def _save_if_active(operation, **fields):
     return saved > 0
 
 
-def _unreadable_fleet(operation, settings):
+def _unreadable_fleet(operation, settings, *, had_error=False):
     """Count a poll whose fleet read got a 404 and end the fleet once enough polls in a row did."""
     observation = observe_unreadable_fleet(operation)
     if observation is None:
         # Whether the fleet is gone could not be checked, so this poll proves nothing.
         message = "The fleet could not be read and the fleet boss check failed; this check was not counted."
-        return "FLEET_CHECK_FAILED" if _save_if_active(operation, last_error=message) else "inactive"
+        if not _save_if_active(operation, last_error=message):
+            return "inactive"
+        _audit_tracking_error(operation, had_error, "FLEET_CHECK_FAILED", message)
+        return "FLEET_CHECK_FAILED"
     reason, detail = observation
     fields = {}
     if observation.boss_id:
@@ -138,9 +196,11 @@ def _unreadable_fleet(operation, settings):
     if not counted:
         return "inactive"
     code = "BOSS_HANDOVER" if reason == FleetOperation.EndReason.BOSS_HANDOVER else "FLEET_NOT_FOUND"
+    _audit_tracking_error(operation, had_error, code, operation.last_error)
     if not settings.auto_end_enabled or operation.fleet_missing_count < settings.auto_end_missing_count:
         return code
     # One more read before ending: if the fleet can be read again the end is called off.
+    error = operation.last_error
     try:
         count = sync_operation(operation)
     except FleetESIError:
@@ -148,7 +208,10 @@ def _unreadable_fleet(operation, settings):
     except Exception as exc:
         report_failure(logger, "Fleet tracking", exc, operation)
     else:
-        return "inactive" if count is None else "auto-end-cancelled"
+        if count is None:
+            return "inactive"
+        _audit_tracking_recovered(operation, error, count)
+        return "auto-end-cancelled"
     end_fleet(operation, automatic=True, reason=reason, detail=detail)
     return "auto-ended"
 
@@ -172,6 +235,21 @@ def finish_fleet_end(operation_id):
             log_failure(logger, "Fleet end", exc, operation)
             return "error"
         return "closed"
+    finally:
+        cache.delete(lock_key)
+
+
+@shared_task(bind=True, max_retries=KICK_LOCK_TIMEOUT // KICK_RETRY_SECONDS)
+def kick_members(self, operation_id, character_ids, actor_id, purpose, context=None):
+    """Kick a batch of fleet members with the FC's ESI token, away from the web request."""
+    # Imported here: the kick service queues this task.
+    from fleetops.services.fleet_controls import run_kick_batch
+
+    lock_key = f"fleetops:kick:{operation_id}"
+    if not cache.add(lock_key, "1", timeout=KICK_LOCK_TIMEOUT):
+        raise self.retry(countdown=KICK_RETRY_SECONDS)
+    try:
+        return run_kick_batch(operation_id, character_ids, actor_id, purpose, context)
     finally:
         cache.delete(lock_key)
 

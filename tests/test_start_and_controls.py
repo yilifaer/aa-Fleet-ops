@@ -15,7 +15,7 @@ from django.utils import timezone
 from fleetops.forms import ManualFleetForm
 from fleetops.models import AuditLog, FleetMemberState, FleetOperation
 from fleetops.services import operations as operations_module
-from fleetops.services.fleet_controls import kick_all_pods, kickable_pod_members
+from fleetops.services.fleet_controls import CAPSULES, kick_members, kickable_pod_members
 from fleetops.services.operations import (
     START_ABANDONED_MESSAGE,
     STARTING_ABANDONED_AFTER,
@@ -79,7 +79,7 @@ class KickableCapsuleTests(TestCase):
         self.assertEqual(page.context["pod_count"], 1)
         self.assertContains(page, "Kick 1 Capsule</button>")
         with mock.patch("fleetops.services.fleet_controls.kick_fleet_member") as kick:
-            result = kick_all_pods(self.operation, actor=self.fc)
+            result = kick_members(self.operation, None, actor=self.fc, purpose=CAPSULES)
 
         self.assertEqual(result["target_count"], page.context["pod_count"])
         self.assertEqual([call.args[3] for call in kick.call_args_list], [self.pod.character_id])
@@ -96,7 +96,7 @@ class KickableCapsuleTests(TestCase):
         with mock.patch(
             "fleetops.services.fleet_controls.kick_fleet_member", side_effect=RuntimeError("token=abc123secret")
         ):
-            result = kick_all_pods(self.operation, actor=self.fc)
+            result = kick_members(self.operation, None, actor=self.fc, purpose=CAPSULES)
 
         self.assertEqual(result["failures"], [{"character": "Podded Pilot", "error": "Capsule kick failed unexpectedly (RuntimeError)."}])
         step = self.operation.actions.get(action="kick_capsules")
@@ -309,7 +309,16 @@ class BossHandoverAtStartTests(StartTestBase):
         for status, extra in (
             (Status.STARTING, {}),
             (Status.ACTIVE, {"missing_reason": FleetOperation.EndReason.BOSS_HANDOVER, "fleet_missing_count": 2}),
-            (Status.ENDING, {"end_reason": "manual", "end_requested_at": requested_at, "end_requested_multiplier": 2}),
+            # Long enough for the 2x the FC asked for.
+            (
+                Status.ENDING,
+                {
+                    "end_reason": "manual",
+                    "end_requested_at": requested_at,
+                    "end_requested_multiplier": 2,
+                    "started_at": requested_at - timedelta(hours=2),
+                },
+            ),
         ):
             with self.subTest(status=status):
                 FleetOperation.objects.all().delete()

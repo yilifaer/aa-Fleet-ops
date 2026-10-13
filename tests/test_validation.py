@@ -553,6 +553,25 @@ class ManualAttendanceFormTests(TestCase):
                     ],
                 )
 
+    def test_character_needs_a_name_or_an_id(self):
+        for data in ({"character_id": ""}, {"character_id": "", "character_name": "   "}):
+            with self.subTest(data=data):
+                form = ManualAttendanceForm(self._data(**data))
+                self.assertFalse(form.is_valid())
+                self.assertEqual(form.non_field_errors(), ["Enter a character name or a character ID."])
+
+    def test_long_names_are_rejected_on_the_name_field(self):
+        form = ManualAttendanceForm(self._data(character_id="", character_name="x" * 256))
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("character_name", form.errors)
+
+    def test_duplicate_actions_are_the_corrections(self):
+        self.assertTrue(ManualAttendanceForm(self._data(duplicate_action="merge")).is_valid())
+        form = ManualAttendanceForm(self._data(duplicate_action="drop"))
+        self.assertFalse(form.is_valid())
+        self.assertIn("duplicate_action", form.errors)
+
     def test_unowned_character_gets_no_attendance_through_the_views(self):
         self.client.force_login(self.fc)
         unknown_id = str(f.next_id())
@@ -570,27 +589,26 @@ class ManualAttendanceFormTests(TestCase):
 
 
 class IncentivePeriodFormTests(TestCase):
-    def _form(self, year, month="1"):
-        return IncentivePeriodForm({"year": year, "month": month, "budget": "0", "minimum_fleets": "1"})
+    def test_posted_year_and_month_are_ignored(self):
+        # The month comes from the incentive page, never from the form.
+        form = IncentivePeriodForm(
+            {"year": "99999", "month": "13", "budget": "0", "minimum_fleets": "1"},
+            instance=IncentivePeriod(year=2026, month=3),
+        )
 
-    def test_supported_years_are_accepted(self):
-        for year in ("2003", "2026", "2200"):
-            with self.subTest(year=year):
-                self.assertTrue(self._form(year).is_valid())
+        self.assertTrue(form.is_valid(), form.errors)
+        period = form.save()
+        self.assertEqual((period.year, period.month), (2026, 3))
 
     def test_out_of_range_year_or_month_is_rejected(self):
-        for year, month, field in (
-            ("0", "1", "year"),
-            ("2002", "1", "year"),
-            ("2201", "1", "year"),
-            ("99999", "1", "year"),
-            ("2026", "0", "month"),
-            ("2026", "13", "month"),
-        ):
+        f.settings(incentive_enabled=True)
+        self.client.force_login(f.create_user(perms=f.MEMBER_PERMS + ["fleetops.manage_incentives"]))
+        for year, month in (("0", "1"), ("2002", "1"), ("2201", "1"), ("99999", "1"), ("2026", "0"), ("2026", "13")):
             with self.subTest(year=year, month=month):
-                form = self._form(year, month)
-                self.assertFalse(form.is_valid())
-                self.assertIn(field, form.errors)
+                self.client.post(
+                    reverse("fleetops:incentive_review") + f"?year={year}&month={month}",
+                    {"budget": "0", "minimum_fleets": "1"},
+                )
         self.assertFalse(IncentivePeriod.objects.exists())
 
 

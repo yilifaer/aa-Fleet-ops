@@ -7,7 +7,6 @@ from types import SimpleNamespace
 from unittest import mock
 
 from allianceauth.eveonline.models import EveCharacter
-from allianceauth.tests.auth_utils import AuthUtils
 from django.apps import apps as django_apps
 from django.contrib.auth.models import Permission, User
 from django.db import models
@@ -25,6 +24,7 @@ from fleetops.models import (
     FleetOperation,
     OperationAction,
     OperationRoleAssignment,
+    SpecialRole,
 )
 from fleetops.providers import doctrines as doctrines_module
 from fleetops.providers import esi as esi_provider
@@ -42,9 +42,10 @@ from fleetops.providers.srp import (
 from fleetops.services import routing as routing_module
 from fleetops.services import sde as sde_module
 from fleetops.services.fleet_controls import (
+    CAPSULES,
     KNOWN_CAPSULE_TYPE_IDS,
     is_capsule_member,
-    kick_all_pods,
+    kick_members,
     pod_members,
 )
 from fleetops.services import operations as operations_module
@@ -1119,7 +1120,7 @@ class KickCapsulesTests(TestCase):
     def test_kicks_every_capsule_except_the_fc(self):
         kick = self.patch_kick()
 
-        result = kick_all_pods(self.operation, actor=self.fc)
+        result = kick_members(self.operation, None, actor=self.fc, purpose=CAPSULES)
 
         kicked_ids = [c.args[3] for c in kick.call_args_list]
         self.assertCountEqual(kicked_ids, [self.pod_a.character_id, self.pod_b.character_id])
@@ -1133,7 +1134,7 @@ class KickCapsulesTests(TestCase):
     def test_successful_kick_records_action_and_audit(self):
         self.patch_kick()
 
-        kick_all_pods(self.operation, actor=self.fc)
+        kick_members(self.operation, None, actor=self.fc, purpose=CAPSULES)
 
         action = action_of(self.operation, "kick_capsules")
         self.assertEqual(action.status, ActionStatus.SUCCESS)
@@ -1154,7 +1155,7 @@ class KickCapsulesTests(TestCase):
 
         self.patch_kick(side_effect=kick)
 
-        result = kick_all_pods(self.operation, actor=self.fc)
+        result = kick_members(self.operation, None, actor=self.fc, purpose=CAPSULES)
 
         self.assertEqual(result["kicked"], ["Pod Alpha"])
         self.assertEqual(result["failures"], [{"character": "Pod Bravo", "error": f"Fleet member {failing_id} was not found."}])
@@ -1164,33 +1165,33 @@ class KickCapsulesTests(TestCase):
         entry = AuditLog.objects.get(action="fleet.kick_capsules")
         self.assertEqual(entry.new_value["failures"][0]["character"], "Pod Bravo")
 
-    def test_no_capsules_is_a_successful_no_op(self):
+    def test_no_capsules_kicks_nobody(self):
         FleetMemberState.objects.filter(pk__in=[self.pod_a.pk, self.pod_b.pk]).update(ship_type_id=GUARDIAN)
         kick = self.patch_kick()
 
-        result = kick_all_pods(self.operation, actor=self.fc)
+        result = kick_members(self.operation, None, actor=self.fc, purpose=CAPSULES)
 
         kick.assert_not_called()
-        self.assertEqual(result, {"kicked": [], "failures": [], "target_count": 0})
-        self.assertEqual(action_of(self.operation, "kick_capsules").status, ActionStatus.SUCCESS)
+        self.assertEqual(result, {"queued": False, "kicked": [], "failures": [], "skipped": [], "target_count": 0})
+        self.assertFalse(OperationAction.objects.filter(operation=self.operation, action="kick_capsules").exists())
 
     def test_repeated_kick_increments_attempts(self):
         self.patch_kick()
 
-        kick_all_pods(self.operation, actor=self.fc)
-        kick_all_pods(self.operation, actor=self.fc)
+        kick_members(self.operation, None, actor=self.fc, purpose=CAPSULES)
+        kick_members(self.operation, None, actor=self.fc, purpose=CAPSULES)
 
         self.assertEqual(action_of(self.operation, "kick_capsules").attempts, 2)
         self.assertEqual(AuditLog.objects.filter(action="fleet.kick_capsules").count(), 2)
 
-    def test_operation_without_esi_fleet_id_raises(self):
+    def test_fleet_without_esi_fleet_is_refused(self):
         manual = f.create_operation(self.fc, status=Status.CLOSED, is_manual=True)
         FleetOperation.objects.filter(pk=manual.pk).update(esi_fleet_id=None)
         manual.refresh_from_db()
         kick = self.patch_kick()
 
         with self.assertRaises(ValueError):
-            kick_all_pods(manual, actor=self.fc)
+            kick_members(manual, None, actor=self.fc, purpose=CAPSULES)
 
         kick.assert_not_called()
         self.assertFalse(OperationAction.objects.filter(operation=manual, action="kick_capsules").exists())
@@ -1200,7 +1201,7 @@ class KickCapsulesTests(TestCase):
         token = f.add_token(self.fc, self.fc_char)
         fleets = self.patch_esi_client()
 
-        result = kick_all_pods(self.operation, actor=self.fc)
+        result = kick_members(self.operation, None, actor=self.fc, purpose=CAPSULES)
 
         self.assertEqual(result["failures"], [])
         calls = fleets.DeleteFleetsFleetIdMembersMemberId.call_args_list
@@ -1215,7 +1216,7 @@ class KickCapsulesTests(TestCase):
         f.add_token(self.fc, self.fc_char, scopes=[FLEET_READ_SCOPE])
         fleets = self.patch_esi_client()
 
-        result = kick_all_pods(self.operation, actor=self.fc)
+        result = kick_members(self.operation, None, actor=self.fc, purpose=CAPSULES)
 
         fleets.DeleteFleetsFleetIdMembersMemberId.assert_not_called()
         self.assertEqual(result["kicked"], [])
@@ -1230,7 +1231,7 @@ class KickCapsulesTests(TestCase):
             status_code=403, headers={}, data=None
         )
 
-        result = kick_all_pods(self.operation, actor=self.fc)
+        result = kick_members(self.operation, None, actor=self.fc, purpose=CAPSULES)
 
         self.assertEqual(len(result["failures"]), 2)
         self.assertIn("denied permission", result["failures"][0]["error"])
@@ -1293,8 +1294,11 @@ class RoleAssignmentServiceTests(TestCase):
         self.operation = f.create_operation(self.fc, status=Status.CLOSED, started_at=STATS_START)
         self.co_fc = f.create_user("co_fc", perms=f.MEMBER_PERMS + ["fleetops.start_fleet"])
         self.member = f.create_user("line_member", perms=f.MEMBER_PERMS)
+        # Roles are given to characters recorded in the fleet.
+        for user in (self.fc, self.co_fc, self.member):
+            f.member_state(self.operation, f.main_of(user), active=False)
 
-    def test_assignee_with_start_fleet_gets_fc_credit_snapshot(self):
+    def test_role_with_fc_credit_gives_a_credit_snapshot(self):
         main = f.main_of(self.co_fc)
 
         assignment = add_role_assignment(
@@ -1307,19 +1311,31 @@ class RoleAssignmentServiceTests(TestCase):
         self.assertEqual(assignment.main_character_id, main.character_id)
         self.assertEqual(assignment.assigned_by, self.fc)
         self.assertEqual(assignment.notes, "Backup")
+        self.assertEqual(assignment.special_role, SpecialRole.objects.get(key="backseat_fc"))
 
-    def test_assignee_without_start_fleet_gets_no_credit(self):
+    def test_role_without_fc_credit_gives_none(self):
         assignment = add_role_assignment(
-            self.operation, actor=self.fc, role=Role.LOGI_ANCHOR, character_id=f.main_of(self.member).character_id
+            self.operation, actor=self.fc, role=Role.LOGI_ANCHOR, character_id=f.main_of(self.co_fc).character_id
         )
 
         self.assertFalse(assignment.grants_fc_credit)
-        self.assertEqual(assignment.auth_user, self.member)
+        self.assertEqual(assignment.auth_user, self.co_fc)
+
+    def test_fc_credit_needs_no_fc_permission(self):
+        # The role's switch alone decides; the pilot does not need start_fleet.
+        assignment = add_role_assignment(
+            self.operation, actor=self.fc, role=Role.BACKSEAT_FC, character_id=f.main_of(self.member).character_id
+        )
+
+        self.assertFalse(self.member.has_perm("fleetops.start_fleet"))
+        self.assertTrue(assignment.grants_fc_credit)
+        self.assertEqual(fc_statistics(self.member, STATS_YEAR, STATS_MONTH)["fleet_count"], 1)
 
     def test_alt_in_other_corporation_is_attributed_to_main(self):
         alt = f.add_alt(self.co_fc, "Co FC Alt", corporation=f.OTHER_CORP, alliance=f.FOREIGN_ALLIANCE)
+        f.member_state(self.operation, alt, active=False)
 
-        assignment = add_role_assignment(self.operation, actor=self.fc, role=Role.SNOWFLAKE, character_id=alt.character_id)
+        assignment = add_role_assignment(self.operation, actor=self.fc, role=Role.BACKSEAT_FC, character_id=alt.character_id)
 
         main = f.main_of(self.co_fc)
         self.assertEqual(assignment.character_name, "Co FC Alt")
@@ -1330,9 +1346,11 @@ class RoleAssignmentServiceTests(TestCase):
 
     def test_unowned_character_gets_no_user_and_no_credit(self):
         stranger = f.create_character("Neutral Pilot", corporation=f.OTHER_CORP)
+        f.member_state(self.operation, stranger, active=False)
+        f.member_state(self.operation, 1_999_999_999, active=False)
 
-        assignment = add_role_assignment(self.operation, actor=self.fc, role=Role.SNOWFLAKE, character_id=stranger.character_id)
-        unknown = add_role_assignment(self.operation, actor=self.fc, role=Role.SNOWFLAKE, character_id=1_999_999_999)
+        assignment = add_role_assignment(self.operation, actor=self.fc, role=Role.BACKSEAT_FC, character_id=stranger.character_id)
+        unknown = add_role_assignment(self.operation, actor=self.fc, role=Role.BACKSEAT_FC, character_id=1_999_999_999)
 
         self.assertIsNone(assignment.auth_user)
         self.assertFalse(assignment.grants_fc_credit)
@@ -1352,7 +1370,8 @@ class RoleAssignmentServiceTests(TestCase):
         self.assertEqual(entry.object_id, str(assignment.pk))
         self.assertIsNone(entry.old_value)
         self.assertEqual(
-            entry.new_value, {"role": "backseat_fc", "character_id": main.character_id, "grants_fc_credit": True}
+            entry.new_value,
+            {"role": "backseat_fc", "role_name": "Back Seat FC", "character_id": main.character_id, "grants_fc_credit": True},
         )
 
     def test_reassigning_same_role_updates_existing_row(self):
@@ -1395,15 +1414,19 @@ class RoleAssignmentServiceTests(TestCase):
         self.assertTrue(assignment.grants_fc_credit)
         self.assertEqual(fc_statistics(co_fc, STATS_YEAR, STATS_MONTH)["fleet_count"], 1)
 
-    def test_later_permission_grant_is_not_retroactive(self):
+    def test_later_role_credit_change_is_not_retroactive(self):
         main = f.main_of(self.member)
         assignment = add_role_assignment(self.operation, actor=self.fc, role=Role.LOGI_ANCHOR, character_id=main.character_id)
 
-        AuthUtils.add_permissions_to_user_by_name(["fleetops.start_fleet"], self.member)
+        f.special_role(key="logi_anchor", grants_fc_credit=True)
 
         assignment.refresh_from_db()
         self.assertFalse(assignment.grants_fc_credit)
         self.assertEqual(fc_statistics(self.member, STATS_YEAR, STATS_MONTH)["fleet_count"], 0)
+        # Assigning the role again applies the new setting.
+        assignment = add_role_assignment(self.operation, actor=self.fc, role=Role.LOGI_ANCHOR, character_id=main.character_id)
+        self.assertTrue(assignment.grants_fc_credit)
+        self.assertEqual(fc_statistics(self.member, STATS_YEAR, STATS_MONTH)["fleet_count"], 1)
 
     def test_delete_is_audited_and_removes_assignment(self):
         main = f.main_of(self.co_fc)
@@ -1417,7 +1440,8 @@ class RoleAssignmentServiceTests(TestCase):
         self.assertEqual(entry.actor, self.fc)
         self.assertEqual(entry.object_id, str(pk))
         self.assertEqual(
-            entry.old_value, {"role": "backseat_fc", "character_id": main.character_id, "grants_fc_credit": True}
+            entry.old_value,
+            {"role": "backseat_fc", "role_name": "Back Seat FC", "character_id": main.character_id, "grants_fc_credit": True},
         )
         self.assertIsNone(entry.new_value)
 
@@ -1437,6 +1461,7 @@ class RoleAssignmentServiceTests(TestCase):
 
     def test_user_counted_once_with_several_credit_sources(self):
         alt = f.add_alt(self.co_fc, "Co FC Logi Alt")
+        f.member_state(self.operation, alt, active=False)
         add_role_assignment(self.operation, actor=self.fc, role=Role.BACKSEAT_FC, character_id=f.main_of(self.co_fc).character_id)
         add_role_assignment(self.operation, actor=self.fc, role=Role.LOGI_ANCHOR, character_id=alt.character_id)
         add_role_assignment(self.operation, actor=self.fc, role=Role.SNOWFLAKE, character_id=f.main_of(self.fc).character_id)

@@ -21,6 +21,7 @@ from fleetops.models import (
     FleetMemberEvent,
     FleetMemberState,
     FleetOperation,
+    FleetStartPreset,
     IncentivePeriod,
     MessageTemplate,
     MonthlyFCStatistic,
@@ -54,7 +55,9 @@ ROLES = ("member", "corp", "fc", "lead")
 
 Case = namedtuple("Case", "label method url data expected")
 
-CONFIG_SECTIONS = ("fleet-types", "comms", "channels", "ping-channels", "ping-roles", "templates")
+CONFIG_SECTIONS = (
+    "fleet-types", "multiplier-tiers", "special-roles", "comms", "channels", "ping-channels", "ping-roles", "templates",
+)
 
 
 def add_member_state(
@@ -290,8 +293,15 @@ class FleetOpsViewTestCase(TestCase):
             reason="Weight review",
         )
 
+        # PAP links of both FCs' active fleets and a Fleet Start preset of the FC.
+        cls.own_link = f.pap_link(cls.own_active)
+        cls.other_link = f.pap_link(cls.other_active)
+        cls.fc_preset = FleetStartPreset.objects.create(owner=cls.fc, name="Muninn")
+
         cls.config_objects = {
             "fleet-types": cls.stratop,
+            "multiplier-tiers": f.multiplier_tiers()[0],
+            "special-roles": f.special_role("Scout"),
             "comms": cls.comms,
             "channels": cls.logi,
             "ping-channels": cls.webhook,
@@ -481,9 +491,10 @@ class PermissionMatrixTests(FleetOpsViewTestCase):
             Case("delete_operation_role other", "post",
                  r("fleetops:delete_operation_role", args=[self.other_role.pk]), None,
                  {"member": DENIED, "corp": DENIED, "fc": HIDDEN, "lead": REDIRECT}),
+            # An approved correction is deleted by FC leads only.
             Case("delete_manual_attendance own", "post",
                  r("fleetops:delete_manual_attendance", args=[self.own_manual.pk]), None,
-                 {"member": DENIED, "corp": DENIED, "fc": REDIRECT, "lead": REDIRECT}),
+                 {"member": DENIED, "corp": DENIED, "fc": HIDDEN, "lead": REDIRECT}),
             Case("delete_manual_attendance other", "post",
                  r("fleetops:delete_manual_attendance", args=[self.other_manual.pk]), None,
                  {"member": DENIED, "corp": DENIED, "fc": HIDDEN, "lead": REDIRECT}),
@@ -495,8 +506,66 @@ class PermissionMatrixTests(FleetOpsViewTestCase):
                  None, lead_post),
             Case("incentive_waiver", "post",
                  r("fleetops:incentive_waiver", args=[self.period.pk, self.fc.pk]), {"waived": "1"}, lead_post),
+            Case("incentive_update", "post", r("fleetops:incentive_update", args=[self.period.pk]),
+                 {"budget": "1000000000", "minimum_fleets": "1"}, lead_post),
         ]
+        cases += self.pap_rule_cases(own_and_other, member_only, lead_post)
         return cases
+
+    def pap_rule_cases(self, own_and_other, member_only, lead_post):
+        r = reverse
+        fc_pages = {"member": DENIED, "corp": DENIED, "fc": OK, "lead": OK}
+        own_page = {"member": DENIED, "corp": DENIED, "fc": OK, "lead": OK}
+        other_page = {"member": DENIED, "corp": DENIED, "fc": HIDDEN, "lead": OK}
+        own_post = {"member": DENIED, "corp": DENIED, "fc": REDIRECT, "lead": REDIRECT}
+        other_post = {"member": DENIED, "corp": DENIED, "fc": HIDDEN, "lead": REDIRECT}
+        # Presets belong to their owner; the FC lead does not see the FC's presets either.
+        owner_post = {"member": DENIED, "corp": DENIED, "fc": REDIRECT, "lead": HIDDEN}
+
+        def kick_member_url(operation):
+            return r("fleetops:kick_member", args=[operation.uuid, self.member_main.character_id])
+
+        return [
+            *own_and_other("recalculate_pap", "recalculate_pap", self.own_closed, self.other_closed),
+            *own_and_other("set_stats_mode", "set_stats_mode", self.own_closed, self.other_closed,
+                           {"mode": "exclude", "note": "Test fleet"}),
+            Case("live_pap", "get", r("fleetops:live_pap"), None, dict.fromkeys(ROLES, OK)),
+            Case("approval_queue", "get", r("fleetops:approval_queue"), None, member_only),
+            Case("review_operation", "post", r("fleetops:review_operation", args=[self.own_closed.uuid]),
+                 {"action": "approve", "note": ""}, lead_post),
+            Case("review_attendance", "post", r("fleetops:review_attendance"),
+                 {"ids": [str(self.own_manual.pk)], "action": "approve", "note": ""}, lead_post),
+            Case("roster_import own", "get", r("fleetops:roster_import", args=[self.own_closed.uuid]), None,
+                 own_page),
+            Case("roster_import other", "get", r("fleetops:roster_import", args=[self.other_closed.uuid]), None,
+                 other_page),
+            # Any pilot with FleetOps access registers through a link of a fleet they cannot open.
+            Case("pap_link_register", "get", r("fleetops:pap_link_register", args=[self.other_link.code]), None,
+                 dict.fromkeys(ROLES, OK)),
+            Case("pap_link_authorize", "get", r("fleetops:pap_link_authorize", args=[self.other_link.code]), None,
+                 dict.fromkeys(ROLES, REDIRECT)),
+            *own_and_other("create_pap_link", "create_pap_link", self.own_active, self.other_active,
+                           {"minutes": "30", "require_online": "on"}),
+            Case("revoke_pap_link own", "post", r("fleetops:revoke_pap_link", args=[self.own_link.pk]), None,
+                 own_post),
+            Case("revoke_pap_link other", "post", r("fleetops:revoke_pap_link", args=[self.other_link.pk]), None,
+                 other_post),
+            Case("start_link_only_fleet", "get", r("fleetops:start_link_only_fleet"), None, fc_pages),
+            Case("kick_member own", "post", kick_member_url(self.own_active), None, own_post),
+            Case("kick_member other", "post", kick_member_url(self.other_active), None, other_post),
+            Case("kick_preview own", "get", r("fleetops:kick_preview", args=[self.own_active.uuid]), None,
+                 own_page),
+            Case("kick_preview other", "get", r("fleetops:kick_preview", args=[self.other_active.uuid]), None,
+                 other_page),
+            *own_and_other("kick_outside_system", "kick_outside_system", self.own_active, self.other_active,
+                           {"system_id": "30000142"}),
+            Case("preset_list", "get", r("fleetops:preset_list"), None, fc_pages),
+            Case("preset_save", "post", r("fleetops:preset_save"), {"name": "Muninn"}, fc_pages),
+            Case("preset_rename", "post", r("fleetops:preset_rename", args=[self.fc_preset.pk]),
+                 {"name": "Eagles"}, owner_post),
+            Case("preset_delete", "post", r("fleetops:preset_delete", args=[self.fc_preset.pk]), None, owner_post),
+            Case("preset_default", "post", r("fleetops:preset_default", args=[self.fc_preset.pk]), None, owner_post),
+        ]
 
     def resolve(self, value, user):
         return value(user) if callable(value) else value
@@ -687,6 +756,8 @@ class ObjectIsolationTests(FleetOpsViewTestCase):
         self.sync.assert_not_called()
 
     def test_fc_manages_own_fleet(self):
+        # Long enough for 2x.
+        FleetOperation.objects.filter(pk=self.own_active.pk).update(started_at=timezone.now() - timedelta(minutes=100))
         client = self.client_for(self.fc)
         response = client.post(
             reverse("fleetops:end_fleet", args=[self.own_active.uuid]), {"attendance_multiplier": "2"}
@@ -931,12 +1002,14 @@ class PageRenderingTests(FleetOpsViewTestCase):
         self.assertEqual(response.context["attendance_total"], 2)
 
     def test_dashboard_shows_member_participation(self):
+        f.add_attendance(self.own_closed, self.member)
         response = self.client_for(self.member).get(reverse("fleetops:dashboard"))
         self.assertEqual(response.status_code, 200)
         active = list(response.context["active_operations"])
         self.assertEqual([op.pk for op in active], [self.own_active.pk])
         recent = [row["operation"].pk for row in response.context["recent_participations"]]
-        self.assertIn(self.own_active.pk, recent)
+        # PAP of the running fleet is granted when it closes.
+        self.assertEqual(recent, [self.own_closed.pk])
 
     def test_statistics_pages_render_with_data(self):
         client = self.client_for(self.lead)
@@ -1017,14 +1090,13 @@ class PageRenderingTests(FleetOpsViewTestCase):
                 urls.append(
                     reverse("fleetops:configuration_edit", args=[section, self.config_objects[section].pk])
                 )
+        # The ping channel's own edit page does not show its URL either.
+        urls.append(reverse("fleetops:configuration_edit", args=["ping-channels", self.webhook.pk]))
         for url in urls:
             with self.subTest(url=url):
                 response = client.get(url)
                 self.assertEqual(response.status_code, 200)
                 self.assertNotIn(WEBHOOK_SECRET, response.content.decode())
-
-        edit = client.get(reverse("fleetops:configuration_edit", args=["ping-channels", self.webhook.pk]))
-        self.assertContains(edit, WEBHOOK_SECRET)
 
     def test_edit_operation_updates_metadata_without_side_effects(self):
         client = self.client_for(self.fc)

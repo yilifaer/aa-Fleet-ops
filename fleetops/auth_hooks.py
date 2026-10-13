@@ -24,6 +24,12 @@ def register_menu():
     return FleetOpsMenu()
 
 
+@hooks.register("charlink")
+def register_charlink_hook():
+    # aa-charlink imports this module only when it is installed; FleetOps works without it.
+    return "fleetops.charlink_hook"
+
+
 @hooks.register("url_hook")
 def register_urls():
     # The comms join page is public when the site lists "fleetops" in APPS_WITH_PUBLIC_VIEWS.

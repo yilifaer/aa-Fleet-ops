@@ -1,0 +1,40 @@
+{% if operation.status == 'active' or operation.status == 'ending' or operation.status == 'closed' %}
+{% if operation.multiplier_pending %}
+<div class="alert alert-warning" id="multiplier-pending">
+  <div><strong>This fleet ended automatically. Choose the PAP multiplier (currently {{ operation.attendance_multiplier }}x).</strong>{% if multiplier_requirements %} <span class="small">Multipliers above 1x need: {{ multiplier_requirements }}.</span>{% endif %}</div>
+  {% if can_set_multiplier %}
+  <form method="post" action="{% url 'fleetops:set_attendance_multiplier' operation.uuid %}" class="d-flex flex-wrap gap-2 mt-2 align-items-center">{% csrf_token %}
+    {% for value in multiplier_allowed %}<button class="btn btn-sm {% if value == 1 %}btn-outline-secondary{% else %}btn-warning{% endif %}" name="attendance_multiplier" value="{{ value }}">{% if value == 1 %}Keep 1x{% else %}{{ value }}x{% endif %}</button>{% endfor %}
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+<div class="card mb-3" id="pap-stats-card"><div class="card-body d-flex flex-wrap gap-3 align-items-start justify-content-between">
+  <div>
+    <div><strong>Counted in statistics and incentives:</strong> {% if count_reason %}<span class="text-warning-emphasis" id="stats-not-counted">No — {{ count_reason }}</span>{% elif operation.status == 'closed' %}<span id="stats-counted">Yes</span>{% else %}<span id="stats-counted">Yes, once the fleet has closed</span>{% endif %}
+      {% if operation.stats_mode != 'auto' %}<span class="small text-muted">({{ operation.get_stats_mode_display }}{% if operation.stats_note %}: {{ operation.stats_note }}{% endif %})</span>{% endif %}</div>
+    <div class="small text-muted">PAP minimum time {{ pap_minimum_minutes }} min{% if not pap_minimum_minutes %} (any presence){% endif %} · {% if operation.pap_character_limit %}{{ operation.pap_character_limit }} PAP character{{ operation.pap_character_limit|pluralize }} per player{% else %}no PAP character limit per player{% endif %}{% if operation.pap_rules == 1 %} · closed before PAP followed time in fleet{% endif %}</div>
+  </div>
+  <div class="d-flex flex-wrap gap-2 align-items-start">
+    {% if can_exclude_from_stats %}
+    <form method="post" action="{% url 'fleetops:set_stats_mode' operation.uuid %}" class="d-flex gap-2" id="stats-exclude-form">{% csrf_token %}
+      <input type="hidden" name="mode" value="exclude">
+      <input class="form-control form-control-sm" name="note" maxlength="255" required placeholder="Reason, e.g. test fleet" aria-label="Reason for excluding the fleet">
+      <button class="btn btn-sm btn-outline-danger text-nowrap">Do not count</button>
+    </form>
+    {% endif %}
+    {% if can_include_in_stats %}
+      {% if operation.stats_mode != 'include' %}
+      <form method="post" action="{% url 'fleetops:set_stats_mode' operation.uuid %}" class="d-flex gap-2" id="stats-include-form">{% csrf_token %}
+        <input type="hidden" name="mode" value="include">
+        <input class="form-control form-control-sm" name="note" maxlength="255" placeholder="Note (optional)" aria-label="Note for counting the fleet">
+        <button class="btn btn-sm btn-outline-success text-nowrap">Always count</button>
+      </form>
+      {% endif %}
+      {% if operation.stats_mode != 'auto' %}
+      <form method="post" action="{% url 'fleetops:set_stats_mode' operation.uuid %}" id="stats-auto-form">{% csrf_token %}<input type="hidden" name="mode" value="auto"><button class="btn btn-sm btn-outline-secondary text-nowrap">Use the automatic rule</button></form>
+      {% endif %}
+    {% endif %}
+  </div>
+</div></div>
+{% endif %}

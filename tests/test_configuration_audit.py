@@ -22,9 +22,11 @@ from fleetops.models import (
     FleetOpsSettings,
     FleetType,
     MessageTemplate,
+    MultiplierTier,
     OperationAction,
     PingRole,
     PingTarget,
+    SpecialRole,
 )
 from fleetops.providers import srp as srp_providers
 from fleetops.services.audit import audit
@@ -50,6 +52,8 @@ SECTION_MODELS = {
     "ping-roles": PingRole,
     "templates": MessageTemplate,
 }
+# Sections of the PAP rules; tests/test_pap_routes.py covers their pages.
+PAP_SECTION_MODELS = {"multiplier-tiers": MultiplierTier, "special-roles": SpecialRole}
 
 
 def create_sample_objects():
@@ -109,7 +113,11 @@ def edit_payload(section, obj):
 
 def settings_payload(**overrides):
     data = {
+        "multiplier_mode": "fc",
+        "pap_minimum_minutes": "0",
         "attendance_limit": "",
+        "minimum_fleet_minutes": "0",
+        "pap_link_minutes": "30",
         "tracking_interval": "60",
         "stale_threshold": "180",
         "auto_end_enabled": "on",
@@ -212,9 +220,10 @@ class ConfigurationAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         cards = {card["key"]: card["count"] for card in response.context["cards"]}
-        self.assertEqual(set(cards), set(SECTIONS))
-        for section in SECTIONS:
-            self.assertEqual(cards[section], SECTION_MODELS[section].objects.count(), section)
+        models = {**SECTION_MODELS, **PAP_SECTION_MODELS}
+        self.assertEqual(set(cards), set(models))
+        for section, model in models.items():
+            self.assertEqual(cards[section], model.objects.count(), section)
             self.assertContains(response, reverse("fleetops:configuration_list", args=[section]))
         self.assertContains(response, reverse("fleetops:configuration_settings"))
 
@@ -975,11 +984,12 @@ class WebhookSecretTests(TestCase):
         self.assertNoSecret(self.client.get(reverse("fleetops:configuration_index")))
         self.assertNoSecret(self.client.get(reverse("fleetops:configuration_settings")))
 
-    def test_webhook_edit_form_shows_url(self):
+    def test_webhook_edit_form_never_shows_url(self):
         response = self.client.get(reverse("fleetops:configuration_edit", args=["ping-channels", self.webhook.pk]))
 
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, WEBHOOK_SECRET)
+        self.assertNoSecret(response)
+        self.assertContains(response, "Leave empty to keep the stored URL.")
+        self.assertContains(response, 'type="password"')
 
     def test_save_message_does_not_echo_url(self):
         response = self.client.post(

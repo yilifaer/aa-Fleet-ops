@@ -1,0 +1,65 @@
+{% extends "fleetops/base.html" %}
+{% load fleetops_messages %}
+{% block fleetops_content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div><h2 class="mb-1">Paste Roster</h2><div class="text-muted">{{ operation.fleet_type }} · FC {{ operation.fc_character_name }} · {{ operation.started_at|eve_time }} EVE · {{ operation.get_status_display }}</div></div>
+  <a class="btn btn-outline-secondary" href="{% url 'fleetops:operation_detail' operation.uuid %}">Back to the fleet</a>
+</div>
+{% if needs_approval %}<div class="alert alert-info">Imported PAP counts once an FC lead approves it.</div>{% endif %}
+
+{% if preview_rows %}
+{% if warnings %}<div class="alert alert-warning" id="roster-warnings">{% for warning in warnings %}<div>{{ warning }}</div>{% endfor %}</div>{% endif %}
+<div class="card mb-3" id="roster-preview"><div class="card-header d-flex flex-wrap gap-2 align-items-center"><strong>Preview</strong>
+  <span class="badge bg-success">To add: {{ counts.add|default:0 }}</span>
+  {% if counts.capped %}<span class="badge bg-warning text-dark">Over the limit: {{ counts.capped }}</span>{% endif %}
+  {% if counts.has_pap %}<span class="badge bg-secondary">Already has PAP: {{ counts.has_pap }}</span>{% endif %}
+  {% if counts.not_in_auth %}<span class="badge bg-danger">Not in Alliance Auth: {{ counts.not_in_auth }}</span>{% endif %}
+  {% if counts.not_found %}<span class="badge bg-danger">Not found: {{ counts.not_found }}</span>{% endif %}
+  {% if counts.error %}<span class="badge bg-danger">Not checked: {{ counts.error }}</span>{% endif %}
+  {% if counts.invalid %}<span class="badge bg-danger">Invalid: {{ counts.invalid }}</span>{% endif %}
+</div>
+<form method="post" id="roster-import-form">{% csrf_token %}
+  <input type="hidden" name="step" value="import">
+  <input type="hidden" name="payload" value="{{ payload }}">
+  <div class="card-body small text-muted">Value {{ form.cleaned_data.attendance_value }} · {{ duplicate_action_label }}{% if form.cleaned_data.notes %} · Notes: {{ form.cleaned_data.notes }}{% endif %}</div>
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+    <thead><tr><th></th><th>Line</th><th>Pasted name</th><th>Character</th><th>Main</th><th>Ship</th><th>Location</th><th>Fleet role</th><th>Status</th></tr></thead>
+    <tbody>{% for item in preview_rows %}{% with row=item.row %}<tr{% if not row.importable %} class="text-muted"{% endif %}>
+      <td>{% if row.importable %}<input class="form-check-input" type="checkbox" name="rows" value="{{ item.index }}"{% if row.checked %} checked{% endif %} aria-label="Import {{ row.character_name }}">{% else %}<input class="form-check-input" type="checkbox" disabled aria-label="Cannot import {{ row.line.name }}">{% endif %}</td>
+      <td>{{ row.line.line_no|default:"—" }}</td>
+      <td>{{ row.line.name }}</td>
+      <td>{{ row.character_name|default:"—" }}</td>
+      <td>{{ row.main_character_name|default:"—" }}</td>
+      <td>{{ row.line.ship_type|default:"—" }}{% if row.line.ship_group %}<div class="small text-muted">{{ row.line.ship_group }}</div>{% endif %}</td>
+      <td>{{ row.line.location|default:"—" }}{% if row.line.docked %} <span class="badge bg-light text-dark">Docked</span>{% endif %}</td>
+      <td>{{ row.line.role|default:"—" }}{% if row.line.position %}<div class="small text-muted">{{ row.line.position }}</div>{% endif %}</td>
+      <td>{% if row.status == 'add' %}<span class="badge bg-success">Add</span>{% elif row.status == 'capped' %}<span class="badge bg-warning text-dark">Over the limit</span>{% elif row.status == 'has_pap' %}<span class="badge bg-secondary">Has PAP</span>{% elif row.status == 'not_in_auth' %}<span class="badge bg-danger">Not in Alliance Auth</span>{% elif row.status == 'not_found' %}<span class="badge bg-danger">Not found</span>{% elif row.status == 'error' %}<span class="badge bg-danger">Not checked</span>{% else %}<span class="badge bg-danger">Invalid</span>{% endif %}{% if row.reason %}<div class="small text-muted">{{ row.reason }}</div>{% endif %}</td>
+    </tr>{% endwith %}{% endfor %}</tbody>
+  </table></div>
+  <div class="card-body"><button class="btn btn-primary" id="roster-import-submit">Import selected</button> <span class="small text-muted ms-2">The preview is valid for 30 minutes.</span></div>
+</form></div>
+<script>
+document.getElementById('roster-import-form').addEventListener('submit',()=>{
+  // A second submit would only find the rows of the first one.
+  const button=document.getElementById('roster-import-submit');
+  button.disabled=true; button.textContent='Importing…';
+});
+</script>
+<details class="mb-3"><summary>Change the paste or the settings</summary>
+{% endif %}
+
+<div class="card mb-3" id="roster-paste-form"><div class="card-body">
+<form method="post">{% csrf_token %}
+  <input type="hidden" name="step" value="parse">
+  {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+  <div class="mb-3">{{ form.text.label_tag }}{{ form.text }}{% if form.text.errors %}<div class="text-danger small">{{ form.text.errors|join:" " }}</div>{% endif %}<div class="form-text">{{ form.text.help_text }}</div></div>
+  <div class="row g-3">
+    <div class="col-md-2">{{ form.attendance_value.label_tag }}{{ form.attendance_value }}{% if form.attendance_value.errors %}<div class="text-danger small">{{ form.attendance_value.errors|join:" " }}</div>{% endif %}</div>
+    <div class="col-md-4">{{ form.duplicate_action.label_tag }}{{ form.duplicate_action }}{% if form.duplicate_action.errors %}<div class="text-danger small">{{ form.duplicate_action.errors|join:" " }}</div>{% endif %}</div>
+    <div class="col-md-6">{{ form.notes.label_tag }}{{ form.notes }}{% if form.notes.errors %}<div class="text-danger small">{{ form.notes.errors|join:" " }}</div>{% endif %}</div>
+  </div>
+  <button class="btn {% if preview_rows %}btn-outline-primary{% else %}btn-primary{% endif %} mt-3">Preview</button>
+</form>
+</div></div>
+{% if preview_rows %}</details>{% endif %}
+{% endblock %}

@@ -8,6 +8,7 @@ from django.core.validators import MaxValueValidator, MinValueValidator, RegexVa
 from django.db import models, transaction
 from django.template import Template, TemplateSyntaxError
 from django.utils import timezone
+from django.utils.text import slugify
 
 from fleetops.validators import (  # noqa: F401 - VOICE_URL_SCHEMES re-exported
     INGAME_CHANNEL_ID_RE,
@@ -19,6 +20,8 @@ MIN_RETENTION_DAYS = 365
 MAX_RETENTION_DAYS = 36500
 # Largest value a BigIntegerField id can hold.
 MAX_DATABASE_ID = 2**63 - 1
+# Highest PAP multiplier a fleet or a multiplier tier can have.
+MAX_MULTIPLIER = 10
 
 # https://discord.com/api[/v<n>]/webhooks/<id>/<token>, optionally with a trailing slash and a query
 # such as ?wait=true&thread_id=1. Suffixed endpoints (/slack, /github) are not accepted.
@@ -55,12 +58,50 @@ def validate_template_syntax(value):
         raise ValidationError("Invalid template syntax: %(error)s", code="invalid", params={"error": exc})
 
 
+class ReviewStatus(models.TextChoices):
+    """FC lead review of manual fleets and manual PAP; shared by fleets and attendance rows."""
+
+    APPROVED = "approved", "Approved"
+    PENDING = "pending", "Pending approval"
+    REJECTED = "rejected", "Rejected"
+
+
 class FleetOpsSettings(models.Model):
+    class MultiplierMode(models.TextChoices):
+        FC = "fc", "FC chooses when ending"
+        AUTO = "auto", "Automatic by fleet duration"
+
     attendance_limit = models.PositiveIntegerField(
+        "PAP characters per player",
         null=True,
         blank=True,
         validators=[MinValueValidator(1)],
-        help_text="Maximum attendance credits per Alliance Auth user per fleet. Empty = unlimited.",
+        help_text="Maximum characters of one Alliance Auth user that receive PAP in one fleet. Empty = unlimited.",
+    )
+    multiplier_mode = models.CharField(
+        "PAP multiplier mode",
+        max_length=10,
+        choices=MultiplierMode.choices,
+        default=MultiplierMode.FC,
+    )
+    pap_minimum_minutes = models.PositiveIntegerField(
+        "PAP minimum time",
+        default=0,
+        validators=[MaxValueValidator(1440)],
+        help_text="Minutes a character must accumulate in fleet to receive PAP. 0 = any presence.",
+    )
+    minimum_fleet_minutes = models.PositiveIntegerField(
+        "Minimum fleet duration",
+        default=0,
+        validators=[MaxValueValidator(1440)],
+        help_text="Fleets shorter than this are not counted in statistics and incentives unless included "
+        "manually. 0 = count all.",
+    )
+    pap_link_minutes = models.PositiveIntegerField(
+        "PAP link validity",
+        default=30,
+        validators=[MinValueValidator(1), MaxValueValidator(1440)],
+        help_text="Minutes a new PAP link stays open unless the FC chooses another time.",
     )
     tracking_interval = models.PositiveIntegerField(default=60, validators=[MinValueValidator(30)])
     stale_threshold = models.PositiveIntegerField(default=180, validators=[MinValueValidator(60)])
@@ -114,6 +155,25 @@ class FleetOpsSettings(models.Model):
     def get_solo(cls):
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj
+
+
+class MultiplierTier(models.Model):
+    """A PAP multiplier for fleets that ran longer than a threshold; 1x needs no tier."""
+
+    threshold_minutes = models.PositiveIntegerField(
+        unique=True,
+        validators=[MinValueValidator(1), MaxValueValidator(10080)],
+        help_text="Fleets running strictly longer than this many minutes qualify.",
+    )
+    multiplier = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(2), MaxValueValidator(MAX_MULTIPLIER)],
+    )
+
+    class Meta:
+        ordering = ["threshold_minutes"]
+
+    def __str__(self):
+        return f"{self.multiplier}x after {self.threshold_minutes} min"
 
 
 class FleetType(models.Model):
@@ -310,6 +370,23 @@ class FleetOperation(models.Model):
         HERE = "here", "@here"
         ROLES = "roles", "Roles"
 
+    class MultiplierSource(models.TextChoices):
+        DEFAULT = "default", "Default"
+        FC = "fc", "Chosen by the FC"
+        AUTO = "auto", "By fleet duration"
+        OVERRIDE = "override", "Override by an FC lead"
+        MANUAL = "manual", "Manual fleet"
+
+    class PapRules(models.IntegerChoices):
+        # Fleets closed before PAP was granted by time in fleet keep the selection they were closed with.
+        LEGACY = 1, "Legacy"
+        TIME_IN_FLEET = 2, "Time in fleet"
+
+    class StatsMode(models.TextChoices):
+        AUTO = "auto", "Automatic"
+        INCLUDE = "include", "Always count"
+        EXCLUDE = "exclude", "Do not count"
+
     # Fleets in these states own their ESI fleet; a second start for it returns the same record.
     # Scheduled fleets have no ESI fleet yet.
     OPEN_STATUSES = (Status.STARTING, Status.ACTIVE, Status.ENDING)
@@ -360,13 +437,50 @@ class FleetOperation(models.Model):
     )
     attendance_multiplier = models.PositiveIntegerField(
         default=1,
-        validators=[MinValueValidator(1), MaxValueValidator(3)],
-        help_text="Fleet-wide multiplier applied to automatically granted attendance (1x, 2x or 3x).",
+        validators=[MinValueValidator(1), MaxValueValidator(MAX_MULTIPLIER)],
+        help_text="Fleet-wide PAP multiplier applied to automatically granted attendance.",
     )
+    multiplier_pending = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="The fleet ended without a multiplier choice although a higher multiplier was reached.",
+    )
+    multiplier_source = models.CharField(max_length=10, choices=MultiplierSource.choices, blank=True)
     is_manual = models.BooleanField(
         default=False,
         help_text="Manual fleet record created without ESI fleet detection/tracking.",
     )
+    link_only = models.BooleanField(
+        default=False,
+        help_text="Fleet started without ESI; members register through PAP links.",
+    )
+
+    # PAP rules this fleet is finalized with; the minimum and the limit are copied from the settings
+    # when the fleet starts, so later setting changes never alter it.
+    pap_rules = models.PositiveSmallIntegerField(choices=PapRules.choices, default=PapRules.TIME_IN_FLEET)
+    pap_minimum_minutes = models.PositiveIntegerField(null=True, blank=True)
+    pap_character_limit = models.PositiveIntegerField(null=True, blank=True)
+
+    review_status = models.CharField(
+        max_length=10, choices=ReviewStatus.choices, default=ReviewStatus.APPROVED, db_index=True
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fleetops_reviewed_operations",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    review_note = models.CharField(max_length=255, blank=True)
+
+    stats_mode = models.CharField(max_length=10, choices=StatsMode.choices, default=StatsMode.AUTO)
+    counts_for_stats = models.BooleanField(
+        default=True,
+        db_index=True,
+        help_text="Counted in statistics and incentives; follows the minimum fleet duration unless overridden.",
+    )
+    stats_note = models.CharField(max_length=255, blank=True)
 
     srp_provider = models.CharField(max_length=50, blank=True)
     srp_reference = models.CharField(max_length=255, blank=True)
@@ -397,7 +511,7 @@ class FleetOperation(models.Model):
         related_name="fleetops_end_requests",
     )
     end_requested_multiplier = models.PositiveIntegerField(
-        null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(3)]
+        null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(MAX_MULTIPLIER)]
     )
     end_reason = models.CharField(max_length=20, choices=EndReason.choices, blank=True)
     end_detail = models.CharField(max_length=255, blank=True)
@@ -415,6 +529,11 @@ class FleetOperation(models.Model):
     @property
     def end_reason_text(self):
         return end_reason_text(self.end_reason, self.end_detail)
+
+    @property
+    def fc_points(self):
+        """FC points of this fleet: fleet type weight times the PAP multiplier."""
+        return Decimal(self.fleet_point_weight_snapshot or 0) * int(self.attendance_multiplier or 1)
 
 
 def end_reason_text(reason, detail=""):
@@ -487,6 +606,7 @@ class FleetMemberState(models.Model):
     last_seen = models.DateTimeField()
     left_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True, db_index=True)
+    accumulated_seconds = models.PositiveIntegerField(default=0, help_text="Time in fleet so far.")
 
     class Meta:
         ordering = ["character_name"]
@@ -524,6 +644,16 @@ class AttendanceRecord(models.Model):
         AUTOMATIC = "automatic", "Automatic"
         MANUAL = "manual", "Manual"
         IMPORTED = "imported", "Imported"
+        CLICK = "click", "PAP link"
+
+    class Correction(models.TextChoices):
+        KEEP = "keep", "Keep separate"
+        REPLACE = "replace", "Replace tracked PAP"
+        MERGE = "merge", "Merge into tracked PAP"
+
+    # Rows the PAP engine writes from tracking and PAP links; manual and imported rows are written by users.
+    MANAGED_SOURCES = (Source.AUTOMATIC, Source.CLICK)
+    USER_SOURCES = (Source.MANUAL, Source.IMPORTED)
 
     operation = models.ForeignKey(FleetOperation, on_delete=models.CASCADE, related_name="attendance_records")
     character_id = models.BigIntegerField()
@@ -537,9 +667,33 @@ class AttendanceRecord(models.Model):
     attendance_value = models.PositiveIntegerField(default=1)
     granted = models.BooleanField(default=True, db_index=True)
     capped = models.BooleanField(default=False)
+    below_minimum = models.BooleanField(default=False, help_text="The character did not reach the PAP minimum time.")
+    replaced = models.BooleanField(default=False, help_text="Replaced by an approved manual PAP.")
+    # Merged manual PAP on top of the multiplier; legacy_extra_value holds merges made before the upgrade.
+    extra_value = models.PositiveIntegerField(default=0)
+    legacy_extra_value = models.PositiveIntegerField(default=0)
+    tracked_seconds = models.PositiveIntegerField(null=True, blank=True)
+    correction = models.CharField(
+        max_length=10,
+        choices=Correction.choices,
+        default=Correction.KEEP,
+        help_text="What a manual or imported row does with the tracked PAP of the same character.",
+    )
     first_seen = models.DateTimeField(null=True, blank=True)
     last_seen = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True)
+    review_status = models.CharField(
+        max_length=10, choices=ReviewStatus.choices, default=ReviewStatus.APPROVED, db_index=True
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fleetops_reviewed_attendance",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    review_note = models.CharField(max_length=255, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="fleetops_attendance_created")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -552,7 +706,101 @@ class AttendanceRecord(models.Model):
         ]
 
 
+class SpecialRole(models.Model):
+    """A role FCs can assign to a pilot in a fleet, such as Back Seat FC."""
+
+    key = models.SlugField(max_length=30, unique=True, editable=False)
+    name = models.CharField(max_length=100, unique=True)
+    grants_fc_credit = models.BooleanField(
+        "Gives FC credit",
+        default=False,
+        help_text="Pilots with this role get the fleet as an FC fleet for FC points and incentives. "
+        "A change applies to new assignments; remove and add an assignment again to apply it there.",
+    )
+    is_active = models.BooleanField(default=True, help_text="FCs can assign this role.")
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort_order", "name"]
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        # The key is stored on every assignment, so it is set once and never follows a rename.
+        if not self.key:
+            self.key = self._free_key(slugify(self.name).replace("-", "_")[:30].rstrip("_") or "role")
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def _free_key(cls, base):
+        key, number = base, 1
+        while cls.objects.filter(key=key).exists():
+            number += 1
+            suffix = f"_{number}"
+            key = base[: 30 - len(suffix)].rstrip("_") + suffix
+        return key
+
+
+class PapLink(models.Model):
+    """A link pilots open to register their characters for PAP in a fleet."""
+
+    operation = models.ForeignKey(FleetOperation, on_delete=models.CASCADE, related_name="pap_links")
+    code = models.CharField(max_length=64, unique=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="fleetops_pap_links"
+    )
+    created_at = models.DateTimeField(default=timezone.now)
+    expires_at = models.DateTimeField(db_index=True)
+    require_online = models.BooleanField(
+        default=True, help_text="Characters must be logged in to the game when they register."
+    )
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "PAP link"
+
+    def __str__(self):
+        return f"PAP link {self.pk} @ {self.operation_id}"
+
+
+class PapRegistration(models.Model):
+    """A character registered for PAP through a PAP link."""
+
+    operation = models.ForeignKey(FleetOperation, on_delete=models.CASCADE, related_name="pap_registrations")
+    link = models.ForeignKey(
+        PapLink, null=True, blank=True, on_delete=models.SET_NULL, related_name="registrations"
+    )
+    character_id = models.BigIntegerField(db_index=True)
+    character_name = models.CharField(max_length=255)
+    auth_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fleetops_pap_registrations",
+    )
+    ship_type_id = models.BigIntegerField(null=True, blank=True)
+    ship_type_name = models.CharField(max_length=255, blank=True)
+    solar_system_id = models.BigIntegerField(null=True, blank=True)
+    solar_system_name = models.CharField(max_length=255, blank=True)
+    online = models.BooleanField(null=True, blank=True)
+    registered_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["registered_at"]
+        verbose_name = "PAP registration"
+        constraints = [
+            models.UniqueConstraint(fields=["operation", "character_id"], name="fleetops_unique_pap_registration")
+        ]
+
+    def __str__(self):
+        return f"{self.character_name} @ {self.operation_id}"
+
+
 class OperationRoleAssignment(models.Model):
+    # The special roles before they became configurable; migration 0012 turned them into SpecialRole rows.
     class Role(models.TextChoices):
         BACKSEAT_FC = "backseat_fc", "Back Seat FC"
         LOGI_ANCHOR = "logi_anchor", "Logi Anchor"
@@ -561,7 +809,10 @@ class OperationRoleAssignment(models.Model):
     operation = models.ForeignKey(
         FleetOperation, on_delete=models.CASCADE, related_name="role_assignments"
     )
-    role = models.CharField(max_length=30, choices=Role.choices, db_index=True)
+    role = models.CharField(max_length=30, db_index=True, help_text="Key of the special role.")
+    special_role = models.ForeignKey(
+        SpecialRole, null=True, blank=True, on_delete=models.PROTECT, related_name="assignments"
+    )
     character_id = models.BigIntegerField(db_index=True)
     character_name = models.CharField(max_length=255)
     main_character_id = models.BigIntegerField(null=True, blank=True, db_index=True)
@@ -592,7 +843,57 @@ class OperationRoleAssignment(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.get_role_display()}: {self.character_name}"
+        return f"{self.role_label}: {self.character_name}"
+
+    def save(self, *args, **kwargs):
+        # An assignment made by role key alone is linked to the role with that key.
+        if self.special_role_id is None and self.role:
+            self.special_role = SpecialRole.objects.filter(key=self.role).first()
+        super().save(*args, **kwargs)
+
+    @property
+    def role_label(self):
+        if self.special_role_id is not None:
+            return self.special_role.name
+        return dict(self.Role.choices).get(self.role, self.role)
+
+    def get_role_display(self):
+        # The role field lost its fixed choices; pages written for them still call this.
+        return self.role_label
+
+
+class FleetStartPreset(models.Model):
+    """Fleet Start values an FC saved; the row without a name holds the FC's last used values."""
+
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="fleetops_start_presets"
+    )
+    name = models.CharField(max_length=100, blank=True)
+    is_last_used = models.BooleanField(default=False)
+    is_default = models.BooleanField(default=False)
+    # {"fields": {field name: value or list}, "labels": {field name: text shown when the value is gone}}
+    values = models.JSONField(default=dict, blank=True)
+    fc_character_id = models.BigIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [models.UniqueConstraint(fields=["owner", "name"], name="fleetops_unique_start_preset")]
+
+    def __str__(self):
+        return self.name or "Last used settings"
+
+    def save(self, *args, **kwargs):
+        # One default preset per FC. MariaDB has no conditional unique constraint, so the other
+        # defaults are cleared here, under a row lock.
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            if self.is_default:
+                others = FleetStartPreset.objects.select_for_update().filter(owner_id=self.owner_id, is_default=True)
+                demoted = list(others.exclude(pk=self.pk).values_list("pk", flat=True))
+                if demoted:
+                    FleetStartPreset.objects.filter(pk__in=demoted).update(is_default=False)
 
 
 class IncentivePeriod(models.Model):

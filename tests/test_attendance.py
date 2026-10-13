@@ -1,6 +1,5 @@
-"""Tests for attendance crediting, manual corrections, identity resolution and history retention."""
+"""Tests for manual PAP corrections, the PAP multiplier of closed fleets, identity resolution and history retention."""
 
-import unittest
 from datetime import timedelta
 from io import StringIO
 from unittest import mock
@@ -18,12 +17,9 @@ from fleetops.models import (
     FleetMemberEvent,
     FleetOperation,
     FleetOpsSettings,
+    ReviewStatus,
 )
-from fleetops.services.attendance import (
-    create_manual_attendance,
-    ensure_automatic_attendance,
-    set_operation_attendance_multiplier,
-)
+from fleetops.services.attendance import create_manual_attendance, set_operation_attendance_multiplier
 from fleetops.services.history import (
     apply_current_membership_filter,
     configured_alliance_ids,
@@ -37,27 +33,31 @@ from fleetops.services.identity import (
     owned_characters,
     resolve_many,
 )
+from fleetops.services.operations import end_fleet
+from fleetops.services.pap import finalize_pap
 from fleetops.services.statistics import attendance_history_queryset
-from fleetops.services.tracking import sync_operation
 from fleetops.tasks import prune_attendance_history
 
 from . import factories as f
 
 AUTOMATIC = AttendanceRecord.Source.AUTOMATIC
 MANUAL = AttendanceRecord.Source.MANUAL
+IMPORTED = AttendanceRecord.Source.IMPORTED
+CLOSED = FleetOperation.Status.CLOSED
 
 
-def credit(operation, character, seen_at=None):
-    """Run automatic attendance for a character the way the tracker does."""
-    return ensure_automatic_attendance(
-        operation,
-        identity_for_character_id(character.character_id),
-        seen_at or timezone.now(),
+def long_closed_fleet(fc_user, minutes=200, **extra):
+    """A closed fleet that ran long enough for every seeded multiplier (90 -> 2x, 180 -> 3x)."""
+    started = timezone.now() - timedelta(hours=6)
+    return f.create_operation(
+        fc_user, status=CLOSED, started_at=started, ended_at=started + timedelta(minutes=minutes), **extra
     )
 
 
-def automatic_rows(operation, **filters):
-    return AttendanceRecord.objects.filter(operation=operation, source=AUTOMATIC, **filters)
+def tracked_row(operation, character):
+    return AttendanceRecord.objects.get(
+        operation=operation, character_id=character.character_id, source__in=AttendanceRecord.MANAGED_SOURCES
+    )
 
 
 def audit_actions(obj=None):
@@ -67,249 +67,56 @@ def audit_actions(obj=None):
     return list(qs.order_by("pk").values_list("action", flat=True))
 
 
-class EnsureAutomaticAttendanceTests(TestCase):
-    def setUp(self):
-        self.fc = f.create_user(perms=f.FC_PERMS)
-        self.operation = f.create_operation(self.fc)
-        self.pilot = f.create_user()
-        self.main = f.main_of(self.pilot)
-
-    def test_unowned_character_gets_no_attendance(self):
-        stranger = f.create_character("Unowned Pilot")
-        self.assertIsNone(credit(self.operation, stranger))
-        self.assertFalse(AttendanceRecord.objects.filter(operation=self.operation).exists())
-
-    def test_unknown_character_gets_no_attendance(self):
-        identity = identity_for_character_id(f.next_id())
-        self.assertIsNone(ensure_automatic_attendance(self.operation, identity, timezone.now()))
-        self.assertFalse(AttendanceRecord.objects.exists())
-
-    def test_creates_single_granted_row_for_owned_character(self):
-        seen = timezone.now() - timedelta(minutes=10)
-        record = credit(self.operation, self.main, seen)
-
-        self.assertIsNotNone(record)
-        self.assertEqual(record.source, AUTOMATIC)
-        self.assertEqual(record.auth_user, self.pilot)
-        self.assertEqual(record.character_id, self.main.character_id)
-        self.assertEqual(record.main_character_id, self.main.character_id)
-        self.assertEqual(record.main_character_name, self.main.character_name)
-        self.assertEqual(record.corporation_id, f.DEFAULT_CORP[0])
-        self.assertEqual(record.attendance_value, 1)
-        self.assertTrue(record.granted)
-        self.assertFalse(record.capped)
-        self.assertEqual(record.first_seen, seen)
-        self.assertEqual(record.last_seen, seen)
-
-    def test_repeated_sightings_reuse_the_row_and_move_last_seen_forward(self):
-        first = timezone.now() - timedelta(minutes=20)
-        later = first + timedelta(minutes=5)
-        record = credit(self.operation, self.main, first)
-
-        again = credit(self.operation, self.main, later)
-
-        self.assertEqual(again.pk, record.pk)
-        self.assertEqual(automatic_rows(self.operation).count(), 1)
-        record.refresh_from_db()
-        self.assertEqual(record.first_seen, first)
-        self.assertEqual(record.last_seen, later)
-
-    def test_older_sighting_does_not_move_last_seen_backwards(self):
-        latest = timezone.now() - timedelta(minutes=1)
-        record = credit(self.operation, self.main, latest)
-
-        credit(self.operation, self.main, latest - timedelta(minutes=30))
-
-        record.refresh_from_db()
-        self.assertEqual(record.last_seen, latest)
-
-    def test_last_seen_filled_when_previously_empty(self):
-        record = f.add_attendance(self.operation, self.pilot)
-        AttendanceRecord.objects.filter(pk=record.pk).update(last_seen=None)
-        seen = timezone.now()
-
-        credit(self.operation, self.main, seen)
-
-        record.refresh_from_db()
-        self.assertEqual(record.last_seen, seen)
-
-    def test_rows_are_per_operation(self):
-        other = f.create_operation(self.fc)
-        credit(self.operation, self.main)
-        credit(other, self.main)
-
-        self.assertEqual(automatic_rows(self.operation).count(), 1)
-        self.assertEqual(automatic_rows(other).count(), 1)
-
-    def test_value_follows_fleet_multiplier(self):
-        self.operation.attendance_multiplier = 3
-        self.operation.save()
-
-        record = credit(self.operation, self.main)
-
-        self.assertEqual(record.attendance_value, 3)
-
-    def test_unlimited_when_attendance_limit_is_null(self):
-        f.settings(attendance_limit=None)
-        alts = [f.add_alt(self.pilot) for _ in range(3)]
-
-        for character in [self.main, *alts]:
-            credit(self.operation, character)
-
-        rows = automatic_rows(self.operation, auth_user=self.pilot)
-        self.assertEqual(rows.count(), 4)
-        self.assertTrue(all(r.granted and not r.capped for r in rows))
-
-    def test_limit_of_one_caps_extra_alts_but_keeps_them(self):
-        f.settings(attendance_limit=1)
-        alt_one = f.add_alt(self.pilot)
-        alt_two = f.add_alt(self.pilot)
-
-        main_row = credit(self.operation, self.main)
-        alt_one_row = credit(self.operation, alt_one)
-        alt_two_row = credit(self.operation, alt_two)
-
-        self.assertTrue(main_row.granted)
-        self.assertFalse(main_row.capped)
-        for row in (alt_one_row, alt_two_row):
-            self.assertFalse(row.granted)
-            self.assertTrue(row.capped)
-            self.assertIn("capped", row.notes.lower())
-            self.assertEqual(row.main_character_id, self.main.character_id)
-        self.assertEqual(automatic_rows(self.operation).count(), 3)
-
-    def test_limit_of_two_grants_first_two_characters(self):
-        f.settings(attendance_limit=2)
-        alts = [f.add_alt(self.pilot) for _ in range(3)]
-
-        rows = [credit(self.operation, c) for c in [alts[0], self.main, alts[1], alts[2]]]
-
-        self.assertEqual([r.granted for r in rows], [True, True, False, False])
-        self.assertEqual([r.capped for r in rows], [False, False, True, True])
-
-    def test_limit_is_per_user(self):
-        f.settings(attendance_limit=1)
-        other = f.create_user()
-
-        credit(self.operation, self.main)
-        other_row = credit(self.operation, f.main_of(other))
-
-        self.assertTrue(other_row.granted)
-
-    def test_limit_is_per_fleet(self):
-        f.settings(attendance_limit=1)
-        other_operation = f.create_operation(self.fc)
-        alt = f.add_alt(self.pilot)
-
-        credit(self.operation, self.main)
-        row = credit(other_operation, alt)
-
-        self.assertTrue(row.granted)
-
-    def test_capped_row_is_not_regranted_on_later_sightings(self):
-        f.settings(attendance_limit=1)
-        alt = f.add_alt(self.pilot)
-        credit(self.operation, self.main)
-        capped = credit(self.operation, alt)
-
-        again = credit(self.operation, alt, timezone.now() + timedelta(minutes=1))
-
-        self.assertEqual(again.pk, capped.pk)
-        again.refresh_from_db()
-        self.assertFalse(again.granted)
-        self.assertTrue(again.capped)
-
-    def test_alt_in_foreign_alliance_is_credited_to_main_and_main_corporation(self):
-        alt = f.add_alt(self.pilot, "Foreign Alt", corporation=f.OTHER_CORP, alliance=f.FOREIGN_ALLIANCE)
-
-        record = credit(self.operation, alt)
-
-        self.assertEqual(record.character_id, alt.character_id)
-        self.assertEqual(record.character_name, "Foreign Alt")
-        self.assertEqual(record.auth_user, self.pilot)
-        self.assertEqual(record.main_character_id, self.main.character_id)
-        self.assertEqual(record.main_character_name, self.main.character_name)
-        self.assertEqual(record.corporation_id, f.DEFAULT_CORP[0])
-        self.assertEqual(record.corporation_name, f.DEFAULT_CORP[1])
-
-    def test_alt_of_main_in_other_corp_uses_main_corp(self):
-        pilot = f.create_user(corporation=f.OTHER_CORP)
-        alt = f.add_alt(pilot, corporation=f.DEFAULT_CORP)
-
-        record = credit(self.operation, alt)
-
-        self.assertEqual(record.corporation_id, f.OTHER_CORP[0])
-
-
-class TrackingAttendanceIntegrationTests(TestCase):
-    def setUp(self):
-        self.fc = f.create_user(perms=f.FC_PERMS)
-        self.operation = f.create_operation(self.fc)
-
-    def _sync(self, characters):
-        rows = [f.esi_member(c) for c in characters]
-        with mock.patch("fleetops.services.tracking.get_fleet_members", return_value=rows):
-            return sync_operation(self.operation)
-
-    def test_sync_credits_owned_members_once_and_skips_unowned(self):
-        pilot = f.create_user()
-        alt = f.add_alt(pilot, corporation=f.OTHER_CORP, alliance=f.FOREIGN_ALLIANCE)
-        stranger = f.create_character("Random Stranger", corporation=f.OTHER_CORP)
-
-        self._sync([f.main_of(self.fc), alt, stranger])
-        self._sync([f.main_of(self.fc), alt, stranger])
-
-        rows = AttendanceRecord.objects.filter(operation=self.operation)
-        self.assertEqual(rows.count(), 2)
-        self.assertFalse(rows.filter(character_id=stranger.character_id).exists())
-        alt_row = rows.get(character_id=alt.character_id)
-        self.assertEqual(alt_row.main_character_id, f.main_of(pilot).character_id)
-        self.assertEqual(alt_row.corporation_id, f.DEFAULT_CORP[0])
-
-    def test_sync_respects_attendance_limit(self):
-        f.settings(attendance_limit=1)
-        pilot = f.create_user()
-        alt = f.add_alt(pilot)
-
-        self._sync([f.main_of(pilot), alt])
-
-        rows = AttendanceRecord.objects.filter(operation=self.operation, auth_user=pilot)
-        self.assertEqual(rows.filter(granted=True).count(), 1)
-        self.assertEqual(rows.filter(capped=True).count(), 1)
-
-
 class ManualAttendanceTests(TestCase):
     def setUp(self):
         self.fc = f.create_user(perms=f.FC_PERMS)
-        self.closed = f.create_operation(self.fc, status=FleetOperation.Status.CLOSED)
+        self.lead = f.create_user(perms=f.FC_LEAD_PERMS)
+        self.closed = f.create_operation(self.fc, status=CLOSED)
         self.active = f.create_operation(self.fc)
         self.pilot = f.create_user()
         self.main = f.main_of(self.pilot)
 
     def _manual(self, operation, character_id, **kwargs):
-        kwargs.setdefault("actor", self.fc)
+        kwargs.setdefault("actor", self.lead)
         return create_manual_attendance(operation, character_id=character_id, **kwargs)
 
-    def test_keep_without_automatic_creates_granted_manual_row(self):
+    def _tracked(self, character, operation=None, seconds=1200):
+        """Track ``character`` in the closed fleet and grant its PAP."""
+        operation = operation or self.closed
+        f.member_state(operation, character, accumulated_seconds=seconds, active=False)
+        finalize_pap(operation)
+        return tracked_row(operation, character)
+
+    def test_fc_lead_entry_is_approved_and_granted(self):
         record = self._manual(self.closed, self.main.character_id, notes="Late login")
 
         self.assertEqual(record.source, MANUAL)
+        self.assertEqual(record.correction, AttendanceRecord.Correction.KEEP)
         self.assertTrue(record.granted)
         self.assertFalse(record.capped)
         self.assertEqual(record.attendance_value, 1)
         self.assertEqual(record.auth_user, self.pilot)
-        self.assertEqual(record.created_by, self.fc)
+        self.assertEqual(record.created_by, self.lead)
         self.assertEqual(record.character_name, self.main.character_name)
         self.assertEqual(record.notes, "Late login")
         self.assertEqual(record.first_seen, self.closed.started_at)
         self.assertEqual(record.last_seen, self.closed.ended_at)
+        self.assertEqual((record.review_status, record.reviewed_by), (ReviewStatus.APPROVED, self.lead))
+        self.assertIsNotNone(record.reviewed_at)
+
+    def test_fc_entry_waits_for_fc_lead_approval(self):
+        record = self._manual(self.closed, self.main.character_id, actor=self.fc)
+
+        self.assertEqual(record.review_status, ReviewStatus.PENDING)
+        self.assertIsNone(record.reviewed_by)
+        self.assertFalse(record.granted)
 
     def test_manual_row_on_active_fleet_uses_start_time_for_last_seen(self):
         record = self._manual(self.active, self.main.character_id)
         self.assertEqual(record.last_seen, self.active.started_at)
 
     def test_manual_create_is_audited(self):
-        record = self._manual(self.closed, self.main.character_id, attendance_value=2)
+        record = self._manual(self.closed, self.main.character_id, attendance_value=2, actor=self.fc)
 
         entry = AuditLog.objects.get(action="attendance.manual_create")
         self.assertEqual(entry.actor, self.fc)
@@ -318,16 +125,18 @@ class ManualAttendanceTests(TestCase):
         self.assertIsNone(entry.old_value)
         self.assertEqual(entry.new_value["attendance_value"], 2)
         self.assertEqual(entry.new_value["operation"], str(self.closed.uuid))
+        self.assertEqual(entry.new_value["correction"], "keep")
+        self.assertEqual(entry.new_value["review_status"], ReviewStatus.PENDING)
 
-    def test_keep_with_automatic_leaves_both_rows_granted(self):
-        automatic = f.add_attendance(self.closed, self.pilot)
+    def test_keep_with_tracked_pap_leaves_both_rows_granted(self):
+        tracked = self._tracked(self.main)
 
         manual = self._manual(self.closed, self.main.character_id, duplicate_action="keep")
 
-        automatic.refresh_from_db()
-        self.assertTrue(automatic.granted)
-        self.assertEqual(automatic.attendance_value, 1)
-        self.assertNotEqual(manual.pk, automatic.pk)
+        tracked.refresh_from_db()
+        self.assertTrue(tracked.granted)
+        self.assertEqual(tracked.attendance_value, 1)
+        self.assertTrue(manual.granted)
         self.assertEqual(AttendanceRecord.objects.filter(operation=self.closed).count(), 2)
 
     def test_closed_fleet_accepts_multiple_manual_rows(self):
@@ -339,88 +148,85 @@ class ManualAttendanceTests(TestCase):
         self.assertEqual(sum(r.attendance_value for r in rows), 6)
         self.assertEqual(audit_actions().count("attendance.manual_create"), 3)
 
-    def test_merge_adds_value_to_automatic_row(self):
-        automatic = f.add_attendance(self.closed, self.pilot)
+    def test_merge_adds_value_to_the_tracked_pap(self):
+        tracked = self._tracked(self.main)
 
-        result = self._manual(
+        manual = self._manual(
             self.closed, self.main.character_id, attendance_value=2, duplicate_action="merge", notes="Logi bonus"
         )
 
-        self.assertEqual(result.pk, automatic.pk)
-        automatic.refresh_from_db()
-        self.assertEqual(automatic.attendance_value, 3)
-        self.assertTrue(automatic.granted)
-        self.assertIn("Logi bonus", automatic.notes)
-        self.assertFalse(AttendanceRecord.objects.filter(operation=self.closed, source=MANUAL).exists())
-
-        entry = AuditLog.objects.get(action="attendance.merge")
-        self.assertEqual(entry.actor, self.fc)
-        self.assertEqual(entry.object_id, str(automatic.pk))
-        self.assertEqual(entry.old_value, {"attendance_value": 1, "granted": True})
-        self.assertEqual(entry.new_value, {"attendance_value": 3, "granted": True})
+        tracked.refresh_from_db()
+        self.assertEqual((tracked.attendance_value, tracked.extra_value, tracked.granted), (3, 2, True))
+        # The manual row stays as the record of the correction; its value counts on the tracked row.
+        self.assertEqual((manual.source, manual.correction, manual.granted), (MANUAL, "merge", False))
+        self.assertEqual(audit_actions(), ["attendance.manual_create"])
 
     def test_merge_into_capped_row_grants_it(self):
-        capped = f.add_attendance(self.closed, self.pilot, granted=False, capped=True)
+        alt = f.add_alt(self.pilot)
+        self.closed.pap_character_limit = 1
+        self.closed.save()
+        f.member_state(self.closed, self.main, accumulated_seconds=1200, active=False)
+        capped = self._tracked(alt)
+        self.assertEqual((capped.granted, capped.capped), (False, True))
 
-        self._manual(self.closed, self.main.character_id, duplicate_action="merge")
+        self._manual(self.closed, alt.character_id, duplicate_action="merge")
 
         capped.refresh_from_db()
         self.assertTrue(capped.granted)
-        self.assertFalse(capped.capped)
         self.assertEqual(capped.attendance_value, 2)
+        self.assertTrue(tracked_row(self.closed, self.main).granted)
 
-    def test_merge_without_automatic_row_creates_manual_row(self):
+    def test_merge_without_tracked_pap_is_a_separate_credit(self):
         record = self._manual(self.closed, self.main.character_id, duplicate_action="merge")
 
         self.assertEqual(record.source, MANUAL)
+        self.assertTrue(record.granted)
         self.assertEqual(audit_actions(), ["attendance.manual_create"])
 
     def test_merge_targets_the_matching_character_only(self):
         alt = f.add_alt(self.pilot)
-        main_row = f.add_attendance(self.closed, self.pilot)
+        main_row = self._tracked(self.main)
 
         record = self._manual(self.closed, alt.character_id, duplicate_action="merge")
 
         main_row.refresh_from_db()
-        self.assertEqual(main_row.attendance_value, 1)
-        self.assertEqual(record.source, MANUAL)
+        self.assertEqual((main_row.attendance_value, main_row.extra_value), (1, 0))
+        self.assertTrue(record.granted)
         self.assertEqual(record.character_id, alt.character_id)
 
-    def test_replace_ungrants_automatic_and_creates_manual(self):
-        automatic = f.add_attendance(self.closed, self.pilot)
+    def test_replace_ungrants_the_tracked_pap_and_grants_the_manual_row(self):
+        tracked = self._tracked(self.main)
 
         manual = self._manual(self.closed, self.main.character_id, attendance_value=2, duplicate_action="replace")
 
-        automatic.refresh_from_db()
-        self.assertFalse(automatic.granted)
-        self.assertIn("Replaced", automatic.notes)
-        self.assertEqual(manual.source, MANUAL)
-        self.assertTrue(manual.granted)
-        self.assertEqual(manual.attendance_value, 2)
-
+        tracked.refresh_from_db()
+        self.assertEqual((tracked.granted, tracked.replaced), (False, True))
+        self.assertEqual((manual.source, manual.granted, manual.attendance_value), (MANUAL, True, 2))
         granted = AttendanceRecord.objects.filter(operation=self.closed, auth_user=self.pilot, granted=True)
         self.assertEqual([r.pk for r in granted], [manual.pk])
-
-        self.assertEqual(audit_actions(automatic), ["attendance.replace_auto"])
+        self.assertEqual(audit_actions(tracked), [])
         self.assertEqual(audit_actions(manual), ["attendance.manual_create"])
-        replace_entry = AuditLog.objects.get(action="attendance.replace_auto")
-        self.assertEqual(replace_entry.old_value, {"granted": True})
-        self.assertEqual(replace_entry.new_value, {"granted": False})
 
     def test_replace_capped_row_gives_manual_credit(self):
-        f.add_attendance(self.closed, self.pilot, granted=False, capped=True)
+        alt = f.add_alt(self.pilot)
+        self.closed.pap_character_limit = 1
+        self.closed.save()
+        f.member_state(self.closed, self.main, accumulated_seconds=1200, active=False)
+        self._tracked(alt)
 
-        manual = self._manual(self.closed, self.main.character_id, duplicate_action="replace")
+        manual = self._manual(self.closed, alt.character_id, duplicate_action="replace")
 
         self.assertTrue(manual.granted)
-        self.assertEqual(
-            AttendanceRecord.objects.filter(operation=self.closed, auth_user=self.pilot, granted=True).count(), 1
-        )
+        granted = AttendanceRecord.objects.filter(operation=self.closed, auth_user=self.pilot, granted=True)
+        self.assertEqual(granted.count(), 2)
+        # The replaced alt still holds its place under the limit; the main keeps its PAP.
+        self.assertTrue(tracked_row(self.closed, self.main).granted)
 
-    def test_replace_without_automatic_creates_manual_row(self):
+    def test_replace_without_tracked_pap_creates_manual_row(self):
         record = self._manual(self.closed, self.main.character_id, duplicate_action="replace")
 
         self.assertEqual(record.source, MANUAL)
+        self.assertTrue(record.granted)
         self.assertEqual(audit_actions(), ["attendance.manual_create"])
 
     def test_manual_alt_in_foreign_alliance_credited_to_main_corp(self):
@@ -442,15 +248,75 @@ class ManualAttendanceTests(TestCase):
         self.assertIsNone(record.main_character_id)
         self.assertEqual(record.character_name, "Mystery Pilot")
 
-    def test_manual_rows_are_not_touched_by_later_tracking(self):
-        manual = self._manual(self.active, self.main.character_id)
+    def test_deleting_a_correction_and_recalculating_restores_the_tracked_pap(self):
+        tracked = self._tracked(self.main)
+        for action in ("merge", "replace"):
+            with self.subTest(action=action):
+                manual = self._manual(self.closed, self.main.character_id, duplicate_action=action, attendance_value=2)
+                manual.delete()
 
-        automatic = credit(self.active, self.main)
+                finalize_pap(self.closed)
 
-        self.assertNotEqual(automatic.pk, manual.pk)
-        self.assertEqual(automatic.source, AUTOMATIC)
+                tracked.refresh_from_db()
+                self.assertEqual(
+                    (tracked.granted, tracked.replaced, tracked.extra_value, tracked.attendance_value),
+                    (True, False, 0, 1),
+                )
+
+    def test_pending_correction_changes_nothing_until_approved(self):
+        tracked = self._tracked(self.main)
+
+        manual = self._manual(self.closed, self.main.character_id, actor=self.fc, duplicate_action="replace")
+
+        tracked.refresh_from_db()
+        self.assertEqual((tracked.granted, tracked.replaced), (True, False))
+        self.assertFalse(manual.granted)
+
+        AttendanceRecord.objects.filter(pk=manual.pk).update(review_status=ReviewStatus.APPROVED)
+        finalize_pap(self.closed)
+
+        tracked.refresh_from_db()
         manual.refresh_from_db()
-        self.assertEqual(manual.attendance_value, 1)
+        self.assertEqual((tracked.granted, tracked.replaced, manual.granted), (False, True, True))
+
+    def test_rejected_correction_never_counts(self):
+        tracked = self._tracked(self.main)
+        manual = self._manual(self.closed, self.main.character_id, actor=self.fc, duplicate_action="merge")
+        AttendanceRecord.objects.filter(pk=manual.pk).update(review_status=ReviewStatus.REJECTED)
+
+        finalize_pap(self.closed)
+
+        tracked.refresh_from_db()
+        manual.refresh_from_db()
+        self.assertEqual((tracked.extra_value, tracked.attendance_value, manual.granted), (0, 1, False))
+
+    def test_corrections_on_a_running_fleet_apply_when_it_closes(self):
+        f.member_state(self.active, self.main, accumulated_seconds=1200)
+        merge = self._manual(self.active, self.main.character_id, duplicate_action="merge", attendance_value=2)
+        # Until the close there is no tracked PAP to merge into.
+        self.assertTrue(merge.granted)
+        self.assertFalse(AttendanceRecord.objects.filter(operation=self.active, source=AUTOMATIC).exists())
+
+        with mock.patch("fleetops.services.operations.sync_operation"):
+            end_fleet(self.active, actor=self.fc)
+
+        merge.refresh_from_db()
+        tracked = tracked_row(self.active, self.main)
+        self.assertFalse(merge.granted)
+        self.assertEqual((tracked.granted, tracked.attendance_value), (True, 3))
+
+    def test_imported_rows_are_corrections_too(self):
+        record = self._manual(self.closed, self.main.character_id, source=IMPORTED)
+
+        self.assertEqual((record.source, record.granted), (IMPORTED, True))
+
+    def test_only_manual_and_imported_rows_are_entered_by_hand(self):
+        for source in (AUTOMATIC, AttendanceRecord.Source.CLICK):
+            with self.subTest(source=source), self.assertRaises(ValueError):
+                self._manual(self.closed, self.main.character_id, source=source)
+        with self.assertRaises(ValueError):
+            self._manual(self.closed, self.main.character_id, duplicate_action="add")
+        self.assertFalse(AttendanceRecord.objects.exists())
 
 
 class ManualAttendanceViewTests(TestCase):
@@ -471,7 +337,7 @@ class ManualAttendanceViewTests(TestCase):
         return self.client.post(reverse("fleetops:add_manual_attendance", args=[operation.uuid]), payload)
 
     def test_add_to_closed_fleet(self):
-        operation = f.create_operation(self.fc, status=FleetOperation.Status.CLOSED)
+        operation = f.create_operation(self.fc, status=CLOSED)
 
         response = self._post(operation, attendance_value=2)
 
@@ -479,6 +345,8 @@ class ManualAttendanceViewTests(TestCase):
         record = AttendanceRecord.objects.get(operation=operation)
         self.assertEqual(record.source, MANUAL)
         self.assertEqual(record.attendance_value, 2)
+        # An FC's correction waits for an FC lead.
+        self.assertEqual((record.review_status, record.granted), (ReviewStatus.PENDING, False))
         self.assertTrue(AuditLog.objects.filter(action="attendance.manual_create", actor=self.fc).exists())
 
     def test_add_to_active_fleet(self):
@@ -489,8 +357,9 @@ class ManualAttendanceViewTests(TestCase):
         self.assertTrue(AttendanceRecord.objects.filter(operation=operation, source=MANUAL).exists())
 
     def test_delete_manual_row_is_audited(self):
-        operation = f.create_operation(self.fc, status=FleetOperation.Status.CLOSED)
-        record = f.add_attendance(operation, self.pilot, source=MANUAL, value=2)
+        operation = f.create_operation(self.fc, status=CLOSED)
+        # FCs delete their own rows until an FC lead approved them.
+        record = f.add_attendance(operation, self.pilot, source=MANUAL, value=2, created_by=self.fc, review_status="pending")
 
         response = self.client.post(reverse("fleetops:delete_manual_attendance", args=[record.pk]))
 
@@ -502,7 +371,7 @@ class ManualAttendanceViewTests(TestCase):
         self.assertEqual(entry.old_value, {"attendance_value": 2})
 
     def test_automatic_rows_cannot_be_deleted_through_manual_delete(self):
-        operation = f.create_operation(self.fc, status=FleetOperation.Status.CLOSED)
+        operation = f.create_operation(self.fc, status=CLOSED)
         record = f.add_attendance(operation, self.pilot)
 
         response = self.client.post(reverse("fleetops:delete_manual_attendance", args=[record.pk]))
@@ -511,7 +380,7 @@ class ManualAttendanceViewTests(TestCase):
         self.assertTrue(AttendanceRecord.objects.filter(pk=record.pk).exists())
 
     def test_other_fc_cannot_add_attendance_to_foreign_fleet(self):
-        operation = f.create_operation(f.create_user(perms=f.FC_PERMS), status=FleetOperation.Status.CLOSED)
+        operation = f.create_operation(f.create_user(perms=f.FC_PERMS), status=CLOSED)
 
         response = self._post(operation)
 
@@ -535,7 +404,7 @@ class ManualAttendanceViewTests(TestCase):
         self.assertFalse(AttendanceRecord.objects.exists())
 
     def test_invalid_entry_flashes_the_field_errors(self):
-        operation = f.create_operation(self.fc, status=FleetOperation.Status.CLOSED)
+        operation = f.create_operation(self.fc, status=CLOSED)
 
         response = self._post(operation, attendance_value=101)
 
@@ -549,7 +418,7 @@ class ManualAttendanceViewTests(TestCase):
         self.assertFalse(AttendanceRecord.objects.exists())
 
     def test_historical_form_shows_field_errors(self):
-        operation = f.create_operation(self.fc, status=FleetOperation.Status.CLOSED)
+        operation = f.create_operation(self.fc, status=CLOSED)
 
         response = self.client.post(
             reverse("fleetops:manual_attendance"),
@@ -584,126 +453,194 @@ class ManualAttendanceViewTests(TestCase):
 class AttendanceMultiplierTests(TestCase):
     def setUp(self):
         self.fc = f.create_user(perms=f.FC_PERMS)
-        self.operation = f.create_operation(self.fc)
+        self.lead = f.create_user(perms=f.FC_LEAD_PERMS)
+        self.operation = long_closed_fleet(self.fc)
         self.pilot = f.create_user()
         self.main = f.main_of(self.pilot)
 
-    def test_only_granted_automatic_rows_are_multiplied(self):
+    def track(self, character, operation=None, seconds=1200):
+        operation = operation or self.operation
+        f.member_state(operation, character, accumulated_seconds=seconds, active=False)
+
+    def finalize(self, operation=None):
+        return finalize_pap(operation or self.operation)
+
+    def correction(self, action, value=1, character=None):
+        return create_manual_attendance(
+            self.operation,
+            actor=self.lead,
+            character_id=(character or self.main).character_id,
+            attendance_value=value,
+            duplicate_action=action,
+        )
+
+    def test_only_granted_tracked_rows_carry_the_multiplier_and_extras(self):
         alt = f.add_alt(self.pilot)
         other = f.create_user()
-        granted = f.add_attendance(self.operation, self.pilot)
-        capped = f.add_attendance(self.operation, self.pilot, alt, granted=False, capped=True)
-        manual = f.add_attendance(self.operation, other, source=MANUAL, value=1)
+        self.operation.pap_character_limit = 1
+        self.operation.save()
+        self.track(self.main)
+        self.track(alt)
+        manual = self.correction("keep", character=f.main_of(other))
+        self.finalize()
 
-        updated = set_operation_attendance_multiplier(self.operation, 3, actor=self.fc)
+        summary = set_operation_attendance_multiplier(self.operation, 3, actor=self.fc)
 
-        self.assertEqual(updated, 1)
-        granted.refresh_from_db()
-        capped.refresh_from_db()
+        self.assertEqual(summary["granted"], 1)
+        main_row = tracked_row(self.operation, self.main)
+        self.assertEqual((main_row.attendance_value, main_row.granted), (3, True))
+        self.assertFalse(tracked_row(self.operation, alt).granted)
         manual.refresh_from_db()
-        self.assertEqual(granted.attendance_value, 3)
-        self.assertEqual(capped.attendance_value, 1)
         self.assertEqual(manual.attendance_value, 1)
         self.operation.refresh_from_db()
         self.assertEqual(self.operation.attendance_multiplier, 3)
 
-    def test_replaced_automatic_row_is_not_multiplied(self):
-        automatic = f.add_attendance(self.operation, self.pilot)
-        create_manual_attendance(
-            self.operation, actor=self.fc, character_id=self.main.character_id, duplicate_action="replace"
-        )
+    def test_replaced_tracked_row_stays_ungranted_after_a_switch(self):
+        self.track(self.main)
+        self.finalize()
+        self.correction("replace")
 
         set_operation_attendance_multiplier(self.operation, 2, actor=self.fc)
 
-        automatic.refresh_from_db()
-        self.assertEqual(automatic.attendance_value, 1)
-        self.assertFalse(automatic.granted)
+        tracked = tracked_row(self.operation, self.main)
+        self.assertEqual((tracked.granted, tracked.replaced), (False, True))
         manual = AttendanceRecord.objects.get(operation=self.operation, source=MANUAL)
-        self.assertEqual(manual.attendance_value, 1)
+        self.assertEqual((manual.attendance_value, manual.granted), (1, True))
 
     def test_rows_of_other_operations_are_untouched(self):
-        other_operation = f.create_operation(self.fc)
-        elsewhere = f.add_attendance(other_operation, self.pilot)
-        f.add_attendance(self.operation, self.pilot)
+        other_operation = long_closed_fleet(self.fc)
+        self.track(self.main, other_operation)
+        self.finalize(other_operation)
+        self.track(self.main)
+        self.finalize()
 
         set_operation_attendance_multiplier(self.operation, 2)
 
-        elsewhere.refresh_from_db()
-        self.assertEqual(elsewhere.attendance_value, 1)
+        self.assertEqual(tracked_row(other_operation, self.main).attendance_value, 1)
+        self.assertEqual(tracked_row(self.operation, self.main).attendance_value, 2)
 
     def test_merged_extra_value_survives_multiplier_switches(self):
-        automatic = f.add_attendance(self.operation, self.pilot)
-        create_manual_attendance(
-            self.operation,
-            actor=self.fc,
-            character_id=self.main.character_id,
-            attendance_value=2,
-            duplicate_action="merge",
-        )
-        automatic.refresh_from_db()
-        self.assertEqual(automatic.attendance_value, 3)
+        self.track(self.main)
+        self.finalize()
+        self.correction("merge", value=2)
+        self.assertEqual(tracked_row(self.operation, self.main).attendance_value, 3)
 
         expected = {2: 4, 3: 5, 1: 3}
         for multiplier, value in expected.items():
             set_operation_attendance_multiplier(self.operation, multiplier)
-            automatic.refresh_from_db()
-            self.assertEqual(automatic.attendance_value, value, f"after switching to {multiplier}x")
+            self.assertEqual(tracked_row(self.operation, self.main).attendance_value, value, f"after {multiplier}x")
+
+    def test_merge_into_replaced_row_keeps_extra_after_switch(self):
+        self.track(self.main)
+        self.finalize()
+        self.correction("replace")
+        set_operation_attendance_multiplier(self.operation, 2)
+        self.correction("merge", value=1)
+
+        set_operation_attendance_multiplier(self.operation, 3)
+
+        tracked = tracked_row(self.operation, self.main)
+        # 3x base plus the 1 merged by hand; a merge grants the tracked PAP again, as merges always did.
+        self.assertEqual(tracked.attendance_value, 4)
+        self.assertTrue(tracked.granted)
 
     def test_switching_back_and_forth_is_reversible(self):
-        rows = [f.add_attendance(self.operation, f.create_user()) for _ in range(3)]
+        users = [f.create_user() for _ in range(3)]
+        for user in users:
+            self.track(f.main_of(user))
+        self.finalize()
 
         set_operation_attendance_multiplier(self.operation, 3)
         set_operation_attendance_multiplier(self.operation, 1)
 
-        for row in rows:
-            row.refresh_from_db()
-            self.assertEqual(row.attendance_value, 1)
+        for user in users:
+            self.assertEqual(tracked_row(self.operation, f.main_of(user)).attendance_value, 1)
 
-    def test_new_automatic_rows_use_current_multiplier(self):
-        set_operation_attendance_multiplier(self.operation, 2)
+    def test_running_fleet_only_stores_the_multiplier(self):
+        running = f.create_operation(self.fc)
+        self.track(self.main, running)
 
-        record = credit(self.operation, self.main)
+        self.assertIsNone(set_operation_attendance_multiplier(running, 2))
 
-        self.assertEqual(record.attendance_value, 2)
+        running.refresh_from_db()
+        self.assertEqual(running.attendance_multiplier, 2)
+        self.assertFalse(AttendanceRecord.objects.filter(operation=running).exists())
 
     def test_string_value_is_accepted(self):
-        f.add_attendance(self.operation, self.pilot)
         set_operation_attendance_multiplier(self.operation, "2")
         self.operation.refresh_from_db()
         self.assertEqual(self.operation.attendance_multiplier, 2)
 
     def test_invalid_values_raise_and_change_nothing(self):
-        row = f.add_attendance(self.operation, self.pilot)
-        for bad in (0, 4, -1, 10, "x", ""):
+        self.track(self.main)
+        self.finalize()
+        for bad in (0, 11, -1, "x", "", None):
             with self.subTest(value=bad):
                 with self.assertRaises(ValueError):
                     set_operation_attendance_multiplier(self.operation, bad, actor=self.fc)
-        row.refresh_from_db()
+        with self.assertRaises(ValueError):
+            set_operation_attendance_multiplier(self.operation, 2, source="guess")
         self.operation.refresh_from_db()
-        self.assertEqual(row.attendance_value, 1)
+        self.assertEqual(tracked_row(self.operation, self.main).attendance_value, 1)
         self.assertEqual(self.operation.attendance_multiplier, 1)
         self.assertFalse(AuditLog.objects.filter(action="attendance.multiplier").exists())
 
-    def test_audit_written_only_when_value_changes(self):
-        f.add_attendance(self.operation, self.pilot)
-        f.add_attendance(self.operation, f.create_user())
+    def test_audit_written_when_the_value_changes(self):
+        self.track(self.main)
+        self.track(f.main_of(f.create_user()))
+        self.finalize()
 
         set_operation_attendance_multiplier(self.operation, 1, actor=self.fc)
         self.assertFalse(AuditLog.objects.filter(action="attendance.multiplier").exists())
 
-        set_operation_attendance_multiplier(self.operation, 2, actor=self.fc)
+        set_operation_attendance_multiplier(self.operation, 2, actor=self.fc, reason="Structure bash")
         entry = AuditLog.objects.get(action="attendance.multiplier")
         self.assertEqual(entry.actor, self.fc)
         self.assertEqual(entry.object_type, "FleetOperation")
         self.assertEqual(entry.object_id, str(self.operation.pk))
-        self.assertEqual(entry.old_value, {"attendance_multiplier": 1})
-        self.assertEqual(entry.new_value, {"attendance_multiplier": 2, "automatic_rows_updated": 2})
+        self.assertEqual(entry.old_value["attendance_multiplier"], 1)
+        self.assertEqual(entry.new_value["attendance_multiplier"], 2)
+        self.assertEqual(entry.new_value["multiplier_source"], "fc")
+        self.assertEqual(entry.new_value["pap"]["granted"], 2)
+        self.assertEqual(entry.reason, "Structure bash")
 
         set_operation_attendance_multiplier(self.operation, 2, actor=self.fc)
         self.assertEqual(AuditLog.objects.filter(action="attendance.multiplier").count(), 1)
 
-    def test_view_rejects_invalid_multiplier(self):
-        row = f.add_attendance(self.operation, self.pilot)
+    def test_keeping_1x_clears_a_pending_choice_and_is_audited(self):
+        self.operation.multiplier_pending = True
+        self.operation.multiplier_source = FleetOperation.MultiplierSource.DEFAULT
+        self.operation.save()
+
+        set_operation_attendance_multiplier(self.operation, 1, actor=self.fc)
+
+        self.operation.refresh_from_db()
+        self.assertFalse(self.operation.multiplier_pending)
+        self.assertEqual(self.operation.multiplier_source, "fc")
+        entry = AuditLog.objects.get(action="attendance.multiplier")
+        self.assertTrue(entry.new_value["pending_cleared"])
+
+    def test_view_applies_an_allowed_multiplier(self):
+        self.track(self.main)
+        self.finalize()
+        self.client.force_login(self.fc)
+
+        response = self.client.post(
+            reverse("fleetops:set_attendance_multiplier", args=[self.operation.uuid]),
+            {"attendance_multiplier": "3"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(tracked_row(self.operation, self.main).attendance_value, 3)
+        self.assertTrue(AuditLog.objects.filter(action="attendance.multiplier", actor=self.fc).exists())
+        self.assertIn(
+            "PAP multiplier set to 3x; PAP recalculated (1 granted).",
+            [str(m) for m in get_messages(response.wsgi_request)],
+        )
+
+    def test_view_rejects_an_unknown_multiplier(self):
+        self.track(self.main)
+        self.finalize()
         self.client.force_login(self.fc)
 
         response = self.client.post(
@@ -712,45 +649,9 @@ class AttendanceMultiplierTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 302)
-        row.refresh_from_db()
         self.operation.refresh_from_db()
-        self.assertEqual(row.attendance_value, 1)
+        self.assertEqual(tracked_row(self.operation, self.main).attendance_value, 1)
         self.assertEqual(self.operation.attendance_multiplier, 1)
-
-    def test_view_applies_valid_multiplier(self):
-        row = f.add_attendance(self.operation, self.pilot)
-        self.client.force_login(self.fc)
-
-        self.client.post(
-            reverse("fleetops:set_attendance_multiplier", args=[self.operation.uuid]),
-            {"attendance_multiplier": "3"},
-        )
-
-        row.refresh_from_db()
-        self.assertEqual(row.attendance_value, 3)
-        self.assertTrue(AuditLog.objects.filter(action="attendance.multiplier", actor=self.fc).exists())
-
-    # Known issue: merged extra is inferred from the current multiplier, so a row merged while ungranted loses its extra on the next switch
-    @unittest.expectedFailure
-    def test_merge_into_replaced_row_keeps_extra_after_switch(self):
-        automatic = f.add_attendance(self.operation, self.pilot)
-        create_manual_attendance(
-            self.operation, actor=self.fc, character_id=self.main.character_id, duplicate_action="replace"
-        )
-        set_operation_attendance_multiplier(self.operation, 2)
-        create_manual_attendance(
-            self.operation,
-            actor=self.fc,
-            character_id=self.main.character_id,
-            attendance_value=1,
-            duplicate_action="merge",
-        )
-
-        set_operation_attendance_multiplier(self.operation, 3)
-
-        automatic.refresh_from_db()
-        # 3x base plus the 1 merged by hand.
-        self.assertEqual(automatic.attendance_value, 4)
 
 
 class IdentityTests(TestCase):
@@ -781,6 +682,25 @@ class IdentityTests(TestCase):
         self.assertEqual(identity.corporation_name, f.DEFAULT_CORP[1])
         self.assertEqual(identity.alliance_id, f.DEFAULT_ALLIANCE[0])
         self.assertEqual(identity.alliance_name, f.DEFAULT_ALLIANCE[1])
+        # The character's own corporation is kept apart for the member list.
+        self.assertEqual(
+            (identity.character_corporation_id, identity.character_corporation_name),
+            (f.OTHER_CORP[0], f.OTHER_CORP[1]),
+        )
+        self.assertEqual(
+            (identity.character_alliance_id, identity.character_alliance_name),
+            (f.FOREIGN_ALLIANCE[0], f.FOREIGN_ALLIANCE[1]),
+        )
+
+    def test_character_without_alliance_has_no_own_alliance(self):
+        alt = f.add_alt(self.user, corporation=f.OTHER_CORP, alliance=None)
+
+        identity = identity_for_character_id(alt.character_id)
+
+        self.assertEqual(identity.character_corporation_id, f.OTHER_CORP[0])
+        self.assertIsNone(identity.character_alliance_id)
+        self.assertEqual(identity.character_alliance_name, "")
+        self.assertEqual(identity.alliance_id, f.DEFAULT_ALLIANCE[0])
 
     def test_unowned_character_uses_its_own_affiliation(self):
         stranger = f.create_character("Stranger", corporation=f.OTHER_CORP, alliance=None)
@@ -1019,6 +939,10 @@ class PruneHistoryTests(TestCase):
 
     def _settings_form(self, retention_days):
         data = {
+            "multiplier_mode": "fc",
+            "pap_minimum_minutes": 0,
+            "minimum_fleet_minutes": 0,
+            "pap_link_minutes": 30,
             "tracking_interval": 60,
             "stale_threshold": 180,
             "auto_end_missing_count": 3,

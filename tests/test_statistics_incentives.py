@@ -21,6 +21,7 @@ from fleetops.models import (
     IncentivePeriod,
     MonthlyFCStatistic,
     OperationRoleAssignment,
+    ReviewStatus,
 )
 from fleetops.services.dashboard import dashboard_metrics
 from fleetops.services.incentives import finalize_period, rebuild_period, set_waiver, unlock_period
@@ -498,23 +499,37 @@ class FCStatisticsTests(TestCase):
         closed_op(self.fc, utc(2026, 4, 1, 0, 0, 0))
         self.assertEqual(fc_statistics(self.fc, 2026, 3)["fleet_count"], 1)
 
-    def test_role_credit_is_snapshotted_at_assignment_time(self):
+    def test_role_credit_is_the_snapshot_of_the_assignment(self):
         op = closed_op(self.fc, utc(2026, 3, 4, 20), type_obj=self.roam)
-        assignment = add_role_assignment(op, actor=self.fc, role=Role.BACKSEAT_FC, character_id=f.main_of(self.co_fc).character_id)
-        self.assertTrue(assignment.grants_fc_credit)
+        add_role(op, self.co_fc, role=Role.BACKSEAT_FC)
 
+        # Neither the role's switch nor the assignee's permissions change a credit already given.
+        f.special_role(key="backseat_fc", grants_fc_credit=False)
         self.co_fc.user_permissions.clear()
         self.assertEqual(fc_statistics(self.co_fc, 2026, 3)["fleet_count"], 1)
 
-    def test_role_assignee_without_start_fleet_gets_no_credit(self):
+    def test_role_credit_needs_no_start_fleet(self):
+        # The role's FC credit switch alone decides, also through the role service.
         member = f.create_user("member", perms=f.MEMBER_PERMS)
         op = closed_op(self.fc, utc(2026, 3, 4, 20))
+        f.member_state(op, f.main_of(member), active=False)
         assignment = add_role_assignment(op, actor=self.fc, role=Role.BACKSEAT_FC, character_id=f.main_of(member).character_id)
-        self.assertFalse(assignment.grants_fc_credit)
-        self.assertEqual(fc_statistics(member, 2026, 3)["fleet_count"], 0)
+        self.assertTrue(assignment.grants_fc_credit)
+        self.assertEqual(fc_statistics(member, 2026, 3)["fleet_count"], 1)
 
-    def test_manual_fleet_counts(self):
-        create_manual_fleet(
+    def test_role_credit_needs_no_fc_permission(self):
+        # The role's "Gives FC credit" switch alone decides; the assignee need not be an FC.
+        member = f.create_user("member", perms=f.MEMBER_PERMS)
+        op = closed_op(self.fc, utc(2026, 3, 4, 20), type_obj=self.stratop)
+        add_role(op, member, role=Role.BACKSEAT_FC)
+
+        stats = fc_statistics(member, 2026, 3)
+
+        self.assertEqual(stats["fleet_count"], 1)
+        self.assertAlmostEqual(stats["total_points"], 2.5)
+
+    def test_manual_fleet_counts_once_approved(self):
+        operation = create_manual_fleet(
             user=self.fc,
             cleaned_data={
                 "started_at": utc(2026, 3, 12, 19),
@@ -523,9 +538,33 @@ class FCStatisticsTests(TestCase):
                 "formup": "Jita",
             },
         )
+        # An FC's manual fleet waits for an FC lead.
+        self.assertEqual(fc_statistics(self.fc, 2026, 3)["fleet_count"], 0)
+
+        FleetOperation.objects.filter(pk=operation.pk).update(review_status=ReviewStatus.APPROVED)
+
         stats = fc_statistics(self.fc, 2026, 3)
         self.assertEqual(stats["fleet_count"], 1)
         self.assertAlmostEqual(stats["total_points"], 2.5)
+
+    def test_fc_lead_manual_fleet_counts_at_once(self):
+        lead = f.create_user("lead", perms=f.FC_LEAD_PERMS)
+        create_manual_fleet(
+            user=lead,
+            cleaned_data={
+                "started_at": utc(2026, 3, 12, 19),
+                "ended_at": utc(2026, 3, 12, 21),
+                "fleet_type": self.stratop,
+                "formup": "Jita",
+                "attendance_multiplier": 2,
+            },
+        )
+
+        stats = fc_statistics(lead, 2026, 3)
+
+        self.assertEqual(stats["fleet_count"], 1)
+        # FC points are the type weight times the PAP multiplier.
+        self.assertAlmostEqual(stats["total_points"], 5.0)
 
 
 # ---------------------------------------------------------------------------
@@ -784,7 +823,7 @@ class IncentiveRebuildTests(TestCase):
         rebuild_period(self.period)
         self.assertEqual(stat_for(self.period, self.fc1).fleet_count, 2)
 
-    def test_manual_fleets_count(self):
+    def test_manual_fleets_count_once_approved(self):
         for day in (5, 6):
             create_manual_fleet(
                 user=self.fc1,
@@ -795,6 +834,10 @@ class IncentiveRebuildTests(TestCase):
                     "formup": "Amarr",
                 },
             )
+        rebuild_period(self.period)
+        self.assertFalse(MonthlyFCStatistic.objects.filter(period=self.period, fc_user=self.fc1).exists())
+
+        FleetOperation.objects.filter(is_manual=True).update(review_status=ReviewStatus.APPROVED)
         rebuild_period(self.period)
         row = stat_for(self.period, self.fc1)
         self.assertEqual((row.fleet_count, row.total_points, row.eligible), (2, Decimal("4.00"), True))
@@ -1347,6 +1390,8 @@ class DashboardViewTests(TestCase):
 
     def test_dashboard_cards_rendered(self):
         f.add_attendance(self.mine, self.pilot, value=2)
+        # PAP counts once its fleet has closed.
+        FleetOperation.objects.filter(pk__in=[self.mine.pk, self.joined.pk]).update(status=Status.CLOSED)
         response, _ = self.active_for(self.pilot)
         cards = response.context["dashboard_cards"]
         self.assertEqual(cards[0]["month"], 3)

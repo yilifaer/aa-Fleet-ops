@@ -143,12 +143,17 @@ After functional correctness:
 ## Stage 14 — Special roles / shared FC credit
 
 - Assign Back Seat FC, Logi Anchor and Snowflake Member before and after Fleet End.
-- Confirm only assigned users who currently have `fleetops.start_fleet` receive FC credit.
+- Confirm FC credit follows the role's **Gives FC credit** switch for any pilot in Alliance Auth: Back Seat FC gives credit by default, also to a pilot without `fleetops.start_fleet`, and a role with the switch off gives no credit, also to a pilot who has `fleetops.start_fleet`.
+- Confirm a pilot with FC credit cannot manage the fleet without `fleetops.manage_own_fleet`.
 - Recalculate the monthly incentive period and verify the credited operation is counted exactly once per FC.
 
-## Stage 15 — Capsule cleanup
+## Stage 15 — Kicks
 
 - Add several pod/capsule characters to an active test fleet.
-- Confirm FleetOps detects the expected pod count.
-- Execute Kick all Capsules.
-- Confirm pods are removed, Fleet Boss is never targeted, and partial ESI failures are reported per action.
+- Confirm **Kick Capsules** shows the expected count, opens a list of the capsule pilots by name, and kicks only the ticked ones.
+- **Kick** a single member from the member list; the confirmation names the pilot and corporation.
+- Use **Kick outside system…**: the FC's system is preselected, the members outside it are listed and ticked; untick some to spare them.
+- Kick up to 10 members at once and confirm they are kicked in the request; kick more than 10 and confirm the whole batch runs on the Celery worker, with the results under Operation Actions.
+- Confirm the FC character and the Fleet Boss are never targeted, and partial ESI failures are reported per member.
+- Remove `esi-fleets.write_fleet.v1` from the FC character's token and confirm the kick buttons are disabled.
+- Confirm the audit log has `fleet.kick_member`, `fleet.kick_outside_system` and `fleet.kick_capsules` entries, and that a member without `fleetops.view_all_fleets` sees no kicked pilot names under Operation Actions while the fleet runs.

@@ -1,6 +1,7 @@
 {% extends "fleetops/base.html" %}
 {% load static fleetops_messages %}
 {% block fleetops_content %}
+{% include "fleetops/partials/live_pap_status.html" %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
     <h2 class="mb-0">Fleet Operations</h2>
@@ -8,6 +9,15 @@
   </div>
   {% if perms.fleetops.start_fleet %}<a class="btn btn-primary" href="{% url 'fleetops:start_fleet' %}">Start Fleet</a>{% endif %}
 </div>
+
+{% if pending_multiplier_operations %}
+<div class="card mb-3 border-warning" id="pending-multipliers">
+  <div class="card-header"><strong>Fleets waiting for your multiplier choice</strong> <span class="small text-muted">They ended without a choice and count at 1x until you choose.</span></div>
+  <div class="table-responsive"><table class="table table-sm table-hover mb-0 align-middle"><thead><tr><th>Ended</th><th>Fleet</th><th>Current</th><th></th></tr></thead><tbody>
+  {% for op in pending_multiplier_operations %}<tr><td class="text-nowrap">{{ op.ended_at|eve_time }}</td><td>{{ op.fleet_type }}{% if op.doctrine_name %} · {{ op.doctrine_name }}{% endif %}</td><td>{{ op.attendance_multiplier }}x</td><td><a href="{% url 'fleetops:operation_detail' op.uuid %}">Choose</a></td></tr>{% endfor %}
+  </tbody></table></div>
+</div>
+{% endif %}
 
 <div class="row g-3 mb-3 fleetops-metric-row">
   {% for card in dashboard_cards %}

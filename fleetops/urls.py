@@ -1,6 +1,16 @@
 from django.urls import path
 
-from fleetops import public_views, views, views_config, views_fleet_actions
+from fleetops import (
+    public_views,
+    views,
+    views_config,
+    views_controls,
+    views_fleet_actions,
+    views_links,
+    views_pap,
+    views_presets,
+    views_records,
+)
 
 app_name = "fleetops"
 
@@ -54,6 +64,30 @@ urlpatterns += [
     path("configuration/<slug:section>/add/", views_config.configuration_edit, name="configuration_add"),
     path("configuration/<slug:section>/<int:pk>/edit/", views_config.configuration_edit, name="configuration_edit"),
     path("configuration/<slug:section>/<int:pk>/delete/", views_config.configuration_delete, name="configuration_delete"),
+]
+
+urlpatterns += [
+    path("operations/<uuid:operation_uuid>/pap/recalculate/", views_pap.recalculate_pap_view, name="recalculate_pap"),
+    path("operations/<uuid:operation_uuid>/statistics-inclusion/", views_pap.set_stats_mode_view, name="set_stats_mode"),
+    path("api/me/live-pap/", views_pap.live_pap_partial, name="live_pap"),
+    path("approvals/", views_records.approval_queue, name="approval_queue"),
+    path("approvals/operations/<uuid:operation_uuid>/", views_records.review_operation_view, name="review_operation"),
+    path("approvals/attendance/", views_records.review_attendance_view, name="review_attendance"),
+    path("attendance/<uuid:operation_uuid>/roster/", views_records.roster_import_view, name="roster_import"),
+    path("pap/<slug:code>/", views_links.pap_link_register, name="pap_link_register"),
+    path("pap/<slug:code>/authorize/", views_links.pap_link_authorize, name="pap_link_authorize"),
+    path("operations/<uuid:operation_uuid>/pap-links/", views_links.create_pap_link_view, name="create_pap_link"),
+    path("pap-links/<int:pk>/revoke/", views_links.revoke_pap_link_view, name="revoke_pap_link"),
+    path("pap-fleet/start/", views_links.start_link_only_fleet_view, name="start_link_only_fleet"),
+    path("operations/<uuid:operation_uuid>/members/<int:character_id>/kick/", views_controls.kick_member_view, name="kick_member"),
+    path("operations/<uuid:operation_uuid>/kick/preview/", views_controls.kick_preview_view, name="kick_preview"),
+    path("operations/<uuid:operation_uuid>/kick/outside-system/", views_controls.kick_outside_system_view, name="kick_outside_system"),
+    path("start/presets/", views_presets.preset_list_view, name="preset_list"),
+    path("start/presets/save/", views_presets.preset_save_view, name="preset_save"),
+    path("start/presets/<int:pk>/rename/", views_presets.preset_rename_view, name="preset_rename"),
+    path("start/presets/<int:pk>/delete/", views_presets.preset_delete_view, name="preset_delete"),
+    path("start/presets/<int:pk>/default/", views_presets.preset_default_view, name="preset_default"),
+    path("incentives/<int:pk>/update/", views.incentive_update, name="incentive_update"),
 ]
 
 # Public page; it must stay the last pattern. Alliance Auth stops adding its login check at the first

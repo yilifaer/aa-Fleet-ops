@@ -17,6 +17,7 @@ from fleetops.models import (
     MessageTemplate,
     PingRole,
     PingTarget,
+    validate_discord_webhook_url,
 )
 from fleetops.providers.srp import get_registered_srp_providers
 from fleetops.services.links import extract_ingame_channel_id, extract_link_text, strip_url_userinfo
@@ -57,6 +58,17 @@ def srp_provider_choices(current=""):
 
 
 class FleetOpsSettingsForm(forms.ModelForm):
+    # Field groups of the settings page, in order; fields of no group are listed under "General".
+    GROUPS = [
+        (
+            "PAP rules",
+            "Apply to fleets that start after a change; running and closed fleets keep their rules.",
+            ["multiplier_mode", "pap_minimum_minutes", "attendance_limit"],
+        ),
+        ("Statistics", "", ["minimum_fleet_minutes"]),
+        ("PAP links", "", ["pap_link_minutes"]),
+    ]
+
     srp_provider = forms.ChoiceField(
         label="SRP provider",
         help_text="The SRP app that gets an SRP link when a fleet starts and SRP auto create is on.",
@@ -65,7 +77,11 @@ class FleetOpsSettingsForm(forms.ModelForm):
     class Meta:
         model = FleetOpsSettings
         fields = [
+            "multiplier_mode",
+            "pap_minimum_minutes",
             "attendance_limit",
+            "minimum_fleet_minutes",
+            "pap_link_minutes",
             "tracking_interval",
             "stale_threshold",
             "auto_end_enabled",
@@ -82,6 +98,12 @@ class FleetOpsSettingsForm(forms.ModelForm):
             "incentive_enabled": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "srp_auto_create": forms.CheckboxInput(attrs={"class": "form-check-input"}),
         }
+        help_texts = {
+            "multiplier_mode": "FC chooses: when ending a fleet that ran long enough for more than 1x, the FC "
+            "picks the multiplier; fleets that end automatically get 1x until the FC chooses. Automatic: "
+            "the highest multiplier the fleet's duration allows. Configure the multipliers under "
+            "PAP multiplier tiers.",
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -91,6 +113,15 @@ class FleetOpsSettingsForm(forms.ModelForm):
                 field.widget.attrs["class"] = "form-select"
             elif not isinstance(field.widget, forms.CheckboxInput):
                 field.widget.attrs["class"] = "form-control"
+
+    def field_groups(self):
+        """``(title, description, bound fields)`` for each group of the settings page."""
+        grouped = {name for _title, _text, names in self.GROUPS for name in names}
+        groups = [
+            (title, text, [self[name] for name in names if name in self.fields]) for title, text, names in self.GROUPS
+        ]
+        rest = [self[name] for name in self.fields if name not in grouped]
+        return [("General", "", rest), *groups]
 
 
 class FleetTypeForm(forms.ModelForm):
@@ -195,13 +226,22 @@ class PingRoleChoiceField(forms.ModelMultipleChoiceField):
 
 
 class DiscordWebhookForm(forms.ModelForm):
+    """A ping channel. The webhook URL carries its token, so it can be replaced but is never shown again."""
+
+    webhook_url = forms.CharField(
+        label="Webhook URL",
+        widget=forms.PasswordInput(
+            render_value=False,
+            attrs={"autocomplete": "new-password", "placeholder": "https://discord.com/api/webhooks/..."},
+        ),
+    )
+
     class Meta:
         model = DiscordWebhook
         fields = ["name", "webhook_url", "is_active", "allow_everyone", "allow_here", "allowed_roles", "sort_order"]
         field_classes = {"allowed_roles": PingRoleChoiceField}
         labels = {
             "name": "Channel name",
-            "webhook_url": "Webhook URL",
             "allow_everyone": "Allow @everyone",
             "allow_here": "Allow @here",
             "allowed_roles": "Allowed roles",
@@ -210,15 +250,25 @@ class DiscordWebhookForm(forms.ModelForm):
             "name": "Shown to FCs when they choose where the ping goes.",
             "allowed_roles": "Leave empty to allow every active role.",
         }
-        widgets = {
-            "webhook_url": forms.TextInput(
-                attrs={
-                    "autocomplete": "off",
-                    "placeholder": "https://discord.com/api/webhooks/...",
-                }
-            ),
-            "allowed_roles": forms.CheckboxSelectMultiple,
-        }
+        widgets = {"allowed_roles": forms.CheckboxSelectMultiple}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Facts the audit entry cannot read from the model fields.
+        self.audit_extra = {}
+        if self.instance.pk is not None:
+            self.fields["webhook_url"].required = False
+            self.fields["webhook_url"].help_text = "Leave empty to keep the stored URL."
+
+    def clean_webhook_url(self):
+        # Errors name the expected form only, never the value that was entered.
+        value = (self.cleaned_data.get("webhook_url") or "").strip()
+        if not value and self.instance.pk is not None:
+            return self.instance.webhook_url
+        validate_discord_webhook_url(value)
+        if self.instance.pk is not None and value != self.instance.webhook_url:
+            self.audit_extra["webhook_url_replaced"] = True
+        return value
 
 
 class PingRoleForm(forms.ModelForm):

@@ -474,6 +474,14 @@ class StartWithChannelTests(StartFormTestBase):
                 "ping_mention_mode": HERE,
                 "from_schedule": False,
                 "handed_over_from": [],
+                # Added once the start steps ran.
+                "steps": {
+                    "fleet_detection": ActionStatus.SUCCESS,
+                    "discord_ping": ActionStatus.SUCCESS,
+                    "motd_update": ActionStatus.SUCCESS,
+                    "tracking_start": ActionStatus.SUCCESS,
+                    "srp_link": ActionStatus.SKIPPED,
+                },
             },
         )
 

@@ -1,0 +1,44 @@
+{% load fleetops_messages %}
+{% if operation.review_status == 'pending' or operation.review_status == 'rejected' %}
+<div class="alert {% if operation.review_status == 'pending' %}alert-warning{% else %}alert-danger{% endif %}" id="fleet-review">
+  {% if operation.review_status == 'pending' %}
+    <strong>Pending FC lead approval</strong> — this fleet is not counted in statistics and incentives yet.
+  {% else %}
+    <strong>Rejected by an FC lead</strong>{% if can_review or can_manage %}: {{ operation.review_note }}{% endif %} — this fleet is not counted in statistics and incentives.
+    {% if can_manage and not can_review %}<div class="small mt-1">Correct the fleet with Edit Operation to send it back for approval.</div>{% endif %}
+  {% endif %}
+  {% if operation.reviewed_at %}<div class="small mt-1">{{ operation.reviewed_by.profile.main_character|default:operation.reviewed_by|default:"Unknown" }} · {{ operation.reviewed_at|eve_time }} EVE</div>{% endif %}
+  {% if can_review %}
+  <form method="post" action="{% url 'fleetops:review_operation' operation.uuid %}" class="row g-2 align-items-center mt-1" id="fleet-review-form">{% csrf_token %}
+    <input type="hidden" name="next" value="{% url 'fleetops:operation_detail' operation.uuid %}">
+    <div class="col-lg-5"><input class="form-control form-control-sm" name="note" maxlength="255" placeholder="Note (required to reject)" aria-label="Review note"></div>
+    <div class="col-auto"><div class="form-check"><input class="form-check-input" type="checkbox" name="include_attendance" id="fleet-review-attendance" checked><label class="form-check-label" for="fleet-review-attendance">With its PAP rows waiting for approval{% if pending_pap_count %} ({{ pending_pap_count }}){% endif %}</label></div></div>
+    <div class="col-auto"><button class="btn btn-sm btn-success" name="action" value="approve">Approve fleet</button>{% if operation.review_status == 'pending' %} <button class="btn btn-sm btn-outline-danger" name="action" value="reject">Reject fleet</button>{% endif %}</div>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+{% if can_review and review_rows %}
+<details class="card mb-3" id="pap-review"{% if review_rows|length <= 10 %} open{% endif %}><summary class="card-header"><strong>Manual PAP waiting for review</strong> <span class="badge bg-warning text-dark">{{ review_rows|length }}</span></summary>
+<form method="post" action="{% url 'fleetops:review_attendance' %}">{% csrf_token %}
+  <input type="hidden" name="next" value="{% url 'fleetops:operation_detail' operation.uuid %}">
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+    <thead><tr><th></th><th>Character</th><th>Main</th><th>Value</th><th>Correction</th><th>Source</th><th>Review</th><th>Notes</th><th>Added by</th></tr></thead>
+    <tbody>{% for r in review_rows %}<tr>
+      <td><input class="form-check-input" type="checkbox" name="ids" value="{{ r.pk }}"{% if r.review_status == 'pending' %} checked{% endif %} aria-label="Select {{ r.character_name }}"></td>
+      <td>{{ r.character_name }}</td><td>{{ r.main_character_name|default:"—" }}</td><td>{{ r.attendance_value }}</td><td>{{ r.get_correction_display }}</td><td>{{ r.get_source_display }}</td>
+      <td>{% if r.review_status == 'pending' %}<span class="badge bg-warning text-dark">Pending</span>{% else %}<span class="badge bg-danger">Rejected</span>{% if r.review_note %}<div class="small text-muted">{{ r.review_note }}</div>{% endif %}{% endif %}</td>
+      <td>{{ r.notes|default:"—" }}</td><td>{{ r.created_by.profile.main_character|default:r.created_by|default:"—" }}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  <div class="card-body row g-2 align-items-center">
+    <div class="col-lg-5"><input class="form-control form-control-sm" name="note" maxlength="255" placeholder="Note (required to reject)" aria-label="Review note"></div>
+    <div class="col-auto"><button class="btn btn-sm btn-success" name="action" value="approve">Approve selected</button> <button class="btn btn-sm btn-outline-danger" name="action" value="reject">Reject selected</button></div>
+  </div>
+</form></details>
+{% elif can_manage_attendance and pending_pap_count or can_manage_attendance and rejected_pap_count %}
+<div class="alert alert-info" id="pap-review-summary">
+  {% if pending_pap_count %}{{ pending_pap_count }} manual PAP row{{ pending_pap_count|pluralize }} of this fleet wait{{ pending_pap_count|pluralize:"s," }} for FC lead approval.{% endif %}
+  {% if rejected_pap_count %}{{ rejected_pap_count }} manual PAP row{{ rejected_pap_count|pluralize }} {{ rejected_pap_count|pluralize:"was,were" }} rejected; see <a href="{% url 'fleetops:manual_attendance' %}">Manual Attendance</a>.{% endif %}
+</div>
+{% endif %}

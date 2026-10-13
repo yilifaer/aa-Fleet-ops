@@ -1,10 +1,12 @@
+from datetime import datetime
+
 from allianceauth.services.hooks import get_extension_logger
 from django.db import transaction
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 from fleetops.models import FleetMemberEvent, FleetMemberState, FleetOperation
 from fleetops.providers.esi import FleetESIError, detect_character_fleet, get_fleet_members
-from fleetops.services.attendance import ensure_automatic_attendance
 from fleetops.services.errors import log_failure, report_failure
 from fleetops.services.identity import character_label, resolve_many
 from fleetops.services.names import (
@@ -13,11 +15,58 @@ from fleetops.services.names import (
     stale_character_ids,
     unnamed_character_ids,
 )
+from fleetops.services.periods import to_utc
 from fleetops.services.sde import item_type_names, solar_system_names
 
 logger = get_extension_logger(__name__)
 
 EndReason = FleetOperation.EndReason
+# How JOIN and REJOIN events store the ESI join time.
+JOIN_TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+
+
+def parse_join_time(value):
+    """The ESI ``join_time`` of a member as an aware UTC datetime, or None when missing or unreadable."""
+    if isinstance(value, str):
+        try:
+            value = parse_datetime(value.strip())
+        except ValueError:
+            return None
+    if not isinstance(value, datetime):
+        return None
+    return to_utc(value)
+
+
+def join_time_value(join_time):
+    """``join_time`` as stored in the new value of JOIN and REJOIN events (ISO 8601, UTC)."""
+    return join_time.strftime(JOIN_TIME_FORMAT) if join_time else ""
+
+
+def stored_join_time(value):
+    """The join time a JOIN or REJOIN event stored, or None."""
+    if not value:
+        return None
+    try:
+        return to_utc(datetime.strptime(value, JOIN_TIME_FORMAT))
+    except (TypeError, ValueError):
+        return None
+
+
+def _segment_start(state, join_time, lower, now):
+    """Since when an incoming member has been in fleet without being counted yet.
+
+    A member who was in fleet at the previous poll is counted from that poll, unless ESI says it
+    joined again since (left and came back between two polls). A new or returning member is
+    counted from its join time, but never from before the fleet started or the previous poll.
+    """
+    if state is not None and state.is_active:
+        if join_time and join_time > state.last_seen:
+            return min(join_time, now)
+        return state.last_seen
+    start = join_time or now
+    if lower is not None:
+        start = max(start, lower)
+    return min(start, now)
 
 
 def _event(operation, state, event_type, old_value="", new_value=""):
@@ -45,16 +94,24 @@ def _keep_known_details(values, state):
             values[key] = getattr(state, key)
 
 
-def sync_operation(operation):
-    """Read the fleet members from ESI and record joins, leaves, changes and attendance.
+def sync_operation(operation, fresh=False, until=None):
+    """Read the fleet members from ESI and record joins, leaves, changes and time in fleet.
 
+    ``fresh`` skips django-esi's response cache, so a sync right after a kick sees the change.
     Returns the number of members, or None when the fleet was closed or cancelled while
-    ESI was being read; nothing is written then.
+    ESI was being read; nothing is written then. A read older than the one already recorded
+    (another sync read ESI later and finished first) writes nothing either and returns the
+    recorded member count. PAP is granted when the fleet closes.
+
+    Time in fleet is approximated from the polls: a member present at two successive polls is
+    counted for the whole time between them, also when an ESI outage made that gap long.
+    ``until`` (the end request of a fleet being closed) ends the time in fleet: nothing after it
+    is counted, and members who joined after it are not added.
     """
     if not operation.esi_fleet_id:
         raise FleetESIError("NO_FLEET_ID", "Operation has no ESI fleet ID.")
     now = timezone.now()
-    members = get_fleet_members(operation.fc_user, operation.fc_character_id, operation.esi_fleet_id)
+    members = get_fleet_members(operation.fc_user, operation.fc_character_id, operation.esi_fleet_id, fresh=fresh)
     ids = [int(m.get("character_id")) for m in members if m.get("character_id")]
     identities = resolve_many(ids)
     ship_names = item_type_names({m.get("ship_type_id") for m in members if m.get("ship_type_id")})
@@ -64,18 +121,31 @@ def sync_operation(operation):
 
     with transaction.atomic():
         # The close of a fleet locks the same row, so a poll whose ESI read was still running
-        # when the fleet ended cannot put its pilots back in fleet afterwards.
+        # when the fleet ended cannot put its pilots back in fleet afterwards. The lock also
+        # serialises the tracking poll, the final sync and the syncs after kicks, so no stretch
+        # of time in fleet is counted twice.
         current = (
             FleetOperation.objects.select_for_update()
-            .only("status", "attendance_multiplier", "missing_reason")
+            .only("status", "attendance_multiplier", "missing_reason", "last_esi_update", "started_at")
             .get(pk=operation.pk)
         )
         if current.status not in FleetOperation.OPEN_STATUSES:
             return None
         operation.attendance_multiplier = current.attendance_multiplier
+        previous_poll = current.last_esi_update
+        if previous_poll and previous_poll > now:
+            # A sync that read ESI later finished first: its member list is newer than this one,
+            # which would bring back pilots that left or were kicked meanwhile.
+            return operation.member_states.filter(is_active=True).count()
+        late = until is not None and now > until
+        if late:
+            # The fleet ended at ``until``; never count back before the previous poll.
+            now = max(until, previous_poll) if previous_poll else until
+        bounds = [value for value in (previous_poll, current.started_at) if value]
+        lower = max(bounds) if bounds else None
         existing = {s.character_id: s for s in operation.member_states.all()}
 
-        # Missing active pilots leave.
+        # Missing active pilots leave. They were counted up to the previous poll.
         for cid, state in existing.items():
             if state.is_active and cid not in incoming:
                 state.is_active = False
@@ -87,15 +157,21 @@ def sync_operation(operation):
         for cid, member in incoming.items():
             identity = identities[cid]
             state = existing.get(cid)
+            join_time = parse_join_time(member.get("join_time"))
+            if late and (state is None or not state.is_active) and (join_time is None or join_time > now):
+                # Joined (or came back) after the fleet ended.
+                continue
+            seconds = max(0, int((now - _segment_start(state, join_time, lower, now)).total_seconds()))
+            # The member list shows each character's own corporation; PAP and statistics use the main's.
             defaults = {
                 "character_name": identity.character_name,
                 "main_character_id": identity.main_character_id,
                 "main_character_name": identity.main_character_name,
                 "auth_user": identity.user,
-                "corporation_id": identity.corporation_id,
-                "corporation_name": identity.corporation_name,
-                "alliance_id": identity.alliance_id,
-                "alliance_name": identity.alliance_name,
+                "corporation_id": identity.character_corporation_id,
+                "corporation_name": identity.character_corporation_name,
+                "alliance_id": identity.character_alliance_id,
+                "alliance_name": identity.character_alliance_name,
                 "ship_type_id": member.get("ship_type_id"),
                 "ship_type_name": ship_names.get(member.get("ship_type_id"), ""),
                 "solar_system_id": member.get("solar_system_id"),
@@ -111,13 +187,18 @@ def sync_operation(operation):
             if identity.external and state is not None:
                 _keep_known_details(defaults, state)
             if state is None:
-                state = FleetMemberState.objects.create(operation=operation, character_id=cid, **defaults)
-                _event(operation, state, FleetMemberEvent.EventType.JOIN)
+                state = FleetMemberState.objects.create(
+                    operation=operation, character_id=cid, accumulated_seconds=seconds, **defaults
+                )
+                _event(operation, state, FleetMemberEvent.EventType.JOIN, new_value=join_time_value(join_time))
             else:
+                state.accumulated_seconds += seconds
                 if not state.is_active:
                     state.is_active = True
                     state.left_at = None
-                    _event(operation, state, FleetMemberEvent.EventType.REJOIN)
+                    _event(
+                        operation, state, FleetMemberEvent.EventType.REJOIN, new_value=join_time_value(join_time)
+                    )
                 comparisons = [
                     ("ship_type_id", "ship_type_name", FleetMemberEvent.EventType.SHIP_CHANGE),
                     ("solar_system_id", "solar_system_name", FleetMemberEvent.EventType.SYSTEM_CHANGE),
@@ -136,8 +217,6 @@ def sync_operation(operation):
                     if key != "first_seen":
                         setattr(state, key, value)
                 state.save()
-
-            ensure_automatic_attendance(operation, identity, now)
 
         update_fields = [
             "last_esi_update", "fleet_missing_count", "missing_reason", "missing_detail", "last_error", "updated_at",

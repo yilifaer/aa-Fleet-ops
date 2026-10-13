@@ -1,5 +1,6 @@
 {% extends "fleetops/base.html" %}
 {% block fleetops_content %}
+{% include "fleetops/partials/live_pap_status.html" %}
 <div class="mb-3"><h2 class="mb-1">My Statistics</h2><div class="text-muted">Personal fleet activity · {{ year }}-{{ month|stringformat:"02d" }}</div></div>
 {% include "fleetops/month_selector.html" %}
 <div class="row g-3 mb-3">

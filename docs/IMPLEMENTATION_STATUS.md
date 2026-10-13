@@ -48,8 +48,8 @@ The presence of a feature in `FEATURES.md` does not by itself mean it has been p
 - Configurable retention (minimum 365 days) and current-alliance membership pruning service/task/management command
 - Dashboard attendance cards, top tracked ships, recent participations and FC-month summary
 - Back Seat FC / Logi Anchor / Snowflake role assignments on active or closed operations
-- FC-credit snapshot for assigned special-role users who have `fleetops.start_fleet`
-- ESI kick-member provider call and active-fleet one-click capsule cleanup action
+- FC-credit snapshot for special-role assignments, from the role's **Gives FC credit** switch
+- ESI kick-member provider call; single-member kick, kick outside a system and Kick Capsules with a named, tickable pilot list
 
 ## Requires local Alliance Auth smoke testing
 
@@ -83,7 +83,7 @@ These cannot be honestly considered production-proven until tested with real ESI
 - concurrent active fleets
 - larger fleet performance
 - exact Alliance Auth 5.2 built-in SRP model/URL behavior and successful SRP link creation
-- ESI `DELETE /fleets/{fleet_id}/members/{member_id}/` behavior for capsule cleanup
+- ESI `DELETE /fleets/{fleet_id}/members/{member_id}/` behavior for kicks
 - special-role FC credit recalculation after post-fleet assignment
 - membership-pruning behavior against the staging alliance's real UserProfile data
 

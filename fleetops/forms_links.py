@@ -1,0 +1,84 @@
+"""Forms of PAP links and PAP-link fleets."""
+
+import uuid
+
+from django import forms
+
+from fleetops.forms import _style
+from fleetops.models import FleetOpsSettings, FleetType
+from fleetops.providers.doctrines import get_doctrines
+from fleetops.services.identity import owned_characters
+from fleetops.services.pap_links import MAX_LINK_MINUTES, MIN_LINK_MINUTES
+
+REQUIRE_ONLINE_HELP = "Characters must be logged in to the game when they register. Untick for out-of-game events."
+
+
+class PapLinkForm(forms.Form):
+    minutes = forms.IntegerField(
+        label="Open for (minutes)", min_value=MIN_LINK_MINUTES, max_value=MAX_LINK_MINUTES
+    )
+    require_online = forms.BooleanField(
+        label="Require online",
+        required=False,
+        initial=True,
+        help_text=REQUIRE_ONLINE_HELP,
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["minutes"].initial = FleetOpsSettings.get_solo().pap_link_minutes
+        _style(self.fields)
+
+
+def _character_choices(user):
+    # No ESI check: a PAP-link fleet has no ESI fleet, so any of the user's characters can lead it.
+    if user is None:
+        return []
+    main_id = getattr(getattr(user.profile, "main_character", None), "character_id", None)
+    choices = []
+    for ownership in owned_characters(user):
+        character = ownership.character
+        marker = "MAIN" if character.character_id == main_id else "ALT"
+        choices.append((character.character_id, f"{character.character_name} — {marker}"))
+    return choices
+
+
+class LinkOnlyFleetForm(forms.Form):
+    # One per page, so a double click on Start starts one fleet.
+    request_id = forms.UUIDField(widget=forms.HiddenInput())
+    fc_character_id = forms.TypedChoiceField(label="FC character", coerce=int)
+    fleet_type = forms.ModelChoiceField(queryset=FleetType.objects.none())
+    doctrine_choice = forms.ChoiceField(label="Doctrine", required=False)
+    custom_doctrine = forms.CharField(label="Custom doctrine", required=False, max_length=255)
+    formup = forms.CharField(label="Form up", max_length=255)
+    notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2}))
+    link_minutes = forms.IntegerField(
+        label="PAP link open for (minutes)", min_value=MIN_LINK_MINUTES, max_value=MAX_LINK_MINUTES
+    )
+    require_online = forms.BooleanField(
+        label="Require online", required=False, initial=True, help_text=REQUIRE_ONLINE_HELP
+    )
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.user = user
+        self.fields["request_id"].initial = uuid.uuid4()
+        self.fields["fc_character_id"].choices = _character_choices(user)
+        self.fields["fleet_type"].queryset = FleetType.objects.filter(is_active=True)
+        self.fields["doctrine_choice"].choices = [("", "None / Custom")] + [
+            (f"{doctrine.source}|{doctrine.external_id}|{doctrine.name}", doctrine.name)
+            for doctrine in get_doctrines(user)
+        ]
+        self.fields["link_minutes"].initial = FleetOpsSettings.get_solo().pap_link_minutes
+        _style(self.fields)
+
+    def clean(self):
+        data = super().clean()
+        choice = data.get("doctrine_choice") or ""
+        custom = (data.get("custom_doctrine") or "").strip()
+        if choice:
+            source, external_id, name = choice.split("|", 2)
+            data.update(doctrine_source=source, doctrine_external_id=external_id, doctrine_name=name)
+        else:
+            data.update(doctrine_source="custom" if custom else "none", doctrine_external_id="", doctrine_name=custom)
+        return data

@@ -5,6 +5,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from fleetops.models import FleetOperation, FleetOpsSettings, FleetType, IncentivePeriod, MonthlyFCStatistic
+from fleetops.services.counting import counted_operations
 from fleetops.services.history import current_member_user_ids
 from fleetops.services.statistics import month_bounds
 from fleetops.calculations import calculate_payouts
@@ -23,16 +24,29 @@ def _ensure_enabled():
         raise IncentiveError(INCENTIVES_DISABLED_MESSAGE)
 
 
+def pending_multiplier_operations(period: IncentivePeriod):
+    """Fleets of the period whose PAP multiplier still waits for the FC's choice; they count at 1x until then."""
+    start, end = month_bounds(period.year, period.month)
+    return (
+        FleetOperation.objects.filter(
+            started_at__gte=start,
+            started_at__lt=end,
+            status=FleetOperation.Status.CLOSED,
+            multiplier_pending=True,
+        )
+        .select_related("fleet_type", "fc_user")
+        .order_by("started_at", "pk")
+    )
+
+
 def rebuild_period(period: IncentivePeriod):
     _ensure_enabled()
     if period.status == IncentivePeriod.Status.FINALIZED:
         raise IncentiveError("Finalized periods must be unlocked before recalculation.")
     start, end = month_bounds(period.year, period.month)
-    # Only Closed fleets count; manual fleets are created Closed.
+    # Closed, approved fleets that are not excluded from the statistics; manual fleets are created Closed.
     operations = list(
-        FleetOperation.objects.filter(
-            started_at__gte=start, started_at__lt=end, status=FleetOperation.Status.CLOSED
-        )
+        counted_operations(FleetOperation.objects.filter(started_at__gte=start, started_at__lt=end))
         .select_related("fc_user", "fleet_type")
         .prefetch_related("role_assignments")
     )
@@ -53,12 +67,13 @@ def rebuild_period(period: IncentivePeriod):
     existing_waivers = {row.fc_user_id: row.waived for row in period.fc_statistics.all()}
     rows = []
     for user_id, ops in grouped.items():
-        points = sum((op.fleet_point_weight_snapshot for op in ops), Decimal("0"))
+        # FC points: the fleet type weight times the PAP multiplier (1x while the choice is pending).
+        points = sum((op.fc_points for op in ops), Decimal("0"))
         breakdown = defaultdict(lambda: {"count": 0, "points": 0.0})
         for op in ops:
             key = str(op.fleet_type)
             breakdown[key]["count"] += 1
-            breakdown[key]["points"] += float(op.fleet_point_weight_snapshot)
+            breakdown[key]["points"] += float(op.fc_points)
         rows.append({
             "user_id": user_id,
             "fleet_count": len(ops),
@@ -90,6 +105,8 @@ def rebuild_period(period: IncentivePeriod):
             "minimum_fleets": period.minimum_fleets,
             "fleet_type_weights": {str(ft.pk): str(ft.point_weight) for ft in FleetType.objects.all()},
             "co_fc_credit": "OperationRoleAssignment.grants_fc_credit",
+            "fc_points": "fleet type weight x PAP multiplier",
+            "counted": "closed, approved, counts_for_stats",
         }
         period.status = IncentivePeriod.Status.REVIEW
         period.save(update_fields=["policy_snapshot", "status"])

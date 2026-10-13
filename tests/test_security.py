@@ -179,13 +179,18 @@ class OutputEscapingTests(TestCase):
         OperationAction.objects.create(
             operation=cls.operation, action="discord_ping", status=OperationAction.Status.FAILED, error_message=XSS_SCRIPT
         )
-        f.create_operation(
+        closed = f.create_operation(
             cls.lead,
             status=CLOSED,
             type_obj=cls.fleet_type,
             started_at=max(month_start, now - timedelta(minutes=30)),
             formup=XSS_SCRIPT,
             doctrine_name=XSS_SCRIPT,
+        )
+        # PAP of closed fleets reaches the history and statistics pages.
+        closed_record = f.add_attendance(closed, cls.member, cls.member_alt)
+        AttendanceRecord.objects.filter(pk=closed_record.pk).update(
+            character_name=XSS_SCRIPT, corporation_name=XSS_SCRIPT
         )
         add_member_state(
             cls.operation,
@@ -827,7 +832,7 @@ class MassAssignmentTests(StartFleetPatchesMixin, TestCase):
 
     def test_incentive_period_creation_ignores_status_fields(self):
         response = self.client.post(
-            reverse("fleetops:incentive_review"),
+            reverse("fleetops:incentive_review") + "?year=2026&month=5",
             {
                 "create_period": "1",
                 "year": 2026,
@@ -911,10 +916,11 @@ class MassAssignmentTests(StartFleetPatchesMixin, TestCase):
         member_main = f.main_of(self.member)
         add_member_state(self.operation, member_main, self.member)
         url = reverse("fleetops:add_operation_role", args=[self.operation.uuid])
+        # Logi Anchor gives no FC credit; a posted credit flag must not change that.
         self.client.post(
             url,
             {
-                "role": OperationRoleAssignment.Role.BACKSEAT_FC,
+                "role": OperationRoleAssignment.Role.LOGI_ANCHOR,
                 "character_id": member_main.character_id,
                 "grants_fc_credit": "on",
                 "auth_user": self.fc.pk,
@@ -1079,8 +1085,12 @@ class EsiTokenOwnershipTests(StartFleetPatchesMixin, TestCase):
         self.assertEqual(kick.call_args.kwargs["member_id"], f.main_of(pilot).character_id)
         self.assertEqual(kick.call_args.kwargs["token"], self.fc_token)
 
-        # Without the write scope no ESI call is made and the failure is reported.
+        # Without the write scope no ESI call is made and the failure is reported. The fleet read after the
+        # kick saw the pilot leave; they are back in a capsule.
         kick.reset_mock()
+        FleetMemberState.objects.filter(operation=operation, character_id=f.main_of(pilot).character_id).update(
+            is_active=True, left_at=None
+        )
         self.fc_token.scopes.set(Scope.objects.filter(name=FLEET_READ_SCOPE))
         self.client.post(url)
         kick.assert_not_called()
@@ -1135,10 +1145,11 @@ class SecretHandlingTests(StartFleetPatchesMixin, TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertNoSecret(response)
 
-    def test_webhook_edit_form_is_where_the_url_is_shown(self):
+    def test_webhook_edit_form_never_shows_the_url(self):
         self.client.force_login(self.lead)
         response = self.client.get(reverse("fleetops:configuration_edit", args=["ping-channels", self.webhook.pk]))
-        self.assertContains(response, WEBHOOK_TOKEN)
+        self.assertEqual(response.status_code, 200)
+        self.assertNoSecret(response)
 
     def test_webhook_url_is_redacted_from_configuration_audit(self):
         self.client.force_login(self.lead)

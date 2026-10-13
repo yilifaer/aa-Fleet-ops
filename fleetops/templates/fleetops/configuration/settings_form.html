@@ -5,17 +5,21 @@
   <h2>General Settings</h2>
   <div class="text-muted">Alliance-level FleetOps behavior. Changes are audited.</div>
 </div>
-<div class="card"><div class="card-body">
 <form method="post">
   {% csrf_token %}
-  {% for field in form %}
-    {% if field.field.widget.input_type == 'checkbox' %}
-      <div class="form-check mb-3">{{ field }} <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}</div>
-    {% else %}
-      <div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}<div class="text-danger small">{{ field.errors }}</div></div>
-    {% endif %}
+  {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+  {% for title, text, fields in form.field_groups %}
+  <div class="card mb-3" id="settings-{{ title|slugify }}"><div class="card-header"><strong>{{ title }}</strong>{% if text %}<div class="small text-muted">{{ text }}</div>{% endif %}</div><div class="card-body">
+    {% for field in fields %}
+      {% if field.field.widget.input_type == 'checkbox' %}
+        <div class="form-check mb-3">{{ field }} <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}<div class="text-danger small">{{ field.errors }}</div></div>
+      {% else %}
+        <div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}<div class="text-danger small">{{ field.errors }}</div></div>
+      {% endif %}
+    {% endfor %}
+    {% if title == "PAP rules" %}<div class="small"><a href="{% url 'fleetops:configuration_list' 'multiplier-tiers' %}">PAP multiplier tiers</a> · <a href="{% url 'fleetops:configuration_list' 'special-roles' %}">Special roles</a></div>{% endif %}
+  </div></div>
   {% endfor %}
   <div class="d-flex gap-2"><button class="btn btn-primary">Save Settings</button><a class="btn btn-outline-secondary" href="{% url 'fleetops:configuration_index' %}">Cancel</a></div>
 </form>
-</div></div>
 {% endblock %}

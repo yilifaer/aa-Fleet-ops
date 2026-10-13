@@ -8,6 +8,7 @@ from allianceauth.services.hooks import get_extension_logger
 from django.contrib import messages
 from django.contrib.auth.decorators import permission_required
 from django.core.paginator import Paginator
+from django.db import IntegrityError, transaction
 from django.db.models import Count, IntegerField, OuterRef, Prefetch, Q, Subquery, Sum
 from django.db.models.functions import Coalesce
 from django.forms.models import model_to_dict
@@ -32,7 +33,9 @@ from fleetops.forms import (
     ScheduledFleetForm,
     StartFleetForm,
     StartScheduledFleetForm,
+    manageable_attendance_operations,
 )
+from fleetops.forms_presets import PRESET_FORM_PREFIX, PresetSaveForm
 from fleetops.models import (
     MAX_DATABASE_ID,
     MIN_RETENTION_DAYS,
@@ -41,22 +44,26 @@ from fleetops.models import (
     FleetOperation,
     FleetMemberState,
     FleetOpsSettings,
+    FleetStartPreset,
     FleetType,
     IncentivePeriod,
     MonthlyFCStatistic,
     OperationActionAttempt,
     OperationRoleAssignment,
+    ReviewStatus,
 )
 from fleetops.providers.esi import FleetESIError, detect_character_fleet
+from fleetops.services import pap
 from fleetops.services.audit import audit
 from fleetops.services.attendance import (
     RECORDABLE_STATUSES,
     create_manual_attendance,
     set_operation_attendance_multiplier,
 )
+from fleetops.services.counting import counted_operations, evaluate_stats_inclusion, operation_count_reason
 from fleetops.services.dashboard import dashboard_metrics
 from fleetops.services.errors import log_failure
-from fleetops.services.fleet_controls import kick_all_pods, kickable_pod_members
+from fleetops.services.fleet_controls import CAPSULES, KickRefused, kick_members, kickable_pod_members
 from fleetops.services.identity import get_owned_character
 from fleetops.services.history import current_member_user_ids
 from fleetops.services.incentives import (
@@ -64,12 +71,20 @@ from fleetops.services.incentives import (
     WAIVER_LOCKED_MESSAGE,
     IncentiveError,
     finalize_period,
+    pending_multiplier_operations,
     rebuild_period,
     set_waiver,
     unlock_period,
 )
 from fleetops.services.mentions import DISCORD_MESSAGE_LIMIT, mention_text, selection_from_operation
 from fleetops.services.messages import render_messages
+from fleetops.services.multipliers import (
+    allowed_multipliers,
+    fleet_duration,
+    needs_choice,
+    not_allowed_message,
+    tiers,
+)
 from fleetops.services.operations import (
     build_unsaved_operation,
     create_manual_fleet,
@@ -81,6 +96,9 @@ from fleetops.services.operations import (
     retry_srp,
     start_fleet,
 )
+from fleetops.services.periods import month_bounds
+from fleetops.services.presets import load_preset, save_last_used
+from fleetops.services.review import can_delete_manual_row, is_approver, pending_approval_count
 from fleetops.services.roles import add_role_assignment, delete_role_assignment
 from fleetops.services.routing import proximity_rows
 from fleetops.services.scheduling import (
@@ -88,6 +106,7 @@ from fleetops.services.scheduling import (
     NOT_SCHEDULED_MESSAGE,
     cancel_scheduled_fleet as cancel_scheduled_fleet_service,
     is_pre_ping_record,
+    record_start_steps,
     schedule_fleet,
     start_scheduled_fleet as start_scheduled_fleet_service,
     update_scheduled_fleet,
@@ -103,8 +122,6 @@ from fleetops.services.tracking import unreadable_fleet_warning
 
 logger = get_extension_logger(__name__)
 
-# Fleets running longer than this get the 1x/2x/3x attendance prompt when ended.
-ATTENDANCE_PROMPT_AFTER = timedelta(minutes=90)
 # Earlier attempts listed under each operation step.
 PREVIOUS_ATTEMPTS_SHOWN = 5
 # A scheduled fleet still not started this long after its time is shown as overdue.
@@ -113,6 +130,11 @@ SCHEDULED_FLEETS_SHOWN = 20
 NOT_STARTED_MESSAGE = "This fleet has not started; the MOTD and the SRP link are set when it starts."
 HISTORY_PAGE_SIZE = 200
 AUDIT_PAGE_SIZE = 50
+# Step messages are written for the fleet page (short ESI texts, error classes), so audit entries may keep them.
+RETRY_AUDIT_MESSAGE_LENGTH = 500
+PENDING_MULTIPLIERS_SHOWN = 20
+# The id of the start form in start_fleet.html; the preset fields above it post with it.
+START_FORM_ID = "fleet-start-form"
 
 
 def _render(request, template_name, context=None):
@@ -122,6 +144,8 @@ def _render(request, template_name, context=None):
         request.user.has_perm("fleetops.manage_incentives")
         and FleetOpsSettings.get_solo().incentive_enabled
     )
+    if is_approver(request.user):
+        context["pending_approval_count"] = pending_approval_count()
     return render(request, template_name, context)
 
 
@@ -166,7 +190,22 @@ def _can_view_operation(user, operation):
         return True
     if operation.role_assignments.filter(auth_user=user).exists():
         return True
+    # Members follow the fleets they fly in; PAP rows only exist once a fleet has closed.
+    if operation.member_states.filter(auth_user=user).exists():
+        return True
+    if operation.pap_registrations.filter(auth_user=user).exists():
+        return True
     return operation.attendance_records.filter(auth_user=user, granted=True).exists()
+
+
+def _member_of(user):
+    """Fleets ``user`` takes part in: tracked, registered by PAP link, special role or granted PAP."""
+    return (
+        Q(member_states__auth_user=user)
+        | Q(pap_registrations__auth_user=user)
+        | Q(role_assignments__auth_user=user)
+        | Q(attendance_records__auth_user=user, attendance_records__granted=True)
+    )
 
 
 def _can_manage_attendance_operation(user, operation):
@@ -244,13 +283,11 @@ def _incentives_enabled(request):
 
 @permission_required("fleetops.basic_access", raise_exception=True)
 def dashboard(request):
+    from fleetops.views_pap import live_pap_rows
+
     active_qs = FleetOperation.objects.filter(status=FleetOperation.Status.ACTIVE)
     if not _can_view_all_fleets(request.user):
-        active_qs = active_qs.filter(
-            Q(fc_user=request.user)
-            | Q(role_assignments__auth_user=request.user)
-            | Q(attendance_records__auth_user=request.user, attendance_records__granted=True)
-        ).distinct()
+        active_qs = active_qs.filter(Q(fc_user=request.user) | _member_of(request.user)).distinct()
     active = (
         active_qs.select_related("fleet_type", "fc_user")
         .annotate(active_member_count=Count("member_states", filter=Q(member_states__is_active=True), distinct=True))[:20]
@@ -273,6 +310,14 @@ def dashboard(request):
     now = timezone.now()
     fc = fc_statistics(request.user, now.year, now.month, include_active=True)
     metrics = dashboard_metrics(request.user)
+    # Fleets that ended without the FC's multiplier choice, such as after an automatic end.
+    pending_multipliers = (
+        FleetOperation.objects.filter(
+            fc_user=request.user, multiplier_pending=True, status=FleetOperation.Status.CLOSED
+        )
+        .select_related("fleet_type")
+        .order_by("-ended_at", "-pk")
+    )
     return _render(
         request,
         "fleetops/dashboard.html",
@@ -284,6 +329,8 @@ def dashboard(request):
             "dashboard_cards": metrics["cards"],
             "top_ships": metrics["top_ships"],
             "recent_participations": metrics["recent"],
+            "pending_multiplier_operations": pending_multipliers[:20],
+            "live_pap_rows": live_pap_rows(request.user),
         },
     )
 
@@ -364,7 +411,7 @@ def _preview_payload(operation, *, actor, pre_ping):
     )
 
 
-def _start_page(request, form, operation=None):
+def _start_page(request, form, operation=None, **extra):
     return _render(
         request,
         "fleetops/start_fleet.html",
@@ -374,17 +421,77 @@ def _start_page(request, form, operation=None):
             "channel_rules": form.channel_rules(),
             "ping_limit": DISCORD_MESSAGE_LIMIT,
             "eve_now": timezone.now(),
+            **extra,
         },
     )
+
+
+def _chosen_preset(request):
+    """The preset the start page opens with and how it was chosen.
+
+    ``?preset=<id>``, ``?preset=last`` (the last used settings) or ``?preset=none``; without the
+    parameter the FC's default preset. Presets of other users are not found.
+    """
+    choice = request.GET.get("preset", "").strip()
+    own = FleetStartPreset.objects.filter(owner=request.user)
+    if choice == "none":
+        return None, "none"
+    if choice == "last":
+        return own.filter(is_last_used=True).first(), "last"
+    if choice:
+        pk = _database_id(choice)
+        if pk is None:
+            raise Http404
+        return get_object_or_404(own, pk=pk), "chosen"
+    return own.filter(is_default=True, is_last_used=False).first(), "default"
+
+
+def _preset_bar(request, *, preset=None, how="", warnings=()):
+    """Context of the preset bar above the start form."""
+    own = FleetStartPreset.objects.filter(owner=request.user)
+    if preset is None:
+        notice = "No last used settings are saved yet." if how == "last" else ""
+    elif preset.is_last_used:
+        notice = "Last used settings loaded."
+    elif how == "default":
+        notice = f"Default preset {preset.name} applied."
+    else:
+        notice = f"Preset {preset.name} loaded."
+    named = preset is not None and not preset.is_last_used
+    save_form = PresetSaveForm(
+        prefix=PRESET_FORM_PREFIX,
+        form_id=START_FORM_ID,
+        initial={"name": preset.name if named else "", "remember_fc": bool(preset and preset.fc_character_id)},
+    )
+    return {
+        "presets": own.filter(is_last_used=False),
+        "has_last_used": own.filter(is_last_used=True).exists(),
+        "preset_selected": "last" if preset is not None and preset.is_last_used else str(preset.pk) if named else "",
+        "preset_notice": notice,
+        "preset_default_applied": how == "default" and preset is not None,
+        "preset_warnings": list(warnings),
+        "preset_save_form": save_form,
+    }
+
+
+def _remember_last_used(user, cleaned_data):
+    # The start itself succeeded; a failure here only loses the "last used" shortcut.
+    try:
+        save_last_used(user, cleaned_data)
+    except Exception as exc:
+        log_failure(logger, "Saving the last used start settings", exc)
 
 
 @permission_required("fleetops.start_fleet", raise_exception=True)
 def start_fleet_view(request):
     if request.method != "POST":
-        return _start_page(request, StartFleetForm(user=request.user, initial={"request_id": uuid.uuid4()}))
+        preset, how = _chosen_preset(request)
+        initial, warnings = load_preset(preset, StartFleetForm, request.user) if preset else ({}, [])
+        form = StartFleetForm(user=request.user, initial={**initial, "request_id": uuid.uuid4()})
+        return _start_page(request, form, **_preset_bar(request, preset=preset, how=how, warnings=warnings))
     form = StartFleetForm(request.POST, user=request.user)
     if not form.is_valid():
-        return _start_page(request, form)
+        return _start_page(request, form, **_preset_bar(request))
     data = form.cleaned_data
     pre_ping = data["is_pre_ping"]
     try:
@@ -394,23 +501,26 @@ def start_fleet_view(request):
         for problem in blockers:
             form.add_error(None, problem)
         if blockers:
-            return _start_page(request, form)
+            return _start_page(request, form, **_preset_bar(request))
         if pre_ping:
             operation = schedule_fleet(user=request.user, cleaned_data=data, request_id=data["request_id"])
         else:
             operation = start_fleet(user=request.user, cleaned_data=data, request_id=data["request_id"])
     except (FleetESIError, PermissionError) as exc:
         form.add_error(None, str(exc))
-        return _start_page(request, form)
+        return _start_page(request, form, **_preset_bar(request))
     except Exception as exc:
         log_failure(logger, "Fleet start", exc)
         form.add_error(None, "Fleet start failed because of an unexpected error. Please try again or contact an administrator.")
-        return _start_page(request, form)
+        return _start_page(request, form, **_preset_bar(request))
 
+    if not getattr(operation, "already_tracked", False):
+        _remember_last_used(request.user, data)
     if operation.status == FleetOperation.Status.SCHEDULED:
         messages.success(request, "Fleet scheduled. Start it from this page when it is time.")
         return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     if not getattr(operation, "already_tracked", False):
+        record_start_steps(operation)
         # A resubmitted form can return a start that was interrupted and cancelled; its page says so.
         if operation.status != FleetOperation.Status.CANCELLED:
             messages.success(
@@ -424,7 +534,7 @@ def start_fleet_view(request):
         messages.info(request, text)
         return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     form.add_error(None, text)
-    return _start_page(request, form)
+    return _start_page(request, form, **_preset_bar(request))
 
 
 @permission_required("fleetops.start_fleet", raise_exception=True)
@@ -498,11 +608,7 @@ def fleet_operations_view(request):
         .annotate(fleet_time=Coalesce("started_at", "scheduled_at"))
     )
     if not _can_view_all_fleets(request.user):
-        visible = (
-            Q(fc_user=request.user)
-            | Q(role_assignments__auth_user=request.user)
-            | Q(attendance_records__auth_user=request.user, attendance_records__granted=True)
-        )
+        visible = Q(fc_user=request.user) | _member_of(request.user)
         if _can_see_scheduled_fleets(request.user):
             visible |= Q(
                 status__in=[FleetOperation.Status.SCHEDULED, FleetOperation.Status.CANCELLED],
@@ -539,7 +645,7 @@ def fleet_operations_view(request):
         )
 
     attendance_total_subquery = (
-        AttendanceRecord.objects.filter(operation_id=OuterRef("pk"), granted=True)
+        AttendanceRecord.objects.filter(operation_id=OuterRef("pk"), granted=True, review_status=ReviewStatus.APPROVED)
         .values("operation_id")
         .annotate(total=Sum("attendance_value"))
         .values("total")[:1]
@@ -556,9 +662,11 @@ def fleet_operations_view(request):
     ).order_by("-fleet_time", "-created_at")
 
     page = Paginator(qs, 50).get_page(request.GET.get("page"))
+    settings = FleetOpsSettings.get_solo()
     for operation in page.object_list:
         operation.can_edit = _can_manage_operation(request.user, operation)
         operation.is_pre_ping = is_pre_ping_record(operation)
+        operation.count_reason = "" if operation.is_pre_ping else operation_count_reason(operation, settings)
     period = _period_choices(year, month or now.month)
     period.update(
         {
@@ -584,6 +692,37 @@ EDITED_FIELDS = [
     "logi_channel", "boost_channel", "ping_template", "motd_template", "additional_message",
     "started_at", "ended_at",
 ]
+# Recorded with each edit; a change by someone who is not an FC lead can send a fleet back to review.
+REVIEW_FIELDS = ["review_status", "counts_for_stats"]
+
+
+def _minute(value):
+    # Fleet times are edited to the minute.
+    return value.replace(second=0, microsecond=0) if value else None
+
+
+def _keep_multiplier_within_duration(user, operation):
+    """Lower the multiplier of a closed fleet to the highest one its edited times allow.
+
+    Returns the new multiplier, or None when the times still allow it. An FC lead's override is
+    kept; a fleet that is still open is checked when it ends.
+    """
+    if operation.status != FleetOperation.Status.CLOSED:
+        return None
+    if operation.multiplier_source == FleetOperation.MultiplierSource.OVERRIDE:
+        return None
+    current = int(operation.attendance_multiplier or 1)
+    allowed = allowed_multipliers(fleet_duration(operation, operation.ended_at))
+    if current in allowed:
+        return None
+    lowered = max(value for value in allowed if value <= current)
+    source = operation.multiplier_source
+    if source not in FleetOperation.MultiplierSource.values:
+        source = FleetOperation.MultiplierSource.FC
+    set_operation_attendance_multiplier(
+        operation, lowered, actor=user, source=source, reason=f"Fleet times edited. {not_allowed_message(current)}"
+    )
+    return lowered
 
 
 @permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
@@ -596,7 +735,7 @@ def edit_operation_view(request, operation_uuid):
     if is_pre_ping_record(operation):
         messages.info(request, "This scheduled fleet was cancelled before it started, so there is nothing to edit.")
         return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
-    old = model_to_dict(operation, fields=EDITED_FIELDS)
+    old = model_to_dict(operation, fields=EDITED_FIELDS + REVIEW_FIELDS)
     if request.method == "POST":
         form = OperationEditForm(request.POST, instance=operation)
         if form.is_valid():
@@ -609,8 +748,25 @@ def edit_operation_view(request, operation_uuid):
                 updated.doctrine_source = "custom"
                 updated.doctrine_external_id = ""
                 updated.doctrine_fits = []
+            times_changed = _minute(updated.started_at) != _minute(old["started_at"]) or _minute(
+                updated.ended_at
+            ) != _minute(old["ended_at"])
+            approver = is_approver(request.user)
+            back_to_review = (
+                (times_changed or (fleet_type_changed and (updated.is_manual or updated.link_only)))
+                and updated.review_status != ReviewStatus.PENDING
+                and not approver
+            )
+            if back_to_review:
+                # A fleet entered by hand counts only as an FC lead approved it. So do new times of any
+                # fleet: the multiplier tiers and the minimum fleet duration are measured from them.
+                updated.review_status = ReviewStatus.PENDING
+                updated.reviewed_by = None
+                updated.reviewed_at = None
+            if times_changed:
+                evaluate_stats_inclusion(updated)
             updated.save()
-            new = model_to_dict(updated, fields=EDITED_FIELDS)
+            new = model_to_dict(updated, fields=EDITED_FIELDS + REVIEW_FIELDS)
             audit(
                 request.user,
                 "operation.edit",
@@ -619,7 +775,18 @@ def edit_operation_view(request, operation_uuid):
                 {k: str(v) for k, v in new.items()},
                 reason="Edited from FleetOps fleet archive",
             )
-            messages.success(request, "Fleet operation updated.")
+            # The multiplier chosen for the old times stays within the duration rule.
+            lowered = None
+            if times_changed and not approver:
+                lowered = _keep_multiplier_within_duration(request.user, updated)
+            if lowered is not None:
+                messages.warning(request, f"PAP multiplier lowered to {lowered}x: the new times do not allow more.")
+            if back_to_review:
+                messages.warning(
+                    request, "Fleet operation updated. Changes need FC lead approval; the fleet does not count until then."
+                )
+            else:
+                messages.success(request, "Fleet operation updated.")
             return redirect("fleetops:operation_detail", operation_uuid=updated.uuid)
     else:
         form = OperationEditForm(instance=operation)
@@ -703,45 +870,66 @@ def operation_detail(request, operation_uuid):
     is_active = operation.status == FleetOperation.Status.ACTIVE
     pods = kickable_pod_members(operation) if is_active else []
     settings = FleetOpsSettings.get_solo()
-    end_reference = operation.ended_at or timezone.now()
-    elapsed = end_reference - operation.started_at if operation.started_at else timedelta(0)
-    duration_minutes = max(0, int(elapsed.total_seconds() // 60))
     stale = bool(
         is_active
         and operation.last_esi_update
         and (timezone.now() - operation.last_esi_update).total_seconds()
         > settings.stale_threshold
     )
-    return _render(
-        request,
-        "fleetops/operation_detail.html",
-        {
-            "operation": operation,
-            "actions": actions,
-            "members": members,
-            "assignable_members": assignable_members,
-            "events": events,
-            "attendance": attendance,
-            "attendance_total": attendance_total,
-            "unique_players": unique_players,
-            "map_rows": map_rows,
-            "role_assignments": role_assignments,
-            "role_assignment_form": OperationRoleAssignmentForm(operation=operation),
-            "pod_count": len(pods),
-            "stale": stale,
-            "unreadable_warning": unreadable_fleet_warning(operation, settings) if is_active else "",
-            "can_manage": _can_manage_operation(request.user, operation),
-            "can_manage_attendance": _can_manage_attendance_operation(request.user, operation),
-            "accepts_records": operation.status in RECORDABLE_STATUSES,
-            "manual_attendance_form": ManualAttendanceForm(),
-            "multiplier_form": FleetAttendanceMultiplierForm(initial={"attendance_multiplier": operation.attendance_multiplier}),
-            "end_form": EndFleetForm(initial={"attendance_multiplier": operation.attendance_multiplier}),
-            "duration_minutes": duration_minutes,
-            "attendance_prompt_eligible": (
-                operation.status == FleetOperation.Status.ACTIVE and elapsed > ATTENDANCE_PROMPT_AFTER
-            ),
-        },
-    )
+    context = {
+        "operation": operation,
+        "actions": actions,
+        "members": members,
+        "assignable_members": assignable_members,
+        "events": events,
+        "attendance": attendance,
+        "attendance_total": attendance_total,
+        "unique_players": unique_players,
+        "map_rows": map_rows,
+        "role_assignments": role_assignments,
+        "role_assignment_form": OperationRoleAssignmentForm(operation=operation),
+        "pod_count": len(pods),
+        "stale": stale,
+        "unreadable_warning": unreadable_fleet_warning(operation, settings) if is_active else "",
+        "can_manage": _can_manage_operation(request.user, operation),
+        "can_manage_attendance": _can_manage_attendance_operation(request.user, operation),
+        "accepts_records": operation.status in RECORDABLE_STATUSES,
+        "manual_attendance_form": ManualAttendanceForm(),
+    }
+    # The page's PAP (end prompt, multiplier form), records, link and control parts add their own
+    # context. Imported here because
+    # those modules import their helpers from this one.
+    from fleetops import views_controls, views_links, views_pap, views_records
+
+    for provider in (
+        views_pap.pap_context,
+        views_records.records_context,
+        views_links.links_context,
+        views_controls.controls_context,
+    ):
+        context.update(provider(request, operation))
+    return _render(request, "fleetops/operation_detail.html", context)
+
+
+def _end_multiplier_problem(operation, posted):
+    """Why an end request must not end the fleet, or "" when it may.
+
+    In the FC mode a fleet that ran longer than a multiplier tier needs the FC's choice (the page
+    may have been loaded before the fleet got there), and the choice must be one the duration
+    allows. The automatic mode ignores a posted value.
+    """
+    if operation.status != FleetOperation.Status.ACTIVE:
+        return ""
+    settings = FleetOpsSettings.get_solo()
+    if settings.multiplier_mode != FleetOpsSettings.MultiplierMode.FC:
+        return ""
+    duration = fleet_duration(operation)
+    if posted is not None:
+        return "" if posted in allowed_multipliers(duration) else not_allowed_message(posted)
+    if not needs_choice(duration, settings):
+        return ""
+    longest = max(tier.threshold_minutes for tier in tiers() if duration > timedelta(minutes=tier.threshold_minutes))
+    return f"This fleet now runs longer than {longest} minutes; choose the PAP multiplier."
 
 
 @permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
@@ -754,11 +942,16 @@ def end_fleet_view(request, operation_uuid):
     if request.POST.get("attendance_multiplier"):
         form = EndFleetForm(request.POST)
         if not form.is_valid():
-            messages.error(request, "Attendance multiplier must be 1x, 2x or 3x. The fleet was not ended.")
+            choices = ", ".join(label for _value, label in form.fields["attendance_multiplier"].choices)
+            messages.error(request, f"Choose one of the PAP multipliers ({choices}). The fleet was not ended.")
             return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
         multiplier = form.cleaned_data["attendance_multiplier"]
-    # Without an explicit choice the fleet keeps its current multiplier. The final sync and the
-    # attendance run in a background task, so the browser does not wait for ESI.
+    problem = _end_multiplier_problem(operation, multiplier)
+    if problem:
+        messages.error(request, f"{problem} The fleet was not ended.")
+        return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+    # The final sync and the PAP run in a background task, so the browser does not wait for ESI.
+    # The task checks the multiplier against the duration again.
     operation, requested = request_fleet_end(operation, actor=request.user, attendance_multiplier=multiplier)
     if requested and operation.status == FleetOperation.Status.CLOSED:
         messages.success(request, f"Fleet ended. Attendance finalized at {operation.attendance_multiplier}x.")
@@ -895,6 +1088,25 @@ def cancel_scheduled_fleet(request, operation_uuid):
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
+def _step_statuses(operation):
+    return dict(operation.actions.values_list("action", "status"))
+
+
+def _audit_retry(actor, name, operation, action, before):
+    """One audit entry per retry with the step, its status before and after, and the step's message."""
+    audit(
+        actor,
+        name,
+        operation,
+        {"step": action.action, "status": before.get(action.action)},
+        {
+            "step": action.action,
+            "status": action.status,
+            "message": (action.error_message or "")[:RETRY_AUDIT_MESSAGE_LENGTH],
+        },
+    )
+
+
 @permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
 @require_POST
 def retry_ping_view(request, operation_uuid):
@@ -904,7 +1116,9 @@ def retry_ping_view(request, operation_uuid):
     if operation.status == FleetOperation.Status.CANCELLED and is_pre_ping_record(operation):
         messages.info(request, "This scheduled fleet was cancelled, so its pre ping is not posted again.")
         return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+    before = _step_statuses(operation)
     action = retry_ping(operation)
+    _audit_retry(request.user, "fleet.retry_ping", operation, action, before)
     detail = f" {action.error_message}" if action.error_message else ""
     messages.info(request, f"Ping retry: {action.get_status_display()}.{detail}")
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
@@ -919,7 +1133,9 @@ def retry_motd_view(request, operation_uuid):
     if is_pre_ping_record(operation):
         messages.info(request, NOT_STARTED_MESSAGE)
         return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+    before = _step_statuses(operation)
     action = retry_motd(operation)
+    _audit_retry(request.user, "fleet.retry_motd", operation, action, before)
     detail = f" {action.error_message}" if action.error_message else ""
     messages.info(request, f"MOTD retry: {action.get_status_display()}.{detail}")
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
@@ -934,26 +1150,47 @@ def retry_srp_view(request, operation_uuid):
     if is_pre_ping_record(operation):
         messages.info(request, NOT_STARTED_MESSAGE)
         return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+    before = _step_statuses(operation)
     action = retry_srp(operation)
+    _audit_retry(request.user, "fleet.retry_srp", operation, action, before)
     detail = f" {action.error_message}" if action.error_message else ""
     messages.info(request, f"SRP retry: {action.get_status_display()}.{detail}")
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
-@permission_required("fleetops.manage_attendance", raise_exception=True)
+def _can_set_multiplier(user, operation):
+    """Attendance managers of the fleet change its multiplier; its FC can always settle a pending choice."""
+    if _can_manage_attendance_operation(user, operation):
+        return True
+    return operation.multiplier_pending and _can_manage_operation(user, operation)
+
+
+@permissions_required(
+    ("fleetops.manage_attendance", "fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True
+)
 @require_POST
 def set_attendance_multiplier_view(request, operation_uuid):
     operation = get_object_or_404(FleetOperation, uuid=operation_uuid)
-    if not _can_manage_attendance_operation(request.user, operation):
+    if not _can_set_multiplier(request.user, operation):
         raise Http404
-    form = FleetAttendanceMultiplierForm(request.POST)
+    detail = redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+    if operation.status != FleetOperation.Status.CLOSED:
+        messages.error(request, "The PAP multiplier is chosen when the fleet ends.")
+        return detail
+    form = FleetAttendanceMultiplierForm(
+        request.POST, operation=operation, can_override=request.user.has_perm("fleetops.manage_fleets")
+    )
     if not form.is_valid():
-        messages.error(request, "Attendance multiplier must be 1x, 2x or 3x.")
-        return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+        errors = " ".join(str(error) for errors in form.errors.values() for error in errors)
+        messages.error(request, f"The PAP multiplier was not changed. {errors}".strip())
+        return detail
     multiplier = form.cleaned_data["attendance_multiplier"]
-    updated = set_operation_attendance_multiplier(operation, multiplier, actor=request.user)
-    messages.success(request, f"Fleet attendance set to {multiplier}x ({updated} automatic records updated).")
-    return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+    reason = (form.cleaned_data.get("reason") or "").strip()
+    # Beyond the duration rule only with an FC lead's written reason; the audit entry keeps it.
+    source = FleetOperation.MultiplierSource.OVERRIDE if form.is_override else FleetOperation.MultiplierSource.FC
+    summary = set_operation_attendance_multiplier(operation, multiplier, actor=request.user, source=source, reason=reason)
+    messages.success(request, f"PAP multiplier set to {multiplier}x; PAP recalculated ({summary['granted']} granted).")
+    return detail
 
 
 @permission_required("fleetops.create_manual_fleet", raise_exception=True)
@@ -969,21 +1206,34 @@ def manual_fleet_view(request):
                 log_failure(logger, "Manual fleet creation", exc)
                 form.add_error(None, "The manual fleet could not be created because of an unexpected error.")
             else:
-                messages.success(request, "Manual fleet record created. Add attendance from the Attendance tab or Manual Attendance page.")
+                if operation.review_status == ReviewStatus.PENDING:
+                    messages.success(
+                        request,
+                        "Manual fleet record created. It counts once an FC lead approves it. "
+                        "Add attendance from the Attendance tab or Manual Attendance page.",
+                    )
+                else:
+                    messages.success(request, "Manual fleet record created. Add attendance from the Attendance tab or Manual Attendance page.")
                 return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     else:
         form = ManualFleetForm()
-    return _render(request, "fleetops/manual_fleet.html", {"form": form, "eve_time": timezone.now()})
+    return _render(
+        request,
+        "fleetops/manual_fleet.html",
+        {"form": form, "eve_time": timezone.now(), "needs_approval": not is_approver(request.user)},
+    )
 
 
 @permission_required("fleetops.basic_access", raise_exception=True)
 def my_statistics_view(request):
+    from fleetops.views_pap import live_pap_rows
+
     year, month = _year_month(request)
     stats = member_statistics(request.user, year, month)
     return _render(
         request,
         "fleetops/my_statistics.html",
-        _period_render_context(year, month, stats=stats),
+        _period_render_context(year, month, stats=stats, live_pap_rows=live_pap_rows(request.user)),
     )
 
 
@@ -1048,9 +1298,7 @@ def all_corporation_statistics_view(request):
 @permission_required("fleetops.view_all_stats", raise_exception=True)
 def all_fc_statistics_view(request):
     year, month = _year_month(request)
-    operation_qs = FleetOperation.objects.filter(
-        status=FleetOperation.Status.CLOSED, started_at__year=year, started_at__month=month
-    )
+    operation_qs = counted_operations(FleetOperation.objects.filter(started_at__year=year, started_at__month=month))
     user_ids = set(operation_qs.values_list("fc_user_id", flat=True))
     user_ids.update(
         OperationRoleAssignment.objects.filter(
@@ -1103,37 +1351,72 @@ def fc_statistics_detail_view(request, user_id):
     )
 
 
+def _incentive_page(request, year, month, *, period=None, form=None, edit_form=None):
+    """The incentive page of a month: the create form, or the period with its edit form."""
+    if period is None and form is None:
+        form = IncentivePeriodForm(initial={"minimum_fleets": FleetOpsSettings.get_solo().incentive_minimum_fleets})
+    if period is not None and period.status != IncentivePeriod.Status.FINALIZED and edit_form is None:
+        edit_form = IncentivePeriodForm(instance=period)
+    start, end = month_bounds(year, month)
+    closed = FleetOperation.objects.filter(
+        status=FleetOperation.Status.CLOSED, started_at__gte=start, started_at__lt=end
+    )
+    pending = pending_multiplier_operations(period or IncentivePeriod(year=year, month=month))
+    return _render(
+        request,
+        "fleetops/incentive_review.html",
+        _period_render_context(
+            year,
+            month,
+            period=period,
+            form=form,
+            edit_form=edit_form,
+            pending_multiplier_operations=list(pending.select_related("fleet_type")[:PENDING_MULTIPLIERS_SHOWN]),
+            pending_multiplier_count=pending.count(),
+            not_counted_count=closed.count() - counted_operations(closed).count(),
+        ),
+    )
+
+
 @permission_required("fleetops.manage_incentives", raise_exception=True)
 def incentive_review(request):
     if not _incentives_enabled(request):
         return redirect("fleetops:dashboard")
     year, month = _year_month(request)
     period = IncentivePeriod.objects.filter(year=year, month=month).first()
-    if request.method == "POST" and request.POST.get("create_period"):
-        form = IncentivePeriodForm(request.POST)
-        if form.is_valid():
+    if request.method != "POST":
+        return _incentive_page(request, year, month, period=period)
+    # The create form posts to the page of its month; never fall back to another month.
+    if (request.GET.get("year"), request.GET.get("month")) != (str(year), str(month)):
+        messages.error(request, "Choose the month of the new incentive period first.")
+        return redirect("fleetops:incentive_review")
+    if period is not None:
+        # A page opened before the month was created; show the month as it is.
+        messages.info(request, f"The incentive period {period} already exists; nothing was changed.")
+        return _incentive_page(request, year, month, period=period)
+    # The month comes from the page (?year=&month=); the form only holds the budget and the minimum.
+    form = IncentivePeriodForm(request.POST, instance=IncentivePeriod(year=year, month=month))
+    if not form.is_valid():
+        return _incentive_page(request, year, month, form=form)
+    try:
+        with transaction.atomic():
             period = form.save()
-            audit(
-                request.user,
-                "incentive.period_create",
-                period,
-                None,
-                {"budget": period.budget, "minimum_fleets": period.minimum_fleets},
-            )
-            return _incentive_redirect(period)
-    else:
-        form = IncentivePeriodForm(
-            initial={
-                "year": year,
-                "month": month,
-                "minimum_fleets": FleetOpsSettings.get_solo().incentive_minimum_fleets,
-            }
-        )
-    return _render(
-        request,
-        "fleetops/incentive_review.html",
-        _period_render_context(year, month, period=period, form=form),
+    except IntegrityError:
+        # Another manager created the month at the same moment.
+        period = IncentivePeriod.objects.filter(year=year, month=month).first()
+        if period is None:
+            raise
+        messages.info(request, f"The incentive period {period} was created meanwhile; nothing was changed.")
+        return _incentive_redirect(period)
+    audit(
+        request.user,
+        "incentive.period_create",
+        period,
+        None,
+        {"budget": period.budget, "minimum_fleets": period.minimum_fleets},
     )
+    messages.success(request, f"Incentive period {period} created. Recalculate to build the FC statistics.")
+    return _incentive_redirect(period)
 
 
 @permission_required("fleetops.manage_incentives", raise_exception=True)
@@ -1150,6 +1433,36 @@ def incentive_recalculate(request, pk):
         return _incentive_redirect(period)
     audit(request.user, "incentive.recalculate", period, {"status": old_status}, {"status": period.status})
     messages.success(request, "Incentive period recalculated and moved to Review.")
+    return _incentive_redirect(period)
+
+
+@permission_required("fleetops.manage_incentives", raise_exception=True)
+@require_POST
+def incentive_update(request, pk):
+    period = get_object_or_404(IncentivePeriod, pk=pk)
+    if not _incentives_enabled(request):
+        return redirect("fleetops:dashboard")
+    with transaction.atomic():
+        # Locked so a finalize cannot slip in between the check and the save.
+        period = IncentivePeriod.objects.select_for_update().get(pk=period.pk)
+        if period.status == IncentivePeriod.Status.FINALIZED:
+            messages.error(
+                request, "This period is finalized. Unlock it before changing the budget or the minimum fleets."
+            )
+            return _incentive_redirect(period)
+        old = {"budget": period.budget, "minimum_fleets": period.minimum_fleets}
+        # A copy, so a refused value never shows up as the period's own value on the page.
+        form = IncentivePeriodForm(request.POST, instance=IncentivePeriod.objects.get(pk=period.pk))
+        if form.is_valid():
+            period = form.save()
+    if form.errors:
+        return _incentive_page(request, period.year, period.month, period=period, edit_form=form)
+    new = {"budget": period.budget, "minimum_fleets": period.minimum_fleets}
+    if new == old:
+        messages.info(request, "Budget and minimum fleets are unchanged.")
+        return _incentive_redirect(period)
+    audit(request.user, "incentive.period_update", period, old, new)
+    messages.success(request, "Budget and minimum fleets saved. Recalculate to apply them.")
     return _incentive_redirect(period)
 
 
@@ -1220,14 +1533,38 @@ def add_manual_attendance(request, operation_uuid):
     operation = get_object_or_404(FleetOperation, uuid=operation_uuid)
     if not _can_manage_attendance_operation(request.user, operation):
         raise Http404
+    if operation.status not in RECORDABLE_STATUSES:
+        messages.error(request, "Manual attendance can only be added to Active or Closed fleets.")
+        return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     form = ManualAttendanceForm(request.POST)
     if not form.is_valid():
         details = " ".join(str(error) for errors in form.errors.values() for error in errors)
         messages.error(request, f"Invalid manual attendance entry. {details}".strip())
+        _keep_manual_attendance_entry(request, operation, [str(e) for errors in form.errors.values() for e in errors])
         return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
-    data = form.cleaned_data
+    _save_manual_attendance(request, operation, form.cleaned_data)
+    return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+
+
+# A manual attendance entry the fleet page could not save is shown there again, with its errors.
+MANUAL_ATTENDANCE_ENTRY_KEY = "fleetops_manual_attendance_entry"
+
+
+def _keep_manual_attendance_entry(request, operation, errors):
+    request.session[MANUAL_ATTENDANCE_ENTRY_KEY] = {
+        "operation": str(operation.uuid),
+        "values": {name: request.POST.get(name, "") for name in ManualAttendanceForm.base_fields},
+        "errors": errors,
+    }
+
+
+def _save_manual_attendance(request, operation, data, *, form=None):
+    """Create a manual PAP row and tell the user; the row, or None when it was refused.
+
+    Refusals go to ``form`` when there is one, else to the fleet page.
+    """
     try:
-        create_manual_attendance(
+        record = create_manual_attendance(
             operation,
             actor=request.user,
             character_id=data["character_id"],
@@ -1237,20 +1574,28 @@ def add_manual_attendance(request, operation_uuid):
             notes=data["notes"],
         )
     except ValueError as exc:
-        messages.error(request, str(exc))
-    else:
-        messages.success(request, "Manual attendance saved.")
-    return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+        if form is not None:
+            form.add_error(None, str(exc))
+        else:
+            messages.error(request, str(exc))
+            _keep_manual_attendance_entry(request, operation, [str(exc)])
+        return None
+    text = "Historical manual attendance saved." if form is not None else "Manual attendance saved."
+    if record.source in AttendanceRecord.USER_SOURCES and record.review_status == ReviewStatus.PENDING:
+        text += " It counts once an FC lead approves it."
+    messages.success(request, text)
+    return record
 
 
 @permission_required("fleetops.manage_attendance", raise_exception=True)
 @require_POST
 def delete_manual_attendance(request, pk):
-    record = get_object_or_404(
-        AttendanceRecord, pk=pk, source=AttendanceRecord.Source.MANUAL
-    )
+    record = get_object_or_404(AttendanceRecord, pk=pk, source__in=AttendanceRecord.USER_SOURCES)
     operation = record.operation
     if not _can_manage_attendance_operation(request.user, operation):
+        raise Http404
+    if not can_delete_manual_row(request.user, record):
+        # Deleting an accepted correction would change PAP without an FC lead.
         raise Http404
     audit(
         request.user,
@@ -1260,46 +1605,49 @@ def delete_manual_attendance(request, pk):
         None,
     )
     record.delete()
+    # A deleted correction gives the tracked PAP back.
+    pap.refresh_after_change(operation, actor=request.user, reason="manual attendance deleted")
     messages.warning(request, "Manual attendance deleted.")
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
 @permission_required("fleetops.manage_attendance", raise_exception=True)
 def manual_attendance_view(request):
+    roster_fleet = request.GET.get("roster_fleet")
+    if roster_fleet:
+        # "Paste roster" picks the fleet first.
+        operation = manageable_attendance_operations(request.user).filter(pk=_database_id(roster_fleet) or 0).first()
+        if operation is not None and _can_manage_attendance_operation(request.user, operation):
+            return redirect("fleetops:roster_import", operation_uuid=operation.uuid)
+        messages.error(request, "Choose an active or closed fleet you manage.")
+        return redirect("fleetops:manual_attendance")
     if request.method == "POST":
         form = HistoricalManualAttendanceForm(request.POST, user=request.user)
         if form.is_valid():
             operation = form.cleaned_data["operation"]
             if not _can_manage_attendance_operation(request.user, operation):
                 raise Http404
-            data = form.cleaned_data
-            try:
-                create_manual_attendance(
-                    operation,
-                    actor=request.user,
-                    character_id=data["character_id"],
-                    character_name=data["character_name"],
-                    attendance_value=data["attendance_value"],
-                    duplicate_action=data["duplicate_action"],
-                    notes=data["notes"],
-                )
-            except ValueError as exc:
-                form.add_error(None, str(exc))
-            else:
-                messages.success(request, "Historical manual attendance saved.")
+            if _save_manual_attendance(request, operation, form.cleaned_data, form=form) is not None:
                 return redirect("fleetops:manual_attendance")
     else:
         form = HistoricalManualAttendanceForm(user=request.user)
-    recent = AttendanceRecord.objects.filter(source=AttendanceRecord.Source.MANUAL)
+    recent = AttendanceRecord.objects.filter(source__in=AttendanceRecord.USER_SOURCES)
     if not request.user.has_perm("fleetops.manage_fleets"):
         recent = recent.filter(
             Q(operation__fc_user=request.user)
             | Q(operation__role_assignments__auth_user=request.user, operation__role_assignments__grants_fc_credit=True)
         ).distinct()
+    recent_rows = list(recent.select_related("operation__fleet_type", "created_by").order_by("-created_at")[:100])
     return _render(
         request,
         "fleetops/manual_attendance.html",
-        {"form": form, "recent_manual": recent.select_related("operation__fleet_type", "created_by")[:100]},
+        {
+            "form": form,
+            "recent_manual": recent_rows,
+            "deletable_row_ids": {row.pk for row in recent_rows if can_delete_manual_row(request.user, row)},
+            "roster_fleets": manageable_attendance_operations(request.user)[:200],
+            "needs_approval": not is_approver(request.user),
+        },
     )
 
 
@@ -1360,7 +1708,8 @@ def add_operation_role(request, operation_uuid):
         raise Http404
     form = OperationRoleAssignmentForm(request.POST, operation=operation)
     if not form.is_valid():
-        messages.error(request, "Invalid special-role assignment.")
+        details = " ".join(str(error) for errors in form.errors.values() for error in errors)
+        messages.error(request, f"Invalid special-role assignment. {details}".strip())
         return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     try:
         assignment = add_role_assignment(
@@ -1373,10 +1722,13 @@ def add_operation_role(request, operation_uuid):
     except ValueError as exc:
         messages.error(request, str(exc))
     else:
+        text = f"{assignment.character_name} assigned as {assignment.role_label}"
         if assignment.grants_fc_credit:
-            messages.success(request, f"{assignment.character_name} assigned; FC credit granted.")
+            messages.success(request, f"{text}; FC credit granted.")
+        elif form.cleaned_data["role"].grants_fc_credit:
+            messages.success(request, f"{text}. No FC credit: the character is not registered in Alliance Auth.")
         else:
-            messages.success(request, f"{assignment.character_name} assigned.")
+            messages.success(request, f"{text}.")
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
@@ -1395,14 +1747,20 @@ def delete_operation_role(request, pk):
 @permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
 @require_POST
 def kick_capsules_view(request, operation_uuid):
+    # Imported here because the fleet control views import their helpers from this module.
+    from fleetops.views_controls import posted_character_ids, report_kicks
+
     operation = _operation_for_user(request, operation_uuid, manage=True)
     if not _can_manage_operation(request.user, operation) or operation.status != FleetOperation.Status.ACTIVE:
         raise Http404
-    result = kick_all_pods(operation, actor=request.user)
-    if result["failures"]:
-        messages.warning(request, f"Kicked {len(result['kicked'])} capsule members; {len(result['failures'])} failed.")
+    # The capsule list lets the FC spare pilots; without a selection every capsule pilot is kicked.
+    selected = posted_character_ids(request) if "character_ids" in request.POST else None
+    try:
+        result = kick_members(operation, selected, actor=request.user, purpose=CAPSULES)
+    except KickRefused as exc:
+        messages.error(request, str(exc))
     else:
-        messages.success(request, f"Kicked {len(result['kicked'])} capsule members.")
+        report_kicks(request, result, "capsule member")
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 

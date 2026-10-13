@@ -29,18 +29,22 @@ from esi.exceptions import (
 )
 from esi.openapi_clients import ESIClientProvider
 
-from fleetops.constants import FLEET_READ_SCOPE, FLEET_WRITE_SCOPE
+from fleetops.constants import CLICK_SCOPES, FLEET_READ_SCOPE, FLEET_WRITE_SCOPE
 from fleetops.models import AttendanceRecord, FleetMemberEvent, FleetMemberState, FleetOperation, OperationAction
 from fleetops.providers import esi as esi_provider
 from fleetops.providers.esi import (
     FleetESIError,
     character_affiliations,
+    character_location,
+    character_online,
+    character_ship,
     detect_character_fleet,
     get_fleet_info,
     get_fleet_members,
     kick_fleet_member,
     resolve_names,
     set_fleet_motd,
+    universe_ids,
 )
 from fleetops.services.operations import end_fleet, retry_motd, start_fleet
 from fleetops.tasks import POLL_SLACK_SECONDS, schedule_active_fleet_tracking, track_operation
@@ -49,7 +53,14 @@ from . import factories as f
 
 FLEET_ID = 1_045_000_000_777
 # Public lookups (no token) FleetOps sends as POST requests.
-POST_OPERATIONS = ["PostUniverseNames", "PostCharactersAffiliation"]
+POST_OPERATIONS = ["PostUniverseNames", "PostCharactersAffiliation", "PostUniverseIds"]
+# Where a pilot is, what they fly and whether they are online, read when they register through a PAP link.
+LOCATION_OPERATIONS = ["GetCharactersCharacterIdOnline", "GetCharactersCharacterIdLocation", "GetCharactersCharacterIdShip"]
+ONLINE_SCOPE, LOCATION_SCOPE, SHIP_SCOPE = (
+    "esi-location.read_online.v1",
+    "esi-location.read_location.v1",
+    "esi-location.read_ship_type.v1",
+)
 OUTSIDE_PILOT = 2_119_000_001
 OUTSIDE_CORP = 98_700_001
 OUTSIDE_ALLIANCE = 99_000_001
@@ -266,6 +277,7 @@ class UnchangedReadTests(FakeESIMixin, TestCase):
         start = timezone.now()
         with frozen_now(start):
             self.assertEqual(track_operation(operation.pk), 2)
+        first_poll = FleetMemberState.objects.get(operation=operation, character_id=self.pilot_char.character_id)
 
         later = start + timedelta(minutes=1)
         self.esi.expire_cache()
@@ -278,8 +290,9 @@ class UnchangedReadTests(FakeESIMixin, TestCase):
         pilot_state = FleetMemberState.objects.get(operation=operation, character_id=self.pilot_char.character_id)
         self.assertTrue(pilot_state.is_active)
         self.assertEqual(pilot_state.last_seen, later)
-        attendance = AttendanceRecord.objects.get(operation=operation, character_id=self.pilot_char.character_id)
-        self.assertEqual(attendance.last_seen, later)
+        # The minute between the polls counts as time in fleet; PAP is granted when the fleet closes.
+        self.assertEqual(pilot_state.accumulated_seconds, first_poll.accumulated_seconds + 60)
+        self.assertFalse(AttendanceRecord.objects.filter(operation=operation).exists())
         self.assertFalse(FleetMemberEvent.objects.filter(operation=operation, event_type=FleetMemberEvent.EventType.LEAVE).exists())
 
     def test_cached_member_list_counts_as_successful_sync(self):
@@ -573,10 +586,10 @@ def _fleet_spec():
     """A minimal ESI OpenAPI document with the fleet operations FleetOps uses."""
     error = {"description": "Error", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
 
-    def operation(operation_id, scope, path_params, ok_status, schema=None, request_schema=None):
+    def operation(operation_id, scope, path_params, ok_status, schema=None, request_schema=None, tag="Fleets"):
         spec = {
             "operationId": operation_id,
-            "tags": ["Fleets"],
+            "tags": [tag],
             "parameters": [
                 {"name": name, "in": "path", "required": True, "schema": {"type": "integer", "format": "int64"}}
                 for name in path_params
@@ -626,12 +639,27 @@ def _fleet_spec():
             "x-compatibility-date": "2020-01-01",
         }
 
+    def location(operation_id, scope, schema):
+        spec = operation(operation_id, scope, ["character_id"], "200", schema, tag="Location")
+        spec["x-rate-limit"] = {"group": "char-location", "max-tokens": 1200, "window-size": "15m"}
+        return spec
+
+    def entities():
+        return {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"id": {"type": "integer", "format": "int64"}, "name": {"type": "string"}},
+                "required": ["id", "name"],
+            },
+        }
+
     integer = {"type": "integer", "format": "int64"}
     return {
         "openapi": "3.1.0",
         "info": {"title": "EVE Stable Infrastructure (ESI) - tranquility", "version": "2025-11-06"},
         "servers": [{"url": "https://esi.evetech.net"}],
-        "tags": [{"name": "Fleets"}, {"name": "Universe"}, {"name": "Character"}],
+        "tags": [{"name": "Fleets"}, {"name": "Universe"}, {"name": "Character"}, {"name": "Location"}],
         "paths": {
             "/characters/{character_id}/fleet": {
                 "get": operation("GetCharactersCharacterIdFleet", FLEET_READ_SCOPE, ["character_id"], "200", "CharacterFleet"),
@@ -647,6 +675,45 @@ def _fleet_spec():
                 "delete": operation("DeleteFleetsFleetIdMembersMemberId", FLEET_WRITE_SCOPE, ["fleet_id", "member_id"], "204"),
             },
             "/universe/names": {"post": lookup("PostUniverseNames", "Universe", "UniverseNamesPost")},
+            "/universe/ids": {
+                "post": {
+                    "operationId": "PostUniverseIds",
+                    "tags": ["Universe"],
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {"type": "string", "minLength": 1, "maxLength": 100},
+                                    "minItems": 1,
+                                    "maxItems": 500,
+                                    "uniqueItems": True,
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "OK",
+                            "content": {
+                                "application/json": {"schema": {"$ref": "#/components/schemas/UniverseIdsPost"}}
+                            },
+                        },
+                        "default": error,
+                    },
+                    "x-compatibility-date": "2020-01-01",
+                }
+            },
+            "/characters/{character_id}/online": {
+                "get": location("GetCharactersCharacterIdOnline", ONLINE_SCOPE, "CharactersOnline"),
+            },
+            "/characters/{character_id}/location": {
+                "get": location("GetCharactersCharacterIdLocation", LOCATION_SCOPE, "CharactersLocation"),
+            },
+            "/characters/{character_id}/ship": {
+                "get": location("GetCharactersCharacterIdShip", SHIP_SCOPE, "CharactersShip"),
+            },
             "/characters/affiliation": {
                 "post": lookup("PostCharactersAffiliation", "Character", "CharactersAffiliationPost"),
             },
@@ -668,6 +735,36 @@ def _fleet_spec():
                     },
                 },
                 "FleetUpdate": {"type": "object", "properties": {"is_free_move": {"type": "boolean"}, "motd": {"type": "string"}}},
+                "CharactersOnline": {
+                    "type": "object",
+                    "properties": {
+                        "last_login": {"type": "string", "format": "date-time"},
+                        "last_logout": {"type": "string", "format": "date-time"},
+                        "logins": {"type": "integer", "format": "int64"},
+                        "online": {"type": "boolean"},
+                    },
+                    "required": ["online"],
+                },
+                "CharactersLocation": {
+                    "type": "object",
+                    "properties": {"solar_system_id": integer, "station_id": integer, "structure_id": integer},
+                    "required": ["solar_system_id"],
+                },
+                "CharactersShip": {
+                    "type": "object",
+                    "properties": {"ship_item_id": integer, "ship_name": {"type": "string"}, "ship_type_id": integer},
+                    "required": ["ship_item_id", "ship_name", "ship_type_id"],
+                },
+                "UniverseIdsPost": {
+                    "type": "object",
+                    "properties": {
+                        name: entities()
+                        for name in (
+                            "agents", "alliances", "characters", "constellations", "corporations", "factions",
+                            "inventory_types", "regions", "stations", "systems",
+                        )
+                    },
+                },
                 "UniverseNamesPost": {
                     "type": "array",
                     "items": {
@@ -723,7 +820,7 @@ def _fleet_spec():
                         "authorizationCode": {
                             "authorizationUrl": "https://login.eveonline.com/v2/oauth/authorize",
                             "tokenUrl": "https://login.eveonline.com/v2/oauth/token",
-                            "scopes": {FLEET_READ_SCOPE: FLEET_READ_SCOPE, FLEET_WRITE_SCOPE: FLEET_WRITE_SCOPE},
+                            "scopes": {scope: scope for scope in (FLEET_READ_SCOPE, FLEET_WRITE_SCOPE, *CLICK_SCOPES)},
                         }
                     },
                 }
@@ -784,7 +881,7 @@ class DjangoEsiOperationTests(TestCase):
             ua_appname="aa-fleetops-tests",
             ua_version="0.0.0",
             spec_file=spec_file,
-            operations=[*FakeFleetsAPI.OPERATIONS, *POST_OPERATIONS],
+            operations=[*FakeFleetsAPI.OPERATIONS, *POST_OPERATIONS, *LOCATION_OPERATIONS],
         )
 
     @classmethod
@@ -1081,3 +1178,151 @@ class DjangoEsiOperationTests(TestCase):
             str(affiliation.exception), "Could not look up character affiliations: ESI returned HTTP 403 (Forbidden)."
         )
         self.assertEqual(len(self.server.requests_of("POST")), 2)
+
+    def ids_route(self, known):
+        """POST /universe/ids/: exact names only, one list per category."""
+
+        def answer(body):
+            characters = [{"id": known[name][0], "name": known[name][1]} for name in body if name in known]
+            corporations = [{"id": 98_000_001, "name": "Jita Traders"}] if "Jita Traders" in body else []
+            return 200, {"characters": characters, "corporations": corporations}
+
+        return answer
+
+    def test_character_name_lookups_with_different_bodies_both_reach_esi(self):
+        self.server.cache_seconds = 300
+        self.server.routes[("POST", "/universe/ids")] = self.ids_route(
+            {"Ana Khan": (2_119_000_001, "Ana Khan"), "Jita Trader": (2_119_000_002, "Jita Trader")}
+        )
+
+        first = universe_ids(["Ana Khan"])
+        second = universe_ids(["Jita Trader", "Jita Traders", "Nobody Here"])
+
+        self.assertEqual(first, {"ana khan": (2_119_000_001, "Ana Khan")})
+        self.assertEqual(second, {"jita trader": (2_119_000_002, "Jita Trader")})
+        self.assertEqual(
+            [request[1:] for request in self.server.requests_of("POST")],
+            [
+                ("/universe/ids", None, ["Ana Khan"]),
+                ("/universe/ids", None, ["Jita Trader", "Jita Traders", "Nobody Here"]),
+            ],
+        )
+
+    def test_character_name_lookup_errors_are_short(self):
+        self.server.routes[("POST", "/universe/ids")] = (400, {"error": "Invalid body"})
+
+        with self.assertLogs(esi_provider.logger, "WARNING"), self.assertRaises(FleetESIError) as ctx:
+            universe_ids(["Ana Khan"])
+
+        self.assertEqual(ctx.exception.code, "IDS_ERROR")
+        self.assertEqual(str(ctx.exception), "Could not look up character names: ESI returned HTTP 400 (Invalid body).")
+
+    # -- Location reads of PAP link registrations ----------------------------------------------
+
+    def location_pilot(self, *, online=True):
+        """A pilot with a PAP link token; the character is online (or not), docked in Jita, in a Guardian."""
+        pilot = f.create_user()
+        character = f.main_of(pilot)
+        token = f.add_token(pilot, character, scopes=CLICK_SCOPES)
+        base = f"/characters/{character.character_id}"
+        self.server.routes.update(
+            {
+                ("GET", f"{base}/online"): (
+                    200,
+                    {
+                        "last_login": "2025-11-05T18:02:11Z",
+                        "last_logout": "2025-11-04T23:40:00Z",
+                        "logins": 812,
+                        "online": online,
+                    },
+                ),
+                ("GET", f"{base}/location"): (200, {"solar_system_id": 30000142, "station_id": 60003760}),
+                ("GET", f"{base}/ship"): (
+                    200,
+                    {"ship_item_id": 1_000_000_016_991, "ship_name": "Pilot's Guardian", "ship_type_id": 11987},
+                ),
+            }
+        )
+        return token, base
+
+    def test_location_reads_return_the_pilot_details(self):
+        token, base = self.location_pilot()
+
+        self.assertIs(character_online(token), True)
+        location = character_location(token)
+        ship = character_ship(token)
+
+        self.assertEqual((location["solar_system_id"], location["station_id"]), (30000142, 60003760))
+        self.assertEqual(
+            (ship["ship_type_id"], ship["ship_name"], ship["ship_item_id"]),
+            (11987, "Pilot's Guardian", 1_000_000_016_991),
+        )
+        self.assertEqual(
+            [request[:2] for request in self.server.requests],
+            [("GET", f"{base}/online"), ("GET", f"{base}/location"), ("GET", f"{base}/ship")],
+        )
+
+    def test_an_offline_character_is_reported_offline(self):
+        token, _base = self.location_pilot(online=False)
+
+        self.assertIs(character_online(token), False)
+
+    def test_unchanged_location_reads_return_data_every_time(self):
+        token, _base = self.location_pilot()
+
+        for _ in range(2):
+            self.assertIs(character_online(token), True)
+            self.assertEqual(character_location(token)["solar_system_id"], 30000142)
+
+        self.assertEqual(len(self.server.requests), 4)
+        self.assertEqual({request[2] for request in self.server.requests}, {None})
+
+    def test_location_errors_are_short(self):
+        token, base = self.location_pilot()
+        self.server.error_headers = {"X-ESI-Request-ID": "esi-request-77", "X-Private-Header": "header-secret-value"}
+        self.server.routes[("GET", f"{base}/online")] = (403, {"error": "Token is not valid for scope(s)"})
+        self.server.routes[("GET", f"{base}/location")] = (500, {"error": "Internal error occurred"})
+        self.server.routes[("GET", f"{base}/ship")] = (404, {"error": "Character not found"})
+        cases = (
+            (
+                character_online,
+                "ONLINE_FORBIDDEN",
+                "ESI denied access to the online status: ESI returned HTTP 403 (Token is not valid for scope(s)).",
+            ),
+            (
+                character_location,
+                "LOCATION_ERROR",
+                "Could not read the location: ESI returned HTTP 500 (Internal error occurred).",
+            ),
+            (
+                character_ship,
+                "SHIP_ERROR",
+                "Could not read the current ship: ESI returned HTTP 404 (Character not found).",
+            ),
+        )
+        for read, code, text in cases:
+            with self.subTest(read=read.__name__):
+                # One attempt: django-esi would otherwise wait between its retries of a 500.
+                with mock.patch("esi.app_settings.ESI_SERVER_ERROR_MAX_RETRIES", 1), self.assertLogs(
+                    esi_provider.logger, "WARNING"
+                ) as logs, self.assertRaises(FleetESIError) as ctx:
+                    read(token)
+
+                self.assertEqual(ctx.exception.code, code)
+                self.assertEqual(str(ctx.exception), text)
+                log = "\n".join(logs.output)
+                self.assertIn("x-esi-request-id esi-request-77", log)
+                for value in (str(ctx.exception), log):
+                    self.assertNotIn("header-secret-value", value)
+                    self.assertNotIn(token.access_token, value)
+                    self.assertNotIn(token.refresh_token, value)
+
+    def test_a_token_without_the_scope_is_never_sent(self):
+        token, _base = self.location_pilot()
+        token.scopes.remove(*token.scopes.filter(name="esi-location.read_online.v1"))
+
+        with self.assertLogs(esi_provider.logger, "WARNING"), self.assertRaises(FleetESIError) as ctx:
+            character_online(token)
+
+        self.assertEqual(ctx.exception.code, "ONLINE_ERROR")
+        self.assertEqual(self.server.requests, [])

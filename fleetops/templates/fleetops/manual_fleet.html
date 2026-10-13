@@ -6,6 +6,7 @@
   <a class="btn btn-outline-secondary" href="{% url 'fleetops:fleet_operations' %}">Fleet Archive</a>
 </div>
 <div class="alert alert-info">The current user's main character is recorded as FC. After creating the fleet, use <strong>Manual Attendance</strong> or the fleet Attendance tab to add participants/credits.</div>
+{% if needs_approval %}<div class="alert alert-warning" id="manual-fleet-approval">A manual fleet and its PAP count in statistics and incentives once an FC lead approves them.</div>{% endif %}
 <div class="card"><div class="card-body">
 <form method="post" id="manual-fleet-form">{% csrf_token %}
   {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}

@@ -172,7 +172,7 @@ Automatic close should only happen after repeated confirmed evidence that the ES
 
 Operational member tracking and attendance credits are separate concepts.
 
-A single Auth user may have several characters in one fleet. All characters remain visible operationally, while the administrator can configure a maximum attendance credit per person per fleet:
+A single Auth user may have several characters in one fleet. All characters remain visible operationally, while the administrator can configure how many characters of one person receive PAP in one fleet (**PAP characters per player**):
 
 - 1
 - 2
@@ -180,7 +180,11 @@ A single Auth user may have several characters in one fleet. All characters rema
 - ...
 - Unlimited
 
-Manual attendance add/edit/delete is required for authorized users and must be audited.
+Over the limit the FC character gets the PAP first, then the player's main, then the character with the longest time in fleet.
+
+PAP is granted when the fleet closes, from each character's accumulated time in fleet and a configurable PAP minimum time (0 = any presence). Characters registered through a PAP link need no minimum time. The PAP multiplier follows configurable duration tiers (FC choice or automatic), and FC points are the fleet type weight times the multiplier.
+
+Manual attendance add/delete (by character name, ID or pasted roster) is required for authorized users and must be audited. Entries of FCs, and manual or PAP-link fleets, count once an FC lead approves them.
 
 ## 12. Member Statistics
 
@@ -342,17 +346,13 @@ The FleetOps landing page should provide a compact operational dashboard inspire
 
 ## 24. Special Fleet Roles / FC Credit
 
-After a FleetOperation is created — including after it is closed — the operation FC or an authorized fleet manager may assign tracked members as:
+After a FleetOperation is created — including after it is closed — the operation FC or an authorized fleet manager may assign pilots recorded in the fleet a special role. Roles are configured by administrators (Back Seat FC, Logi Anchor and Snowflake Member by default), each with a **Gives FC credit** switch.
 
-- Back Seat FC
-- Logi Anchor
-- Snowflake Member
+When the role gives FC credit and the pilot is in Alliance Auth, the operation also grants that user an FC fleet/point credit, whether or not the user is an FC. This is snapshotted so historical FC calculations remain stable.
 
-If the assigned member is an authorized FleetOps FC at assignment time, the operation also grants that user an FC fleet/point credit. This is snapshotted so historical FC calculations remain stable.
+## 25. Kicks and Capsule Cleanup
 
-## 25. One-click Capsule Cleanup
-
-While a fleet is active, an authorized FC/fleet manager may execute **Kick all Capsules**. FleetOps detects currently tracked capsule/pod members and removes them through the Fleet Boss ESI write token. The Fleet Boss character must never be targeted. Per-member failures must be reported without hiding successful kicks.
+While a fleet is active, an authorized FC/fleet manager may kick a single member, every member outside a chosen system (the FC's system by default), or the capsule pilots (**Kick Capsules**, listed by name before kicking). FleetOps removes them through the Fleet Boss ESI write token. The FC and the Fleet Boss characters must never be targeted. Per-member failures must be reported without hiding successful kicks.
 
 ## 26. Open-source Design
 
@@ -403,3 +403,13 @@ Personal statistics should present selected-period attendance, unique fleets, FC
 - Names, corporations and alliances of pilots without an Alliance Auth account from ESI, with a "Not in Alliance Auth" badge.
 - A new fleet boss confirmed by ESI ends the previous FC's record at once and starts an independent record.
 - Ship and system names always in English.
+- PAP at fleet close from time in fleet, with a PAP minimum time, PAP characters per player (FC character, then main, then longest time first), a PAP preview on running fleets and live PAP status for members.
+- Configurable PAP multiplier tiers, FC choice or automatic by duration, pending choices for fleets that ended automatically, and FC lead overrides with a written reason. FC points are weight times multiplier.
+- One counting rule for statistics and incentives: closed, approved and not excluded fleets; per-fleet exclusion and a minimum fleet duration.
+- FC lead approvals for manual fleets, manual PAP, pasted rosters and PAP-link fleets.
+- Configurable special roles with a per-role FC credit switch.
+- Manual PAP by character name and roster paste from the game client.
+- PAP links (AFAT click-tracking scopes, optional online check) and PAP-link fleets without an ESI fleet; optional CharLink imports.
+- Single kicks, kicks outside a system and a named Kick Capsules list.
+- Personal start presets.
+- Write-only webhook URLs, steady tracking cadence, audits for start steps, retries and tracking errors, incentive period editing, and Fittings doctrine visibility.

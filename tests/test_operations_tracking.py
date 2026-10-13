@@ -47,7 +47,7 @@ from fleetops.providers.esi import (
 from fleetops.providers.pings import send_discord_webhook
 from fleetops.providers.srp import SRPLinkResult
 from fleetops.services.attendance import create_manual_attendance
-from fleetops.services.fleet_controls import kick_all_pods
+from fleetops.services.fleet_controls import CAPSULES, kick_members
 from fleetops.services.mentions import EVERYONE, MentionSelection
 from fleetops.services.messages import render_messages, render_operation_messages
 from fleetops.services.operations import (
@@ -462,9 +462,8 @@ class StartFleetFullModeTests(StartFleetTestBase):
         self.assertEqual(
             FleetMemberEvent.objects.filter(operation=operation, event_type=Event.JOIN).count(), 2
         )
-        self.assertTrue(
-            AttendanceRecord.objects.filter(operation=operation, character_id=self.pilot_char.character_id).exists()
-        )
+        # PAP is granted when the fleet closes.
+        self.assertFalse(AttendanceRecord.objects.filter(operation=operation).exists())
         operation.refresh_from_db()
         self.assertIsNotNone(operation.last_esi_update)
         self.assertEqual(action(operation, "tracking_start").status, ActionStatus.SUCCESS)
@@ -548,9 +547,21 @@ class StartFleetFullModeTests(StartFleetTestBase):
         self.assertEqual(operation.fc_character_name, "Boss Alt")
         self.assertEqual(operation.fleet_boss_character_id, alt.character_id)
         self.assertEqual(operation.fc_main_character_id, self.fc_char.character_id)
-        attendance = AttendanceRecord.objects.get(operation=operation, character_id=alt.character_id)
-        self.assertEqual(attendance.main_character_id, self.fc_char.character_id)
-        self.assertEqual(attendance.corporation_id, f.DEFAULT_CORP[0])
+        state = FleetMemberState.objects.get(operation=operation, character_id=alt.character_id)
+        self.assertEqual(state.main_character_id, self.fc_char.character_id)
+        # The member list shows the alt's own corporation.
+        self.assertEqual(state.corporation_id, f.OTHER_CORP[0])
+
+    def test_takes_the_pap_rules_of_the_settings(self):
+        f.settings(pap_minimum_minutes=20, attendance_limit=2)
+
+        operation = self.start()
+
+        self.assertEqual((operation.pap_minimum_minutes, operation.pap_character_limit), (20, 2))
+        self.assertEqual(operation.pap_rules, FleetOperation.PapRules.TIME_IN_FLEET)
+        f.settings(pap_minimum_minutes=45, attendance_limit=None)
+        operation.refresh_from_db()
+        self.assertEqual((operation.pap_minimum_minutes, operation.pap_character_limit), (20, 2))
 
 
 class StartFleetAttendanceOnlyTests(StartFleetTestBase):
@@ -846,11 +857,19 @@ class TrackingTestBase(FakeESIMixin, TestCase):
 
 
 class SyncOperationTests(TrackingTestBase):
-    def test_first_sync_creates_member_state_join_event_and_attendance(self):
+    def test_first_sync_creates_member_state_join_event_and_time_in_fleet(self):
+        moment = timezone.now().replace(microsecond=0)
         self.set_members(
-            f.esi_member(self.pilot_char, role="squad_member", ship_type_id=17738, solar_system_id=30002187, wing_id=11, squad_id=22)
+            f.esi_member(
+                self.pilot_char,
+                role="squad_member",
+                ship_type_id=17738,
+                solar_system_id=30002187,
+                wing_id=11,
+                squad_id=22,
+                join_time=moment - timedelta(minutes=5),
+            )
         )
-        moment = timezone.now()
 
         with frozen_now(moment):
             count = sync_operation(self.operation)
@@ -872,13 +891,11 @@ class SyncOperationTests(TrackingTestBase):
         self.assertEqual(state.last_seen, moment)
         self.assertTrue(state.is_active)
         self.assertIsNone(state.left_at)
-        self.assertEqual(events(self.operation), [(Event.JOIN, "", "")])
-
-        record = AttendanceRecord.objects.get(operation=self.operation, character_id=self.pilot_char.character_id)
-        self.assertEqual(record.source, AttendanceRecord.Source.AUTOMATIC)
-        self.assertEqual(record.auth_user, self.pilot)
-        self.assertTrue(record.granted)
-        self.assertEqual(record.attendance_value, 1)
+        self.assertEqual(state.accumulated_seconds, 300)
+        joined = (moment - timedelta(minutes=5)).astimezone(dt_timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.assertEqual(events(self.operation), [(Event.JOIN, "", joined)])
+        # PAP is granted when the fleet closes.
+        self.assertFalse(AttendanceRecord.objects.filter(operation=self.operation).exists())
 
         self.operation.refresh_from_db()
         self.assertEqual(self.operation.last_esi_update, moment)
@@ -896,43 +913,43 @@ class SyncOperationTests(TrackingTestBase):
         self.assertEqual(unknown.character_name, "Character 95555555")
         self.assertFalse(AttendanceRecord.objects.filter(operation=self.operation).exists())
 
-    def test_alt_attendance_is_credited_to_main_and_main_corporation(self):
+    def test_alt_is_listed_with_its_own_corporation_and_its_main(self):
         alt = f.add_alt(self.pilot, "Pilot Alt", corporation=f.OTHER_CORP, alliance=f.FOREIGN_ALLIANCE)
         self.set_members(f.esi_member(alt))
 
         sync_operation(self.operation)
 
-        record = AttendanceRecord.objects.get(operation=self.operation, character_id=alt.character_id)
-        self.assertEqual(record.character_name, "Pilot Alt")
-        self.assertEqual(record.main_character_id, self.pilot_char.character_id)
-        self.assertEqual(record.auth_user, self.pilot)
-        self.assertEqual(record.corporation_id, f.DEFAULT_CORP[0])
-        self.assertEqual(self.state(alt).main_character_id, self.pilot_char.character_id)
+        state = self.state(alt)
+        self.assertEqual(state.character_name, "Pilot Alt")
+        self.assertEqual(state.auth_user, self.pilot)
+        self.assertEqual((state.main_character_id, state.main_character_name), (self.pilot_char.character_id, "Line Pilot"))
+        self.assertEqual((state.corporation_id, state.corporation_name), f.OTHER_CORP)
+        self.assertEqual((state.alliance_id, state.alliance_name), f.FOREIGN_ALLIANCE)
 
     def test_unchanged_member_creates_no_events_and_keeps_first_seen(self):
-        row = f.esi_member(self.pilot_char)
-        self.set_members(row)
         start = timezone.now()
+        row = f.esi_member(self.pilot_char, join_time=start - timedelta(minutes=5))
+        self.set_members(row)
         with frozen_now(start):
             sync_operation(self.operation)
+        self.assertEqual(self.state(self.pilot_char).accumulated_seconds, 300)
 
         later = start + timedelta(minutes=1)
         with frozen_now(later):
             sync_operation(self.operation)
             sync_operation(self.operation)
 
-        self.assertEqual(events(self.operation), [(Event.JOIN, "", "")])
+        # A second sync at the same moment adds nothing.
+        self.assertEqual(self.state(self.pilot_char).accumulated_seconds, 360)
+        self.assertEqual([event[0] for event in events(self.operation)], [Event.JOIN])
         state = self.state(self.pilot_char)
         self.assertEqual(state.first_seen, start)
         self.assertEqual(state.last_seen, later)
-        record = AttendanceRecord.objects.get(operation=self.operation, character_id=self.pilot_char.character_id)
-        self.assertEqual(record.first_seen, start)
-        self.assertEqual(record.last_seen, later)
-        self.assertEqual(AttendanceRecord.objects.filter(operation=self.operation).count(), 1)
+        self.assertFalse(AttendanceRecord.objects.filter(operation=self.operation).exists())
 
     def test_leave_and_rejoin(self):
-        row = f.esi_member(self.pilot_char)
         start = timezone.now()
+        row = f.esi_member(self.pilot_char, join_time=start - timedelta(minutes=5))
         self.set_members(row)
         with frozen_now(start):
             sync_operation(self.operation)
@@ -951,7 +968,7 @@ class SyncOperationTests(TrackingTestBase):
         sync_operation(self.operation)
 
         back = start + timedelta(minutes=3)
-        self.set_members(row)
+        self.set_members({**row, "join_time": back - timedelta(seconds=30)})
         with frozen_now(back):
             sync_operation(self.operation)
 
@@ -964,7 +981,9 @@ class SyncOperationTests(TrackingTestBase):
             [e[0] for e in events(self.operation)],
             [Event.JOIN, Event.LEAVE, Event.REJOIN],
         )
-        self.assertEqual(AttendanceRecord.objects.filter(operation=self.operation).count(), 1)
+        # 5 minutes before the first poll and 30 seconds since the rejoin; the time away does not count.
+        self.assertEqual(state.accumulated_seconds, 330)
+        self.assertFalse(AttendanceRecord.objects.filter(operation=self.operation).exists())
 
     def test_each_meaningful_change_creates_one_event(self):
         base = f.esi_member(self.pilot_char, ship_type_id=11987, solar_system_id=30000142, role="squad_member", wing_id=1, squad_id=1)
@@ -1002,25 +1021,14 @@ class SyncOperationTests(TrackingTestBase):
         sync_operation(self.operation)
         FleetMemberEvent.objects.filter(operation=self.operation).delete()
 
-        self.set_members(f.esi_member(self.pilot_char, ship_type_id=670))
+        joined = datetime(2026, 10, 12, 18, 4, 5, tzinfo=dt_timezone.utc)
+        self.set_members(f.esi_member(self.pilot_char, ship_type_id=670, join_time=joined))
         sync_operation(self.operation)
 
         self.assertEqual(
             events(self.operation),
-            [(Event.REJOIN, "", ""), (Event.SHIP_CHANGE, "11987", "670")],
+            [(Event.REJOIN, "", "2026-10-12T18:04:05Z"), (Event.SHIP_CHANGE, "11987", "670")],
         )
-
-    def test_attendance_limit_caps_extra_alts(self):
-        f.settings(attendance_limit=1)
-        alt = f.add_alt(self.pilot, "Pilot Alt")
-        self.set_members(f.esi_member(self.pilot_char), f.esi_member(alt))
-
-        sync_operation(self.operation)
-
-        records = AttendanceRecord.objects.filter(operation=self.operation, auth_user=self.pilot)
-        self.assertEqual(records.count(), 2)
-        self.assertEqual(records.filter(granted=True).count(), 1)
-        self.assertEqual(records.filter(capped=True, granted=False).count(), 1)
 
     def test_successful_sync_resets_missing_counter_and_error(self):
         self.operation.fleet_missing_count = 2
@@ -1187,7 +1195,9 @@ class TrackOperationTaskTests(TrackingTestBase):
         self.assertIsNotNone(self.operation.ended_at)
         end_action = action(self.operation, "fleet_end")
         self.assertEqual(end_action.status, ActionStatus.SUCCESS)
-        self.assertEqual(end_action.error_message, "Ended automatically: the fleet no longer exists or the FC left it")
+        self.assertEqual(
+            end_action.error_message, "Ended automatically: the fleet no longer exists or the FC left it. PAP: 0 granted at 1x."
+        )
         self.assertEqual(self.operation.end_reason, FleetOperation.EndReason.FLEET_GONE)
         entry = AuditLog.objects.get(action="fleet.auto_end")
         self.assertIsNone(entry.actor)
@@ -1308,6 +1318,9 @@ class TrackOperationTaskTests(TrackingTestBase):
 class EndFleetTests(TrackingTestBase):
     def setUp(self):
         super().setUp()
+        # Long enough for every seeded multiplier (90 -> 2x, 180 -> 3x).
+        self.operation.started_at = timezone.now() - timedelta(minutes=200)
+        self.operation.save()
         self.set_members(f.esi_member(self.fc_char), f.esi_member(self.pilot_char))
         sync_operation(self.operation)
 
@@ -1331,48 +1344,64 @@ class EndFleetTests(TrackingTestBase):
         self.assertIsNotNone(self.operation.ended_at)
         self.assertEqual(self.operation.attendance_multiplier, 2)
         values = dict(
-            AttendanceRecord.objects.filter(operation=self.operation).values_list("character_id", "attendance_value")
+            AttendanceRecord.objects.filter(operation=self.operation, granted=True).values_list(
+                "character_id", "attendance_value"
+            )
         )
         self.assertEqual(
             values,
             {self.fc_char.character_id: 2, self.pilot_char.character_id: 2, late_char.character_id: 2},
         )
+        self.assertEqual((self.operation.multiplier_source, self.operation.multiplier_pending), ("fc", False))
         end_action = action(self.operation, "fleet_end")
         self.assertEqual(end_action.status, ActionStatus.SUCCESS)
-        self.assertEqual(end_action.error_message, "Ended manually")
+        self.assertEqual(end_action.error_message, "Ended manually. PAP: 3 granted at 2x.")
         self.assertEqual(self.operation.end_reason, FleetOperation.EndReason.MANUAL)
-        self.assertEqual(audit_actions(self.operation), ["attendance.multiplier", "fleet.end"])
+        self.assertEqual(audit_actions(self.operation), ["fleet.end"])
         entry = AuditLog.objects.get(action="fleet.end")
         self.assertEqual(entry.actor, self.fc)
         self.assertEqual(
             entry.new_value,
-            {"status": Status.CLOSED, "tracking_enabled": False, "end_reason": "manual", "end_detail": ""},
+            {
+                "status": Status.CLOSED,
+                "tracking_enabled": False,
+                "end_reason": "manual",
+                "end_detail": "",
+                "attendance_multiplier": 2,
+                "multiplier_source": "fc",
+                "multiplier_pending": False,
+                "counts_for_stats": True,
+                "pap": {"granted": 3, "capped": 0, "below_minimum": 0, "replaced": 0, "unregistered": 0, "manual": 0},
+            },
         )
         self.assertEqual(entry.reason, "Ended manually")
 
-    def test_multiplier_skips_manual_and_capped_rows(self):
-        manual = f.add_attendance(self.operation, self.pilot, source=AttendanceRecord.Source.MANUAL, value=1)
+    def test_multiplier_skips_manual_rows_and_capped_characters(self):
+        lead = f.create_user(perms=f.FC_LEAD_PERMS)
+        manual = create_manual_attendance(
+            self.operation, actor=lead, character_id=self.pilot_char.character_id, attendance_value=1
+        )
         alt = f.add_alt(self.pilot, "Capped Alt")
-        capped = f.add_attendance(self.operation, self.pilot, alt, granted=False, capped=True)
+        FleetOperation.objects.filter(pk=self.operation.pk).update(pap_character_limit=1)
+        self.set_members(f.esi_member(self.fc_char), f.esi_member(self.pilot_char), f.esi_member(alt))
 
         end_fleet(self.operation, actor=self.fc, attendance_multiplier=3)
 
         manual.refresh_from_db()
-        capped.refresh_from_db()
-        self.assertEqual(manual.attendance_value, 1)
-        self.assertEqual(capped.attendance_value, 1)
-        self.assertEqual(
-            AttendanceRecord.objects.get(
-                operation=self.operation, character_id=self.pilot_char.character_id, source=AttendanceRecord.Source.AUTOMATIC
-            ).attendance_value,
-            3,
+        self.assertEqual((manual.attendance_value, manual.granted), (1, True))
+        capped = AttendanceRecord.objects.get(operation=self.operation, character_id=alt.character_id)
+        self.assertEqual((capped.granted, capped.capped), (False, True))
+        tracked = AttendanceRecord.objects.get(
+            operation=self.operation, character_id=self.pilot_char.character_id, source=AttendanceRecord.Source.AUTOMATIC
         )
+        self.assertEqual((tracked.attendance_value, tracked.granted), (3, True))
 
-    def test_default_multiplier_keeps_current_operation_value(self):
+    def test_without_a_choice_the_fleet_closes_at_1x_with_the_choice_pending(self):
         end_fleet(self.operation, actor=self.fc)
 
         self.operation.refresh_from_db()
         self.assertEqual(self.operation.attendance_multiplier, 1)
+        self.assertEqual((self.operation.multiplier_source, self.operation.multiplier_pending), ("default", True))
         self.assertEqual(audit_actions(self.operation), ["fleet.end"])
 
     def test_final_sync_failure_still_closes_the_fleet(self):
@@ -1383,6 +1412,7 @@ class EndFleetTests(TrackingTestBase):
         self.operation.refresh_from_db()
         self.assertEqual(self.operation.status, Status.CLOSED)
         self.assertFalse(self.operation.tracking_enabled)
+        # The members tracked before the end still get their PAP.
         self.assertEqual(
             AttendanceRecord.objects.get(operation=self.operation, character_id=self.pilot_char.character_id).attendance_value,
             2,
@@ -1547,7 +1577,8 @@ class CreateManualFleetTests(FakeESIMixin, TestCase):
             operation, actor=self.fc, character_id=f.main_of(pilot).character_id, attendance_value=1
         )
 
-        self.assertTrue(record.granted)
+        # Corrections of an FC wait for an FC lead.
+        self.assertEqual((record.review_status, record.granted), ("pending", False))
         self.assertEqual(record.auth_user, pilot)
         self.assertEqual(record.source, AttendanceRecord.Source.MANUAL)
 
@@ -1571,14 +1602,15 @@ class CreateManualFleetTests(FakeESIMixin, TestCase):
                 "formup": "Amamake",
                 "started_at": "2026-10-01 19:00",
                 "ended_at": "2026-10-01 21:00",
-                "attendance_multiplier": "3",
+                "attendance_multiplier": "2",
             }
         )
         self.assertTrue(form.is_valid(), form.errors)
 
         operation = create_manual_fleet(user=self.fc, cleaned_data=form.cleaned_data)
 
-        self.assertEqual(operation.attendance_multiplier, 3)
+        self.assertEqual(operation.attendance_multiplier, 2)
+        self.assertEqual(operation.multiplier_source, "manual")
         self.assertEqual(operation.ended_at - operation.started_at, timedelta(hours=2))
         self.assertTrue(timezone.is_aware(operation.started_at))
 
@@ -1757,6 +1789,12 @@ class ESIFleetCallTests(FakeESIMixin, TestCase):
 
         self.assertEqual(as_dict(obj), {"fleet_id": 5, "role": "fleet_commander"})
         self.assertEqual(as_dict(None), {})
+
+    def test_as_dict_keeps_the_join_time_of_plain_member_objects(self):
+        joined = timezone.now() - timedelta(minutes=7)
+        obj = SimpleNamespace(character_id=7, join_time=joined, station_id=60003760)
+
+        self.assertEqual(as_dict(obj), {"character_id": 7, "join_time": joined, "station_id": 60003760})
 
 
 class ESIUnchangedResponseTests(FakeESIMixin, TestCase):
@@ -1956,7 +1994,7 @@ class KickCapsulesCallTests(TrackingTestBase):
         )
         sync_operation(self.operation)
 
-        result = kick_all_pods(self.operation, actor=self.fc)
+        result = kick_members(self.operation, None, actor=self.fc, purpose=CAPSULES)
 
         self.assertEqual(self.esi.kicks, [podded_char.character_id])
         self.assertEqual(result["target_count"], 1)
@@ -1969,7 +2007,7 @@ class KickCapsulesCallTests(TrackingTestBase):
         self.set_members(f.esi_member(self.pilot_char, ship_type_id=670))
         sync_operation(self.operation)
 
-        result = kick_all_pods(self.operation, actor=self.fc)
+        result = kick_members(self.operation, None, actor=self.fc, purpose=CAPSULES)
 
         self.assertEqual(self.esi.kicks, [])
         self.assertEqual(len(result["failures"]), 1)

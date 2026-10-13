@@ -307,6 +307,17 @@ class StartScheduledFleetTests(SchedulingTestBase):
         self.assertEqual(entry.old_value, {"status": Status.SCHEDULED})
         self.assertTrue(entry.new_value["from_schedule"])
         self.assertEqual(entry.new_value["esi_fleet_id"], FLEET_ID)
+        # The same entry lists what the start did; the earlier pre ping is not one of its steps.
+        self.assertEqual(
+            entry.new_value["steps"],
+            {
+                "fleet_detection": ActionStatus.SUCCESS,
+                "discord_ping": ActionStatus.SUCCESS,
+                "motd_update": ActionStatus.SUCCESS,
+                "tracking_start": ActionStatus.SUCCESS,
+                "srp_link": ActionStatus.SKIPPED,
+            },
+        )
         self.assertFalse(AuditLog.objects.filter(action="fleet.schedule_start").exists())
 
     def test_start_refreshes_the_doctrine_fits(self):

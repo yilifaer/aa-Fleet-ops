@@ -1,0 +1,43 @@
+{% load fleetops_pap tz %}
+<div id="live-pap-status" data-url="{% url 'fleetops:live_pap' %}"{% if live_pap_rows %} data-rows="1"{% endif %}>
+{% if live_pap_rows %}
+<div class="card mb-3 border-info">
+  <div class="card-header"><strong>PAP in running fleets</strong> <span class="small text-muted">Updates every minute while you are in a fleet.</span></div>
+  <ul class="list-group list-group-flush">
+  {% for row in live_pap_rows %}
+    <li class="list-group-item live-pap-row" data-character-id="{{ row.character_id }}">
+      Your character <strong>{{ row.character_name }}</strong> {% if row.in_fleet %}is in{% else %}was in{% endif %} <strong>{{ row.fc_name }}</strong>'s fleet ({{ row.fleet_type }}){% if not row.in_fleet and row.tracked_seconds %} and left{% endif %}{% if row.via_link and not row.in_fleet %}, registered by PAP link{% endif %}{% if row.ending %}. <span class="live-pap-ending">The fleet is ending; PAP is being finalized.</span>{% else %}: {{ row.tracked_seconds|minutes }} in fleet.
+        {% if row.via_link %}<span class="live-pap-link">Registered by PAP link: no minimum time needed.</span>
+        {% elif not row.minimum_seconds %}<span class="live-pap-minimum">Any time in fleet counts for PAP.</span>
+        {% elif row.reached %}<span class="live-pap-minimum">PAP minimum {{ row.minimum_seconds|minutes }} — reached.</span>
+        {% else %}<span class="live-pap-minimum">PAP minimum {{ row.minimum_seconds|minutes }} — not reached yet: {{ row.seconds_to_go|minutes }} to go.</span>{% endif %}
+        {% if row.outcome == 'capped' %}<span class="live-pap-capped">Over the limit of {{ row.operation.pap_character_limit }} character{{ row.operation.pap_character_limit|pluralize }} per player: your character {{ row.capped_by }} gets the PAP.</span>{% endif %}
+      {% endif %}
+      {% if row.as_of %}<span class="small text-muted">As of {{ row.as_of|utc|date:"H:i" }} EVE.</span>{% endif %}
+      {% if row.can_open %}<a class="small ms-1" href="{% url 'fleetops:operation_detail' row.operation.uuid %}">Open fleet</a>{% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}
+</div>
+{% if not live_pap_fragment %}
+<script>
+(function(){
+  // Refreshes the PAP status every minute while the user has characters in running fleets.
+  const box=document.getElementById('live-pap-status');
+  if(!box||!box.dataset.rows||!window.fetch) return;
+  const timer=setInterval(()=>{
+    fetch(box.dataset.url,{credentials:'same-origin'}).then(r=>r.ok?r.text():null).then(html=>{
+      if(html===null) return;
+      const holder=document.createElement('div');
+      holder.innerHTML=html;
+      const fresh=holder.querySelector('#live-pap-status');
+      if(!fresh) return;
+      box.innerHTML=fresh.innerHTML;
+      if(!fresh.dataset.rows) clearInterval(timer);
+    }).catch(()=>{});
+  },60000);
+})();
+</script>
+{% endif %}

@@ -3,6 +3,7 @@ from django.contrib.admin.utils import unquote
 from django.db import transaction
 from django.shortcuts import redirect
 
+from fleetops.forms_config import DiscordWebhookForm
 from fleetops.models import (
     AttendanceRecord,
     AuditLog,
@@ -15,15 +16,20 @@ from fleetops.models import (
     FleetMemberState,
     FleetOperation,
     FleetOpsSettings,
+    FleetStartPreset,
     FleetType,
     IncentivePeriod,
     MessageTemplate,
     MonthlyFCStatistic,
+    MultiplierTier,
     OperationAction,
     OperationActionAttempt,
     OperationRoleAssignment,
+    PapLink,
+    PapRegistration,
     PingRole,
     PingTarget,
+    SpecialRole,
 )
 from fleetops.services.audit import audit
 from fleetops.services.mentions import role_delete_refusal
@@ -121,6 +127,18 @@ class FleetTypeAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
     list_editable = ("point_weight", "is_active", "sort_order")
 
 
+@admin.register(MultiplierTier)
+class MultiplierTierAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
+    list_display = ("threshold_minutes", "multiplier")
+
+
+@admin.register(SpecialRole)
+class SpecialRoleAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
+    list_display = ("name", "key", "grants_fc_credit", "is_active", "sort_order")
+    list_filter = ("grants_fc_credit", "is_active")
+    readonly_fields = ("key",)
+
+
 @admin.register(CommsPreset)
 class CommsPresetAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
     list_display = ("name", "channel_name", "is_active")
@@ -164,8 +182,22 @@ class PingRoleAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
 
 @admin.register(DiscordWebhook)
 class DiscordWebhookAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
+    # The configuration page's form: the webhook URL can be replaced but is never shown.
+    form = DiscordWebhookForm
     list_display = ("name", "is_active", "allow_everyone", "allow_here", "sort_order")
     filter_horizontal = ("allowed_roles",)
+
+    def get_fields(self, request, obj=None):
+        fields = super().get_fields(request, obj)
+        if obj is None or self.has_change_permission(request, obj):
+            return fields
+        # Without the change permission Django shows every field's value as text; the URL holds the
+        # webhook token, so only whether one is stored is shown.
+        return [name if name != "webhook_url" else "webhook_url_stored" for name in fields]
+
+    @admin.display(description="Webhook URL")
+    def webhook_url_stored(self, obj):
+        return "Stored (hidden)" if obj is not None and obj.webhook_url else "Not set"
 
 
 @admin.register(PingTarget)
@@ -199,6 +231,24 @@ class FleetOperationAdmin(admin.ModelAdmin):
     list_filter = ("status", "fleet_type", "tracking_enabled")
     search_fields = ("fc_character_name", "fc_main_character_name", "esi_fleet_id", "uuid")
     readonly_fields = ("uuid", "created_at", "updated_at")
+
+
+@admin.register(PapLink)
+class PapLinkAdmin(admin.ModelAdmin):
+    list_display = ("pk", "operation", "created_by", "created_at", "expires_at", "require_online", "revoked_at")
+    list_filter = ("require_online",)
+
+
+@admin.register(PapRegistration)
+class PapRegistrationAdmin(admin.ModelAdmin):
+    list_display = ("character_name", "operation", "auth_user", "ship_type_name", "solar_system_name", "registered_at")
+    search_fields = ("character_name",)
+
+
+@admin.register(FleetStartPreset)
+class FleetStartPresetAdmin(admin.ModelAdmin):
+    list_display = ("name", "owner", "is_default", "is_last_used", "updated_at")
+    list_filter = ("is_default", "is_last_used")
 
 
 admin.site.register(OperationAction)

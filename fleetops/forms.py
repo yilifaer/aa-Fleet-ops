@@ -18,6 +18,7 @@ from fleetops.forms_config import (  # noqa: F401 - configuration forms, re-expo
 )
 from fleetops.models import (
     MAX_DATABASE_ID,
+    AttendanceRecord,
     ChannelPreset,
     CommsPreset,
     DiscordWebhook,
@@ -25,11 +26,12 @@ from fleetops.models import (
     FleetOperation,
     IncentivePeriod,
     MessageTemplate,
-    OperationRoleAssignment,
     PingRole,
+    SpecialRole,
 )
 from fleetops.providers.doctrines import get_doctrines
 from fleetops.providers.esi import has_scope_token
+from fleetops.services import roster_import
 from fleetops.services.identity import owned_characters
 from fleetops.services.mentions import (
     EVERYONE,
@@ -42,6 +44,8 @@ from fleetops.services.mentions import (
     validate_for_channel,
 )
 from fleetops.services.periods import EVE_CLOCK_PATTERN, format_eve, parse_eve_datetime
+from fleetops.services.roles import participant_rows
+from fleetops.services.roster_paste import clean_name, name_error
 
 PING_NOW = "now"
 PRE_PING = "pre_ping"
@@ -324,21 +328,87 @@ class CancelScheduledFleetForm(forms.Form):
         self.fields["notify"].widget.attrs["class"] = "form-check-input"
 
 
+def multiplier_choices(values=None):
+    """PAP multiplier choices: ``values``, or every configured multiplier."""
+    from fleetops.services.multipliers import all_multipliers
+
+    return [(value, f"{value}x") for value in (all_multipliers() if values is None else values)]
+
+
 class EndFleetForm(forms.Form):
+    """The PAP multiplier the FC picks when ending a fleet.
+
+    Every configured multiplier is accepted here; the end view checks it against the fleet's
+    duration. ``allowed`` limits the radio buttons to what the duration allows.
+    """
+
     attendance_multiplier = forms.TypedChoiceField(
-        label="Attendance Credit",
-        choices=[(1, "1x attendance"), (2, "2x attendance"), (3, "3x attendance")],
-        coerce=int,
-        initial=1,
+        label="PAP multiplier", choices=multiplier_choices, coerce=int, widget=forms.RadioSelect
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, allowed=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["attendance_multiplier"].widget.attrs["class"] = "form-select"
+        field = self.fields["attendance_multiplier"]
+        if allowed is not None:
+            field.widget.choices = multiplier_choices(allowed)
+        field.widget.attrs["class"] = "form-check-input"
 
 
-class FleetAttendanceMultiplierForm(EndFleetForm):
-    pass
+class FleetAttendanceMultiplierForm(forms.Form):
+    """Change the PAP multiplier of a closed fleet.
+
+    The fleet's duration limits the choice. FC leads (``can_override``) may also pick any other
+    configured multiplier, with a written reason.
+    """
+
+    REASON_MIN_LENGTH = 5
+
+    attendance_multiplier = forms.TypedChoiceField(label="PAP multiplier", choices=multiplier_choices, coerce=int)
+    reason = forms.CharField(
+        label="Reason for an override",
+        max_length=255,
+        required=False,
+        help_text="Required when the fleet did not run long enough for the multiplier.",
+    )
+
+    def __init__(self, *args, operation=None, can_override=False, **kwargs):
+        from fleetops.services.multipliers import all_multipliers, allowed_multipliers, fleet_duration
+
+        super().__init__(*args, **kwargs)
+        self.can_override = can_override
+        if operation is None:
+            self.allowed = all_multipliers()
+        else:
+            self.allowed = allowed_multipliers(fleet_duration(operation, operation.ended_at))
+        field = self.fields["attendance_multiplier"]
+        shown = sorted({*self.allowed, *all_multipliers()}) if can_override else self.allowed
+        field.widget.choices = [
+            (value, f"{value}x" if value in self.allowed else f"{value}x (override)") for value in shown
+        ]
+        if not can_override:
+            del self.fields["reason"]
+        _style(self.fields)
+
+    def clean(self):
+        from fleetops.services.multipliers import not_allowed_message
+
+        cleaned = super().clean()
+        multiplier = cleaned.get("attendance_multiplier")
+        if multiplier is None or multiplier in self.allowed:
+            return cleaned
+        if not self.can_override:
+            self.add_error("attendance_multiplier", not_allowed_message(multiplier))
+        elif len((cleaned.get("reason") or "").strip()) < self.REASON_MIN_LENGTH:
+            self.add_error(
+                "reason",
+                f"{not_allowed_message(multiplier)} Give a reason of at least {self.REASON_MIN_LENGTH} "
+                "characters to override the duration rule.",
+            )
+        return cleaned
+
+    @property
+    def is_override(self):
+        return self.cleaned_data["attendance_multiplier"] not in self.allowed
 
 
 class EveDateTimeField(forms.DateTimeField):
@@ -377,9 +447,11 @@ class ManualFleetForm(forms.Form):
         required=False,
     )
     attendance_multiplier = forms.TypedChoiceField(
-        choices=[(1, "1x attendance"), (2, "2x attendance"), (3, "3x attendance")],
+        label="PAP multiplier",
+        choices=multiplier_choices,
         coerce=int,
         initial=1,
+        help_text="Multipliers above 1x need a fleet that ran long enough.",
     )
     notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}))
 
@@ -393,6 +465,17 @@ class ManualFleetForm(forms.Form):
                 field.widget.attrs["class"] = "form-select"
             else:
                 field.widget.attrs["class"] = "form-control"
+
+    def clean_attendance_multiplier(self):
+        # The same duration rule as ending a tracked fleet; the times are cleaned before this field.
+        from fleetops.services.multipliers import allowed_multipliers, not_allowed_message
+
+        multiplier = self.cleaned_data["attendance_multiplier"]
+        started = self.cleaned_data.get("started_at")
+        ended = self.cleaned_data.get("ended_at")
+        if started and ended and ended > started and multiplier not in allowed_multipliers(ended - started):
+            raise forms.ValidationError(not_allowed_message(multiplier))
+        return multiplier
 
     def clean(self):
         data = super().clean()
@@ -480,9 +563,13 @@ class OperationEditForm(forms.ModelForm):
 
 
 class IncentivePeriodForm(forms.ModelForm):
+    """Budget and minimum fleets of an incentive month; the month itself comes from the page."""
+
     class Meta:
         model = IncentivePeriod
-        fields = ["year", "month", "budget", "minimum_fleets"]
+        fields = ["budget", "minimum_fleets"]
+        labels = {"budget": "Budget (ISK)", "minimum_fleets": "Minimum fleets"}
+        help_texts = {"minimum_fleets": "Credited fleets an FC needs in this month to receive a payout."}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -491,12 +578,24 @@ class IncentivePeriodForm(forms.ModelForm):
 
 
 class ManualAttendanceForm(forms.Form):
-    character_id = forms.IntegerField(min_value=1, max_value=MAX_DATABASE_ID)
-    character_name = forms.CharField(max_length=255, required=False)
+    character_name = forms.CharField(
+        label="Character name",
+        max_length=255,
+        required=False,
+        help_text="Looked up in Alliance Auth, then in EVE.",
+    )
+    character_id = forms.IntegerField(
+        label="Character ID",
+        min_value=1,
+        max_value=MAX_DATABASE_ID,
+        required=False,
+        help_text="Optional; use it when the name cannot be looked up.",
+    )
     attendance_value = forms.IntegerField(min_value=1, max_value=100, initial=1)
     duplicate_action = forms.ChoiceField(
-        choices=[("keep", "Keep separate"), ("replace", "Replace automatic"), ("merge", "Merge into automatic")],
-        initial="keep",
+        label="If the character has tracked PAP",
+        choices=AttendanceRecord.Correction.choices,
+        initial=AttendanceRecord.Correction.KEEP,
     )
     notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2}))
 
@@ -509,11 +608,53 @@ class ManualAttendanceForm(forms.Form):
     def clean(self):
         data = super().clean()
         character_id = data.get("character_id")
-        if character_id and not CharacterOwnership.objects.filter(character__character_id=character_id).exists():
-            raise forms.ValidationError(
-                f"Character {character_id} is not registered to any Alliance Auth user, so it cannot receive attendance."
+        if character_id:
+            if not CharacterOwnership.objects.filter(character__character_id=character_id).exists():
+                raise forms.ValidationError(
+                    f"Character {character_id} is not registered to any Alliance Auth user, so it cannot receive attendance."
+                )
+            return data
+        if self.errors:
+            # The name is only looked up for an entry that can be saved.
+            return data
+        name = clean_name(data.get("character_name", ""))
+        if not name:
+            raise forms.ValidationError("Enter a character name or a character ID.")
+        error = name_error(name)
+        if error:
+            self.add_error("character_name", f"'{name}' cannot be an EVE character name. {error}")
+            return data
+        resolved = roster_import.resolve_character_name(name)
+        if resolved.status == roster_import.AUTH:
+            data["character_id"] = resolved.character_id
+            data["character_name"] = resolved.name
+        elif resolved.status == roster_import.NOT_IN_AUTH:
+            self.add_error(
+                "character_name",
+                f"Character '{resolved.name}' exists in EVE but is not registered in Alliance Auth, "
+                "so it cannot receive PAP.",
             )
+        elif resolved.status == roster_import.ERROR:
+            self.add_error(
+                "character_name",
+                f"Could not look the name up in ESI ({resolved.error.rstrip('.')}). Enter the character ID instead.",
+            )
+        else:
+            self.add_error("character_name", f"No EVE character named '{name}' was found.")
         return data
+
+
+def manageable_attendance_operations(user):
+    """Active and closed fleets whose PAP ``user`` may correct, newest first."""
+    qs = FleetOperation.objects.filter(
+        status__in=[FleetOperation.Status.ACTIVE, FleetOperation.Status.CLOSED]
+    ).select_related("fleet_type", "fc_user")
+    if user is not None and not user.has_perm("fleetops.manage_fleets"):
+        qs = qs.filter(
+            Q(fc_user=user)
+            | Q(role_assignments__auth_user=user, role_assignments__grants_fc_credit=True)
+        ).distinct()
+    return qs.order_by("-started_at")
 
 
 class HistoricalManualAttendanceForm(ManualAttendanceForm):
@@ -522,38 +663,54 @@ class HistoricalManualAttendanceForm(ManualAttendanceForm):
         label="Historical Fleet",
         help_text="Active and closed fleets are available. Repeat entries or use Attendance Value > 1 when multiple credits are required.",
     )
+    field_order = ["operation"]
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        qs = FleetOperation.objects.filter(
-            status__in=[FleetOperation.Status.ACTIVE, FleetOperation.Status.CLOSED]
-        ).select_related("fleet_type", "fc_user")
-        if user is not None and not user.has_perm("fleetops.manage_fleets"):
-            qs = qs.filter(
-                Q(fc_user=user)
-                | Q(role_assignments__auth_user=user, role_assignments__grants_fc_credit=True)
-            ).distinct()
-        self.fields["operation"].queryset = qs.order_by("-started_at")
+        self.fields["operation"].queryset = manageable_attendance_operations(user)
         self.fields["operation"].widget.attrs["class"] = "form-select"
 
 
 class OperationRoleAssignmentForm(forms.Form):
-    role = forms.ChoiceField(choices=OperationRoleAssignment.Role.choices)
+    role = forms.ModelChoiceField(
+        queryset=SpecialRole.objects.none(),
+        to_field_name="key",
+        empty_label=None,
+        help_text="Roles marked FC credit count the fleet as an FC fleet for the pilot's FC points and incentives.",
+    )
     character_id = forms.ChoiceField(label="Fleet Member")
     notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2}))
 
     def __init__(self, *args, operation=None, **kwargs):
         super().__init__(*args, **kwargs)
-        choices = []
-        if operation is not None:
-            choices = [
-                (str(member.character_id), f"{member.character_name} — {member.corporation_name or 'Unknown corp'}")
-                for member in operation.member_states.all().order_by("character_name")
-            ]
-        self.fields["character_id"].choices = choices
+        self.fields["role"].queryset = SpecialRole.objects.filter(is_active=True)
+        self.fields["role"].label_from_instance = _role_label
+        self.fields["character_id"].choices = _fleet_member_choices(operation) if operation is not None else []
         self.fields["role"].widget.attrs["class"] = "form-select"
         self.fields["character_id"].widget.attrs["class"] = "form-select"
         self.fields["notes"].widget.attrs["class"] = "form-control"
 
     def clean_character_id(self):
         return int(self.cleaned_data["character_id"])
+
+
+def _role_label(role):
+    return f"{role.name} (FC credit)" if role.grants_fc_credit else role.name
+
+
+def _fleet_member_choices(operation):
+    """Everybody recorded in the fleet: tracked members, PAP link registrations and PAP rows (``participant_rows``)."""
+    names = {}
+    corporations = {}
+    for character_id, name, corporation in operation.member_states.values_list(
+        "character_id", "character_name", "corporation_name"
+    ):
+        names.setdefault(character_id, name)
+        corporations.setdefault(character_id, corporation)
+    for source in (operation.pap_registrations, participant_rows(operation)):
+        for character_id, name in source.values_list("character_id", "character_name"):
+            names.setdefault(character_id, name)
+    return [
+        (str(character_id), f"{name} — {corporations[character_id] or 'Unknown corp'}" if character_id in corporations else name)
+        for character_id, name in sorted(names.items(), key=lambda item: (item[1].casefold(), item[0]))
+    ]

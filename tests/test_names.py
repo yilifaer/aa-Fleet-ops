@@ -745,8 +745,10 @@ class MemberListPageTests(TestCase):
     def test_member_without_auth_account_is_marked_and_linked(self):
         content = self.page(self.fc)
 
-        self.assertIn('Outside Pilot <span class="badge bg-secondary">Not in Alliance Auth</span>', content)
-        self.assertEqual(content.count("Not in Alliance Auth"), 1)
+        badge = '<span class="badge bg-secondary">Not in Alliance Auth</span>'
+        self.assertIn(f"Outside Pilot {badge}", content)
+        # Members with an account are not marked; the PAP preview lists the pilot once more without PAP.
+        self.assertEqual(content.count(badge), 1)
         self.assertIn(f'href="https://evewho.com/character/{PILOT}" target="_blank" rel="noopener noreferrer"', content)
         self.assertIn(f'href="https://zkillboard.com/character/{PILOT}/" target="_blank" rel="noopener noreferrer"', content)
         self.assertIn('Outside Corp<div class="small text-muted">Outside Alliance</div>', content)

@@ -1,0 +1,22 @@
+{% if can_manage and attendance_prompt_eligible %}
+<div class="modal fade" id="endFleetModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title">End Fleet & Finalize Attendance</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <form method="post" action="{% url 'fleetops:end_fleet' operation.uuid %}" class="end-fleet-form">{% csrf_token %}
+      <div class="modal-body">
+        {% if end_prompt.mode == 'auto' %}
+          <p id="end-auto-multiplier">PAP will be finalized at <strong>{{ end_prompt.multiplier }}x</strong> (fleet ran {{ end_prompt.duration }}{% if end_prompt.threshold %}, more than {{ end_prompt.threshold }} minutes{% endif %}).</p>
+        {% else %}
+          <p>This fleet has run <strong>{{ end_prompt.duration }}</strong>. Multipliers above 1x need: {{ end_prompt.requirements }}.</p>
+          <fieldset id="end-multiplier-choice">
+            <legend class="form-label fs-6">Choose the PAP multiplier</legend>
+            {% for radio in end_form.attendance_multiplier %}<div class="form-check form-check-inline">{{ radio.tag }}<label class="form-check-label" for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label></div>{% endfor %}
+          </fieldset>
+        {% endif %}
+        <div class="form-text">The multiplier can be changed later from the Attendance tab within the duration rule.</div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button class="btn btn-danger">End Fleet</button></div>
+    </form>
+  </div></div>
+</div>
+{% endif %}

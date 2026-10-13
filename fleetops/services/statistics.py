@@ -5,6 +5,7 @@ from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
 from fleetops.models import AttendanceRecord, FleetMemberState, FleetOperation, OperationRoleAssignment
+from fleetops.services.counting import counted_attendance, counted_operation_q, counted_operations
 from fleetops.services.history import apply_current_membership_filter, current_member_user_ids, retention_cutoff
 from fleetops.services.identity import corporation_main_count
 
@@ -19,19 +20,16 @@ def month_bounds(year: int, month: int):
 
 
 def attendance_queryset(year, month):
+    """Counted PAP of the month; PAP is credited to the main of the character's owner."""
     start, end = month_bounds(year, month)
-    qs = AttendanceRecord.objects.filter(
-        granted=True,
-        operation__started_at__gte=start,
-        operation__started_at__lt=end,
+    qs = counted_attendance(
+        AttendanceRecord.objects.filter(operation__started_at__gte=start, operation__started_at__lt=end)
     ).select_related("operation__fleet_type")
     return apply_current_membership_filter(qs)
 
 
 def attendance_history_queryset(*, user=None, corporation_id=None, alliance=False, days=365):
-    qs = AttendanceRecord.objects.filter(granted=True).select_related(
-        "operation", "operation__fleet_type", "auth_user"
-    )
+    qs = counted_attendance().select_related("operation", "operation__fleet_type", "auth_user")
     since = retention_cutoff(days)
     if since is not None:
         qs = qs.filter(operation__started_at__gte=since)
@@ -54,6 +52,7 @@ def member_statistics(user, year, month):
     start, end = month_bounds(year, month)
     top_ships = list(
         FleetMemberState.objects.filter(
+            counted_operation_q("operation__"),
             auth_user=user,
             operation__started_at__gte=start,
             operation__started_at__lt=end,
@@ -76,20 +75,25 @@ def member_statistics(user, year, month):
         .annotate(attendance=Sum("attendance_value"))
         .order_by("operation__started_at__date")
     )
-    role_counts = {
-        row["role"]: row["count"]
-        for row in OperationRoleAssignment.objects.filter(
+    role_rows = (
+        OperationRoleAssignment.objects.filter(
+            counted_operation_q("operation__"),
             auth_user=user,
             operation__started_at__gte=start,
             operation__started_at__lt=end,
         )
-        .values("role")
+        .values("role", "special_role__name")
         .annotate(count=Count("id"))
-    }
+        .order_by("special_role__sort_order", "special_role__name", "role")
+    )
     role_labels = dict(OperationRoleAssignment.Role.choices)
     roles = [
-        {"key": key, "label": role_labels.get(key, key), "count": count}
-        for key, count in role_counts.items()
+        {
+            "key": row["role"],
+            "label": row["special_role__name"] or role_labels.get(row["role"], row["role"]),
+            "count": row["count"],
+        }
+        for row in role_rows
     ]
     fc_stats = fc_statistics(user, year, month)
     return {
@@ -126,19 +130,18 @@ def corporation_statistics(corporation_id: int, year: int, month: int):
 def fc_operations_queryset(user, year: int, month: int, *, include_active=False):
     """Operations credited to an FC, including post-fleet special-role FC credits.
 
-    Only Closed fleets count, matching the FC incentive rules. ``include_active``
-    also counts fleets that are still running (used by the dashboard).
+    Only counted fleets count (closed, approved, not excluded), matching the FC incentive rules.
+    ``include_active`` also counts fleets that are still running (used by the dashboard).
     Users who left the configured alliances have no FC statistics.
     """
     member_ids = current_member_user_ids()
     if member_ids is not None and user.pk not in member_ids:
         return FleetOperation.objects.none()
-    statuses = [FleetOperation.Status.CLOSED]
-    if include_active:
-        statuses.append(FleetOperation.Status.ACTIVE)
     start, end = month_bounds(year, month)
     return (
-        FleetOperation.objects.filter(started_at__gte=start, started_at__lt=end, status__in=statuses)
+        counted_operations(
+            FleetOperation.objects.filter(started_at__gte=start, started_at__lt=end), include_active=include_active
+        )
         .filter(
             Q(fc_user=user)
             | Q(role_assignments__auth_user=user, role_assignments__grants_fc_credit=True)
@@ -148,13 +151,17 @@ def fc_operations_queryset(user, year: int, month: int, *, include_active=False)
 
 
 def fc_statistics(user, year: int, month: int, *, include_active=False):
+    """FC fleets and points of a month; a fleet gives its type's weight times its PAP multiplier.
+
+    A fleet whose multiplier choice is still pending counts at 1x until the FC chooses.
+    """
     qs = fc_operations_queryset(user, year, month, include_active=include_active)
     breakdown = defaultdict(lambda: {"count": 0, "points": 0.0})
     points = 0.0
     operations = list(qs.select_related("fleet_type"))
     for op in operations:
         key = str(op.fleet_type)
-        p = float(op.fleet_point_weight_snapshot)
+        p = float(op.fc_points)
         breakdown[key]["count"] += 1
         breakdown[key]["points"] += p
         points += p

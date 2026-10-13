@@ -490,7 +490,7 @@ class EndFleetTests(TestCase):
     def end(self, operation, data):
         return self.client.post(reverse("fleetops:end_fleet", args=[operation.uuid]), data)
 
-    def test_missing_multiplier_keeps_the_current_one(self):
+    def test_short_fleet_without_a_choice_closes_at_1x(self):
         for data in ({}, {"attendance_multiplier": ""}):
             with self.subTest(data=data):
                 operation = f.create_operation(self.fc, attendance_multiplier=2)
@@ -498,11 +498,12 @@ class EndFleetTests(TestCase):
                 response = self.end(operation, data)
 
                 operation.refresh_from_db()
-                self.assertEqual((operation.status, operation.attendance_multiplier), (Status.CLOSED, 2))
-                self.assertIn("Fleet ended. Attendance finalized at 2x.", message_texts(response))
+                self.assertEqual((operation.status, operation.attendance_multiplier), (Status.CLOSED, 1))
+                self.assertFalse(operation.multiplier_pending)
+                self.assertIn("Fleet ended. Attendance finalized at 1x.", message_texts(response))
 
     def test_invalid_multiplier_does_not_end_the_fleet(self):
-        for value in ("0", "4", "abc", "2.5"):
+        for value in ("0", "4", "11", "abc", "2.5"):
             with self.subTest(value=value):
                 operation = f.create_operation(self.fc, attendance_multiplier=2)
 
@@ -516,11 +517,11 @@ class EndFleetTests(TestCase):
                 operation.refresh_from_db()
                 self.assertEqual((operation.status, operation.attendance_multiplier), (Status.ACTIVE, 2))
                 self.assertIn(
-                    "Attendance multiplier must be 1x, 2x or 3x. The fleet was not ended.", message_texts(response)
+                    "Choose one of the PAP multipliers (1x, 2x, 3x). The fleet was not ended.", message_texts(response)
                 )
 
     def test_chosen_multiplier_is_applied(self):
-        operation = f.create_operation(self.fc)
+        operation = f.create_operation(self.fc, started_at=timezone.now() - timedelta(minutes=200))
         self.end(operation, {"attendance_multiplier": "3"})
         operation.refresh_from_db()
         self.assertEqual((operation.status, operation.attendance_multiplier), (Status.CLOSED, 3))
@@ -733,11 +734,16 @@ class ManualRecordStatusTests(TestCase):
 
         self.assertRedirects(response, reverse("fleetops:manual_attendance"), fetch_redirect_response=False)
         record = AttendanceRecord.objects.get(operation=operation)
-        self.assertEqual((record.source, record.attendance_value, record.granted), (MANUAL, 2, True))
+        # An FC's correction waits for an FC lead before it counts.
+        self.assertEqual((record.source, record.attendance_value, record.granted), (MANUAL, 2, False))
+        self.assertEqual(record.review_status, "pending")
         self.assertEqual((record.auth_user, record.created_by, record.notes), (self.pilot, self.fc, "Late login"))
         entry = AuditLog.objects.get(action="attendance.manual_create")
         self.assertEqual((entry.actor, entry.object_type, entry.object_id), (self.fc, "AttendanceRecord", str(record.pk)))
-        self.assertEqual(entry.new_value, {"attendance_value": 2, "operation": str(operation.uuid)})
+        self.assertEqual(
+            entry.new_value,
+            {"attendance_value": 2, "operation": str(operation.uuid), "correction": "keep", "review_status": "pending"},
+        )
 
     def test_special_roles_only_on_active_or_closed_fleets(self):
         for status in (Status.DRAFT, Status.CANCELLED, Status.ERROR):
@@ -758,6 +764,7 @@ class ManualRecordStatusTests(TestCase):
                         operation, actor=self.fc, role=Role.LOGI_ANCHOR, character_id=f.main_of(self.pilot).character_id
                     )
         closed = closed_op(self.fc, timezone.now() - timedelta(hours=3))
+        track(closed, self.pilot)
         add_role_assignment(closed, actor=self.fc, role=Role.LOGI_ANCHOR, character_id=f.main_of(self.pilot).character_id)
         self.assertTrue(OperationRoleAssignment.objects.filter(operation=closed).exists())
 

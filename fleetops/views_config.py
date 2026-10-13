@@ -21,6 +21,8 @@ from fleetops.forms_config import (
     MessageTemplateForm,
     PingRoleForm,
 )
+from fleetops.forms_pap import MultiplierTierForm
+from fleetops.forms_records import SpecialRoleForm
 from fleetops.models import (
     AuditLog,
     ChannelPreset,
@@ -29,7 +31,9 @@ from fleetops.models import (
     FleetOpsSettings,
     FleetType,
     MessageTemplate,
+    MultiplierTier,
     PingRole,
+    SpecialRole,
 )
 from fleetops.services import discord_roles, links
 from fleetops.services.audit import audit
@@ -49,6 +53,28 @@ CONFIG_SECTIONS = {
             ("Name", "name"),
             ("Short name", "short_name"),
             ("Point weight", "point_weight"),
+            ("Active", "is_active"),
+            ("Sort", "sort_order"),
+        ],
+    },
+    "multiplier-tiers": {
+        "title": "PAP Multipliers",
+        "description": "Fleets running longer than a threshold can get a higher PAP multiplier. Shorter fleets get 1x.",
+        "model": MultiplierTier,
+        "form": MultiplierTierForm,
+        "columns": [
+            ("Longer than (minutes)", "threshold_minutes"),
+            ("PAP multiplier", "multiplier"),
+        ],
+    },
+    "special-roles": {
+        "title": "Special Roles",
+        "description": "Roles FCs assign to pilots in a fleet, such as Back Seat FC, and whether a role gives FC credit.",
+        "model": SpecialRole,
+        "form": SpecialRoleForm,
+        "columns": [
+            ("Name", "name"),
+            ("Gives FC credit", "grants_fc_credit"),
             ("Active", "is_active"),
             ("Sort", "sort_order"),
         ],
@@ -82,7 +108,7 @@ CONFIG_SECTIONS = {
     },
     "ping-channels": {
         "title": "Ping Channels",
-        "description": "Discord channels FCs can send pings to, and the mentions each channel allows. Webhook secrets are only available to configuration managers.",
+        "description": "Discord channels FCs can send pings to, and the mentions each channel allows. Webhook URLs can be replaced but are never shown again.",
         "model": DiscordWebhook,
         "form": DiscordWebhookForm,
         "columns": [

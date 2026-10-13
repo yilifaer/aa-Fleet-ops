@@ -4,6 +4,7 @@ from django.db.models import Count, Sum
 from django.utils import timezone
 
 from fleetops.models import AttendanceRecord, FleetMemberState, FleetType
+from fleetops.services.counting import counted_attendance, counted_operation_q
 from fleetops.services.history import apply_current_membership_filter
 from fleetops.services.statistics import month_bounds
 
@@ -12,7 +13,7 @@ def dashboard_metrics(user):
     now = timezone.now()
     month_start, _ = month_bounds(now.year, now.month)
     attendance = apply_current_membership_filter(
-        AttendanceRecord.objects.filter(auth_user=user, granted=True).select_related("operation__fleet_type")
+        counted_attendance(AttendanceRecord.objects.filter(auth_user=user)).select_related("operation__fleet_type")
     )
     types = list(FleetType.objects.filter(is_active=True).order_by("sort_order", "name")[:4])
     cards = []
@@ -46,7 +47,7 @@ def dashboard_metrics(user):
     recent = list(grouped.values())
 
     top_ship_rows = (
-        FleetMemberState.objects.filter(auth_user=user)
+        FleetMemberState.objects.filter(counted_operation_q("operation__"), auth_user=user)
         .exclude(ship_type_id=None)
         .values("ship_type_id", "ship_type_name")
         .annotate(uses=Count("operation_id", distinct=True))

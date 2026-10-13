@@ -2,7 +2,10 @@ from dataclasses import dataclass
 
 from allianceauth.services.hooks import get_extension_logger
 from django.apps import apps
+from django.contrib.auth.models import Group
 from django.core.exceptions import ObjectDoesNotExist
+from django.db import transaction
+from django.db.models import Q
 from django.urls import NoReverseMatch, reverse
 from django.utils import translation
 
@@ -11,7 +14,8 @@ from fleetops.services import links
 logger = get_extension_logger(__name__)
 
 # doctrine_source of doctrines picked from the community fittings app.
-FITTINGS_DOCTRINE_SOURCE = "fittings:fittings.doctrine"
+FITTINGS_DOCTRINE_MODEL = "fittings.doctrine"
+FITTINGS_DOCTRINE_SOURCE = f"fittings:{FITTINGS_DOCTRINE_MODEL}"
 
 
 @dataclass(slots=True)
@@ -39,6 +43,44 @@ def _fittings_configs():
     return matches
 
 
+def _doctrine_visibility(model, user):
+    """Filter for the Fittings doctrines ``user`` may see; None when every doctrine is shown.
+
+    Fittings' own rule: ``fittings.manage`` sees everything; any other user sees doctrines without
+    a category, in a category without groups, or in a category of one of the user's groups. Only
+    the Fittings ``Doctrine`` model is filtered, and only when its layout is the one this rule
+    was written for; anything else keeps the full list.
+    """
+    if user is None or model._meta.label_lower != FITTINGS_DOCTRINE_MODEL:
+        return None
+    if user.has_perm("fittings.manage"):
+        return None
+    try:
+        relation = next(field for field in model._meta.get_fields() if field.name == "category")
+        groups = relation.related_model._meta.get_field("groups")
+    except Exception:
+        return None
+    if not (getattr(relation, "many_to_many", False) and groups.many_to_many and groups.related_model is Group):
+        return None
+    return (
+        Q(category__isnull=True)
+        | Q(category__groups__isnull=True)
+        | Q(category__groups__in=user.groups.all())
+    )
+
+
+def _doctrine_rows(model, user):
+    visible = _doctrine_visibility(model, user)
+    if visible is not None:
+        try:
+            # A savepoint, so a failed query leaves an outer transaction usable.
+            with transaction.atomic():
+                return list(model.objects.filter(visible).distinct()[:500])
+        except Exception:
+            logger.debug("Could not filter the Fittings doctrines for %s; listing all.", user, exc_info=True)
+    return list(model.objects.all()[:500])
+
+
 def get_doctrines(user=None) -> list[DoctrineChoice]:
     """Best-effort soft integration with the community `fittings` app.
 
@@ -46,8 +88,8 @@ def get_doctrines(user=None) -> list[DoctrineChoice]:
     a doctrine-like model and readable name field and fall back to None/Custom
     when an installed revision exposes a layout we do not recognize.
 
-    ``user`` is reserved for Fittings' group/category visibility; until that
-    filter exists every caller gets the full list, as with ``user=None``.
+    ``user`` None lists every doctrine (configuration forms); with a user, Fittings' doctrines
+    are limited to the ones Fittings shows that user (category groups).
     """
     candidates = []
     seen = set()
@@ -68,8 +110,7 @@ def get_doctrines(user=None) -> list[DoctrineChoice]:
             if not name_field:
                 continue
             try:
-                queryset = model.objects.all()
-                for obj in queryset[:500]:
+                for obj in _doctrine_rows(model, user):
                     key = (model._meta.label_lower, str(obj.pk))
                     if key in seen:
                         continue

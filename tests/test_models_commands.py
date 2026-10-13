@@ -28,6 +28,7 @@ from fleetops.constants import (
     FLEET_WRITE_SCOPE,
 )
 from fleetops.models import (
+    MAX_MULTIPLIER,
     AttendanceRecord,
     AuditLog,
     ChannelPreset,
@@ -39,6 +40,7 @@ from fleetops.models import (
     FleetMemberState,
     FleetOperation,
     FleetOpsSettings,
+    FleetStartPreset,
     FleetType,
     IncentivePeriod,
     MessageTemplate,
@@ -337,11 +339,11 @@ class ModelDefaultsAndConstraintsTests(TestCase):
         with self.assertRaises(IntegrityError), transaction.atomic():
             FleetOperation.objects.filter(pk=other.pk).update(start_request_id=request_id)
 
-    def test_attendance_multiplier_accepts_only_one_to_three(self):
+    def test_attendance_multiplier_accepts_one_to_the_maximum(self):
         field = FleetOperation._meta.get_field("attendance_multiplier")
-        for value in (1, 2, 3):
+        for value in (1, 2, 3, MAX_MULTIPLIER):
             field.run_validators(value)
-        for value in (0, 4):
+        for value in (0, MAX_MULTIPLIER + 1):
             with self.subTest(value=value), self.assertRaises(ValidationError):
                 field.run_validators(value)
 
@@ -983,6 +985,9 @@ class AdminTests(TestCase):
         OperationRoleAssignment.objects.create(
             operation=cls.operation, role="backseat_fc", character_id=2, character_name="Bravo"
         )
+        link = f.pap_link(cls.operation)
+        f.registration(cls.operation, f.main_of(cls.fc), link=link)
+        FleetStartPreset.objects.create(owner=cls.fc, name="Roam", values={"fields": {"formup": "Jita"}})
         period = IncentivePeriod.objects.create(year=2026, month=9)
         MonthlyFCStatistic.objects.create(period=period, fc_user=cls.fc)
         AuditLog.objects.create(
@@ -1052,6 +1057,10 @@ class AdminTests(TestCase):
             "history_alliance_ids": "",
             "srp_auto_create": "on",
             "srp_provider": "auto",
+            "multiplier_mode": "fc",
+            "pap_minimum_minutes": 0,
+            "minimum_fleet_minutes": 0,
+            "pap_link_minutes": 30,
         }
         url = self._url(FleetOpsSettings, "change", 1)
 
@@ -1076,9 +1085,10 @@ class AdminTests(TestCase):
                 self.assertNotIn(WEBHOOK_SECRET, content)
                 self.assertNotIn("sUp3r-s3cret", content)
 
-    def test_webhook_url_only_shown_in_its_edit_form(self):
+    def test_webhook_url_never_shown_in_its_edit_form(self):
         content = self.client.get(self._url(DiscordWebhook, "change", self.webhook.pk)).content.decode()
-        self.assertIn("sUp3r-s3cret", content)
+        self.assertIn("Ops Pings", content)
+        self.assertNotIn("sUp3r-s3cret", content)
 
         changelist = self.client.get(self._url(DiscordWebhook, "changelist")).content.decode()
         self.assertIn("Ops Pings", changelist)

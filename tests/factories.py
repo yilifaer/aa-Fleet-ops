@@ -7,6 +7,7 @@ characters, ownerships, tokens and operations are created consistently.
 from __future__ import annotations
 
 import itertools
+import secrets
 from datetime import timedelta
 from decimal import Decimal
 
@@ -20,11 +21,16 @@ from fleetops.constants import DEFAULT_MOTD_TEMPLATE, DEFAULT_PING_TEMPLATE, FLE
 from fleetops.models import (
     AttendanceRecord,
     DiscordWebhook,
+    FleetMemberState,
     FleetOperation,
     FleetOpsSettings,
     FleetType,
     MessageTemplate,
+    MultiplierTier,
+    PapLink,
+    PapRegistration,
     PingRole,
+    SpecialRole,
 )
 
 _ids = itertools.count(90_000_001)
@@ -260,6 +266,7 @@ def add_attendance(
     source: str = AttendanceRecord.Source.AUTOMATIC,
     granted: bool = True,
     capped: bool = False,
+    **extra,
 ) -> AttendanceRecord:
     character = character or main_of(user)
     main = main_of(user)
@@ -278,6 +285,7 @@ def add_attendance(
         capped=capped,
         first_seen=operation.started_at,
         last_seen=operation.started_at,
+        **extra,
     )
 
 
@@ -297,3 +305,119 @@ def esi_member(character: EveCharacter, **overrides) -> dict:
     }
     row.update(overrides)
     return row
+
+
+def multiplier_tiers(*tiers: tuple[int, int]) -> list[MultiplierTier]:
+    """Replace the multiplier tiers with ``(threshold minutes, multiplier)`` pairs (90 -> 2x, 180 -> 3x by default)."""
+    MultiplierTier.objects.all().delete()
+    return [
+        MultiplierTier.objects.create(threshold_minutes=minutes, multiplier=multiplier)
+        for minutes, multiplier in (tiers or ((90, 2), (180, 3)))
+    ]
+
+
+def special_role(name: str | None = None, *, key: str = "", grants_fc_credit: bool = False, **extra) -> SpecialRole:
+    """A special role. A ``key`` of an existing role, such as the seeded ``backseat_fc``, updates and returns it."""
+    role = SpecialRole.objects.filter(key=key).first() if key else None
+    if role is None:
+        return SpecialRole.objects.create(
+            key=key, name=name or f"Role {next_id()}", grants_fc_credit=grants_fc_credit, **extra
+        )
+    role.grants_fc_credit = grants_fc_credit
+    if name:
+        role.name = name
+    for field, value in extra.items():
+        setattr(role, field, value)
+    role.save()
+    return role
+
+
+def owner_of(character_id: int):
+    ownership = (
+        CharacterOwnership.objects.filter(character__character_id=character_id).select_related("user").first()
+    )
+    return ownership.user if ownership else None
+
+
+def _character(character: EveCharacter | int, name: str | None):
+    """``(character_id, name, EveCharacter or None)``; an int is a character Alliance Auth does not know."""
+    if isinstance(character, EveCharacter):
+        return character.character_id, name or character.character_name, character
+    return int(character), name or f"Pilot {character}", None
+
+
+def member_state(
+    operation: FleetOperation,
+    character: EveCharacter | int,
+    *,
+    accumulated_seconds: int = 0,
+    active: bool = True,
+    user=None,
+    name: str | None = None,
+    **extra,
+) -> FleetMemberState:
+    """A tracked fleet member with the character's own corporation, its owner and the owner's main.
+
+    ``character`` may be a bare character ID for a pilot without Alliance Auth account.
+    """
+    character_id, character_name, eve_character = _character(character, name)
+    user = user or owner_of(character_id)
+    main = main_of(user) if user else None
+    first_seen = operation.started_at or timezone.now()
+    last_seen = timezone.now() if active else (operation.ended_at or timezone.now())
+    values = dict(
+        character_name=character_name,
+        main_character_id=main.character_id if main else None,
+        main_character_name=main.character_name if main else "",
+        auth_user=user,
+        corporation_id=eve_character.corporation_id if eve_character else None,
+        corporation_name=eve_character.corporation_name if eve_character else "",
+        alliance_id=eve_character.alliance_id if eve_character else None,
+        alliance_name=eve_character.alliance_name if eve_character else "",
+        first_seen=first_seen,
+        last_seen=last_seen,
+        left_at=None if active else last_seen,
+        is_active=active,
+        accumulated_seconds=accumulated_seconds,
+    )
+    values.update(extra)
+    return FleetMemberState.objects.create(operation=operation, character_id=character_id, **values)
+
+
+def pap_link(
+    operation: FleetOperation,
+    *,
+    created_by=None,
+    minutes: int = 30,
+    require_online: bool = True,
+    **extra,
+) -> PapLink:
+    values = dict(
+        code=secrets.token_urlsafe(24),
+        created_by=created_by or operation.fc_user,
+        expires_at=timezone.now() + timedelta(minutes=minutes),
+        require_online=require_online,
+    )
+    values.update(extra)
+    return PapLink.objects.create(operation=operation, **values)
+
+
+def registration(
+    operation: FleetOperation,
+    character: EveCharacter | int,
+    *,
+    link: PapLink | None = None,
+    user=None,
+    name: str | None = None,
+    **extra,
+) -> PapRegistration:
+    """A character registered for PAP through a PAP link of the fleet."""
+    character_id, character_name, _eve_character = _character(character, name)
+    values = dict(
+        link=link,
+        character_name=character_name,
+        auth_user=user or owner_of(character_id),
+        online=True,
+    )
+    values.update(extra)
+    return PapRegistration.objects.create(operation=operation, character_id=character_id, **values)

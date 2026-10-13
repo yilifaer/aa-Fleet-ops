@@ -1,0 +1,57 @@
+{% extends "fleetops/base.html" %}
+{% load fleetops_messages %}
+{% block fleetops_content %}
+<div class="mb-3"><h2 class="mb-1">Approvals</h2><div class="text-muted">Manual fleets, edited fleet times and manual PAP waiting for FC lead approval</div></div>
+
+<div class="card mb-3" id="pending-fleets"><div class="card-header"><strong>Fleets waiting for approval</strong> <span class="badge bg-warning text-dark">{{ pending_fleets|length }}</span></div>
+<div class="table-responsive"><table class="table table-sm align-middle mb-0">
+  <thead><tr><th>Fleet</th><th>FC</th><th>Start (EVE)</th><th>End (EVE)</th><th>Duration</th><th>Created by</th><th>PAP rows waiting</th><th>Decision</th></tr></thead>
+  <tbody>{% for op in pending_fleets %}<tr>
+    <td><a href="{% url 'fleetops:operation_detail' op.uuid %}">{{ op.fleet_type }}</a>{% if op.link_only %} <span class="badge bg-info text-dark">PAP link</span>{% elif op.is_manual %} <span class="badge bg-secondary">Manual</span>{% else %} <span class="badge bg-warning text-dark" title="An FC changed the times of this tracked fleet.">Times edited</span>{% endif %}<div class="small text-muted">{{ op.get_status_display }}</div></td>
+    <td>{{ op.fc_character_name }}</td>
+    <td class="text-nowrap">{{ op.started_at|eve_time|default:"—" }}</td>
+    <td class="text-nowrap">{{ op.ended_at|eve_time|default:"—" }}</td>
+    <td class="text-nowrap">{{ op.duration_text|default:"—" }}{% if op.status == 'closed' %}<div class="small text-muted">PAP {{ op.attendance_multiplier }}x</div>{% endif %}</td>
+    <td>{{ op.created_by.profile.main_character|default:op.created_by }}</td>
+    <td>{{ op.pending_rows }}</td>
+    <td style="min-width:20rem"><form method="post" action="{% url 'fleetops:review_operation' op.uuid %}" class="d-flex flex-wrap gap-1 align-items-center">{% csrf_token %}
+      <input class="form-control form-control-sm" name="note" maxlength="255" placeholder="Note (required to reject)" aria-label="Note for {{ op.fleet_type }}">
+      <div class="form-check"><input class="form-check-input" type="checkbox" name="include_attendance" id="include-{{ op.pk }}" checked><label class="form-check-label small" for="include-{{ op.pk }}">With its PAP rows</label></div>
+      <button class="btn btn-sm btn-success" name="action" value="approve">Approve</button>
+      <button class="btn btn-sm btn-outline-danger" name="action" value="reject">Reject</button>
+    </form></td>
+  </tr>{% empty %}<tr><td colspan="8" class="text-muted p-4">No fleets are waiting for approval.</td></tr>{% endfor %}</tbody>
+</table></div></div>
+
+<div class="card" id="pending-pap"><div class="card-header"><strong>Manual PAP waiting for approval</strong></div>
+{% if row_groups %}
+<form method="post" action="{% url 'fleetops:review_attendance' %}">{% csrf_token %}
+<div class="table-responsive"><table class="table table-sm align-middle mb-0">
+  <thead><tr><th><input class="form-check-input" type="checkbox" id="select-all-pap" aria-label="Select all"></th><th>Character</th><th>Main</th><th>Value</th><th>Correction</th><th>Source</th><th>Notes</th><th>Added by</th></tr></thead>
+  {% for group in row_groups %}<tbody>
+    <tr class="table-light"><th colspan="8"><a href="{% url 'fleetops:operation_detail' group.operation.uuid %}">{{ group.operation.started_at|eve_time }} EVE · {{ group.operation.fleet_type }} · FC {{ group.operation.fc_character_name }}</a>
+      {% if group.operation.review_status == 'pending' %} <span class="badge bg-warning text-dark">Fleet pending</span>{% elif group.operation.review_status == 'rejected' %} <span class="badge bg-danger">Fleet rejected</span>{% endif %}
+      <span class="badge bg-secondary">{{ group.operation.get_status_display }}</span></th></tr>
+    {% for r in group.rows %}<tr>
+      <td><input class="form-check-input pap-row" type="checkbox" name="ids" value="{{ r.pk }}" aria-label="Select {{ r.character_name }}"></td>
+      <td>{{ r.character_name }}</td><td>{{ r.main_character_name|default:"—" }}</td><td>{{ r.attendance_value }}</td>
+      <td>{{ r.get_correction_display }}</td><td>{{ r.get_source_display }}</td><td>{{ r.notes|default:"—" }}</td>
+      <td>{{ r.created_by.profile.main_character|default:r.created_by|default:"—" }}<div class="small text-muted">{{ r.created_at|eve_time }} EVE</div></td>
+    </tr>{% endfor %}
+  </tbody>{% endfor %}
+</table></div>
+{% if rows_truncated %}<div class="card-body small text-muted">Only the first {{ rows_shown }} rows are listed; the others follow once these are reviewed.</div>{% endif %}
+<div class="card-body row g-2 align-items-center">
+  <div class="col-lg-5"><input class="form-control form-control-sm" name="note" maxlength="255" placeholder="Note (required to reject)" aria-label="Review note"></div>
+  <div class="col-auto"><button class="btn btn-sm btn-success" name="action" value="approve">Approve selected</button> <button class="btn btn-sm btn-outline-danger" name="action" value="reject">Reject selected</button></div>
+</div>
+</form>
+<script>
+(() => {
+  const all = document.getElementById('select-all-pap');
+  all.addEventListener('change', () => document.querySelectorAll('.pap-row').forEach(box => { box.checked = all.checked; }));
+})();
+</script>
+{% else %}<div class="card-body text-muted">No manual PAP is waiting for approval.</div>{% endif %}
+</div>
+{% endblock %}

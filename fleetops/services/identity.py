@@ -9,6 +9,12 @@ from fleetops.services.names import cached_identities, placeholder_name
 
 @dataclass(slots=True)
 class CharacterIdentity:
+    """Who a character belongs to.
+
+    ``corporation_*``/``alliance_*`` are the affiliation of the owner's main, which statistics are
+    credited to; ``character_corporation_*``/``character_alliance_*`` are the character's own.
+    """
+
     character_id: int
     character_name: str
     user: object | None
@@ -20,6 +26,10 @@ class CharacterIdentity:
     alliance_name: str
     # Alliance Auth does not know the character; its details come from FleetOps' ESI name cache.
     external: bool = False
+    character_corporation_id: int | None = None
+    character_corporation_name: str = ""
+    character_alliance_id: int | None = None
+    character_alliance_name: str = ""
 
 
 def owned_characters(user):
@@ -54,21 +64,30 @@ def identity_for_character_id(character_id: int) -> CharacterIdentity:
 
 
 def _external_identity(character_id, cached) -> CharacterIdentity:
+    corporation_id = cached.corporation_id if cached else None
+    corporation_name = cached.corporation_name if cached else ""
+    alliance_id = cached.alliance_id if cached else None
+    alliance_name = cached.alliance_name if cached else ""
     return CharacterIdentity(
         character_id=character_id,
         character_name=cached.character_name if cached else placeholder_name(character_id),
         user=None,
         main_character_id=None,
         main_character_name="",
-        corporation_id=cached.corporation_id if cached else None,
-        corporation_name=cached.corporation_name if cached else "",
-        alliance_id=cached.alliance_id if cached else None,
-        alliance_name=cached.alliance_name if cached else "",
+        corporation_id=corporation_id,
+        corporation_name=corporation_name,
+        alliance_id=alliance_id,
+        alliance_name=alliance_name,
         external=True,
+        character_corporation_id=corporation_id,
+        character_corporation_name=corporation_name,
+        character_alliance_id=alliance_id,
+        character_alliance_name=alliance_name,
     )
 
 
 def resolve_many(character_ids: list[int]) -> dict[int, CharacterIdentity]:
+    """Identities from Alliance Auth and FleetOps' name caches; ESI is never called."""
     ids = list({int(x) for x in character_ids})
     chars = {c.character_id: c for c in EveCharacter.objects.filter(character_id__in=ids)}
     ownerships = (
@@ -102,6 +121,10 @@ def resolve_many(character_ids: list[int]) -> dict[int, CharacterIdentity]:
             corporation_name=getattr(source, "corporation_name", "") or "",
             alliance_id=getattr(source, "alliance_id", None),
             alliance_name=getattr(source, "alliance_name", "") or "",
+            character_corporation_id=char.corporation_id,
+            character_corporation_name=char.corporation_name or "",
+            character_alliance_id=char.alliance_id,
+            character_alliance_name=char.alliance_name or "",
         )
     return result
 

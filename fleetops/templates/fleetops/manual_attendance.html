@@ -1,16 +1,18 @@
 {% extends "fleetops/base.html" %}
+{% load fleetops_messages %}
 {% block fleetops_content %}
 <div class="mb-3">
   <h2 class="mb-0">Manual Attendance</h2>
   <div class="text-muted">Add one or multiple attendance credits to current or historical fleets. FCs with this permission see their own fleets; fleet managers can manage all fleets.</div>
 </div>
+{% if needs_approval %}<div class="alert alert-info">Manual PAP you add here counts once an FC lead approves it.</div>{% endif %}
 <div class="card mb-3"><div class="card-header"><strong>Add Attendance</strong></div><div class="card-body">
   <form method="post">{% csrf_token %}
     {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
     <div class="row g-3">
       <div class="col-lg-6">{{ form.operation.label_tag }}{{ form.operation }}{% if form.operation.errors %}<div class="text-danger small">{{ form.operation.errors|join:" " }}</div>{% endif %}<div class="form-text">{{ form.operation.help_text }}</div></div>
-      <div class="col-lg-3">{{ form.character_id.label_tag }}{{ form.character_id }}{% if form.character_id.errors %}<div class="text-danger small">{{ form.character_id.errors|join:" " }}</div>{% endif %}</div>
-      <div class="col-lg-3">{{ form.character_name.label_tag }}{{ form.character_name }}{% if form.character_name.errors %}<div class="text-danger small">{{ form.character_name.errors|join:" " }}</div>{% endif %}</div>
+      <div class="col-lg-3">{{ form.character_name.label_tag }}{{ form.character_name }}{% if form.character_name.errors %}<div class="text-danger small">{{ form.character_name.errors|join:" " }}</div>{% endif %}<div class="form-text">{{ form.character_name.help_text }}</div></div>
+      <div class="col-lg-3">{{ form.character_id.label_tag }}{{ form.character_id }}{% if form.character_id.errors %}<div class="text-danger small">{{ form.character_id.errors|join:" " }}</div>{% endif %}<div class="form-text">{{ form.character_id.help_text }}</div></div>
       <div class="col-lg-2">{{ form.attendance_value.label_tag }}{{ form.attendance_value }}{% if form.attendance_value.errors %}<div class="text-danger small">{{ form.attendance_value.errors|join:" " }}</div>{% endif %}<div class="form-text">Use 2, 3, etc. for multiple credits.</div></div>
       <div class="col-lg-4">{{ form.duplicate_action.label_tag }}{{ form.duplicate_action }}{% if form.duplicate_action.errors %}<div class="text-danger small">{{ form.duplicate_action.errors|join:" " }}</div>{% endif %}</div>
       <div class="col-lg-6">{{ form.notes.label_tag }}{{ form.notes }}{% if form.notes.errors %}<div class="text-danger small">{{ form.notes.errors|join:" " }}</div>{% endif %}</div>
@@ -18,8 +20,15 @@
     <button class="btn btn-primary mt-3">Save Attendance</button>
   </form>
 </div></div>
+<div class="card mb-3" id="roster-paste"><div class="card-header"><strong>Paste a Roster</strong></div><div class="card-body">
+  <form method="get" class="row g-2 align-items-end">
+    <div class="col-lg-6"><label class="form-label" for="roster-fleet">Fleet</label><select class="form-select" name="roster_fleet" id="roster-fleet">{% for op in roster_fleets %}<option value="{{ op.pk }}">{{ op.started_at|eve_time }} · {{ op.fleet_type }} · {{ op.fc_character_name }}</option>{% empty %}<option value="">No active or closed fleets</option>{% endfor %}</select></div>
+    <div class="col-auto"><button class="btn btn-outline-primary"{% if not roster_fleets %} disabled{% endif %}>Paste roster</button></div>
+  </form>
+  <div class="form-text">Credit everybody in a fleet window, a chat channel member list or chat lines copied from the game client.</div>
+</div></div>
 <div class="card"><div class="card-header"><strong>Recent Manual Entries</strong></div><div class="table-responsive">
-<table class="table table-sm mb-0 align-middle"><thead><tr><th>Fleet</th><th>Character</th><th>Main</th><th>Value</th><th>Added by</th><th>Created</th><th></th></tr></thead><tbody>
-{% for r in recent_manual %}<tr><td><a href="{% url 'fleetops:operation_detail' r.operation.uuid %}">{{ r.operation.started_at|date:"Y-m-d H:i" }} · {{ r.operation.fleet_type }}</a></td><td>{{ r.character_name }}</td><td>{{ r.main_character_name|default:"—" }}</td><td>{{ r.attendance_value }}</td><td>{{ r.created_by|default:"—" }}</td><td>{{ r.created_at }}</td><td><form method="post" action="{% url 'fleetops:delete_manual_attendance' r.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">Delete</button></form></td></tr>{% empty %}<tr><td colspan="7" class="text-muted p-4">No manual attendance entries.</td></tr>{% endfor %}
+<table class="table table-sm mb-0 align-middle"><thead><tr><th>Fleet</th><th>Character</th><th>Main</th><th>Value</th><th>Source</th><th>Review</th><th>Added by</th><th>Created</th><th></th></tr></thead><tbody>
+{% for r in recent_manual %}<tr><td><a href="{% url 'fleetops:operation_detail' r.operation.uuid %}">{{ r.operation.started_at|date:"Y-m-d H:i" }} · {{ r.operation.fleet_type }}</a></td><td>{{ r.character_name }}</td><td>{{ r.main_character_name|default:"—" }}</td><td>{{ r.attendance_value }}</td><td>{{ r.get_source_display }}</td><td>{% if r.review_status == 'pending' %}<span class="badge bg-warning text-dark">Pending</span>{% elif r.review_status == 'rejected' %}<span class="badge bg-danger">Rejected</span>{% if r.review_note %}<div class="small text-muted">{{ r.review_note }}</div>{% endif %}{% else %}<span class="badge bg-success">Approved</span>{% endif %}</td><td>{{ r.created_by|default:"—" }}</td><td>{{ r.created_at }}</td><td>{% if r.pk in deletable_row_ids %}<form method="post" action="{% url 'fleetops:delete_manual_attendance' r.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">Delete</button></form>{% endif %}</td></tr>{% empty %}<tr><td colspan="9" class="text-muted p-4">No manual attendance entries.</td></tr>{% endfor %}
 </tbody></table></div></div>
 {% endblock %}

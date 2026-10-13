@@ -6,10 +6,42 @@
   <div><h2 class="mb-0">Edit Scheduled Fleet</h2><div class="text-muted">{{ operation.fleet_type }} · FC {{ operation.fc_character_name }} · {{ operation.scheduled_at|eve_time }} EVE</div></div>
   <a class="btn btn-outline-secondary" href="{% url 'fleetops:operation_detail' operation.uuid %}">Back to the scheduled fleet</a>
   {% else %}
-  <div><h2 class="mb-0">Start Fleet</h2><div class="text-muted">One form, one start action.</div></div>
+  <div><h2 class="mb-0">Start Fleet</h2><div class="text-muted">One form, one start action. <a href="{% url 'fleetops:start_link_only_fleet' %}" id="link-only-fleet-link">No ESI fleet? Start a PAP-link fleet</a></div></div>
   <a class="btn btn-outline-secondary" href="{% url 'fleetops:authorize_esi' %}">Authorize / Refresh Fleet ESI</a>
   {% endif %}
 </div>
+{% if not operation %}
+<div class="card mb-3" id="preset-bar"><div class="card-body py-2">
+  <div class="d-flex flex-wrap align-items-center gap-2">
+    <form method="get" class="d-flex flex-wrap align-items-center gap-2" id="preset-load">
+      <label class="form-label mb-0" for="preset-select">Preset</label>
+      <select class="form-select form-select-sm w-auto" name="preset" id="preset-select">
+        <option value="none">No preset</option>
+        {% if has_last_used %}<option value="last"{% if preset_selected == "last" %} selected{% endif %}>Last used settings</option>{% endif %}
+        {% for preset in presets %}<option value="{{ preset.pk }}"{% if preset_selected == preset.pk|stringformat:"d" %} selected{% endif %}>{{ preset.name }}{% if preset.is_default %} (default){% endif %}</option>{% endfor %}
+      </select>
+      <button class="btn btn-sm btn-outline-secondary" type="submit">Load</button>
+    </form>
+    <a class="ms-auto small" href="{% url 'fleetops:preset_list' %}">My presets</a>
+  </div>
+  {% if preset_notice %}<div class="form-text" id="preset-notice">{{ preset_notice }}{% if preset_default_applied %} · <a href="?preset=none">Clear</a>{% endif %}</div>{% endif %}
+  {% if preset_warnings %}<div class="alert alert-warning py-2 mt-2 mb-0" id="preset-warnings" role="status">{% for warning in preset_warnings %}<div>{{ warning }}</div>{% endfor %}</div>{% endif %}
+  <details class="mt-2" id="preset-save">
+    <summary>Save as preset…</summary>
+    <div class="row g-2 align-items-end mt-1">
+      <div class="col-sm-5">{{ preset_save_form.name.label_tag }}{{ preset_save_form.name }}</div>
+      <div class="col-auto"><div class="form-check">{{ preset_save_form.remember_fc }} <label class="form-check-label" for="{{ preset_save_form.remember_fc.id_for_label }}">{{ preset_save_form.remember_fc.label }}</label></div></div>
+      <div class="col-auto"><div class="form-check">{{ preset_save_form.make_default }} <label class="form-check-label" for="{{ preset_save_form.make_default.id_for_label }}">{{ preset_save_form.make_default.label }}</label></div></div>
+      <div class="col-auto">{{ preset_save_form.overwrite }}
+        <button type="button" class="btn btn-sm btn-primary d-none" id="preset-save-button" data-url="{% url 'fleetops:preset_save' %}">Save preset</button>
+        <noscript><button type="submit" class="btn btn-sm btn-primary" form="fleet-start-form" formaction="{% url 'fleetops:preset_save' %}" formnovalidate>Save preset</button></noscript>
+      </div>
+    </div>
+    <div class="form-text">Keeps everything except the fleet time; the FC character only when ticked.</div>
+    <div class="small mt-1" id="preset-save-result" role="status"></div>
+  </details>
+</div></div>
+{% endif %}
 <form method="post" id="fleet-start-form" data-mode="{% if operation %}edit{% else %}start{% endif %}"
       data-preview-url="{% if operation %}{% url 'fleetops:edit_scheduled_fleet' operation.uuid %}{% else %}{% url 'fleetops:preview_fleet' %}{% endif %}"
       data-detect-url="{% url 'fleetops:detect_fleet' 999999 %}" data-ping-limit="{{ ping_limit }}">{% csrf_token %}
@@ -247,6 +279,45 @@
  }
  // Wait until the FC stops typing instead of sending a request for every character.
  function queuePreview(){ clearTimeout(previewTimer); previewTimer=setTimeout(preview,PREVIEW_DELAY); }
+ const presetSaveButton = document.getElementById('preset-save-button');
+ const presetName = document.getElementById('id_preset-name');
+ const presetOverwrite = document.getElementById('id_preset-overwrite');
+ const presetResult = document.getElementById('preset-save-result');
+ const presetSelect = document.getElementById('preset-select');
+ function showPresetResult(text, ok){
+   presetResult.textContent = text;
+   presetResult.className = `small mt-1 ${ok ? 'text-success' : 'text-danger'}`;
+ }
+ // The preset fields belong to the start form, so the preset is saved from the same values.
+ async function savePreset(overwrite){
+   const name = presetName.value.trim();
+   presetOverwrite.value = overwrite ? '1' : '';
+   const body = new FormData(form);
+   presetSaveButton.disabled = true;
+   try {
+     const r = await fetch(presetSaveButton.dataset.url, {method:'POST', body, headers:{'Accept':'application/json'}});
+     const d = await r.json();
+     if(d.conflict && !overwrite){
+       if(confirm(`A preset named "${name}" exists. Overwrite?`)){ return await savePreset(true); }
+       showPresetResult('Preset not saved.', false);
+       return;
+     }
+     showPresetResult(d.message, d.ok);
+     if(d.ok && d.preset_id){
+       let option = presetSelect.querySelector(`option[value="${d.preset_id}"]`);
+       if(!option){ option = new Option(name, d.preset_id); presetSelect.add(option); }
+       presetSelect.value = String(d.preset_id);
+     }
+   }
+   catch(e){ showPresetResult('The preset could not be saved.', false); }
+   finally { presetSaveButton.disabled = false; presetOverwrite.value = ''; }
+ }
+ if(presetSaveButton){
+   presetSaveButton.classList.remove('d-none');
+   presetSaveButton.addEventListener('click', () => savePreset(false));
+   // Enter in the preset name saves the preset; it must never start the fleet.
+   presetName.addEventListener('keydown', event => { if(event.key === 'Enter'){ event.preventDefault(); savePreset(false); } });
+ }
  if(char){ char.addEventListener('change',()=>{detectFleet();queuePreview();}); }
  doctrine.addEventListener('change',()=>{toggleCustom();queuePreview();});
  modeRadios.forEach(x=>x.addEventListener('change',()=>{updateMode();queuePreview();}));

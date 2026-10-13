@@ -1,6 +1,13 @@
 FLEET_READ_SCOPE = "esi-fleets.read_fleet.v1"
 FLEET_WRITE_SCOPE = "esi-fleets.write_fleet.v1"
 FLEET_SCOPES = [FLEET_READ_SCOPE, FLEET_WRITE_SCOPE]
+# PAP link registration reads where a character is, its ship and whether it is online. The same scopes as
+# AFAT's click tracking, so tokens AFAT or CharLink already hold are reused.
+CLICK_SCOPES = [
+    "esi-location.read_location.v1",
+    "esi-location.read_ship_type.v1",
+    "esi-location.read_online.v1",
+]
 
 # Built-in templates, also used as the fallback when a stored template cannot be rendered.
 # Migration 0009 keeps copies of both; they must stay identical.

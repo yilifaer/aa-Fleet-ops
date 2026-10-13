@@ -40,9 +40,15 @@ The repository includes the full expected feature target and an explicit distinc
 - ESI MOTD update with per-step success/failure status.
 - Near-real-time active fleet member tracking. Fleet reads use django-esi response caching and always return the fleet data, also when it has not changed (ETags are not used for fleet reads).
 - Current fleet member state plus change events: Join, Leave, Rejoin, Ship, System, Role, Wing and Squad changes.
-- Automatic attendance separated from operational tracking.
-- Configurable maximum attendance credits per Auth user per fleet (`NULL` = unlimited).
-- Manual attendance correction with audit log.
+- Time in fleet tracked for every character (ESI's join time covers pilots who leave and come back between polls). PAP is granted when the fleet closes, to characters that reached the **PAP minimum time** (0 = any presence); see [PAP rules](#pap-rules).
+- Configurable **PAP characters per player** (empty = unlimited). Over the limit the FC character gets the PAP first, then the player's main, then the character with the longest time in fleet.
+- PAP preview on running fleets and "PAP in running fleets" on the Dashboard and My Statistics, so pilots see their time in fleet and whether they reached the minimum.
+- Configurable PAP multiplier tiers (90 minutes → 2x and 180 minutes → 3x by default): the FC chooses when ending, or FleetOps picks by fleet duration. FC points are the fleet type's weight times the multiplier.
+- Manual PAP by character name or from a pasted fleet roster, with audit log. Manual fleets, manual PAP and PAP-link fleets of FCs wait for FC lead approval on the **Approvals** page.
+- **PAP links**: pilots register their characters for PAP without being in the ESI fleet (same ESI scopes as AFAT click tracking), also for fleets without an ESI fleet (**PAP-link fleets**).
+- Per-fleet statistics inclusion: exclude a test fleet, and leave fleets shorter than the **Minimum fleet duration** out of statistics and incentives.
+- Personal **start presets** on Fleet Start.
+- Optional aa-charlink integration for the fleet and PAP link scopes.
 - Member statistics.
 - Corporation statistics where **Average Attendance = Total Granted Attendance / Main Character Count**.
 - Alliance-wide corporation and FC statistics for users with `view_all_stats`.
@@ -57,8 +63,8 @@ The repository includes the full expected feature target and an explicit distinc
 - Manual fleet records take their start and end time in EVE time (UTC), whatever the site or browser time zone; the end time is required, must be after the start, and a fleet longer than 6 hours needs an extra confirmation.
 - At least 365-day attendance-history views for personal, corporation and alliance scopes, with optional current-alliance membership pruning.
 - Operational dashboard cards, recent participation, top tracked ships, active fleets and FC-month summary.
-- Post-creation/post-close special-role assignments: Back Seat FC, Logi Anchor and Snowflake Member. Assigned users who currently hold FleetOps FC permission receive FC fleet/point credit for that operation.
-- Active-fleet one-click **Kick all Capsules** control using the Fleet Boss ESI write token. The FC and the fleet boss are never kicked or counted on the button.
+- Post-creation/post-close special-role assignments with configurable roles (Back Seat FC, Logi Anchor and Snowflake Member by default). A role's **Gives FC credit** switch decides whether its holder gets FC fleet/point credit for that operation.
+- Kicks from an active fleet using the Fleet Boss ESI write token: one member, everyone outside a chosen system, or the capsule pilots (listed by name). The FC and the fleet boss are never kicked or counted.
 
 ## Compatibility target
 
@@ -80,7 +86,17 @@ esi-fleets.read_fleet.v1
 esi-fleets.write_fleet.v1
 ```
 
-The write scope is used for MOTD updates and Fleet Boss controls such as kicking capsule members. If MOTD automation fails, the generated MOTD remains available for manual copy.
+The write scope is used for MOTD updates and Fleet Boss controls such as kicks. If MOTD automation fails, the rendered MOTD remains available for manual copy.
+
+PAP links read where a pilot is, what they fly and whether they are online, with the pilot's own token:
+
+```text
+esi-location.read_location.v1
+esi-location.read_ship_type.v1
+esi-location.read_online.v1
+```
+
+These are the same scopes as AFAT's click tracking and CharLink's "AFAT Click Tracking" import, so tokens they already hold are reused. Enable them in your EVE SSO application (they already are where AFAT click tracking works).
 
 Your Alliance Auth installation must also have a valid `ESI_USER_CONTACT_EMAIL` configured as required by current django-esi guidance.
 
@@ -108,6 +124,8 @@ INSTALLED_APPS += [
     "fleetops",
 ]
 ```
+
+If aa-charlink is installed, `"fleetops"` must appear literally like this in `INSTALLED_APPS`: CharLink checks the app label of every hook and refuses the FleetOps one otherwise. CharLink is optional; without it nothing changes.
 
 Add the tracking scheduler to the same `local.py`:
 
@@ -254,7 +272,7 @@ Move a test member, change ship/system, leave/rejoin, and confirm the Member and
 
 ## 7. Attendance
 
-Confirm tracked Auth characters create attendance records. If an Attendance Limit is configured, additional characters belonging to the same Auth user remain tracked but are marked capped when the credit limit is reached.
+Confirm the Members tab shows **Time in fleet** growing with each poll and that the Attendance tab shows a PAP preview while the fleet runs. End the fleet: characters with at least the PAP minimum time get PAP. If **PAP characters per player** is set, a player's further characters stay tracked but are marked "Capped (limit)" (the FC character, then the main, then the longest time in fleet keep the PAP).
 
 ## 8. Statistics
 
@@ -287,11 +305,11 @@ python manage.py fleetops_prune_history
 
 ## Manual attendance
 
-Grant `fleetops.manage_attendance` to FCs who should be allowed to correct their own credited fleets. They can use `/fleetops/attendance/manual/` for active or historical operations. Alliance fleet managers can manage all fleets.
+Grant `fleetops.manage_attendance` to FCs who should be allowed to correct their own credited fleets. They can use `/fleetops/attendance/manual/` for active or historical operations, by character name or ID, or paste a roster. Alliance fleet managers can manage all fleets. Entries of users without `fleetops.manage_fleets` count once an FC lead approves them (see [Approvals](#approvals)).
 
-## Special roles and capsule cleanup
+## Special roles and kicks
 
-FC/fleet managers may assign Back Seat FC, Logi Anchor and Snowflake Member after an operation is created, including after close. If the selected member currently has `fleetops.start_fleet`, FleetOps snapshots `grants_fc_credit=True` and includes that operation in the member's FC statistics/incentive calculation. During an active fleet, the operation page can kick all currently detected capsule members; this requires a valid Fleet Boss write token and must be staging-tested against ESI before production use.
+FC/fleet managers may assign special roles after an operation is created, including after close, to characters recorded in the fleet: tracked members, PAP-link registrations and characters with PAP (manual PAP only once an FC lead approved it, unless the whole fleet still waits for approval). The roles are configured in FleetOps Administration → Special Roles; Back Seat FC, Logi Anchor and Snowflake Member are created by the upgrade. When the role has **Gives FC credit** ticked and the pilot is in Alliance Auth, FleetOps snapshots `grants_fc_credit=True` and includes that operation in the pilot's FC statistics/incentive calculation; the pilot needs no FC permission for that, and still cannot manage the fleet without `fleetops.manage_own_fleet`. During an active fleet, the operation page can kick single members, everyone outside a system, or the capsule pilots; this requires a valid Fleet Boss write token and must be staging-tested against ESI before production use.
 
 ---
 
@@ -303,7 +321,7 @@ Add the Discord roles FCs may mention under **Ping Roles**: paste the role ID (o
 
 Discord only notifies a role when the role is **mentionable** (Discord server settings → Roles) or when the webhook may mention every role. FleetOps sends each ping with `allowed_mentions` naming exactly the selected target, so other `@everyone`, `@here` or `<@&id>` text in the ping does not notify anybody, and with link previews suppressed.
 
-Only Discord webhook URLs of the form `https://discord.com/api/webhooks/<id>/<token>` are accepted. The `ptb.discord.com`, `canary.discord.com` and `discordapp.com` hosts and an API version segment (`https://discord.com/api/v10/webhooks/<id>/<token>`) are accepted too. The URL is checked when it is saved and again before every send, so a webhook stored by an older FleetOps version that does not match is not used until its URL is fixed. Webhook URLs are never shown outside the ping channel form.
+Only Discord webhook URLs of the form `https://discord.com/api/webhooks/<id>/<token>` are accepted. The `ptb.discord.com`, `canary.discord.com` and `discordapp.com` hosts and an API version segment (`https://discord.com/api/v10/webhooks/<id>/<token>`) are accepted too. The URL is checked when it is saved and again before every send, so a webhook stored by an older FleetOps version that does not match is not used until its URL is fixed. Webhook URLs are write-only: the ping channel form (and Django Admin) never shows a stored URL. Leave the field empty to keep the URL, or paste a new one to replace it.
 
 Leaving the ping channel empty on Fleet Start ("No Discord message (copy only)") is valid: the Discord step is skipped and the Ping remains available to copy manually. This is useful for test environments.
 
@@ -389,6 +407,92 @@ The MOTD gets a warning above 1000 characters, because the game may cut longer M
 
 ---
 
+# PAP rules
+
+## Settings
+
+FleetOps Administration → General Settings groups the PAP settings:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| **PAP multiplier mode** (PAP rules) | FC chooses when ending | **FC chooses when ending**: End Fleet asks the FC for the multiplier once the fleet passed a tier. **Automatic by fleet duration**: the fleet gets the highest multiplier its duration allows. |
+| **PAP minimum time** (PAP rules) | 0 | Minutes a character must spend in fleet to receive PAP. 0 = any presence. |
+| **PAP characters per player** (PAP rules) | empty | Maximum characters of one Alliance Auth user that receive PAP in one fleet. Empty = unlimited. |
+| **Minimum fleet duration** (Statistics) | 0 | Fleets shorter than this are not counted in statistics and incentives unless included manually. 0 = count all. |
+| **PAP link validity** (PAP links) | 30 | Minutes a new PAP link stays open unless the FC chooses another time (1 to 1440). |
+
+A fleet keeps the PAP minimum time and the character limit in force when it started; later changes of the settings do not change fleets that already started.
+
+## Time in fleet and PAP
+
+Every tracking poll adds the time each character spent in fleet since the previous poll. A pilot who left and came back between two polls is counted from ESI's join time; a pilot who left is counted up to the last poll that saw them. A long ESI outage between two good polls counts as time in fleet for pilots present at both ends.
+
+PAP is granted when the fleet closes (End Fleet or the automatic end), never while it runs:
+
+- A character gets PAP when its time in fleet is at least the PAP minimum time, or when it registered through a PAP link.
+- Over **PAP characters per player** the FC character gets the PAP first, then the player's main, then the character with the longest time in fleet (then the one seen first). The others are listed as "Capped (limit)".
+- Characters that are not in Alliance Auth get no PAP; they are listed as "Not in Alliance Auth". **Recalculate PAP** on a fleet closed after the upgrade to 0.1.0a6 grants them PAP once they were added to Alliance Auth.
+- PAP is credited to the character's owner and counted for the owner's main and the main's corporation, also when the character itself is in another corporation or alliance. It stays with that player: when a character changes or loses its owner later, recalculating the fleet keeps its PAP where it was.
+- A fleet whose end finishes later than the End Fleet click (a busy worker, the recovery after a lost task) ends at the time of the click: no time in fleet after it counts, and the multiplier and the minimum fleet duration are measured to it.
+- Manual and imported PAP rows are corrections: **keep** adds a separate credit, **replace** takes the place of the tracked PAP, **merge** adds its value to it. They are applied each time PAP is calculated, so deleting one and recalculating restores the tracked PAP.
+
+While a fleet runs, its Attendance tab shows the PAP preview (who would get PAP if the fleet closed now); members who are not managers of the fleet see only their own characters. Dashboard and My Statistics show "PAP in running fleets" for the user's characters.
+
+## Multiplier tiers
+
+FleetOps Administration → PAP Multipliers lists the tiers: a fleet that ran strictly longer than the threshold may get that multiplier (90 min 01 s qualifies for a 90-minute tier). The upgrade creates 90 minutes → 2x and 180 minutes → 3x; shorter fleets get 1x. Multipliers must rise with the thresholds.
+
+- In the FC mode, End Fleet on a fleet past a tier opens a choice of the allowed multipliers, with none preselected. The server checks the choice again: "3x needs the fleet to run longer than 180 minutes" refuses a multiplier the duration does not allow, and a fleet that passed a tier after the page was loaded asks for the choice first.
+- A fleet that ended without a choice (fleet gone, boss handover, finished by the beat) gets 1x and, when it ran long enough for more, **Multiplier pending**. Its FC chooses on the fleet page (**Keep 1x** or a higher tier); the dashboard lists "Fleets waiting for your multiplier choice" and the incentive review warns about them. Until then the fleet counts at 1x.
+- After the close the multiplier can be changed within the duration rule by whoever manages the fleet's attendance. FC leads (`fleetops.manage_fleets`) may set any configured multiplier with a written reason of at least 5 characters; the fleet shows "Override by an FC lead" and the audit log keeps the reason.
+- New fleet times entered by an FC wait for FC lead approval (see [Approvals](#approvals)), and a multiplier the new times of a closed fleet no longer allow is lowered to the highest one they allow (audited as `attendance.multiplier`; an FC lead's override stays).
+
+FC points of a fleet are its fleet type's weight (snapshotted at the start) times its PAP multiplier.
+
+## Counting in statistics
+
+A fleet counts in member, corporation and FC statistics and in FC incentives when it is closed, approved and not excluded. The fleet page says whether it counts and why not:
+
+- **Do not count** (needs a reason): anyone who manages the fleet, for example for a test fleet.
+- **Always count** (also when shorter than the minimum fleet duration) and **Use the automatic rule**: FC leads only.
+
+Every change is audited as `fleet.stats_mode`; the fleet archive marks fleets that do not count with "Not counted".
+
+## Approvals
+
+Manual fleets, manual PAP rows, pasted rosters and PAP-link fleets created by users without `fleetops.manage_fleets` are "Pending FC lead approval" and do not count until approved; an FC lead's own entries are approved at once. FC leads find them under **Approvals** (with a count in the menu) and on the fleet page. A rejection needs a note; approving a fleet can approve its waiting PAP rows with it. When an FC changes the times of an approved fleet, ESI-tracked fleets included, or the fleet type of an approved manual or PAP-link fleet, it goes back to pending: the multiplier tiers and the minimum fleet duration are measured from the times. The Approvals page marks tracked fleets with "Times edited" and shows the multiplier of closed fleets. FCs can delete their own manual PAP until it is approved; approved rows are deleted by FC leads.
+
+## PAP links
+
+On an active or closed fleet, the FC creates a PAP link on the fleet page (**Create PAP link**) and shares it (the link is built from `SITE_URL`). A pilot opens it, ticks the characters that flew and registers them:
+
+- Each character must belong to the pilot and have the pilot's own token with the three location scopes; **Add a character (EVE login)** gets a token through EVE SSO.
+- **Require online** is ticked by default: the character must be logged in to the game. Untick it for out-of-game events.
+- A character registers once per fleet. It needs no minimum time but counts towards **PAP characters per player**. A registration on a closed fleet recalculates its PAP at once.
+- Links expire after their time and can be revoked; an expired or revoked link says so and accepts nothing.
+- Fleets closed before the upgrade to 0.1.0a6 keep the PAP selection they were closed with and take no PAP links; add manual PAP there.
+
+"No ESI fleet? Start a PAP-link fleet" on Fleet Start creates a **PAP-link fleet**: no ESI fleet, ping, MOTD or tracking, just a fleet record with its first PAP link. End it with End Fleet; the multiplier follows its duration as usual. It waits for FC lead approval unless an FC lead started it.
+
+## CharLink
+
+With aa-charlink installed (and `"fleetops"` literally in `INSTALLED_APPS`), the CharLink page offers two FleetOps imports:
+
+- **FleetOps FC fleet control**: `esi-fleets.read_fleet.v1` and `esi-fleets.write_fleet.v1`, for users with `fleetops.start_fleet`, not ticked by default.
+- **FleetOps PAP links**: the three location scopes, for users with `fleetops.basic_access`, ticked by default.
+
+Characters linked there are ready on Fleet Start and on PAP link pages. Without CharLink the hook is never loaded.
+
+## Kicks
+
+On an active ESI fleet the FC (and fleet managers) can kick from the fleet page: **Kick** on a member row, **Kick outside system…** (choose the system that stays, the FC's system is preselected, untick members to spare them) and **Kick Capsules** (the capsule pilots by name). The FC character and the fleet boss are never kicked. Up to 10 kicks run at once; more run on the Celery worker and their results appear under Operation Actions. After kicks FleetOps reads the fleet again, so the member list is right at once.
+
+## Start presets
+
+**Save as preset…** on Fleet Start keeps the form (without the fleet time and, unless **Remember FC character** is ticked, without the FC character) under a name. Load a preset from the select at the top of the page; **My presets** renames and deletes presets and sets the default that Fleet Start opens with. The last used settings are kept as well. A preset item that was disabled or deleted since loads blank with a warning.
+
+---
+
 # Upgrading to 0.1.0a6
 
 Read the upgrade notes in [`CHANGELOG.md`](CHANGELOG.md) before running `python manage.py migrate fleetops`. In short: Ping Targets become Ping channels and Ping roles (check each channel's mention switches and allowed roles afterwards), the Default Ping/MOTD templates are replaced only if they were never edited, pasted in-game channel links are split into name and link, and user names are removed from voice links. After the upgrade:
@@ -402,11 +506,25 @@ Read the upgrade notes in [`CHANGELOG.md`](CHANGELOG.md) before running `python 
 - Custom ping templates keep working: `{{ ping_target }}` now renders the mention selected on Fleet Start.
 - Run `python manage.py fleetops_refresh_names --dry-run`, then without `--dry-run`, if older fleets show ship or system names in another language.
 
+The PAP rules (see [PAP rules](#pap-rules)) change how PAP and FC points are counted from the upgrade on:
+
+- PAP is granted when a fleet closes, from time in fleet. **PAP minimum time** is 0 after the upgrade, so any presence still counts; raise it when you want a minimum.
+- The attendance limit is now **PAP characters per player** and counts characters, with the FC character, then the main, then the longest time in fleet first.
+- FC points are the fleet type weight times the PAP multiplier. Finalized incentive periods keep their numbers; recalculate open periods to apply the new points.
+- Manual fleets, manual PAP and PAP-link fleets of FCs need FC lead approval. Records from before the upgrade stay approved. Make sure your FC leads have `fleetops.manage_fleets`.
+- Fleets closed before the upgrade keep their PAP selection; changing their multiplier or approving corrections recalculates their values only. PAP links cannot be created for them.
+- Check the multiplier tiers (PAP Multipliers) and the special roles (Special Roles) in FleetOps Administration. Back Seat FC gives FC credit; tick **Gives FC credit** on other roles that should.
+- Enable the three `esi-location.*` scopes in your EVE SSO application for PAP links, and add `"fleetops"` literally to `INSTALLED_APPS` if you use aa-charlink.
+- Exclude old test fleets from statistics with **Do not count** on their fleet pages; **Minimum fleet duration** applies only to fleets that close after it is set.
+- Ping channel webhook URLs are no longer shown; keep a copy of a URL elsewhere if you need it.
+
 ---
 
 # Doctrine integration
 
 `fittings` is optional. When an installed app with label `fittings` exposes a doctrine-like model, FleetOps attempts to list it in the Doctrine selector. If no supported doctrine model is found, `None / Custom` remains available and FleetOps continues normally.
+
+With Fittings, FCs see the doctrines Fittings shows them: a doctrine in a category limited to groups the FC is not in is hidden on Fleet Start and the PAP-link fleet page; users with `fittings.manage` see all doctrines. Administration forms list every doctrine.
 
 FleetOps stores the selected doctrine name/source on each operation so historical records do not depend on a doctrine continuing to exist later. For Fittings doctrines it also stores the fits (fit name and hull, in doctrine order) when a fleet starts or is pre pinged, for the `doctrine_ships` and `doctrine_fits` template variables; **Regenerate & Push MOTD** reads them again. Ship and system names are always stored in English.
 
@@ -427,6 +545,8 @@ If `eve_sde` is not installed or its Stargate schema cannot be detected, all oth
 FC incentives are off until **Incentive enabled** is ticked in FleetOps Administration → General Settings. While it is off, the FC Incentive menu entry is hidden and incentive periods cannot be reviewed, recalculated, waived, finalized or unlocked, even with `fleetops.manage_incentives`. FC statistics are not affected. New installs start with the setting off; when upgrading to 0.1.0a6, the data migration turns it on for installs that already have incentive periods.
 
 Fleet Type weights are snapshotted onto each `FleetOperation`, so changing a Fleet Type weight later does not silently rewrite the points of fleets that already happened.
+
+A fleet gives its FC (and every special-role holder with FC credit) its weight times its PAP multiplier as FC points; a fleet whose multiplier choice is pending counts at 1x. Only counted fleets (closed, approved, not excluded) give points.
 
 For each month:
 

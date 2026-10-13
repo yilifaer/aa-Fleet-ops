@@ -19,7 +19,7 @@ from fleetops.providers.esi import FleetESIError, detect_character_fleet, set_fl
 from fleetops.providers.pings import send_discord_webhook
 from fleetops.providers.srp import create_srp_link
 from fleetops.services.audit import audit
-from fleetops.services.attendance import set_operation_attendance_multiplier
+from fleetops.services.counting import evaluate_stats_inclusion
 from fleetops.services.errors import log_failure, report_failure
 from fleetops.services.identity import character_label, get_owned_character
 from fleetops.services.mentions import (
@@ -31,7 +31,10 @@ from fleetops.services.mentions import (
     validate_for_channel,
 )
 from fleetops.services.messages import render_messages
+from fleetops.services.multipliers import close_multiplier
 from fleetops.services.names import queue_name_resolution, stale_character_ids, unnamed_character_ids
+from fleetops.services.pap import finalize_pap
+from fleetops.services.review import initial_review_fields
 from fleetops.services.tracking import sync_operation
 
 logger = get_extension_logger(__name__)
@@ -267,6 +270,18 @@ def fleet_values(cleaned_data):
     }
 
 
+def pap_rule_values(settings=None) -> dict:
+    """The PAP minimum time and the per-player character limit a fleet keeps from its start on.
+
+    Later changes of the settings never alter the PAP of a fleet that already started.
+    """
+    settings = settings or FleetOpsSettings.get_solo()
+    return {
+        "pap_minimum_minutes": settings.pap_minimum_minutes,
+        "pap_character_limit": settings.attendance_limit,
+    }
+
+
 def operation_values(cleaned_data, *, user, character) -> dict:
     """Fields a start, a preview and a pre ping take from the start form."""
     return {"created_by": user, **fc_values(user, character), **fleet_values(cleaned_data)}
@@ -279,12 +294,13 @@ def build_unsaved_operation(user, cleaned_data) -> FleetOperation:
 
 
 def lock_fleet_starts():
-    """Serialise fleet starts on the settings row. Call inside a transaction.
+    """Serialise fleet starts on the settings row. Call inside a transaction; returns the settings.
 
     Two requests for the same ESI fleet (two tabs, a resubmitted form, a new boss) then cannot
     both create a record.
     """
-    FleetOpsSettings.objects.select_for_update().get_or_create(pk=1)
+    settings, _created = FleetOpsSettings.objects.select_for_update().get_or_create(pk=1)
+    return settings
 
 
 def _open_records(esi_fleet_id):
@@ -335,7 +351,14 @@ def finish_handovers(handed_over):
 
 
 def record_start(operation, actor, *, character, from_schedule, handed_over):
-    """The one ``fleet.start`` audit entry of a start, plus one entry per handover it caused."""
+    """The one ``fleet.start`` audit entry of a start, plus one entry per handover it caused.
+
+    A fleet that started from a schedule takes its PAP rules here, when it starts.
+    """
+    if from_schedule or operation.pap_minimum_minutes is None:
+        for name, value in pap_rule_values().items():
+            setattr(operation, name, value)
+        operation.save(update_fields=["pap_minimum_minutes", "pap_character_limit", "updated_at"])
     set_action(operation, "fleet_detection", True)
     audit(
         actor,
@@ -383,7 +406,7 @@ def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None
     values = operation_values(cleaned_data, user=user, character=character)
     try:
         with transaction.atomic():
-            lock_fleet_starts()
+            settings = lock_fleet_starts()
             existing = FleetOperation.objects.filter(start_request_id=request_id).first()
             if existing:
                 return existing
@@ -403,6 +426,7 @@ def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None
                 tracking_enabled=True,
                 attendance_multiplier=1,
                 is_manual=False,
+                **pap_rule_values(settings),
                 **values,
             )
             record_start(operation, user, character=character, from_schedule=False, handed_over=handed_over)
@@ -550,10 +574,12 @@ def _status_before_end(operation):
 
 
 def end_fleet(operation, actor=None, automatic=False, attendance_multiplier=None, reason="", detail=""):
-    """Close a fleet: final sync (manual ends only), attendance multiplier, member cleanup.
+    """Close a fleet: final sync (manual ends only), PAP multiplier, member cleanup, PAP.
 
-    An automatic end comes right after a confirming read, so it does not sync again.
-    Ending a closed or cancelled fleet does nothing.
+    An automatic end comes right after a confirming read, so it does not sync again; neither
+    does a fleet without ESI fleet. ``attendance_multiplier`` is the FC's choice, checked against
+    the fleet's duration again (``close_multiplier``). Ending a closed or cancelled fleet does
+    nothing.
     """
     if operation.status in FINISHED_STATUSES:
         return operation
@@ -581,9 +607,10 @@ def end_fleet(operation, actor=None, automatic=False, attendance_multiplier=None
             operation.end_requested_by = actor
             update_fields += ["end_requested_at", "end_requested_by"]
         operation.save(update_fields=update_fields)
-    if not automatic:
+    if not automatic and operation.esi_fleet_id:
         try:
-            sync_operation(operation)
+            # Time in fleet ends with the end request, also when the close runs later.
+            sync_operation(operation, until=operation.end_requested_at)
         except Exception as exc:
             # Best effort: a fleet that is already gone must still close.
             report_failure(logger, "Final fleet sync", exc, operation)
@@ -594,31 +621,47 @@ def end_fleet(operation, actor=None, automatic=False, attendance_multiplier=None
             operation.refresh_from_db()
             return operation
         operation.refresh_from_db()
-        if attendance_multiplier is None:
-            attendance_multiplier = operation.attendance_multiplier or 1
-        set_operation_attendance_multiplier(operation, attendance_multiplier, actor=actor)
+        settings = FleetOpsSettings.get_solo()
         label = end_reason_text(reason, detail)
         ended_at = timezone.now()
-        if reason == EndReason.BOSS_HANDOVER and operation.end_requested_at:
-            # The fleet ended when the boss handed it over, even if this close runs later.
+        if operation.end_requested_at:
+            # The fleet ended when its end was requested (or the boss handed it over), even if this
+            # close runs later; every duration rule measures to that time, so a slow or recovered
+            # close changes nothing.
             ended_at = min(ended_at, operation.end_requested_at)
-        operation.tracking_enabled = False
         operation.ended_at = ended_at
+        multiplier, source, pending = close_multiplier(operation, attendance_multiplier, settings)
+        operation.attendance_multiplier = multiplier
+        operation.multiplier_source = source
+        operation.multiplier_pending = pending
+        evaluate_stats_inclusion(operation, settings)
+        operation.tracking_enabled = False
         operation.status = FleetOperation.Status.CLOSED
         operation.last_error = label if automatic else ""
         operation.save(
             update_fields=[
-                "tracking_enabled", "ended_at", "status", "last_error", "fleet_missing_count", "updated_at",
+                "tracking_enabled", "ended_at", "status", "last_error", "fleet_missing_count",
+                "attendance_multiplier", "multiplier_source", "multiplier_pending", "counts_for_stats",
+                "updated_at",
             ]
         )
         # Whoever was still in fleet left when it ended.
         operation.member_states.filter(is_active=True).update(is_active=False, left_at=ended_at)
-        set_action(operation, "fleet_end", True, label)
+        summary = finalize_pap(operation, actor=actor)
+        pap_text = f"PAP: {summary['granted']} granted at {multiplier}x."
+        if pending:
+            pap_text += " The multiplier choice is pending."
+        set_action(operation, "fleet_end", True, f"{label}. {pap_text}" if label else pap_text)
         new_state = {
             "status": operation.status,
             "tracking_enabled": operation.tracking_enabled,
             "end_reason": reason,
             "end_detail": detail,
+            "attendance_multiplier": multiplier,
+            "multiplier_source": source,
+            "multiplier_pending": pending,
+            "counts_for_stats": operation.counts_for_stats,
+            "pap": summary,
         }
         if reason == EndReason.BOSS_HANDOVER:
             # The detail is the new boss's name; keep the id too.
@@ -697,7 +740,10 @@ def finish_requested_end(operation):
 
 
 def create_manual_fleet(*, user, cleaned_data: dict):
-    """Create a closed fleet record without ESI, Discord or automatic tracking."""
+    """Create a closed fleet record without ESI, Discord or automatic tracking.
+
+    Manual fleets of users who are not FC leads wait for approval before they count.
+    """
     profile = getattr(user, "profile", None)
     main = getattr(profile, "main_character", None)
     if main is None:
@@ -724,8 +770,13 @@ def create_manual_fleet(*, user, cleaned_data: dict):
         tracking_enabled=False,
         send_ping=False,
         attendance_multiplier=int(cleaned_data.get("attendance_multiplier", 1) or 1),
+        multiplier_source=FleetOperation.MultiplierSource.MANUAL,
         is_manual=True,
+        **pap_rule_values(),
+        **initial_review_fields(user),
     )
+    if not evaluate_stats_inclusion(operation):
+        operation.save(update_fields=["counts_for_stats", "updated_at"])
     set_action(operation, "manual_fleet", True, "Manual fleet record created without ESI tracking.")
     set_action(operation, "discord_ping", None, "Manual fleet: no Discord ping sent.")
     set_action(operation, "motd_update", None, "Manual fleet: no MOTD update attempted.")
@@ -741,6 +792,8 @@ def create_manual_fleet(*, user, cleaned_data: dict):
             "started_at": str(started_at),
             "ended_at": str(ended_at),
             "attendance_multiplier": operation.attendance_multiplier,
+            "review_status": operation.review_status,
+            "counts_for_stats": operation.counts_for_stats,
         },
     )
     return operation

@@ -30,6 +30,10 @@ esi = ESIClientProvider(
         "DeleteFleetsFleetIdMembersMemberId",
         "PostUniverseNames",
         "PostCharactersAffiliation",
+        "GetCharactersCharacterIdOnline",
+        "GetCharactersCharacterIdLocation",
+        "GetCharactersCharacterIdShip",
+        "PostUniverseIds",
     ],
 )
 
@@ -50,6 +54,9 @@ REASON_PHRASES = {420: "Error limited"}
 MAX_ESI_ERROR_LENGTH = 120
 # ESI accepts at most this many IDs in one POST /universe/names/ or /characters/affiliation/ body.
 MAX_IDS_PER_POST = 1000
+# ESI accepts at most this many names in one POST /universe/ids/ body, each 1 to 100 characters long.
+MAX_NAMES_PER_POST = 500
+MAX_NAME_LENGTH = 100
 # HTTP calls one name or affiliation lookup may make, including the splits that isolate invalid IDs.
 MAX_LOOKUP_CALLS = 25
 # Category of an ID ESI does not know (the same value as EveEntityName.UNRESOLVED).
@@ -218,9 +225,9 @@ def as_dict(value: Any) -> dict:
     result = {}
     for key in (
         "fleet_id", "fleet_boss_id", "role", "squad_id", "wing_id", "character_id", "ship_type_id",
-        "solar_system_id", "role_name", "takes_fleet_warp", "is_free_move",
+        "solar_system_id", "role_name", "takes_fleet_warp", "is_free_move", "join_time",
         "is_registered", "is_voice_enabled", "motd", "id", "name", "category", "corporation_id",
-        "alliance_id", "faction_id",
+        "alliance_id", "faction_id", "online", "station_id", "structure_id", "ship_name", "ship_item_id",
     ):
         if hasattr(value, key):
             result[key] = getattr(value, key)
@@ -298,10 +305,11 @@ def get_fleet_info(user, character_id: int, fleet_id: int) -> dict:
         raise _esi_failure(code, "Could not read fleet information", exc) from exc
 
 
-def get_fleet_members(user, character_id: int, fleet_id: int) -> list[dict]:
+def get_fleet_members(user, character_id: int, fleet_id: int, fresh: bool = False) -> list[dict]:
+    """Read the fleet members; ``fresh`` skips django-esi's response cache, e.g. right after a kick."""
     token = get_token(user, character_id, write=False)
     try:
-        result = _read(esi.client.Fleets.GetFleetsFleetIdMembers(fleet_id=fleet_id, token=token))
+        result = _read(esi.client.Fleets.GetFleetsFleetIdMembers(fleet_id=fleet_id, token=token), fresh=fresh)
         return [as_dict(item) for item in (result or [])]
     except Exception as exc:
         # Only the fleet boss can read a fleet: a 404 means the fleet is gone or the boss changed.
@@ -342,6 +350,33 @@ def kick_fleet_member(user, character_id: int, fleet_id: int, member_id: int) ->
         if status in (401, 403):
             raise _esi_failure("KICK_FORBIDDEN", "ESI denied permission to kick this fleet member", exc) from exc
         raise _esi_failure("KICK_ERROR", f"Could not kick fleet member {member_id}", exc) from exc
+
+
+def _character_read(operation_name, token, code, context):
+    """Read one of the location routes of the token's own character; failures raise short FleetESIError texts."""
+    operation = getattr(esi.client.Location, operation_name)
+    try:
+        return as_dict(_read(operation(character_id=token.character_id, token=token)))
+    except Exception as exc:
+        if _status_code(exc) in (401, 403):
+            raise _esi_failure(f"{code}_FORBIDDEN", f"ESI denied access to {context}", exc) from exc
+        raise _esi_failure(f"{code}_ERROR", f"Could not read {context}", exc) from exc
+
+
+def character_online(token) -> bool:
+    """Whether the token's character is logged in to the game (esi-location.read_online.v1)."""
+    payload = _character_read("GetCharactersCharacterIdOnline", token, "ONLINE", "the online status")
+    return bool(payload.get("online"))
+
+
+def character_location(token) -> dict:
+    """``solar_system_id`` (plus ``station_id`` or ``structure_id`` when docked) of the token's character."""
+    return _character_read("GetCharactersCharacterIdLocation", token, "LOCATION", "the location")
+
+
+def character_ship(token) -> dict:
+    """``ship_type_id``, ``ship_name`` and ``ship_item_id`` of the ship the token's character flies."""
+    return _character_read("GetCharactersCharacterIdShip", token, "SHIP", "the current ship")
 
 
 class LookupBudget:
@@ -441,3 +476,40 @@ def character_affiliations(ids, *, budget: LookupBudget | None = None) -> dict[i
                 key: int(row[key]) if row.get(key) else None for key in ("corporation_id", "alliance_id", "faction_id")
             }
     return result
+
+
+def _unique_names(names) -> list[str]:
+    unique = {}
+    for name in names:
+        name = " ".join(str(name or "").split())
+        if 0 < len(name) <= MAX_NAME_LENGTH:
+            unique.setdefault(name.casefold(), name)
+    return list(unique.values())
+
+
+def universe_ids(names) -> dict[str, tuple[int, str]]:
+    """Character IDs of exact character names.
+
+    Returns ``{casefolded name: (character_id, name as ESI spells it)}``; names ESI does not know as a
+    character are missing. Other categories in the answer (corporations, systems …) are ignored.
+    Any failed call raises FleetESIError with a short message.
+    """
+    names = _unique_names(names)
+    result = {}
+    for start in range(0, len(names), MAX_NAMES_PER_POST):
+        chunk = names[start : start + MAX_NAMES_PER_POST]
+        try:
+            answer = _post(esi.client.Universe.PostUniverseIds(body=chunk))
+        except Exception as exc:
+            raise _esi_failure("IDS_ERROR", "Could not look up character names", exc) from exc
+        # The answer is untyped in the client: a dict, or an object with one list attribute per category.
+        characters = answer.get("characters") if isinstance(answer, dict) else getattr(answer, "characters", None)
+        for row in characters or []:
+            row = as_dict(row)
+            if row.get("id") and row.get("name"):
+                result[str(row["name"]).casefold()] = (int(row["id"]), str(row["name"]))
+    return result
+
+
+# Alias for name entry and the roster import.
+resolve_names_to_ids = universe_ids

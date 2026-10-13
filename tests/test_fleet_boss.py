@@ -6,6 +6,7 @@ gets a 404. The boss may sit in any position of the fleet.
 """
 
 import uuid
+from datetime import timedelta
 from unittest import mock
 
 from django.test import TestCase
@@ -228,12 +229,49 @@ class BossHandoverTests(HandoverTestBase):
         label = "Ended automatically: fleet boss handed over to New Boss"
         self.assertEqual(self.operation.end_reason_text, label)
         self.assertEqual(self.operation.last_error, label)
-        self.assertEqual(OperationAction.objects.get(operation=self.operation, action="fleet_end").error_message, label)
+        self.assertEqual(
+            OperationAction.objects.get(operation=self.operation, action="fleet_end").error_message,
+            f"{label}. PAP: 2 granted at 1x.",
+        )
         entry = AuditLog.objects.get(action="fleet.auto_end")
         self.assertIsNone(entry.actor)
         self.assertEqual(entry.reason, label)
         self.assertEqual(entry.new_value["end_reason"], "boss_handover")
         self.assertEqual(entry.new_value["end_detail"], "New Boss")
+        # The fleet ran 30 minutes: 1x was the only choice, so nothing is pending.
+        self.assertEqual((self.operation.attendance_multiplier, self.operation.multiplier_pending), (1, False))
+
+    def test_handover_after_a_multiplier_tier_closes_at_1x_with_the_choice_pending(self):
+        FleetOperation.objects.filter(pk=self.operation.pk).update(
+            started_at=self.operation.started_at - timedelta(minutes=100)
+        )
+        self.hand_boss_over()
+
+        for _ in range(3):
+            self.poll()
+
+        self.assertEqual(self.operation.status, Status.CLOSED)
+        self.assertEqual(self.operation.end_reason, EndReason.BOSS_HANDOVER)
+        self.assertEqual(
+            (self.operation.attendance_multiplier, self.operation.multiplier_source, self.operation.multiplier_pending),
+            (1, FleetOperation.MultiplierSource.DEFAULT, True),
+        )
+        self.assertEqual(AuditLog.objects.get(action="fleet.auto_end").new_value["multiplier_pending"], True)
+
+    def test_handover_in_the_automatic_mode_takes_the_multiplier_of_the_duration(self):
+        f.settings(multiplier_mode="auto")
+        FleetOperation.objects.filter(pk=self.operation.pk).update(
+            started_at=self.operation.started_at - timedelta(minutes=100)
+        )
+        self.hand_boss_over()
+
+        for _ in range(3):
+            self.poll()
+
+        self.assertEqual(
+            (self.operation.attendance_multiplier, self.operation.multiplier_source, self.operation.multiplier_pending),
+            (2, FleetOperation.MultiplierSource.AUTO, False),
+        )
 
     def test_latest_observation_decides_the_end_reason(self):
         self.esi.members[FLEET_ID] = http_error(404)

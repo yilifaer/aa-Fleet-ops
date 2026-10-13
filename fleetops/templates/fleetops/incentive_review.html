@@ -1,7 +1,17 @@
 {% extends "fleetops/base.html" %}
+{% load fleetops_messages %}
 {% block fleetops_content %}
 <h2>FC Incentive Review</h2>
 {% include "fleetops/month_selector.html" %}
+{% if pending_multiplier_count or not_counted_count %}
+<div class="alert alert-warning" id="incentive-warnings">
+  {% if pending_multiplier_count %}
+  <div><strong>{{ pending_multiplier_count }} fleet{{ pending_multiplier_count|pluralize }} in this month still wait{{ pending_multiplier_count|pluralize:"s," }} for the FC's PAP multiplier choice.</strong> They count with 1x until the multiplier is chosen; recalculate afterwards.</div>
+  <ul class="mb-1 small">{% for operation in pending_multiplier_operations %}<li><a href="{% url 'fleetops:operation_detail' operation.uuid %}">{{ operation.fleet_type }} · FC {{ operation.fc_character_name }} · {{ operation.started_at|eve_time }} EVE</a></li>{% endfor %}{% if pending_multiplier_count > pending_multiplier_operations|length %}<li>… {{ pending_multiplier_count }} in total</li>{% endif %}</ul>
+  {% endif %}
+  {% if not_counted_count %}<div>{{ not_counted_count }} closed fleet{{ not_counted_count|pluralize }} in this month {{ not_counted_count|pluralize:"is,are" }} not counted in statistics and incentives.</div>{% endif %}
+</div>
+{% endif %}
 {% if period %}
 <div class="card my-3"><div class="card-header d-flex justify-content-between"><strong>{{ period }}</strong><span class="badge bg-secondary">{{ period.get_status_display }}</span></div><div class="card-body">
   <div class="row"><div class="col">Budget<br><strong>{{ period.budget }} ISK</strong></div><div class="col">Minimum Fleets<br><strong>{{ period.minimum_fleets }}</strong></div></div>
@@ -10,11 +20,33 @@
     {% if period.status == 'review' %}<form method="post" action="{% url 'fleetops:incentive_finalize' period.pk %}">{% csrf_token %}<button class="btn btn-success">Finalize Month</button></form>{% endif %}
     {% if period.status == 'finalized' %}<form method="post" action="{% url 'fleetops:incentive_unlock' period.pk %}">{% csrf_token %}<button class="btn btn-warning">Unlock</button></form>{% endif %}
   </div>
+  {% if edit_form %}
+  <details class="mt-3" id="incentive-edit"{% if edit_form.errors %} open{% endif %}>
+    <summary>Edit budget / minimum fleets</summary>
+    <form method="post" action="{% url 'fleetops:incentive_update' period.pk %}" class="mt-2">{% csrf_token %}
+      {% if edit_form.non_field_errors %}<div class="alert alert-danger">{{ edit_form.non_field_errors }}</div>{% endif %}
+      <div class="row g-2 align-items-start">
+        {% for field in edit_form %}<div class="col-sm-4"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}<div class="text-danger small">{{ field.errors }}</div></div>{% endfor %}
+        <div class="col-sm-4 align-self-end"><button class="btn btn-outline-primary">Save</button></div>
+      </div>
+      <div class="form-text">Saved values apply when the month is recalculated.</div>
+    </form>
+  </details>
+  {% else %}
+  <div class="form-text mt-3">Unlock the month to change its budget or minimum fleets.</div>
+  {% endif %}
 </div></div>
 <div class="table-responsive"><table class="table align-middle"><thead><tr><th>FC</th><th>Fleets</th><th>Points</th><th>Eligible</th><th>Waived</th><th>Payout</th><th></th></tr></thead><tbody>
 {% for row in period.fc_statistics.all %}<tr><td>{{ row.fc_user.profile.main_character.character_name|default:row.fc_user.username }}</td><td>{{ row.fleet_count }}</td><td>{{ row.total_points }}</td><td>{{ row.eligible|yesno:"YES,NO" }}</td><td>{{ row.waived|yesno:"YES,NO" }}</td><td>{{ row.final_payout }} ISK</td><td>{% if period.status != 'finalized' %}<form method="post" action="{% url 'fleetops:incentive_waiver' period.pk row.fc_user_id %}">{% csrf_token %}<input type="hidden" name="waived" value="{% if row.waived %}0{% else %}1{% endif %}"><button class="btn btn-sm btn-outline-secondary">{% if row.waived %}Restore{% else %}Waive{% endif %}</button></form>{% endif %}</td></tr>{% empty %}<tr><td colspan="7">Recalculate to build monthly FC statistics.</td></tr>{% endfor %}
 </tbody></table></div>
 {% else %}
-<div class="card mt-3"><div class="card-header">Create Selected Month</div><div class="card-body"><form method="post">{% csrf_token %}<input type="hidden" name="create_period" value="1">{{ form.as_p }}<button class="btn btn-primary">Create Period</button></form></div></div>
+<div class="card mt-3"><div class="card-header">Create {{ year }}-{{ month|stringformat:"02d" }}</div><div class="card-body">
+  <form method="post" action="{% url 'fleetops:incentive_review' %}?year={{ year }}&amp;month={{ month }}" id="incentive-create">{% csrf_token %}
+    <input type="hidden" name="create_period" value="1">
+    {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+    {% for field in form %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}<div class="text-danger small">{{ field.errors }}</div></div>{% endfor %}
+    <button class="btn btn-primary">Create Period</button>
+  </form>
+</div></div>
 {% endif %}
 {% endblock %}

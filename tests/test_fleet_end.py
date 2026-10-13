@@ -49,7 +49,10 @@ class EndTestBase(FakeESIMixin, TestCase):
         f.add_token(self.fc, self.fc_char)
         self.pilot = f.create_user(main_name="Line Pilot")
         self.pilot_char = f.main_of(self.pilot)
-        self.operation = f.create_operation(self.fc, esi_fleet_id=FLEET_ID)
+        # Long enough for every seeded multiplier (90 -> 2x, 180 -> 3x), so the FC's choice stands.
+        self.operation = f.create_operation(
+            self.fc, esi_fleet_id=FLEET_ID, started_at=timezone.now() - timedelta(minutes=200)
+        )
         self.esi.put_in_fleet(self.fc_char)
         self.esi.members[FLEET_ID] = [f.esi_member(self.fc_char), f.esi_member(self.pilot_char)]
         sync_operation(self.operation)
@@ -348,11 +351,11 @@ class LatePollTests(EndTestBase):
         real_read = tracking_module.get_fleet_members
         reads = []
 
-        def read(user, character_id, fleet_id):
+        def read(user, character_id, fleet_id, fresh=False):
             reads.append(fleet_id)
             if len(reads) > 1:
                 # The end's own final sync.
-                return real_read(user, character_id, fleet_id)
+                return real_read(user, character_id, fleet_id, fresh=fresh)
             request_fleet_end(self.refresh(), actor=self.fc, attendance_multiplier=2)
             if isinstance(outcome, BaseException):
                 raise outcome
@@ -483,7 +486,9 @@ class EndStateCleanupTests(EndTestBase):
 
         self.assertFalse(page.context["stale"])
         self.assertNotContains(page, "STALE DATA")
-        self.assertNotContains(page, 'class="alert alert-warning"')
+        # The only warning left asks the FC for the multiplier the automatic end could not choose.
+        self.assertContains(page, 'class="alert alert-warning"', count=1)
+        self.assertContains(page, 'id="multiplier-pending"')
         self.assertContains(page, "Ended automatically: the fleet no longer exists or the FC left it")
 
     def test_closed_fleet_lists_everyone_who_was_tracked(self):

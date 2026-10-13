@@ -24,6 +24,16 @@ def composition_visible(context, operation):
     return user.has_perm("fleetops.view_all_fleets") or user.has_perm("fleetops.manage_fleets")
 
 
+# Operation steps whose messages name kicked or failed pilots and the fleet's system.
+MEMBER_STEPS = {"kick_member", "kick_outside_system", "kick_capsules"}
+
+
+@register.filter
+def hides_details(step, show_composition):
+    """Whether a step's messages are hidden from this viewer: they name fleet members (VIS(2))."""
+    return not show_composition and step.action in MEMBER_STEPS
+
+
 @register.filter
 def owned_by(rows, user):
     """Rows (attendance, special roles) that belong to ``user``."""
