@@ -10,6 +10,14 @@ from django.template import Template, TemplateSyntaxError
 from django.utils import timezone
 from django.utils.text import slugify
 
+from fleetops.services.fleet_rules import (
+    DEFAULT_BRIDGE_EXCLUDED_GROUP_IDS,
+    FleetRuleError,
+    format_fleet_roles,
+    parse_fleet_roles,
+    parse_id_list,
+    parse_structure_layout,
+)
 from fleetops.validators import (  # noqa: F401 - VOICE_URL_SCHEMES re-exported
     INGAME_CHANNEL_ID_RE,
     VOICE_URL_SCHEMES,
@@ -22,6 +30,9 @@ MAX_RETENTION_DAYS = 36500
 MAX_DATABASE_ID = 2**63 - 1
 # Highest PAP multiplier a fleet or a multiplier tier can have.
 MAX_MULTIPLIER = 10
+# Live fleet refresh while a manager watches the Fleet tab: 0 (off) or this many seconds.
+MIN_LIVE_REFRESH_SECONDS = 10
+MAX_LIVE_REFRESH_SECONDS = 300
 
 # https://discord.com/api[/v<n>]/webhooks/<id>/<token>, optionally with a trailing slash and a query
 # such as ?wait=true&thread_id=1. Suffixed endpoints (/slack, /github) are not accepted.
@@ -56,6 +67,28 @@ def validate_template_syntax(value):
         Template(value)
     except TemplateSyntaxError as exc:
         raise ValidationError("Invalid template syntax: %(error)s", code="invalid", params={"error": exc})
+
+
+def validate_id_list(value):
+    """EVE IDs separated by commas, semicolons or spaces, such as the ship groups excluded from bridges."""
+    try:
+        parse_id_list(value)
+    except FleetRuleError as exc:
+        raise ValidationError(str(exc), code="invalid")
+
+
+def validate_fleet_roles(value):
+    try:
+        parse_fleet_roles(value)
+    except FleetRuleError as exc:
+        raise ValidationError(str(exc), code="invalid")
+
+
+def validate_structure_layout(value):
+    try:
+        parse_structure_layout(value)
+    except FleetRuleError as exc:
+        raise ValidationError(str(exc), code="invalid")
 
 
 class ReviewStatus(models.TextChoices):
@@ -129,6 +162,23 @@ class FleetOpsSettings(models.Model):
         default="auto",
         help_text="SRP provider key. 'auto' uses aasrp, then Alliance Auth SRP, then any other registered provider.",
     )
+    bridge_excluded_group_ids = models.CharField(
+        "Ship groups without bridge",
+        max_length=500,
+        blank=True,
+        default=DEFAULT_BRIDGE_EXCLUDED_GROUP_IDS,
+        validators=[validate_id_list],
+        help_text="SDE ship group IDs that cannot take a jump bridge. Their mass is not counted as bridgeable. "
+        "Default: Titan, Dreadnought, Freighter, Carrier, Supercarrier, Rorqual, Jump Freighter, Industrial "
+        "Command Ship, Force Auxiliary, Lancer Dreadnought, Command Carrier.",
+    )
+    fleet_live_refresh_seconds = models.PositiveIntegerField(
+        "Live fleet refresh",
+        default=15,
+        validators=[MaxValueValidator(MAX_LIVE_REFRESH_SECONDS)],
+        help_text="While someone who can manage a fleet has its Fleet tab open, read the fleet from ESI this often "
+        "(seconds). 0 = only the tracking interval and the Refresh button.",
+    )
 
     class Meta:
         verbose_name = "FleetOps setting"
@@ -150,6 +200,27 @@ class FleetOpsSettings(models.Model):
 
     def __str__(self):
         return "FleetOps Settings"
+
+    def clean(self):
+        super().clean()
+        # Every live refresh is an ESI read with the FC's token; shorter than ESI's own cache is pointless.
+        seconds = self.fleet_live_refresh_seconds
+        if seconds and seconds < MIN_LIVE_REFRESH_SECONDS:
+            raise ValidationError(
+                {
+                    "fleet_live_refresh_seconds": (
+                        f"Use 0 to turn the live refresh off, or at least {MIN_LIVE_REFRESH_SECONDS} seconds."
+                    )
+                }
+            )
+
+    @property
+    def bridge_excluded_groups(self):
+        """The excluded ship group IDs as a set; an unreadable stored value counts as none."""
+        try:
+            return set(parse_id_list(self.bridge_excluded_group_ids))
+        except FleetRuleError:
+            return set()
 
     @classmethod
     def get_solo(cls):
@@ -501,6 +572,10 @@ class FleetOperation(models.Model):
     )
     missing_detail = models.CharField(max_length=255, blank=True)
     last_error = models.TextField(blank=True)
+    # Wings and squads from the latest successful read: [{"id": 1, "name": "Main", "squads": [{"id": 2,
+    # "name": "Alpha"}]}], in ESI order. Kept after the fleet closed, for the names in its history.
+    fleet_wings = models.JSONField(default=list, blank=True)
+    fleet_wings_read_at = models.DateTimeField(null=True, blank=True)
 
     end_requested_at = models.DateTimeField(null=True, blank=True)
     end_requested_by = models.ForeignKey(
@@ -602,6 +677,8 @@ class FleetMemberState(models.Model):
     fleet_role = models.CharField(max_length=50, blank=True)
     wing_id = models.BigIntegerField(null=True, blank=True)
     squad_id = models.BigIntegerField(null=True, blank=True)
+    station_id = models.BigIntegerField(null=True, blank=True, help_text="Set while the member is docked.")
+    takes_fleet_warp = models.BooleanField(null=True, blank=True)
     first_seen = models.DateTimeField()
     last_seen = models.DateTimeField()
     left_at = models.DateTimeField(null=True, blank=True)
@@ -894,6 +971,125 @@ class FleetStartPreset(models.Model):
                 demoted = list(others.exclude(pk=self.pk).values_list("pk", flat=True))
                 if demoted:
                     FleetStartPreset.objects.filter(pk__in=demoted).update(is_default=False)
+
+
+class ShipFunction(models.Model):
+    """What a fleet member does, such as DPS or Logistics; the fleet composition counts members by it."""
+
+    name = models.CharField(max_length=60, unique=True)
+    color = models.CharField(
+        max_length=7,
+        default="#6c757d",
+        validators=[RegexValidator(r"^#[0-9a-fA-F]{6}$", "Enter a color as # and six hex digits, such as #0d6efd.")],
+    )
+    fleet_roles = models.CharField(
+        "Fleet positions",
+        max_length=100,
+        blank=True,
+        validators=[validate_fleet_roles],
+        help_text="Comma-separated fleet positions (fleet_commander, wing_commander, squad_commander). "
+        "Members in these positions count here whatever they fly.",
+    )
+    is_default = models.BooleanField(
+        "Default",
+        default=False,
+        help_text="Ships that no rule matches count here. Needs django-eveonline-sde to recognise ships.",
+    )
+    sort_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["sort_order", "name"]
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def roles(self):
+        """The fleet positions as a tuple, in fleet order."""
+        try:
+            return parse_fleet_roles(self.fleet_roles)
+        except FleetRuleError:
+            return ()
+
+    def clean(self):
+        super().clean()
+        # Inactive functions are ignored, so an inactive default would leave every unmatched ship unclassified.
+        if self.is_default and not self.is_active:
+            raise ValidationError({"is_default": "The default function must be active."})
+
+    def save(self, *args, **kwargs):
+        # The positions are stored as the classifier reads them (lower case, fleet order), also when
+        # typed otherwise in Django admin; text that does not parse is left to the validator.
+        try:
+            self.fleet_roles = format_fleet_roles(self.fleet_roles)
+        except FleetRuleError:
+            pass
+        # At most one active default. Functions that lost the flag are kept in demoted_defaults so
+        # callers can audit them.
+        self.demoted_defaults = []
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            if self.is_default and self.is_active:
+                others = ShipFunction.objects.select_for_update().filter(is_default=True)
+                self.demoted_defaults = list(others.exclude(pk=self.pk))
+                demoted_pks = [other.pk for other in self.demoted_defaults]
+                ShipFunction.objects.filter(pk__in=demoted_pks).update(is_default=False)
+                for other in self.demoted_defaults:
+                    other.is_default = False
+
+
+class ShipFunctionRule(models.Model):
+    """Puts a ship type or a whole ship group (from the SDE) under a ship function."""
+
+    class Kind(models.TextChoices):
+        TYPE = "type", "Ship type"
+        GROUP = "group", "Ship group"
+
+    function = models.ForeignKey(ShipFunction, on_delete=models.CASCADE, related_name="rules")
+    kind = models.CharField(max_length=10, choices=Kind.choices)
+    target_id = models.BigIntegerField(
+        "Type or group ID",
+        validators=[MinValueValidator(1), MaxValueValidator(MAX_DATABASE_ID)],
+        help_text="ID of the ship type or ship group in the SDE.",
+    )
+    label = models.CharField(
+        max_length=255, blank=True, help_text="Type or group name when the rule was saved, shown without the SDE."
+    )
+
+    class Meta:
+        ordering = ["function__sort_order", "kind", "label", "target_id"]
+        constraints = [
+            models.UniqueConstraint(fields=["kind", "target_id"], name="fleetops_unique_ship_function_rule")
+        ]
+
+    def __str__(self):
+        return f"{self.get_kind_display()} {self.label or self.target_id} → {self.function}"
+
+
+class FleetStructureTemplate(models.Model):
+    """Wing and squad names an FC can apply to a running fleet."""
+
+    name = models.CharField(max_length=100, unique=True)
+    layout = models.TextField(
+        validators=[validate_structure_layout],
+        help_text="One wing per line: 'Wing name: Squad 1, Squad 2'. Names up to 10 characters; "
+        "up to 5 wings with up to 5 squads each. Lines starting with # are ignored.",
+    )
+    description = models.CharField(max_length=255, blank=True)
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort_order", "name"]
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def wings(self):
+        """``[{"name": "Main", "squads": ["Alpha", ...]}, ...]``; raises FleetRuleError for a broken layout."""
+        return parse_structure_layout(self.layout)
 
 
 class IncentivePeriod(models.Model):

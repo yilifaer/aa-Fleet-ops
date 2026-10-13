@@ -6,7 +6,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from fleetops.models import FleetMemberEvent, FleetMemberState, FleetOperation
-from fleetops.providers.esi import FleetESIError, detect_character_fleet, get_fleet_members
+from fleetops.providers.esi import FleetESIError, detect_character_fleet, get_fleet_members, get_fleet_wings
 from fleetops.services.errors import log_failure, report_failure
 from fleetops.services.identity import character_label, resolve_many
 from fleetops.services.names import (
@@ -94,9 +94,25 @@ def _keep_known_details(values, state):
             values[key] = getattr(state, key)
 
 
+def _read_wings(operation, fresh):
+    """The fleet's wings and squads from ESI, or None when they could not be read.
+
+    A failed wings read never fails the member sync: the last snapshot is kept.
+    """
+    try:
+        return get_fleet_wings(operation.fc_user, operation.fc_character_id, operation.esi_fleet_id, fresh=fresh)
+    except FleetESIError as exc:
+        logger.info("FleetOps: wings of operation %s not read (%s).", operation.pk, exc.code)
+    except Exception as exc:
+        report_failure(logger, "Reading the fleet wings", exc, operation)
+    return None
+
+
 def sync_operation(operation, fresh=False, until=None):
     """Read the fleet members from ESI and record joins, leaves, changes and time in fleet.
 
+    The wings and squads are read too and kept as ``operation.fleet_wings``; position events keep
+    the raw wing and squad ids (names are shown from that snapshot).
     ``fresh`` skips django-esi's response cache, so a sync right after a kick sees the change.
     Returns the number of members, or None when the fleet was closed or cancelled while
     ESI was being read; nothing is written then. A read older than the one already recorded
@@ -106,12 +122,14 @@ def sync_operation(operation, fresh=False, until=None):
     Time in fleet is approximated from the polls: a member present at two successive polls is
     counted for the whole time between them, also when an ESI outage made that gap long.
     ``until`` (the end request of a fleet being closed) ends the time in fleet: nothing after it
-    is counted, and members who joined after it are not added.
+    is counted, and members who joined after it are not added. A fleet that is Ending always
+    counts up to its end request, whoever reads it (a refresh after a fleet job, a kick batch).
     """
     if not operation.esi_fleet_id:
         raise FleetESIError("NO_FLEET_ID", "Operation has no ESI fleet ID.")
     now = timezone.now()
     members = get_fleet_members(operation.fc_user, operation.fc_character_id, operation.esi_fleet_id, fresh=fresh)
+    wings = _read_wings(operation, fresh)
     ids = [int(m.get("character_id")) for m in members if m.get("character_id")]
     identities = resolve_many(ids)
     ship_names = item_type_names({m.get("ship_type_id") for m in members if m.get("ship_type_id")})
@@ -126,11 +144,17 @@ def sync_operation(operation, fresh=False, until=None):
         # of time in fleet is counted twice.
         current = (
             FleetOperation.objects.select_for_update()
-            .only("status", "attendance_multiplier", "missing_reason", "last_esi_update", "started_at")
+            .only(
+                "status", "attendance_multiplier", "missing_reason", "last_esi_update", "started_at", "end_requested_at"
+            )
             .get(pk=operation.pk)
         )
         if current.status not in FleetOperation.OPEN_STATUSES:
             return None
+        if until is None and current.status == FleetOperation.Status.ENDING:
+            # The FC ended the fleet while this read ran: pilots who joined after the end request
+            # must not be added, nor anybody counted past it.
+            until = current.end_requested_at
         operation.attendance_multiplier = current.attendance_multiplier
         previous_poll = current.last_esi_update
         if previous_poll and previous_poll > now:
@@ -179,6 +203,9 @@ def sync_operation(operation, fresh=False, until=None):
                 "fleet_role": member.get("role") or member.get("role_name") or "",
                 "wing_id": member.get("wing_id"),
                 "squad_id": member.get("squad_id"),
+                # Docked while set; neither is a source of member events.
+                "station_id": member.get("station_id"),
+                "takes_fleet_warp": member.get("takes_fleet_warp"),
                 "first_seen": now,
                 "last_seen": now,
                 "left_at": None,
@@ -225,6 +252,11 @@ def sync_operation(operation, fresh=False, until=None):
             # Only the boss can read the fleet, so the FC character holds the boss role again.
             operation.fleet_boss_character_id = operation.fc_character_id
             update_fields.append("fleet_boss_character_id")
+        if wings is not None:
+            # Read before the wings were: an expected change newer than this read still shows (fleet_overlay).
+            operation.fleet_wings = wings
+            operation.fleet_wings_read_at = now
+            update_fields += ["fleet_wings", "fleet_wings_read_at"]
         operation.last_esi_update = now
         operation.fleet_missing_count = 0
         operation.missing_reason = ""
@@ -232,6 +264,11 @@ def sync_operation(operation, fresh=False, until=None):
         operation.last_error = ""
         operation.save(update_fields=update_fields)
 
+    # The fleet was read with the FC's token, so the FC character is its boss: earlier read
+    # problems and boss checks no longer apply. Imported here: fleet_refresh imports this module.
+    from fleetops.services.fleet_refresh import clear_read_problem
+
+    clear_read_problem(operation.pk)
     # Members without an Alliance Auth account are named in the background, after this commit; so are
     # members who left before a lookup could name them.
     external = [cid for cid in incoming if identities[cid].external]

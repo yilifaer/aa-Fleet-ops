@@ -6,6 +6,9 @@ from fleetops import (
     views_config,
     views_controls,
     views_fleet_actions,
+    views_fleet_manage,
+    views_fleet_state,
+    views_fleet_tools,
     views_links,
     views_pap,
     views_presets,
@@ -88,6 +91,23 @@ urlpatterns += [
     path("start/presets/<int:pk>/delete/", views_presets.preset_delete_view, name="preset_delete"),
     path("start/presets/<int:pk>/default/", views_presets.preset_default_view, name="preset_default"),
     path("incentives/<int:pk>/update/", views.incentive_update, name="incentive_update"),
+]
+
+# The Fleet tab: live state, wing/squad/member changes, invites, structure templates and ship functions.
+urlpatterns += [
+    path("operations/<uuid:operation_uuid>/fleet/state/", views_fleet_state.fleet_state_view, name="fleet_state"),
+    path("operations/<uuid:operation_uuid>/fleet/refresh/", views_fleet_state.fleet_refresh_view, name="fleet_refresh"),
+    path("operations/<uuid:operation_uuid>/fleet/wings/add/", views_fleet_manage.wing_add_view, name="fleet_wing_add"),
+    path("operations/<uuid:operation_uuid>/fleet/wings/<int:wing_id>/rename/", views_fleet_manage.wing_rename_view, name="fleet_wing_rename"),
+    path("operations/<uuid:operation_uuid>/fleet/wings/<int:wing_id>/delete/", views_fleet_manage.wing_delete_view, name="fleet_wing_delete"),
+    path("operations/<uuid:operation_uuid>/fleet/wings/<int:wing_id>/squads/add/", views_fleet_manage.squad_add_view, name="fleet_squad_add"),
+    path("operations/<uuid:operation_uuid>/fleet/squads/<int:squad_id>/rename/", views_fleet_manage.squad_rename_view, name="fleet_squad_rename"),
+    path("operations/<uuid:operation_uuid>/fleet/squads/<int:squad_id>/delete/", views_fleet_manage.squad_delete_view, name="fleet_squad_delete"),
+    path("operations/<uuid:operation_uuid>/fleet/members/move/", views_fleet_manage.members_move_view, name="fleet_members_move"),
+    path("operations/<uuid:operation_uuid>/fleet/invite/candidates/", views_fleet_tools.invite_candidates_view, name="fleet_invite_candidates"),
+    path("operations/<uuid:operation_uuid>/fleet/invite/", views_fleet_tools.invite_view, name="fleet_invite"),
+    path("operations/<uuid:operation_uuid>/fleet/template/", views_fleet_tools.apply_template_view, name="fleet_apply_template"),
+    path("operations/<uuid:operation_uuid>/fleet/classify/", views_fleet_tools.classify_view, name="fleet_classify"),
 ]
 
 # Public page; it must stay the last pattern. Alliance Auth stops adding its login check at the first

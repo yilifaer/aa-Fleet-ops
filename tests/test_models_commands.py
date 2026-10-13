@@ -1061,6 +1061,8 @@ class AdminTests(TestCase):
             "pap_minimum_minutes": 0,
             "minimum_fleet_minutes": 0,
             "pap_link_minutes": 30,
+            "bridge_excluded_group_ids": "30,485",
+            "fleet_live_refresh_seconds": 15,
         }
         url = self._url(FleetOpsSettings, "change", 1)
 

@@ -35,6 +35,7 @@ from http import HTTPStatus
 from types import SimpleNamespace
 from unittest import mock
 
+from django.core.cache import cache
 from django.utils import timezone
 from esi.exceptions import ESIErrorLimitException, HTTPClientError, HTTPNotModified, HTTPServerError
 from pydantic import BaseModel
@@ -558,13 +559,19 @@ class FleetSim:
     # Test setup
 
     def install(self, testcase=None):
-        """Serve ``fleetops.providers.esi`` from this simulator until the test ends."""
+        """Serve ``fleetops.providers.esi`` from this simulator until the test ends.
+
+        What the fleet services remember about the simulated fleets in the Django cache (boss checks,
+        read errors, expected changes, jobs) is dropped when the test ends, so it never reaches
+        another test whose fleet happens to get the same primary key.
+        """
         from fleetops.providers import esi as esi_provider
 
         patcher = mock.patch.object(esi_provider, "esi", SimpleNamespace(client=SimpleNamespace(Fleets=self)))
         patcher.start()
         if testcase is not None:
             testcase.addCleanup(patcher.stop)
+            testcase.addCleanup(cache.clear)
         return patcher
 
     def create_fleet(

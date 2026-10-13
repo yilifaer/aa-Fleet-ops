@@ -63,7 +63,7 @@ from fleetops.services.attendance import (
 from fleetops.services.counting import counted_operations, evaluate_stats_inclusion, operation_count_reason
 from fleetops.services.dashboard import dashboard_metrics
 from fleetops.services.errors import log_failure
-from fleetops.services.fleet_controls import CAPSULES, KickRefused, kick_members, kickable_pod_members
+from fleetops.services.fleet_controls import CAPSULES, KickRefused, kick_members
 from fleetops.services.identity import get_owned_character
 from fleetops.services.history import current_member_user_ids
 from fleetops.services.incentives import (
@@ -868,7 +868,6 @@ def operation_detail(request, operation_uuid):
     map_rows = proximity_rows(operation, 3)
     role_assignments = operation.role_assignments.select_related("auth_user", "assigned_by").all()
     is_active = operation.status == FleetOperation.Status.ACTIVE
-    pods = kickable_pod_members(operation) if is_active else []
     settings = FleetOpsSettings.get_solo()
     stale = bool(
         is_active
@@ -888,7 +887,6 @@ def operation_detail(request, operation_uuid):
         "map_rows": map_rows,
         "role_assignments": role_assignments,
         "role_assignment_form": OperationRoleAssignmentForm(operation=operation),
-        "pod_count": len(pods),
         "stale": stale,
         "unreadable_warning": unreadable_fleet_warning(operation, settings) if is_active else "",
         "can_manage": _can_manage_operation(request.user, operation),
@@ -896,16 +894,16 @@ def operation_detail(request, operation_uuid):
         "accepts_records": operation.status in RECORDABLE_STATUSES,
         "manual_attendance_form": ManualAttendanceForm(),
     }
-    # The page's PAP (end prompt, multiplier form), records, link and control parts add their own
-    # context. Imported here because
-    # those modules import their helpers from this one.
-    from fleetops import views_controls, views_links, views_pap, views_records
+    # The page's PAP (end prompt, multiplier form), records, link, control and Fleet tab parts add
+    # their own context. Imported here because those modules import their helpers from this one.
+    from fleetops import views_controls, views_fleet_state, views_links, views_pap, views_records
 
     for provider in (
         views_pap.pap_context,
         views_records.records_context,
         views_links.links_context,
         views_controls.controls_context,
+        views_fleet_state.fleet_context,
     ):
         context.update(provider(request, operation))
     return _render(request, "fleetops/operation_detail.html", context)

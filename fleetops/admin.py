@@ -17,6 +17,7 @@ from fleetops.models import (
     FleetOperation,
     FleetOpsSettings,
     FleetStartPreset,
+    FleetStructureTemplate,
     FleetType,
     IncentivePeriod,
     MessageTemplate,
@@ -29,9 +30,11 @@ from fleetops.models import (
     PapRegistration,
     PingRole,
     PingTarget,
+    ShipFunction,
+    ShipFunctionRule,
     SpecialRole,
 )
-from fleetops.services.audit import audit
+from fleetops.services.audit import audit, cascaded_config_rows
 from fleetops.services.mentions import role_delete_refusal
 
 
@@ -84,24 +87,81 @@ class FleetOpsConfigAuditMixin:
             audit(request.user, "configuration.update", demoted, {**new, "is_default": True}, new)
 
     def delete_model(self, request, obj):
-        old = _audit_snapshot(obj)
-        object_id = str(obj.pk)
-        object_type = obj.__class__.__name__
-        super().delete_model(request, obj)
-        AuditLog.objects.create(
-            actor=request.user,
-            action="configuration.delete",
-            object_type=object_type,
-            object_id=object_id,
-            old_value=old,
-            new_value=None,
-        )
+        # The object first, then the rows deleted with it (a ship function's rules).
+        deleted = [
+            (row.__class__.__name__, str(row.pk), _audit_snapshot(row)) for row in [obj, *cascaded_config_rows(obj)]
+        ]
+        with transaction.atomic():
+            super().delete_model(request, obj)
+            for object_type, object_id, old in deleted:
+                AuditLog.objects.create(
+                    actor=request.user,
+                    action="configuration.delete",
+                    object_type=object_type,
+                    object_id=object_id,
+                    old_value=old,
+                    new_value=None,
+                )
 
     def delete_queryset(self, request, queryset):
         # The changelist "delete selected" action must leave the same audit trail as single deletes.
         with transaction.atomic():
             for obj in queryset:
                 self.delete_model(request, obj)
+
+
+class ShipFunctionRuleInline(admin.TabularInline):
+    model = ShipFunctionRule
+    extra = 0
+    fields = ("kind", "target_id", "label")
+
+
+@admin.register(ShipFunction)
+class ShipFunctionAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
+    list_display = ("name", "color", "fleet_roles", "is_default", "is_active", "sort_order")
+    list_filter = ("is_default", "is_active")
+    inlines = [ShipFunctionRuleInline]
+
+    def save_formset(self, request, form, formset, change):
+        # Each rule added, changed or removed in the inline gets its own audit entry.
+        before = {}
+        for inline_form in formset.forms:
+            pk = inline_form.instance.pk
+            stored = formset.model.objects.filter(pk=pk).first() if pk is not None else None
+            if stored is not None:
+                before[pk] = _audit_snapshot(stored)
+        deleted = [
+            (inline_form.instance.pk, inline_form.instance.__class__.__name__)
+            for inline_form in formset.deleted_forms
+            if inline_form.instance.pk in before
+        ]
+        super().save_formset(request, form, formset, change)
+        for pk, object_type in deleted:
+            AuditLog.objects.create(
+                actor=request.user,
+                action="configuration.delete",
+                object_type=object_type,
+                object_id=str(pk),
+                old_value=before[pk],
+                new_value=None,
+            )
+        for obj in formset.new_objects:
+            audit(request.user, "configuration.create", obj, None, _audit_snapshot(obj))
+        for obj, _changed in formset.changed_objects:
+            audit(request.user, "configuration.update", obj, before.get(obj.pk), _audit_snapshot(obj))
+
+
+@admin.register(ShipFunctionRule)
+class ShipFunctionRuleAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
+    list_display = ("function", "kind", "target_id", "label")
+    list_filter = ("kind", "function")
+    search_fields = ("label", "target_id")
+
+
+@admin.register(FleetStructureTemplate)
+class FleetStructureTemplateAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
+    list_display = ("name", "description", "is_active", "sort_order")
+    list_filter = ("is_active",)
 
 
 class ReadOnlyAdmin(admin.ModelAdmin):

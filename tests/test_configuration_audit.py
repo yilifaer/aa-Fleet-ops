@@ -20,16 +20,20 @@ from fleetops.models import (
     DiscordWebhook,
     FleetOperation,
     FleetOpsSettings,
+    FleetStructureTemplate,
     FleetType,
     MessageTemplate,
     MultiplierTier,
     OperationAction,
     PingRole,
     PingTarget,
+    ShipFunction,
+    ShipFunctionRule,
     SpecialRole,
 )
 from fleetops.providers import srp as srp_providers
 from fleetops.services.audit import audit
+from fleetops.services.fleet_rules import DEFAULT_BRIDGE_EXCLUDED_GROUP_IDS
 from fleetops.services.history import prune_history
 from fleetops.services.messages import render_operation_messages
 from fleetops.services.operations import retry_ping
@@ -54,6 +58,12 @@ SECTION_MODELS = {
 }
 # Sections of the PAP rules; tests/test_pap_routes.py covers their pages.
 PAP_SECTION_MODELS = {"multiplier-tiers": MultiplierTier, "special-roles": SpecialRole}
+# Sections of the Fleet tab; tests/test_fleet_page.py covers their pages.
+FLEET_SECTION_MODELS = {
+    "ship-functions": ShipFunction,
+    "ship-function-rules": ShipFunctionRule,
+    "structure-templates": FleetStructureTemplate,
+}
 
 
 def create_sample_objects():
@@ -127,6 +137,8 @@ def settings_payload(**overrides):
         "history_alliance_ids": "",
         "srp_auto_create": "on",
         "srp_provider": "auto",
+        "fleet_live_refresh_seconds": "15",
+        "bridge_excluded_group_ids": DEFAULT_BRIDGE_EXCLUDED_GROUP_IDS,
     }
     data.update(overrides)
     return {key: value for key, value in data.items() if value is not None}
@@ -220,7 +232,7 @@ class ConfigurationAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         cards = {card["key"]: card["count"] for card in response.context["cards"]}
-        models = {**SECTION_MODELS, **PAP_SECTION_MODELS}
+        models = {**SECTION_MODELS, **PAP_SECTION_MODELS, **FLEET_SECTION_MODELS}
         self.assertEqual(set(cards), set(models))
         for section, model in models.items():
             self.assertEqual(cards[section], model.objects.count(), section)

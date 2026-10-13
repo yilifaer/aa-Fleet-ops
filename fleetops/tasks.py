@@ -2,14 +2,18 @@ from datetime import timedelta
 
 from allianceauth.services.hooks import get_extension_logger
 from celery import shared_task
+from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.db.models import Q
 from django.utils import timezone
 
 from fleetops.models import FleetOperation, FleetOpsSettings
 from fleetops.providers.esi import FleetESIError
+from fleetops.services import fleet_jobs
 from fleetops.services.audit import audit
 from fleetops.services.errors import log_failure, report_failure
+from fleetops.services.fleet_access import FleetManageError
+from fleetops.services.fleet_refresh import REFRESH_TASK_LOCK_SECONDS, refresh_now, refresh_task_lock_key
 from fleetops.services.names import apply_names_to_operation, resolve_and_store
 from fleetops.services.operations import cancel_abandoned_starts, end_fleet, finish_requested_end
 from fleetops.services.tracking import observe_unreadable_fleet, sync_operation, unreadable_fleet_message
@@ -31,7 +35,7 @@ ENDING_RECOVERY_AFTER = timedelta(minutes=5)
 # recovery is due. A slow end that outlives its lock is harmless: end_fleet re-checks the locked
 # row before each phase, so a second run never closes the fleet twice.
 END_LOCK_TIMEOUT = 4 * 60
-# One kick batch per fleet at a time; a second batch retries until the first is done.
+# Kick batches queued by earlier versions retry this long while the fleet runs another job.
 KICK_LOCK_TIMEOUT = 10 * 60
 KICK_RETRY_SECONDS = 30
 
@@ -241,17 +245,61 @@ def finish_fleet_end(operation_id):
 
 @shared_task(bind=True, max_retries=KICK_LOCK_TIMEOUT // KICK_RETRY_SECONDS)
 def kick_members(self, operation_id, character_ids, actor_id, purpose, context=None):
-    """Kick a batch of fleet members with the FC's ESI token, away from the web request."""
-    # Imported here: the kick service queues this task.
-    from fleetops.services.fleet_controls import run_kick_batch
+    """Kick a batch of fleet members queued by an earlier version.
 
-    lock_key = f"fleetops:kick:{operation_id}"
-    if not cache.add(lock_key, "1", timeout=KICK_LOCK_TIMEOUT):
-        raise self.retry(countdown=KICK_RETRY_SECONDS)
+    New batches are fleet jobs (``run_fleet_job``); this one runs as a job too, so it never overlaps
+    another job or a single change of the fleet. While the fleet is busy it retries.
+    """
+    # Imported here: the kick service imports this module.
+    from fleetops.services.fleet_controls import kick_job_label, kick_job_payload
+
+    operation = FleetOperation.objects.filter(pk=operation_id).first()
+    if operation is None:
+        return "missing"
+    actor = get_user_model().objects.filter(pk=actor_id).first() if actor_id else None
     try:
-        return run_kick_batch(operation_id, character_ids, actor_id, purpose, context)
+        job = fleet_jobs.claim_job(
+            operation,
+            kind="kick",
+            label=kick_job_label(purpose, context or {}, len(character_ids)),
+            actor=actor,
+            total=len(character_ids),
+        )
+    except FleetManageError:
+        raise self.retry(countdown=KICK_RETRY_SECONDS)
+    payload = kick_job_payload(character_ids, purpose, context or {})
+    return fleet_jobs.run_job(operation_id, job["id"], "kick", payload, actor_id)
+
+
+@shared_task
+def refresh_fleet_structure(operation_id, not_before=None):
+    """Read an active fleet from ESI past the response cache, after a change or for a watched Fleet tab.
+
+    ``not_before`` (a Unix timestamp) is when the read was due: a fleet read since then, for example
+    by an earlier refresh that waited for the same busy worker, is not read again.
+    """
+    lock_key = refresh_task_lock_key(operation_id)
+    if not cache.add(lock_key, "1", timeout=REFRESH_TASK_LOCK_SECONDS):
+        return "already-running"
+    try:
+        operation = FleetOperation.objects.select_related("fc_user").filter(pk=operation_id).first()
+        if operation is None:
+            return "missing"
+        if operation.status != FleetOperation.Status.ACTIVE:
+            return "inactive"
+        last_read = operation.last_esi_update
+        if not_before is not None and last_read is not None and last_read.timestamp() >= float(not_before):
+            return "fresh"
+        ok, _message = refresh_now(operation, min_interval=0)
+        return "refreshed" if ok else "failed"
     finally:
         cache.delete(lock_key)
+
+
+@shared_task(autoretry_for=(), max_retries=0)
+def run_fleet_job(operation_id, job_id, kind, payload, actor_id):
+    """Run a fleet job queued by ``fleet_jobs.start_job`` (structure template, bulk move, invite, kicks)."""
+    return fleet_jobs.run_job(operation_id, job_id, kind, payload, actor_id)
 
 
 @shared_task(autoretry_for=(), max_retries=0)

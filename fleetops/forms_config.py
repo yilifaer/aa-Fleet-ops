@@ -67,6 +67,11 @@ class FleetOpsSettingsForm(forms.ModelForm):
         ),
         ("Statistics", "", ["minimum_fleet_minutes"]),
         ("PAP links", "", ["pap_link_minutes"]),
+        (
+            "Fleet tab",
+            "The live fleet view and its composition.",
+            ["fleet_live_refresh_seconds", "bridge_excluded_group_ids"],
+        ),
     ]
 
     srp_provider = forms.ChoiceField(
@@ -92,6 +97,8 @@ class FleetOpsSettingsForm(forms.ModelForm):
             "history_alliance_ids",
             "srp_auto_create",
             "srp_provider",
+            "fleet_live_refresh_seconds",
+            "bridge_excluded_group_ids",
         ]
         widgets = {
             "auto_end_enabled": forms.CheckboxInput(attrs={"class": "form-check-input"}),
@@ -108,6 +115,14 @@ class FleetOpsSettingsForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["srp_provider"].choices = srp_provider_choices(self.instance.srp_provider)
+        bridge = self.fields.get("bridge_excluded_group_ids")
+        if bridge is not None:
+            # Imported here: the fleet services import the models this module's forms are built on.
+            from fleetops.services.composition_config import describe_group_ids
+
+            current = describe_group_ids(self.instance.bridge_excluded_group_ids)
+            if current:
+                bridge.help_text = f"{bridge.help_text} Now: {current}."
         for name, field in self.fields.items():
             if isinstance(field.widget, forms.Select):
                 field.widget.attrs["class"] = "form-select"

@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlparse
 import requests
 from allianceauth.authentication.models import CharacterOwnership
 from django.conf import settings as django_settings
+from django.contrib.messages import get_messages
 from django.template import TemplateDoesNotExist, TemplateSyntaxError
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
@@ -44,6 +45,7 @@ from fleetops.models import (
 )
 from fleetops.providers.esi import FleetDetectionResult, FleetESIError, detect_character_fleet
 from fleetops.providers.srp import SRPLinkResult
+from fleetops.services.fleet_access import NO_WRITE_TOKEN
 from fleetops.services.messages import render_operation_messages
 from fleetops.services.operations import start_fleet
 
@@ -1085,19 +1087,17 @@ class EsiTokenOwnershipTests(StartFleetPatchesMixin, TestCase):
         self.assertEqual(kick.call_args.kwargs["member_id"], f.main_of(pilot).character_id)
         self.assertEqual(kick.call_args.kwargs["token"], self.fc_token)
 
-        # Without the write scope no ESI call is made and the failure is reported. The fleet read after the
-        # kick saw the pilot leave; they are back in a capsule.
+        # Without the write scope the kick is refused with the reason before any ESI call. The fleet read
+        # after the kick saw the pilot leave; they are back in a capsule.
         kick.reset_mock()
         FleetMemberState.objects.filter(operation=operation, character_id=f.main_of(pilot).character_id).update(
             is_active=True, left_at=None
         )
         self.fc_token.scopes.set(Scope.objects.filter(name=FLEET_READ_SCOPE))
-        self.client.post(url)
+        response = self.client.post(url)
         kick.assert_not_called()
-        action = OperationAction.objects.get(operation=operation, action="kick_capsules")
-        self.assertEqual(action.status, OperationAction.Status.FAILED)
-        audit = AuditLog.objects.filter(action="fleet.kick_capsules").order_by("-pk").first()
-        self.assertEqual(len(audit.new_value["failures"]), 1)
+        self.assertIn(NO_WRITE_TOKEN, [str(message) for message in get_messages(response.wsgi_request)])
+        self.assertEqual(AuditLog.objects.filter(action="fleet.kick_capsules").count(), 1)
 
         # Closed fleets cannot be used to kick anyone.
         FleetOperation.objects.filter(pk=operation.pk).update(status=CLOSED)

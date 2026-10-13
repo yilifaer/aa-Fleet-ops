@@ -24,14 +24,18 @@ from fleetops.models import (
     FleetMemberState,
     FleetOperation,
     FleetOpsSettings,
+    FleetStructureTemplate,
     FleetType,
     MessageTemplate,
     MultiplierTier,
     PapLink,
     PapRegistration,
     PingRole,
+    ShipFunction,
+    ShipFunctionRule,
     SpecialRole,
 )
+from fleetops.services.fleet_rules import normalize_wings
 
 _ids = itertools.count(90_000_001)
 
@@ -354,12 +358,17 @@ def member_state(
     active: bool = True,
     user=None,
     name: str | None = None,
+    role: str | None = None,
     **extra,
 ) -> FleetMemberState:
     """A tracked fleet member with the character's own corporation, its owner and the owner's main.
 
-    ``character`` may be a bare character ID for a pilot without Alliance Auth account.
+    ``character`` may be a bare character ID for a pilot without Alliance Auth account. ``role`` is the
+    fleet position (``fleet_role``); ``wing_id``, ``squad_id``, ``ship_type_id``, ``solar_system_id``,
+    ``station_id`` and the other fields pass through.
     """
+    if role is not None:
+        extra["fleet_role"] = role
     character_id, character_name, eve_character = _character(character, name)
     user = user or owner_of(character_id)
     main = main_of(user) if user else None
@@ -421,3 +430,70 @@ def registration(
     )
     values.update(extra)
     return PapRegistration.objects.create(operation=operation, character_id=character_id, **values)
+
+
+_unit_ids = itertools.count(4_100_000_001)
+
+
+def wings(*spec) -> list[dict]:
+    """A normalised wings list, as ``FleetOperation.fleet_wings`` stores it.
+
+    Each wing is ``(name, squads)`` or ``(wing_id, name, squads)``; squads are names or
+    ``(squad_id, name)`` pairs. Missing ids are allocated. ``wings(("Main", ("Alpha", "Bravo")), ("Logi", ("Logi",)))``
+    """
+    result = []
+    for wing in spec:
+        if isinstance(wing, dict):
+            result.append(wing)
+            continue
+        wing_id, name, squads = wing if len(wing) == 3 else (next(_unit_ids), *wing)
+        result.append(
+            {
+                "id": wing_id,
+                "name": name,
+                "squads": [
+                    {"id": squad[0], "name": squad[1]}
+                    if isinstance(squad, (tuple, list))
+                    else {"id": next(_unit_ids), "name": squad}
+                    for squad in squads
+                ],
+            }
+        )
+    return normalize_wings(result)
+
+
+def clear_ship_functions() -> None:
+    """Remove the seeded ship functions and their rules."""
+    ShipFunction.objects.all().delete()
+
+
+def ship_function(
+    name: str,
+    *,
+    rules=(("group", 832),),
+    fleet_roles: str = "",
+    is_default: bool = False,
+    color: str = "#0d6efd",
+    **extra,
+) -> ShipFunction:
+    """A ship function with ``(kind, target_id)`` or ``(kind, target_id, label)`` rules.
+
+    An existing function of that name (such as a seeded one) is updated; rules for the same ship type
+    or group move to this function.
+    """
+    function, _created = ShipFunction.objects.update_or_create(
+        name=name, defaults={"fleet_roles": fleet_roles, "is_default": is_default, "color": color, **extra}
+    )
+    for rule in rules:
+        kind, target_id, label = (*rule, "")[:3]
+        ShipFunctionRule.objects.update_or_create(
+            kind=kind, target_id=target_id, defaults={"function": function, "label": label}
+        )
+    return function
+
+
+def structure_template(name: str = "Standard", layout: str = "Main: Alpha, Bravo", **extra) -> FleetStructureTemplate:
+    template, _created = FleetStructureTemplate.objects.update_or_create(
+        name=name, defaults={"layout": layout, **extra}
+    )
+    return template

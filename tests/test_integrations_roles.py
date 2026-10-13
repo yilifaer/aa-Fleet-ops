@@ -41,9 +41,11 @@ from fleetops.providers.srp import (
 )
 from fleetops.services import routing as routing_module
 from fleetops.services import sde as sde_module
+from fleetops.services.fleet_access import NO_WRITE_TOKEN
 from fleetops.services.fleet_controls import (
     CAPSULES,
     KNOWN_CAPSULE_TYPE_IDS,
+    KickRefused,
     is_capsule_member,
     kick_members,
     pod_members,
@@ -882,6 +884,25 @@ class SDEFallbackTests(TestCase):
             self.assertEqual(sde_module.solar_system_names({30000142}), {})
             self.assertEqual(sde_module.stargate_edges(), {})
 
+    def test_fleet_composition_lookups_degrade_without_eve_sde(self):
+        def lookups():
+            return (
+                sde_module.ship_type_details({CAPSULE, RIFTER}),
+                sde_module.find_item_type("Rifter"),
+                sde_module.find_item_group("Frigate"),
+                sde_module.item_group_names({25}),
+            )
+
+        self.assertEqual(lookups(), ({}, None, None, {}))
+        with mock.patch.object(sde_module, "apps", FakeSDEApps(error=LookupError("No model"))):
+            self.assertEqual(lookups(), ({}, None, None, {}))
+        broken = SimpleNamespace(
+            _meta=SimpleNamespace(get_fields=lambda: [SimpleNamespace(name=n) for n in ("id", "name", "group", "mass")]),
+            objects=SimpleNamespace(filter=mock.Mock(side_effect=RuntimeError("relation does not exist"))),
+        )
+        with mock.patch.object(sde_module, "apps", FakeSDEApps({"ItemType": broken, "ItemGroup": broken})):
+            self.assertEqual(lookups(), ({}, None, None, {}))
+
     def test_failing_name_queries_degrade_to_empty_results(self):
         broken = fake_named_model(error=RuntimeError("relation does not exist"))
         with mock.patch.object(sde_module, "apps", FakeSDEApps({"ItemType": broken, "SolarSystem": broken})):
@@ -1102,6 +1123,16 @@ class KickCapsulesTests(TestCase):
         self.pod_a = track(self.operation, f.create_character("Pod Alpha"), ship_type_id=CAPSULE)
         self.pod_b = track(self.operation, f.create_character("Pod Bravo"), ship_type_id=GENOLUTION_CAPSULE)
         self.flyer = track(self.operation, f.create_character("Logi Pilot"), ship_type_id=GUARDIAN)
+        self.token = f.add_token(self.fc, self.fc_char)
+        # The reads of the fleet after the kicks and the boss check after a 404 are not part of these tests.
+        for target, value in (
+            ("fleetops.services.fleet_controls.sync_operation", 0),
+            ("fleetops.services.fleet_refresh.schedule_refresh", True),
+            ("fleetops.services.fleet_refresh.check_boss", None),
+        ):
+            patcher = mock.patch(target, return_value=value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def patch_kick(self, **kwargs):
         patcher = mock.patch("fleetops.services.fleet_controls.kick_fleet_member", **kwargs)
@@ -1198,7 +1229,7 @@ class KickCapsulesTests(TestCase):
         self.assertFalse(AuditLog.objects.filter(action="fleet.kick_capsules").exists())
 
     def test_kick_uses_fleet_write_token(self):
-        token = f.add_token(self.fc, self.fc_char)
+        token = self.token
         fleets = self.patch_esi_client()
 
         result = kick_members(self.operation, None, actor=self.fc, purpose=CAPSULES)
@@ -1212,20 +1243,17 @@ class KickCapsulesTests(TestCase):
             self.assertEqual(call.kwargs["fleet_id"], FLEET_ID)
             self.assertEqual(call.kwargs["token"], token)
 
-    def test_missing_write_scope_fails_each_kick_without_calling_esi(self):
-        f.add_token(self.fc, self.fc_char, scopes=[FLEET_READ_SCOPE])
+    def test_missing_write_scope_kicks_nobody_without_calling_esi(self):
+        self.token.scopes.set(self.token.scopes.filter(name=FLEET_READ_SCOPE))
         fleets = self.patch_esi_client()
 
-        result = kick_members(self.operation, None, actor=self.fc, purpose=CAPSULES)
+        with self.assertRaisesMessage(KickRefused, NO_WRITE_TOKEN):
+            kick_members(self.operation, None, actor=self.fc, purpose=CAPSULES)
 
         fleets.DeleteFleetsFleetIdMembersMemberId.assert_not_called()
-        self.assertEqual(result["kicked"], [])
-        self.assertEqual(len(result["failures"]), 2)
-        self.assertIn("No valid ESI token", result["failures"][0]["error"])
-        self.assertEqual(action_of(self.operation, "kick_capsules").status, ActionStatus.FAILED)
+        self.assertFalse(OperationAction.objects.filter(operation=self.operation, action="kick_capsules").exists())
 
-    def test_esi_forbidden_is_reported_per_member(self):
-        f.add_token(self.fc, self.fc_char)
+    def test_esi_forbidden_stops_the_kicks(self):
         fleets = self.patch_esi_client()
         fleets.DeleteFleetsFleetIdMembersMemberId.return_value.result.side_effect = HTTPClientError(
             status_code=403, headers={}, data=None
@@ -1233,8 +1261,12 @@ class KickCapsulesTests(TestCase):
 
         result = kick_members(self.operation, None, actor=self.fc, purpose=CAPSULES)
 
-        self.assertEqual(len(result["failures"]), 2)
+        # A forbidden write ends the batch, as it ends every fleet job: one kick was sent.
+        self.assertEqual(fleets.DeleteFleetsFleetIdMembersMemberId.call_count, 1)
+        self.assertEqual(len(result["failures"]), 1)
+        self.assertEqual(len(result["skipped"]), 1)
         self.assertIn("denied permission", result["failures"][0]["error"])
+        self.assertIn("denied permission", result["stopped"])
 
     def test_view_kicks_capsules_on_active_fleet(self):
         kick = self.patch_kick()

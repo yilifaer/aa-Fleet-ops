@@ -6,6 +6,7 @@
       {% if operation.review_status == 'pending' %}<span class="badge bg-warning text-dark" id="badge-review-pending">Pending approval</span>{% elif operation.review_status == 'rejected' %}<span class="badge bg-danger" id="badge-review-rejected">Rejected</span>{% endif %}
       {% if operation.status == 'closed' and count_reason %}<span class="badge bg-secondary" id="badge-not-counted" title="{{ count_reason }}">Not counted</span>{% endif %}
       {% if operation.multiplier_pending %}<span class="badge bg-warning text-dark" id="badge-multiplier-pending">Multiplier pending</span>{% endif %}
+      {% if show_fleet_tab and operation.status == 'active' %}<a href="" class="small d-none" id="fleet-reload-hint">Updated — reload page</a>{% endif %}
     </div>
   </div>
   <div class="d-flex gap-2 flex-wrap">
@@ -31,9 +32,9 @@
 {% if operation.srp_error %}<div class="alert alert-warning"><strong>SRP:</strong> {{ operation.srp_error }}</div>{% endif %}
 
 <div class="row g-3 mb-3">
-  <div class="col-md-2"><div class="stat-card"><span>Characters</span><strong>{{ members|length }}</strong></div></div>
+  <div class="col-md-2"><div class="stat-card"><span>Characters</span><strong id="stat-characters">{{ members|length }}</strong></div></div>
   <div class="col-md-2"><div class="stat-card"><span>Players</span><strong>{{ unique_players }}</strong></div></div>
   <div class="col-md-2"><div class="stat-card"><span>Attendance</span><strong>{{ attendance_total }}</strong><div class="small text-muted">{{ operation.attendance_multiplier }}x PAP multiplier{% if operation.multiplier_pending %} (choice pending){% endif %}</div></div></div>
   <div class="col-md-3"><div class="stat-card"><span>Form Up</span><strong class="small">{{ operation.formup }}</strong></div></div>
-  <div class="col-md-3"><div class="stat-card"><span>Last ESI</span><strong class="small">{{ operation.last_esi_update|default:"—" }}</strong></div></div>
+  <div class="col-md-3"><div class="stat-card"><span>Last ESI</span><strong class="small" id="stat-last-esi">{{ operation.last_esi_update|default:"—" }}</strong></div></div>
 </div>

@@ -1,0 +1,44 @@
+{% load static %}
+<link rel="stylesheet" href="{% static 'fleetops/fleet.css' %}?v={{ fleetops_version }}">
+<div id="fleet-root" class="fleet-root" data-fleet-root
+     data-state-url="{% url 'fleetops:fleet_state' operation.uuid %}"
+     data-refresh-url="{% url 'fleetops:fleet_refresh' operation.uuid %}"
+     data-candidates-url="{% url 'fleetops:fleet_invite_candidates' operation.uuid %}"
+     data-operation="{{ operation.uuid }}" data-status="{{ operation.status }}"
+     data-can-manage="{{ fleet_can_manage|yesno:'1,0' }}" data-can-write="{{ fleet_can_write|yesno:'1,0' }}"
+     data-poll-seconds="{{ poll_seconds }}" data-live-default="{% if fleet_can_manage and live_refresh_seconds %}1{% else %}0{% endif %}"
+     data-version="{{ fleet_version }}">
+  {% csrf_token %}
+  {% if fleet_view %}
+  {% if fleet_can_manage and fleet_live %}<noscript><div class="alert alert-info">Fleet management needs JavaScript; this view is read-only.</div></noscript>{% endif %}
+  <div id="fleet-toolbar">{% include "fleetops/operation/_fleet_toolbar.html" %}</div>
+  <div id="fleet-status">{% include "fleetops/operation/_fleet_status.html" %}</div>
+  <div id="fleet-flash" aria-live="polite"></div>
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div id="fleet-bulk">{% include "fleetops/operation/_fleet_bulk_bar.html" %}</div>
+      <div id="fleet-tree">{% include "fleetops/operation/_fleet_tree.html" %}</div>
+    </div>
+    <div class="col-lg-5">
+      <div id="fleet-composition">{% include "fleetops/operation/_fleet_composition.html" %}</div>
+      <div id="fleet-changes">{% include "fleetops/operation/_fleet_changes.html" %}</div>
+    </div>
+  </div>
+  {% else %}
+  <div id="fleet-flash" aria-live="polite"></div>
+  <div id="fleet-composition">{% include "fleetops/operation/_fleet_composition.html" %}</div>
+  {% endif %}
+
+  {% include "fleetops/operation/_fleet_invite_modal.html" %}
+  {% include "fleetops/operation/_fleet_template_modal.html" %}
+  <div class="modal fade" id="fleet-confirm" tabindex="-1" aria-labelledby="fleet-confirm-title" aria-hidden="true">
+    <div class="modal-dialog"><div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title" id="fleet-confirm-title">Please confirm</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+      <div class="modal-body"><p class="mb-0" id="fleet-confirm-text"></p></div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-danger" id="fleet-confirm-ok">Confirm</button></div>
+    </div></div>
+  </div>
+</div>
+<script defer src="{% static 'fleetops/fleet_live.js' %}?v={{ fleetops_version }}"></script>
+<script defer src="{% static 'fleetops/fleet_actions.js' %}?v={{ fleetops_version }}"></script>
+<script defer src="{% static 'fleetops/fleet_tools.js' %}?v={{ fleetops_version }}"></script>

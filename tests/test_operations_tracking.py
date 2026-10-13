@@ -47,7 +47,8 @@ from fleetops.providers.esi import (
 from fleetops.providers.pings import send_discord_webhook
 from fleetops.providers.srp import SRPLinkResult
 from fleetops.services.attendance import create_manual_attendance
-from fleetops.services.fleet_controls import CAPSULES, kick_members
+from fleetops.services.fleet_access import NO_WRITE_TOKEN
+from fleetops.services.fleet_controls import CAPSULES, KickRefused, kick_members
 from fleetops.services.mentions import EVERYONE, MentionSelection
 from fleetops.services.messages import render_messages, render_operation_messages
 from fleetops.services.operations import (
@@ -115,6 +116,8 @@ class FakeFleetsAPI:
     def __init__(self):
         self.character_fleets = {}
         self.members = {}
+        # Wings and squads by fleet id; a fleet without an entry has the one wing and squad EVE gives it.
+        self.wings = {}
         self.fleet_info = {}
         self.put_outcome = None
         self.kick_outcomes = {}
@@ -159,6 +162,15 @@ class FakeFleetsAPI:
     def GetFleetsFleetIdMembers(self, *, fleet_id, token):
         self.calls.append(("members", fleet_id, token))
         return self._request(self.members.get(fleet_id, http_error(404)), ("members", fleet_id))
+
+    def GetFleetsFleetIdWings(self, *, fleet_id, token):
+        self.calls.append(("wings", fleet_id, token))
+        if fleet_id not in self.members:
+            # Only the boss can read a fleet: the same 404 as for its members.
+            outcome = http_error(404)
+        else:
+            outcome = self.wings.get(fleet_id, [{"id": 1, "name": "Wing 1", "squads": [{"id": 1, "name": "Squad 1"}]}])
+        return self._request(outcome, ("wings", fleet_id))
 
     def PutFleetsFleetId(self, *, fleet_id, token, body):
         # django-esi only accepts the request body as ``body``.
@@ -1014,6 +1026,32 @@ class SyncOperationTests(TrackingTestBase):
             (17738, 30002187, "squad_commander", 2, 3),
         )
 
+    def test_each_poll_also_reads_the_wings(self):
+        self.esi.wings[FLEET_ID] = [{"id": 1, "name": "Main", "squads": [{"id": 1, "name": "Alpha"}, {"id": 3, "name": "Bravo"}]}]
+        self.set_members(f.esi_member(self.pilot_char, wing_id=1, squad_id=1, station_id=60003760, takes_fleet_warp=False))
+        moment = timezone.now()
+
+        with frozen_now(moment):
+            sync_operation(self.operation)
+
+        self.operation.refresh_from_db()
+        self.assertEqual(self.operation.fleet_wings, self.esi.wings[FLEET_ID])
+        self.assertEqual(self.operation.fleet_wings_read_at, moment)
+        self.assertEqual(len(self.esi.calls_of("wings")), 1)
+        state = self.state(self.pilot_char)
+        self.assertEqual((state.station_id, state.takes_fleet_warp), (60003760, False))
+
+        # Wing and squad events keep ESI's ids; the fleet page names them.
+        self.esi.wings[FLEET_ID] = http_error(502)
+        self.set_members(f.esi_member(self.pilot_char, wing_id=1, squad_id=3))
+        sync_operation(self.operation)
+
+        self.assertEqual(events(self.operation, self.pilot_char)[-1], (Event.SQUAD_CHANGE, "1", "3"))
+        self.operation.refresh_from_db()
+        self.assertEqual(self.operation.fleet_wings[0]["squads"][1]["name"], "Bravo")
+        self.assertEqual(self.operation.fleet_wings_read_at, moment)
+        self.assertIsNone(self.state(self.pilot_char).station_id)
+
     def test_changes_while_away_are_reported_with_rejoin(self):
         self.set_members(f.esi_member(self.pilot_char, ship_type_id=11987))
         sync_operation(self.operation)
@@ -1777,8 +1815,14 @@ class ESIFleetCallTests(FakeESIMixin, TestCase):
                 self.assertEqual(ctx.exception.code, code)
 
     def test_kick_error_mapping(self):
-        self.esi.kick_outcomes = {1: http_error(404), 2: http_error(403), 3: http_error(500)}
-        for member_id, code in ((1, "MEMBER_NOT_FOUND"), (2, "KICK_FORBIDDEN"), (3, "KICK_ERROR")):
+        # Failed kicks share the fleet write codes, so a kick batch stops on them like every fleet job.
+        self.esi.kick_outcomes = {1: http_error(404), 2: http_error(403), 3: http_error(500), 4: http_error(420)}
+        for member_id, code in (
+            (1, "MEMBER_NOT_FOUND"),
+            (2, "FLEET_WRITE_FORBIDDEN"),
+            (3, "FLEET_WRITE_ERROR"),
+            (4, "FLEET_WRITE_LIMITED"),
+        ):
             with self.subTest(code=code):
                 with self.assertRaises(FleetESIError) as ctx:
                     kick_fleet_member(self.user, self.char.character_id, FLEET_ID, member_id)
@@ -2002,13 +2046,13 @@ class KickCapsulesCallTests(TrackingTestBase):
         self.assertEqual(action(self.operation, "kick_capsules").status, ActionStatus.SUCCESS)
         self.assertEqual(audit_actions(self.operation), ["fleet.kick_capsules"])
 
-    def test_read_only_token_reports_per_member_failure(self):
+    def test_a_read_only_token_kicks_nobody(self):
         set_scopes(self.token, [FLEET_READ_SCOPE])
         self.set_members(f.esi_member(self.pilot_char, ship_type_id=670))
         sync_operation(self.operation)
 
-        result = kick_members(self.operation, None, actor=self.fc, purpose=CAPSULES)
+        with self.assertRaisesMessage(KickRefused, NO_WRITE_TOKEN):
+            kick_members(self.operation, None, actor=self.fc, purpose=CAPSULES)
 
         self.assertEqual(self.esi.kicks, [])
-        self.assertEqual(len(result["failures"]), 1)
-        self.assertEqual(action(self.operation, "kick_capsules").status, ActionStatus.FAILED)
+        self.assertFalse(self.operation.actions.filter(action="kick_capsules").exists())

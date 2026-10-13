@@ -1,0 +1,213 @@
+/* Fleet tab: tree, composition and live status. Theme colours only (var(--bs-…)), so light and dark themes both work. */
+
+.fleet-tree,
+.fleet-tree ul {
+  margin: 0;
+  padding: 0;
+}
+
+.fleet-tree .fleet-wings,
+.fleet-tree .fleet-squads,
+.fleet-tree .fleet-node > .fleet-members {
+  margin-left: 0.6rem;
+  padding-left: 0.9rem;
+  border-left: 1px solid var(--bs-border-color);
+}
+
+.fleet-node-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.35rem;
+  border-radius: var(--bs-border-radius-sm, 0.25rem);
+  border: 1px dashed transparent;
+}
+
+.fleet-node[data-node="fleet"] > .fleet-node-head {
+  font-weight: 600;
+}
+
+.fleet-node-name {
+  font-weight: 600;
+}
+
+.fleet-toggle {
+  border: 0;
+  background: none;
+  padding: 0 0.15rem;
+  color: var(--bs-secondary-color, var(--bs-secondary));
+  line-height: 1;
+}
+
+.fleet-toggle i {
+  transition: transform 0.15s ease-in-out;
+}
+
+.fleet-node.is-collapsed > .fleet-node-head .fleet-toggle i {
+  transform: rotate(-90deg);
+}
+
+.fleet-node.is-collapsed > ul {
+  display: none;
+}
+
+.fleet-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: 0.25rem;
+}
+
+.fleet-members {
+  min-height: 0.5rem;
+}
+
+.fleet-members[data-drop-role] {
+  min-height: 1.6rem;
+}
+
+.fleet-member {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.35rem;
+  border-radius: var(--bs-border-radius-sm, 0.25rem);
+}
+
+.fleet-member:hover {
+  background-color: var(--bs-tertiary-bg, var(--bs-light));
+}
+
+.fleet-member[draggable="true"] {
+  cursor: grab;
+}
+
+.fleet-member .fleet-select {
+  margin-top: 0;
+}
+
+.fleet-portrait,
+.fleet-ship-icon {
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+.fleet-member-name {
+  font-weight: 500;
+}
+
+.fleet-ship,
+.fleet-system {
+  white-space: nowrap;
+}
+
+.fleet-link {
+  font-size: 0.8em;
+}
+
+.fleet-position {
+  background-color: var(--bs-secondary-bg, var(--bs-gray-200));
+  color: var(--bs-emphasis-color, var(--bs-body-color));
+  border: 1px solid var(--bs-border-color);
+  font-size: 0.7em;
+}
+
+.fleet-empty {
+  padding: 0.1rem 0.35rem;
+  list-style: none;
+}
+
+.fleet-crown {
+  color: #d4a017;
+}
+
+.fleet-swatch {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  vertical-align: middle;
+  border: 1px solid var(--bs-border-color);
+}
+
+.is-pending {
+  opacity: 0.6;
+}
+
+.fleet-pending-icon {
+  font-size: 0.8em;
+  color: var(--bs-secondary-color, var(--bs-secondary));
+}
+
+.fleet-drop-target {
+  border-color: var(--bs-primary-border-subtle, var(--bs-primary));
+}
+
+.fleet-drop-over {
+  border-color: var(--bs-primary);
+  background-color: var(--bs-primary-bg-subtle, rgba(13, 110, 253, 0.1));
+}
+
+/* Member lists have no border of their own; an outline marks them during a drag. */
+.fleet-members.fleet-drop-target {
+  outline: 1px dashed var(--bs-primary-border-subtle, var(--bs-primary));
+  outline-offset: -1px;
+  border-radius: var(--bs-border-radius-sm, 0.25rem);
+}
+
+.fleet-members.fleet-drop-over {
+  outline: 1px solid var(--bs-primary);
+}
+
+.fleet-node-head.fleet-renaming {
+  background-color: var(--bs-tertiary-bg, var(--bs-light));
+  border-color: var(--bs-border-color);
+}
+
+/* A new name sent to ESI, shown until the answer redraws the tree. */
+.fleet-node-name.is-pending {
+  font-style: italic;
+}
+
+.fleet-member.fleet-highlight {
+  background-color: var(--bs-warning-bg-subtle, rgba(255, 193, 7, 0.2));
+}
+
+.fleet-member.fleet-dim {
+  opacity: 0.35;
+}
+
+.fleet-function-row[role="button"] {
+  cursor: pointer;
+  border-radius: var(--bs-border-radius-sm, 0.25rem);
+  padding: 0.1rem 0.25rem;
+}
+
+.fleet-function-row.active {
+  background-color: var(--bs-tertiary-bg, var(--bs-light));
+  outline: 1px solid var(--bs-border-color);
+}
+
+.fleet-bar {
+  height: 0.4rem;
+  margin-bottom: 0.35rem;
+}
+
+.fleet-classify-cell .form-select {
+  min-width: 8rem;
+}
+
+#fleet-flash .alert {
+  margin-bottom: 0.5rem;
+}
+
+@media (max-width: 991.98px) {
+  .fleet-tree .fleet-wings,
+  .fleet-tree .fleet-squads,
+  .fleet-tree .fleet-node > .fleet-members {
+    margin-left: 0.3rem;
+    padding-left: 0.5rem;
+  }
+}

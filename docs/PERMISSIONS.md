@@ -8,15 +8,15 @@ FleetOps permissions are designed to be assigned through normal Alliance Auth gr
 |---|---|
 | `fleetops.basic_access` | Open FleetOps, personal dashboard/statistics/history, and fleet records the user participated in (also running fleets the user is tracked in or registered for by PAP link). Register characters through a PAP link. |
 | `fleetops.start_fleet` | Start an ESI-tracked Fleet Operation, send a ping, generate/set MOTD, and start attendance tracking. Send a pre ping and schedule a fleet, see every scheduled fleet, and start the fleets the user scheduled. Start a PAP-link fleet. Save and use personal start presets. |
-| `fleetops.manage_own_fleet` | End/edit/retry/control fleets for which the user is the FC or an FC-credited special-role member, including Regenerate & Push MOTD, kicks, PAP links, excluding the fleet from statistics, settling a pending multiplier choice, and editing or cancelling the user's own scheduled fleets. |
-| `fleetops.view_all_fleets` | Read the full fleet archive and open all Fleet Operation records, including scheduled fleets and the member list of running fleets. Does not grant edit/control rights. |
+| `fleetops.manage_own_fleet` | End/edit/retry/control fleets for which the user is the FC or an FC-credited special-role member, including Regenerate & Push MOTD, kicks, fleet management on the Fleet tab (wings, squads, member moves, invites, structure templates), PAP links, excluding the fleet from statistics, settling a pending multiplier choice, and editing or cancelling the user's own scheduled fleets. |
+| `fleetops.view_all_fleets` | Read the full fleet archive and open all Fleet Operation records, including scheduled fleets, the member list of running fleets and their Fleet tab (read-only). Does not grant edit/control rights. |
 | `fleetops.create_manual_fleet` | Create a manual/historical fleet record without ESI tracking. |
-| `fleetops.manage_fleets` | Manage every Fleet Operation, regardless of FC, including editing and cancelling any scheduled fleet. It does not allow starting another FC's scheduled fleet. FC lead rights of the PAP rules: approve or reject manual fleets, manual PAP, pasted rosters, PAP-link fleets and edited fleet times (the user's own entries and edits are approved at once); set a PAP multiplier beyond the duration rule with a written reason; count a fleet in statistics anyway or undo an exclusion; delete approved manual PAP. |
+| `fleetops.manage_fleets` | Manage every Fleet Operation, regardless of FC, including editing and cancelling any scheduled fleet and fleet management on the Fleet tab of any running fleet. It does not allow starting another FC's scheduled fleet. FC lead rights of the PAP rules: approve or reject manual fleets, manual PAP, pasted rosters, PAP-link fleets and edited fleet times (the user's own entries and edits are approved at once); set a PAP multiplier beyond the duration rule with a written reason; count a fleet in statistics anyway or undo an exclusion; delete approved manual PAP. |
 | `fleetops.view_corp_stats` | View the user's own corporation statistics and corporation attendance history. |
 | `fleetops.view_all_stats` | View alliance-wide corporation and FC statistics/history. Statistics only: opening Fleet Operation records needs `view_all_fleets` or `manage_fleets`. |
 | `fleetops.manage_attendance` | Add manual PAP (by name, ID or pasted roster) and delete the user's own entries until an FC lead approved them, recalculate PAP and change the PAP multiplier of closed fleets within the duration rule, on fleets the user is allowed to manage; with `manage_fleets`, applies alliance-wide and any entry can be deleted. |
 | `fleetops.manage_incentives` | Manage monthly FC incentive periods, waivers, recalculation, finalization and unlock. The FC Incentive pages are only available while **Incentive enabled** is ticked in FleetOps Administration → General Settings, which is off by default on new installs. |
-| `fleetops.manage_configuration` | Use FleetOps front-end Administration for fleet types, comms presets, Logi/Boost channels, ping channels, ping roles (including **Sync roles from Discord**), PAP multiplier tiers, special roles, templates and settings. |
+| `fleetops.manage_configuration` | Use FleetOps front-end Administration for fleet types, comms presets, Logi/Boost channels, ping channels, ping roles (including **Sync roles from Discord**), PAP multiplier tiers, special roles, ship functions and their rules, fleet structure templates, templates and settings. Classify a ship from the composition of a fleet the user can open. |
 | `fleetops.view_audit_log` | View FleetOps audit logs. |
 
 ## Recommended Alliance Auth role bundles
@@ -64,6 +64,8 @@ Capabilities:
 - Send pre pings, see every scheduled fleet, and start, edit or cancel their own scheduled fleets.
 - Track and end own fleets.
 - Kick single members, members outside a system and capsule pilots from an active own fleet.
+- Manage an active own fleet from the Fleet tab: add, rename and delete wings and squads, move members and change their positions, invite characters registered in Alliance Auth and apply structure templates. Every change uses the FC character's ESI token.
+- See the read-only Fleet tab (tree and composition) of every running fleet (`view_all_fleets`).
 - Create and revoke PAP links on own fleets, and start PAP-link fleets.
 - Add/remove special-role assignments on own fleets, including after fleet end.
 - Correct attendance after fleet end; corrections wait for FC lead approval. Own corrections can be deleted until an FC lead approved them.
@@ -112,6 +114,21 @@ Scheduling, editing, cancelling and starting are audited (`fleet.schedule`, `fle
 - **Regenerate & Push MOTD** needs `fleetops.manage_own_fleet` on a fleet the user is credited FC of, or `fleetops.manage_fleets`. It is audited as `fleet.motd_regenerate`.
 - While a fleet is starting, active or ending, its member list, 3-jump map, events and the details of its kick steps are shown only to users who manage the fleet and to users with `fleetops.view_all_fleets` or `fleetops.manage_fleets`. Other members who can open the fleet see their own attendance and special roles; everything else becomes visible once the fleet is closed.
 - When ESI confirms a new fleet boss at Fleet Start, the record of the previous FC for that ESI fleet ends with "fleet boss handed over to <name>", without needing any permission on that record. Both records keep their own attendance and FC credit; the handover is audited as `fleet.boss_handover` on the old record.
+
+## Fleet tab (fleet management)
+
+| Action | Who |
+|---|---|
+| See the Fleet tab of an active or ending fleet (fleet tree and composition) | The people who manage the fleet (its FC and FC-credited special-role members with `fleetops.manage_own_fleet`, and `fleetops.manage_fleets`), and `fleetops.view_all_fleets` read-only. Other members who can open the fleet page do not see it while the fleet is open. |
+| See the composition of a closed fleet | Everybody who can open the fleet page. |
+| Refresh the fleet from ESI, add/rename/delete wings and squads, move members, make squad/wing/fleet commanders, kick from the tree, invite characters, apply a structure template | `fleetops.manage_own_fleet` on own and credited fleets, or `fleetops.manage_fleets`; active ESI fleets only. ESI is always called with the FC character's token, which needs `esi-fleets.write_fleet.v1`. |
+| Invite a character | Any character registered in Alliance Auth by an active user, whether or not that user has FleetOps access. Characters outside Alliance Auth and characters of inactive users are refused. |
+| Quick classify a ship from the composition | `fleetops.manage_configuration`, on a fleet the user can open. |
+| Ship functions, ship function rules, fleet structure templates, **Ship groups without bridge**, **Live fleet refresh** | `fleetops.manage_configuration` (FleetOps Administration). |
+
+Changes are refused, with the reason, after the FC handed the fleet boss role to another pilot, while the fleet cannot be read, while the FC character has no token with the write scope and while a background job runs for the fleet. The live ESI refresh runs only for the fleet's managers, never for read-only viewers.
+
+Every change is audited with its result: `fleet.wing_create`, `fleet.wing_rename`, `fleet.wing_delete`, `fleet.squad_create`, `fleet.squad_rename`, `fleet.squad_delete`, `fleet.member_move`, `fleet.invite`, the background jobs `fleet.move_job`, `fleet.invite_job` and `fleet.template_job`, and quick classifications as `configuration.create` or `configuration.update`.
 
 ## PAP rules
 

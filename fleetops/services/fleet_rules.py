@@ -492,8 +492,10 @@ def format_fleet_roles(value) -> str:
 
 
 def _stored_roles(value) -> tuple[str, ...]:
-    # Stored values were validated on save; anything unknown is ignored rather than fatal.
-    return tuple(role for role in _LIST_SEPARATORS.split(str(value or "")) if role in COMMANDER_ROLES)
+    # Stored values were validated on save; anything unknown is ignored rather than fatal. The
+    # validator accepts any letter case, so stored values are compared without it.
+    roles = (role.strip().lower() for role in _LIST_SEPARATORS.split(str(value or "")))
+    return tuple(role for role in roles if role in COMMANDER_ROLES)
 
 
 def _function_id(function):

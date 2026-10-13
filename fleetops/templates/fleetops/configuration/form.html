@@ -28,4 +28,58 @@
   <div class="d-flex gap-2"><button class="btn btn-primary">Save</button><a class="btn btn-outline-secondary" href="{% url 'fleetops:configuration_list' section %}">Cancel</a></div>
 </form>
 </div></div>
+{% if section == "structure-templates" %}
+<script>
+// Live preview of a structure layout; saving checks it again on the server.
+(() => {
+  const area = document.querySelector('textarea[data-structure-layout]');
+  if (!area) return;
+  const preview = document.createElement('div');
+  preview.className = 'form-text';
+  preview.id = 'structure-layout-preview';
+  preview.setAttribute('aria-live', 'polite');
+  area.insertAdjacentElement('afterend', preview);
+  const MAX_WINGS = 5, MAX_SQUADS = 5, NAME_MAX = 10;
+  const clean = value => value.replace(/\s+/g, ' ').trim();
+  function name(text, line, kind) {
+    const value = clean(text);
+    if (!value) throw new Error(`Line ${line}: a ${kind} name is empty.`);
+    if ([...value].length > NAME_MAX) throw new Error(`Line ${line}: ${kind} name "${value}" is longer than ${NAME_MAX} characters.`);
+    return value;
+  }
+  function parse(text) {
+    const wings = [];
+    text.split(/\r?\n/).forEach((raw, index) => {
+      const line = raw.trim(), number = index + 1;
+      if (!line || line.startsWith('#')) return;
+      if (wings.length === MAX_WINGS) throw new Error(`Line ${number}: EVE allows at most ${MAX_WINGS} wings.`);
+      const colon = line.indexOf(':');
+      const wing = name(colon < 0 ? line : line.slice(0, colon), number, 'wing');
+      const rest = colon < 0 ? '' : line.slice(colon + 1);
+      if (!rest.trim()) throw new Error(`Line ${number}: wing "${wing}" needs at least one squad, for example "${wing}: Squad 1".`);
+      if (rest.includes(':')) throw new Error(`Line ${number}: use one ":" per line, between the wing name and its squads.`);
+      const squads = rest.split(',').map(part => name(part, number, 'squad'));
+      if (squads.length > MAX_SQUADS) throw new Error(`Line ${number}: wing "${wing}" has ${squads.length} squads; EVE allows at most ${MAX_SQUADS} per wing.`);
+      wings.push({ wing, squads });
+    });
+    if (!wings.length) throw new Error('Add at least one wing, for example "Main: Alpha, Bravo".');
+    return wings;
+  }
+  function show() {
+    try {
+      const wings = parse(area.value);
+      const squads = wings.reduce((count, item) => count + item.squads.length, 0);
+      preview.className = 'form-text text-success';
+      preview.textContent = `${wings.length} wing${wings.length === 1 ? '' : 's'} with ${squads} squad${squads === 1 ? '' : 's'}: `
+        + wings.map(item => `${item.wing} (${item.squads.join(', ')})`).join(' · ');
+    } catch (error) {
+      preview.className = 'form-text text-danger';
+      preview.textContent = error.message;
+    }
+  }
+  area.addEventListener('input', show);
+  show();
+})();
+</script>
+{% endif %}
 {% endblock %}

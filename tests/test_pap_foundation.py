@@ -495,9 +495,10 @@ class FreshMemberReadTests(TestCase):
     def test_sync_passes_fresh_on(self):
         operation = f.create_operation(self.fc)
         with mock.patch.object(tracking, "get_fleet_members", return_value=[]) as members, mock.patch.object(
-            tracking, "queue_name_resolution"
-        ):
+            tracking, "get_fleet_wings", return_value=[]
+        ) as wings, mock.patch.object(tracking, "queue_name_resolution"):
             tracking.sync_operation(operation)
             tracking.sync_operation(operation, fresh=True)
 
         self.assertEqual([call.kwargs["fresh"] for call in members.call_args_list], [False, True])
+        self.assertEqual([call.kwargs["fresh"] for call in wings.call_args_list], [False, True])

@@ -1,0 +1,14 @@
+{% if fleet_can_write %}
+{% if wing %}
+<span class="fleet-actions">
+  <button type="button" class="btn btn-sm btn-link p-0" data-fleet-rename-open title="Rename the wing"><i class="fa-solid fa-pen" aria-hidden="true"></i><span class="visually-hidden">Rename {{ wing.name }}</span></button>
+  <form method="post" action="{% url 'fleetops:fleet_wing_rename' operation.uuid wing.id %}" class="d-none align-items-center gap-1" data-fleet-action data-fleet-rename>{% csrf_token %}<input type="text" name="name" maxlength="10" value="{{ wing.name }}" class="form-control form-control-sm w-auto" size="10" aria-label="Wing name" required autocomplete="off"><button class="btn btn-sm btn-primary" title="Save the name"><i class="fa-solid fa-check" aria-hidden="true"></i><span class="visually-hidden">Save the name</span></button></form>
+  {% if wing.can_add_squad %}<form method="post" action="{% url 'fleetops:fleet_squad_add' operation.uuid wing.id %}" class="d-inline" data-fleet-action data-fleet-add="squad" data-wing-id="{{ wing.id }}">{% csrf_token %}<button class="btn btn-sm btn-link p-0" title="Add a squad"><i class="fa-solid fa-plus" aria-hidden="true"></i><span class="visually-hidden">Add a squad to {{ wing.name }}</span></button></form>{% else %}<span class="text-muted" title="EVE allows at most 5 squads per wing."><i class="fa-solid fa-plus" aria-hidden="true"></i><span class="visually-hidden">EVE allows at most 5 squads per wing.</span></span>{% endif %}
+  {% if wing.is_empty %}<form method="post" action="{% url 'fleetops:fleet_wing_delete' operation.uuid wing.id %}" class="d-inline" data-fleet-action data-confirm="Delete the wing {{ wing.name }}?">{% csrf_token %}<button class="btn btn-sm btn-link text-danger p-0" title="Delete the wing"><i class="fa-solid fa-trash" aria-hidden="true"></i><span class="visually-hidden">Delete {{ wing.name }}</span></button></form>{% endif %}
+</span>
+{% elif fleet_view.can_add_wing %}
+<span class="fleet-actions"><form method="post" action="{% url 'fleetops:fleet_wing_add' operation.uuid %}" class="d-inline" data-fleet-action data-fleet-add="wing">{% csrf_token %}<button class="btn btn-sm btn-link p-0" title="Add a wing"><i class="fa-solid fa-plus" aria-hidden="true"></i><span class="visually-hidden">Add a wing</span></button></form></span>
+{% else %}
+<span class="fleet-actions text-muted" title="EVE allows at most 5 wings."><i class="fa-solid fa-plus" aria-hidden="true"></i><span class="visually-hidden">EVE allows at most 5 wings.</span></span>
+{% endif %}
+{% endif %}

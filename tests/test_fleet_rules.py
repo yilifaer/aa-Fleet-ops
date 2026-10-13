@@ -684,6 +684,11 @@ class ShipFunctionMapTests(SimpleTestCase):
         odd = {"id": 9, "name": "Odd", "sort_order": 1, "fleet_roles": "squad_member, squad_commander, junk"}
         mapping = ShipFunctionMap.build([odd])
         self.assertEqual(list(mapping.by_role), ["squad_commander"])
+        # The validator accepts any letter case, so stored values are read without it.
+        typed = {"id": 10, "name": "Typed", "sort_order": 1, "fleet_roles": "Wing_Commander, FLEET_COMMANDER"}
+        mapping = ShipFunctionMap.build([typed])
+        self.assertIs(mapping.resolve("wing_commander"), typed)
+        self.assertIs(mapping.resolve("fleet_commander"), typed)
 
     def test_empty(self):
         mapping = ShipFunctionMap.build([])

@@ -17,6 +17,7 @@ from fleetops.models import (
     ReviewStatus,
     SpecialRole,
 )
+from fleetops.services import fleet_jobs
 from fleetops.templatetags.fleetops_pap import minutes
 
 from . import factories as f
@@ -281,34 +282,43 @@ class MinutesFilterTests(TestCase):
 
 
 class KickTaskTests(TestCase):
-    operation_id = 424242
+    """Kick batches queued by an earlier version run as fleet jobs."""
 
     def setUp(self):
-        self.key = f"fleetops:kick:{self.operation_id}"
-        cache.delete(self.key)
-        self.addCleanup(cache.delete, self.key)
+        cache.clear()
+        self.addCleanup(cache.clear)
+        self.fc = f.create_user(perms=f.FC_PERMS)
+        self.operation = f.create_operation(self.fc)
+        self.key = f"fleetops:fleet:{self.operation.pk}:job_lock"
 
-    def test_runs_the_batch_and_releases_the_lock(self):
-        with mock.patch("fleetops.services.fleet_controls.run_kick_batch", return_value={"kicked": 2}) as batch:
-            result = tasks.kick_members(self.operation_id, [1, 2], 7, "capsules", {"system_id": None})
+    def test_runs_the_batch_as_a_job_and_releases_the_lock(self):
+        with mock.patch("fleetops.services.fleet_controls.run_kick_job") as batch:
+            result = tasks.kick_members(self.operation.pk, [1, 2], self.fc.pk, "capsules", {"system_id": None})
 
-        self.assertEqual(result, {"kicked": 2})
-        batch.assert_called_once_with(self.operation_id, [1, 2], 7, "capsules", {"system_id": None})
+        self.assertEqual(result, "done")
+        job, operation, payload, actor = batch.call_args.args
+        self.assertEqual((job["kind"], job["total"], operation, actor), ("kick", 2, self.operation, self.fc))
+        self.assertEqual(payload, {"character_ids": [1, 2], "purpose": "capsules", "context": {"system_id": None}})
         self.assertIsNone(cache.get(self.key))
 
-    def test_a_second_batch_waits_for_the_first(self):
-        cache.add(self.key, "1", timeout=60)
+    def test_a_second_batch_waits_for_the_running_job(self):
+        fleet_jobs.claim_job(self.operation, kind="move", label="Move 3 members", actor=self.fc, total=3)
 
-        with mock.patch("fleetops.services.fleet_controls.run_kick_batch") as batch:
+        with mock.patch("fleetops.services.fleet_controls.run_kick_job") as batch:
             with self.assertRaises(Retry):
-                tasks.kick_members(self.operation_id, [1], 7, "outside_system")
+                tasks.kick_members(self.operation.pk, [1], self.fc.pk, "outside_system")
 
         batch.assert_not_called()
-        self.assertEqual(cache.get(self.key), "1")
+        self.assertEqual(fleet_jobs.running_job(self.operation.pk)["label"], "Move 3 members")
 
     def test_the_lock_is_released_when_the_batch_fails(self):
-        with mock.patch("fleetops.services.fleet_controls.run_kick_batch", side_effect=RuntimeError("ESI down")):
-            with self.assertRaises(RuntimeError):
-                tasks.kick_members(self.operation_id, [1], 7, "capsules")
+        with mock.patch("fleetops.services.fleet_controls.run_kick_job", side_effect=RuntimeError("ESI down")):
+            result = tasks.kick_members(self.operation.pk, [1], self.fc.pk, "capsules")
 
+        self.assertEqual(result, "failed")
         self.assertIsNone(cache.get(self.key))
+        job = fleet_jobs.current_job(self.operation.pk)
+        self.assertEqual(job["messages"][-1]["text"], "Kick 1 capsule pilot failed unexpectedly (RuntimeError).")
+
+    def test_a_batch_of_a_deleted_fleet_is_dropped(self):
+        self.assertEqual(tasks.kick_members(999_999, [1], self.fc.pk, "capsules"), "missing")

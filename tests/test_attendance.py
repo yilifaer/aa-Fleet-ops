@@ -20,6 +20,7 @@ from fleetops.models import (
     ReviewStatus,
 )
 from fleetops.services.attendance import create_manual_attendance, set_operation_attendance_multiplier
+from fleetops.services.fleet_rules import DEFAULT_BRIDGE_EXCLUDED_GROUP_IDS
 from fleetops.services.history import (
     apply_current_membership_filter,
     configured_alliance_ids,
@@ -950,6 +951,8 @@ class PruneHistoryTests(TestCase):
             "data_retention_days": retention_days,
             "history_alliance_ids": "",
             "srp_provider": "auto",
+            "fleet_live_refresh_seconds": 15,
+            "bridge_excluded_group_ids": DEFAULT_BRIDGE_EXCLUDED_GROUP_IDS,
         }
         return FleetOpsSettingsForm(data, instance=FleetOpsSettings.get_solo())
 

@@ -218,7 +218,7 @@ class ProviderErrorTextTests(FakeESIMixin, TestCase):
             "ESI denied permission to update the fleet MOTD: ESI returned HTTP 403 (Forbidden).",
             "MOTD_FORBIDDEN",
         )
-        self.esi.kick_outcomes = {5: esi_error(404), 6: esi_error(500)}
+        self.esi.kick_outcomes = {5: esi_error(404), 6: esi_error(500), 7: esi_error(403), 8: error_limit(reset=60)}
         self.assert_short_error(
             lambda: kick_fleet_member(self.user, self.char.character_id, FLEET_ID, 5),
             "Fleet member 5 was not found: ESI returned HTTP 404 (Not found).",
@@ -227,7 +227,18 @@ class ProviderErrorTextTests(FakeESIMixin, TestCase):
         self.assert_short_error(
             lambda: kick_fleet_member(self.user, self.char.character_id, FLEET_ID, 6),
             "Could not kick fleet member 6: ESI returned HTTP 500 (Internal server error).",
-            "KICK_ERROR",
+            "FLEET_WRITE_ERROR",
+        )
+        # A kick batch stops on these like every fleet job (fleet_jobs.STOP_CODES).
+        self.assert_short_error(
+            lambda: kick_fleet_member(self.user, self.char.character_id, FLEET_ID, 7),
+            "ESI denied permission to kick this fleet member: ESI returned HTTP 403 (Forbidden).",
+            "FLEET_WRITE_FORBIDDEN",
+        )
+        self.assert_short_error(
+            lambda: kick_fleet_member(self.user, self.char.character_id, FLEET_ID, 8),
+            "Could not kick fleet member 8: ESI error limit reached; try again in 60 seconds.",
+            "FLEET_WRITE_LIMITED",
         )
 
     def test_not_being_in_a_fleet_is_not_a_warning(self):

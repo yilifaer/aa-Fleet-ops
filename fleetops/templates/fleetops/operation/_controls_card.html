@@ -1,0 +1,19 @@
+<div class="card mb-3 border-warning" id="fleet-control">
+  <div class="card-header d-flex justify-content-between align-items-center"><strong>Fleet Control</strong><span class="badge bg-warning text-dark">{{ pod_count }} capsule{{ pod_count|pluralize }}</span></div>
+  <div class="card-body">
+    {% if kick_token_missing %}<div class="alert alert-warning py-2" id="kick-token-missing">{{ kick_disabled_reason }}, so nobody can be kicked. Authorize the FC character again with Authorize / Refresh Fleet ESI on Start Fleet.</div>{% elif not kick_token_ok %}<div class="alert alert-warning py-2" id="kick-blocked">{{ kick_disabled_reason }} Nobody can be kicked now.</div>{% endif %}
+    <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
+      <div>
+        <strong>Kick members</strong>
+        <div class="small text-muted">Uses the FC character's ESI token. The FC and the fleet boss are never targeted or counted. The names are listed before anybody is kicked.</div>
+      </div>
+      <div class="d-flex gap-2 flex-wrap">
+        <form method="post" action="{% url 'fleetops:kick_capsules' operation.uuid %}" class="kick-list-trigger" data-kick-mode="capsules" data-kick-names="{% for pod in kick_pods %}{{ pod.character_name }}{% if not forloop.last %}, {% endif %}{% endfor %}">
+          {% csrf_token %}
+          <button class="btn btn-warning"{% if not kick_token_ok %} title="{{ kick_disabled_reason }}"{% endif %} {% if not pod_count or not kick_token_ok %}disabled{% endif %}>Kick {{ pod_count }} Capsule{{ pod_count|pluralize }}</button>
+        </form>
+        <button type="button" class="btn btn-outline-danger kick-list-open" data-kick-mode="system" id="kick-outside-system"{% if not kick_token_ok %} disabled title="{{ kick_disabled_reason }}"{% endif %}>Kick outside system…</button>
+      </div>
+    </div>
+  </div>
+</div>

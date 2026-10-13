@@ -24,8 +24,16 @@ def composition_visible(context, operation):
     return user.has_perm("fleetops.view_all_fleets") or user.has_perm("fleetops.manage_fleets")
 
 
-# Operation steps whose messages name kicked or failed pilots and the fleet's system.
-MEMBER_STEPS = {"kick_member", "kick_outside_system", "kick_capsules"}
+# Operation steps whose messages name kicked or failed pilots and the fleet's system, or describe the
+# live fleet: the fleet jobs of the Fleet tab (structure templates, moves, invites).
+MEMBER_STEPS = {
+    "kick_member",
+    "kick_outside_system",
+    "kick_capsules",
+    "fleet_template",
+    "fleet_move",
+    "fleet_invite",
+}
 
 
 @register.filter

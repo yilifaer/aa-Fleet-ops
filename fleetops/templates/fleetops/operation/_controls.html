@@ -1,23 +1,5 @@
 {% if kick_enabled %}
-<div class="card mb-3 border-warning" id="fleet-control">
-  <div class="card-header d-flex justify-content-between align-items-center"><strong>Fleet Control</strong><span class="badge bg-warning text-dark">{{ pod_count }} capsule{{ pod_count|pluralize }}</span></div>
-  <div class="card-body">
-    {% if not kick_token_ok %}<div class="alert alert-warning py-2" id="kick-token-missing">{{ kick_disabled_reason }}, so nobody can be kicked. Authorize the FC character again with Authorize / Refresh Fleet ESI on Start Fleet.</div>{% endif %}
-    <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
-      <div>
-        <strong>Kick members</strong>
-        <div class="small text-muted">Uses the FC character's ESI token. The FC and the fleet boss are never targeted or counted. The names are listed before anybody is kicked.</div>
-      </div>
-      <div class="d-flex gap-2 flex-wrap">
-        <form method="post" action="{% url 'fleetops:kick_capsules' operation.uuid %}" class="kick-list-trigger" data-kick-mode="capsules" data-kick-names="{% for pod in kick_pods %}{{ pod.character_name }}{% if not forloop.last %}, {% endif %}{% endfor %}">
-          {% csrf_token %}
-          <button class="btn btn-warning"{% if not kick_token_ok %} title="{{ kick_disabled_reason }}"{% endif %} {% if not pod_count or not kick_token_ok %}disabled{% endif %}>Kick {{ pod_count }} Capsule{{ pod_count|pluralize }}</button>
-        </form>
-        <button type="button" class="btn btn-outline-danger kick-list-open" data-kick-mode="system" id="kick-outside-system"{% if not kick_token_ok %} disabled title="{{ kick_disabled_reason }}"{% endif %}>Kick outside system…</button>
-      </div>
-    </div>
-  </div>
-</div>
+<div id="fleet-control-fragment">{% include "fleetops/operation/_controls_card.html" %}</div>
 <div class="modal fade" id="kickListModal" tabindex="-1" aria-hidden="true" data-preview-url="{% url 'fleetops:kick_preview' operation.uuid %}" data-capsules-url="{% url 'fleetops:kick_capsules' operation.uuid %}" data-system-url="{% url 'fleetops:kick_outside_system' operation.uuid %}">
   <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
     <form method="post" id="kick-list-form">{% csrf_token %}
@@ -116,14 +98,18 @@
     load(null);
   }
 
-  document.querySelectorAll('.kick-list-trigger').forEach(trigger=>trigger.addEventListener('submit',event=>{
+  // The card is replaced while the page is open (Fleet tab updates), so its buttons are handled on the document.
+  document.addEventListener('submit',event=>{
+    const trigger=event.target;
+    if(!(trigger instanceof HTMLFormElement) || !trigger.classList.contains('kick-list-trigger')){ return; }
     if(window.bootstrap){ event.preventDefault(); open(trigger.dataset.kickMode); return; }
     // Without the list window the names are confirmed in a plain dialog.
     if(!confirm(`Kick these capsule pilots from the fleet? ${trigger.dataset.kickNames}`)){ event.preventDefault(); }
-  }));
-  document.querySelectorAll('.kick-list-open').forEach(button=>button.addEventListener('click',()=>{
-    if(window.bootstrap){ open(button.dataset.kickMode); }
-  }));
+  });
+  document.addEventListener('click',event=>{
+    const button=event.target.closest('.kick-list-open');
+    if(button && window.bootstrap){ open(button.dataset.kickMode); }
+  });
   form.addEventListener('submit',()=>{ submit.disabled=true; submit.textContent='Kicking…'; });
 })();
 </script>

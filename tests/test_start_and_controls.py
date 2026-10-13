@@ -65,6 +65,12 @@ class KickableCapsuleTests(TestCase):
         self.pod = track(self.operation, f.create_character("Podded Pilot"))
         track(self.operation, f.create_character("Flying Pilot"), ship_type_id=RIFTER)
         track(self.operation, f.create_character("Gone Pod"), active=False)
+        f.add_token(self.fc, self.fc_char)
+        # The reads of the fleet after the kicks are not part of these tests.
+        for target in ("fleetops.services.fleet_controls.sync_operation", "fleetops.services.fleet_refresh.schedule_refresh"):
+            patcher = mock.patch(target)
+            patcher.start()
+            self.addCleanup(patcher.stop)
         self.client.force_login(self.fc)
 
     def detail(self):

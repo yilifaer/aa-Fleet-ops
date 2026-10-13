@@ -3,7 +3,17 @@ from decimal import Decimal
 from django.core.management.base import BaseCommand
 
 from fleetops.constants import DEFAULT_MOTD_TEMPLATE, DEFAULT_PING_TEMPLATE
-from fleetops.models import FleetOpsSettings, FleetType, MessageTemplate, MultiplierTier, SpecialRole
+from fleetops.fleet_defaults import seed_ship_functions, seed_structure_templates
+from fleetops.models import (
+    FleetOpsSettings,
+    FleetStructureTemplate,
+    FleetType,
+    MessageTemplate,
+    MultiplierTier,
+    ShipFunction,
+    ShipFunctionRule,
+    SpecialRole,
+)
 
 # (threshold in minutes, multiplier); only created when no tier exists.
 DEFAULT_MULTIPLIER_TIERS = ((90, 2), (180, 3))
@@ -47,9 +57,13 @@ class Command(BaseCommand):
                 SpecialRole.objects.create(
                     key=key, name=name, grants_fc_credit=grants_fc_credit, sort_order=sort_order
                 )
+        # Ship functions and structure templates are added only to empty tables.
+        seed_ship_functions(ShipFunction, ShipFunctionRule)
+        seed_structure_templates(FleetStructureTemplate)
         self.stdout.write(
             self.style.SUCCESS(
-                "FleetOps settings, default message templates, multiplier tiers and special roles are ready."
+                "FleetOps settings, default message templates, multiplier tiers, special roles, ship functions "
+                "and fleet structure templates are ready."
             )
         )
 

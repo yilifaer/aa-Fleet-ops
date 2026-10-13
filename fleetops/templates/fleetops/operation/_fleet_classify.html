@@ -1,0 +1,7 @@
+{% if can_classify and row.key %}
+<form method="post" action="{% url 'fleetops:fleet_classify' operation.uuid %}" class="d-flex gap-1 fleet-classify" data-fleet-action>{% csrf_token %}
+  <input type="hidden" name="type_id" value="{{ row.key }}">
+  <select name="function_id" class="form-select form-select-sm" aria-label="Ship function for {{ row.label }}" title="Count {{ row.label }} under a ship function"><option value="">Classify…</option>{% for function in ship_functions %}<option value="{{ function.pk }}">{{ function.name }}</option>{% endfor %}</select>
+  <noscript><button type="submit" class="btn btn-sm btn-outline-secondary">Save</button></noscript>
+</form>
+{% endif %}

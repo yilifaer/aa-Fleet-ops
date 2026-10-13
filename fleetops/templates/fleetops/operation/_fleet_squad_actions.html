@@ -1,0 +1,7 @@
+{% if fleet_can_write %}
+<span class="fleet-actions">
+  <button type="button" class="btn btn-sm btn-link p-0" data-fleet-rename-open title="Rename the squad"><i class="fa-solid fa-pen" aria-hidden="true"></i><span class="visually-hidden">Rename {{ squad.name }}</span></button>
+  <form method="post" action="{% url 'fleetops:fleet_squad_rename' operation.uuid squad.id %}" class="d-none align-items-center gap-1" data-fleet-action data-fleet-rename>{% csrf_token %}<input type="text" name="name" maxlength="10" value="{{ squad.name }}" class="form-control form-control-sm w-auto" size="10" aria-label="Squad name" required autocomplete="off"><button class="btn btn-sm btn-primary" title="Save the name"><i class="fa-solid fa-check" aria-hidden="true"></i><span class="visually-hidden">Save the name</span></button></form>
+  {% if squad.is_empty %}<form method="post" action="{% url 'fleetops:fleet_squad_delete' operation.uuid squad.id %}" class="d-inline" data-fleet-action data-confirm="Delete the squad {{ squad.name }}?">{% csrf_token %}<button class="btn btn-sm btn-link text-danger p-0" title="Delete the squad"><i class="fa-solid fa-trash" aria-hidden="true"></i><span class="visually-hidden">Delete {{ squad.name }}</span></button></form>{% endif %}
+</span>
+{% endif %}

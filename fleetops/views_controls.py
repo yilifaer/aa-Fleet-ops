@@ -5,16 +5,18 @@ from django.contrib import messages
 from django.core.cache import cache
 from django.http import JsonResponse
 from django.shortcuts import redirect
+from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
 from fleetops.models import FleetOperation
+from fleetops.services import fleet_access, fleet_refresh
+from fleetops.services.fleet_access import FleetManageError
 from fleetops.services.fleet_controls import (
     CAPSULES,
     NO_WRITE_TOKEN,
     OUTSIDE_SYSTEM,
     KickRefused,
     capsule_preview,
-    fc_can_kick,
     fresh_sync,
     kick_member,
     kick_members,
@@ -22,8 +24,10 @@ from fleetops.services.fleet_controls import (
     outside_system_preview,
     protected_character_ids,
 )
+from fleetops.services.fleet_manage import FleetActionResult
 from fleetops.services.sde import solar_system_names
 from fleetops.views import _can_manage_operation, _database_id, _operation_for_user
+from fleetops.views_fleet_common import fleet_response, wants_json
 
 # The kick preview reads the fleet from ESI at most once in this many seconds per fleet.
 PREVIEW_SYNC_SECONDS = 10
@@ -35,20 +39,33 @@ def _kicks_possible(operation):
 
 
 def controls_context(request, operation):
-    """What the fleet page's member list and Fleet Control card need for kicks."""
+    """What the fleet page's member list and Fleet Control card need for kicks; the poller redraws both.
+
+    Kicks are fleet changes like any other: after a boss handover, while the fleet cannot be read,
+    without the FC character's write token or while a fleet job runs, the buttons are disabled and
+    ``kick_disabled_reason`` says why (``kick_token_missing`` for the missing token).
+    """
     if not (_kicks_possible(operation) and _can_manage_operation(request.user, operation)):
         return {"kick_enabled": False}
+    problem = fleet_access.fleet_problem(operation)
+    token_missing = problem == fleet_access.NO_WRITE_TOKEN
+    pods = sorted(kickable_pod_members(operation), key=lambda member: member.character_name)
     return {
         "kick_enabled": True,
-        "kick_token_ok": fc_can_kick(operation),
-        "kick_disabled_reason": NO_WRITE_TOKEN,
+        # Whether kicks are possible now; the name dates from when only the token decided it.
+        "kick_token_ok": not problem,
+        "kick_token_missing": token_missing,
+        "kick_disabled_reason": NO_WRITE_TOKEN if token_missing or not problem else problem,
         "kick_protected_ids": protected_character_ids(operation),
-        "kick_pods": sorted(kickable_pod_members(operation), key=lambda member: member.character_name),
+        "kick_pods": pods,
+        "pod_count": len(pods),
     }
 
 
-def _back(operation):
-    return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+def _back(operation, tab=""):
+    """The fleet page; ``tab`` (e.g. "members") opens that tab again."""
+    url = reverse("fleetops:operation_detail", kwargs={"operation_uuid": operation.uuid})
+    return redirect(f"{url}#{tab}" if tab else url)
 
 
 def posted_character_ids(request):
@@ -78,15 +95,42 @@ def report_kicks(request, result, noun, where=""):
         )
     else:
         messages.success(request, f"Kicked {_plural(len(result['kicked']), noun)}{where}.")
+    if result.get("stopped"):
+        messages.error(request, f"Kicks stopped: {result['stopped']}")
     if result["skipped"]:
         skipped = _plural(len(result["skipped"]), "selected member")
         messages.info(request, f"{skipped} skipped: no longer in the fleet or no longer a target.")
 
 
+def _kick_answer(operation, character_id, actor):
+    """Kick one member for the Fleet tab's scripts; returns a FleetActionResult or FleetManageError.
+
+    The kick waits for nothing: after a boss handover, while the fleet cannot be read, without the
+    write token or while a fleet job runs it is refused with the reason, before anything is sent.
+    """
+    try:
+        fleet_access.require_writable(operation, actor)
+        result = kick_member(operation, character_id, actor=actor, sync=False)
+    except FleetManageError as exc:
+        return exc
+    except KickRefused as exc:
+        return FleetManageError(str(exc), 409)
+    # Read the fleet now and once more after ESI's own 5 second cache, like after any other change.
+    fleet_refresh.schedule_refresh(operation)
+    if result.ok:
+        return FleetActionResult(True, result.message, data={"character_id": result.character_id})
+    # 404: the member already left; 409: the FC character is no longer the boss or the fleet is gone.
+    level = "warning" if result.status == 404 else "error"
+    return FleetActionResult(False, result.message, level=level, status=result.status)
+
+
 @permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
 @require_POST
 def kick_member_view(request, operation_uuid, character_id):
+    """Kick one member: the member list's form gets the Members tab back, the Fleet tab's scripts JSON."""
     operation = _operation_for_user(request, operation_uuid, manage=True)
+    if wants_json(request):
+        return fleet_response(request, operation, _kick_answer(operation, character_id, request.user))
     try:
         result = kick_member(operation, character_id, actor=request.user)
     except KickRefused as exc:
@@ -96,7 +140,7 @@ def kick_member_view(request, operation_uuid, character_id):
             messages.success(request, result.message)
         else:
             messages.error(request, result.message)
-    return _back(operation)
+    return _back(operation, "members")
 
 
 @permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)

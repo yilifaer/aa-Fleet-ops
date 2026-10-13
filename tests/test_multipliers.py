@@ -11,6 +11,7 @@ from django.utils import timezone
 from fleetops.forms import EndFleetForm, ManualFleetForm
 from fleetops.models import MAX_MULTIPLIER, AuditLog, FleetOperation, FleetOpsSettings, IncentivePeriod
 from fleetops.services import multipliers
+from fleetops.services.fleet_rules import DEFAULT_BRIDGE_EXCLUDED_GROUP_IDS
 from fleetops.services.incentives import pending_multiplier_operations
 from fleetops.services.operations import end_fleet, finish_requested_end, request_fleet_end
 
@@ -437,6 +438,8 @@ class SettingsPageTests(TestCase):
                 "data_retention_days": "365",
                 "history_alliance_ids": "",
                 "srp_provider": "auto",
+                "fleet_live_refresh_seconds": "15",
+                "bridge_excluded_group_ids": DEFAULT_BRIDGE_EXCLUDED_GROUP_IDS,
             },
         )
 

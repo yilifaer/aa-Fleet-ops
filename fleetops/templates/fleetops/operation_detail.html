@@ -13,8 +13,9 @@
 {% include "fleetops/operation/_controls.html" %}
 {% include "fleetops/operation/_links.html" %}
 
-<ul class="nav nav-tabs" role="tablist">
-  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#members">Members</button></li>
+<ul class="nav nav-tabs" role="tablist" id="operation-tabs">
+  {% if show_fleet_tab %}<li class="nav-item"><button class="nav-link{% if fleet_tab_default %} active{% endif %}" data-bs-toggle="tab" data-bs-target="#fleet" id="fleet-tab">{% if operation.status == 'closed' %}Composition{% else %}Fleet{% endif %}</button></li>{% endif %}
+  <li class="nav-item"><button class="nav-link{% if not fleet_tab_default %} active{% endif %}" data-bs-toggle="tab" data-bs-target="#members">Members</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#map">3-Jump Map</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#events">Events</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#attendance">Attendance</button></li>
@@ -22,8 +23,14 @@
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#messages">Ping / MOTD</button></li>
 </ul>
 <div class="tab-content border border-top-0 rounded-bottom p-3">
-  <div class="tab-pane fade show active" id="members">
-    {% include "fleetops/operation/_members.html" %}
+  {% if show_fleet_tab %}
+  <div class="tab-pane fade{% if fleet_tab_default %} show active{% endif %}" id="fleet">
+    {% include "fleetops/operation/_fleet.html" %}
+  </div>
+  {% endif %}
+
+  <div class="tab-pane fade{% if not fleet_tab_default %} show active{% endif %}" id="members">
+    <div id="members-fragment">{% include "fleetops/operation/_members.html" %}</div>
   </div>
 
   <div class="tab-pane fade" id="map">
@@ -37,7 +44,7 @@
   <div class="tab-pane fade" id="attendance">
     {% include "fleetops/operation/_attendance_manual.html" %}
     {% include "fleetops/operation/_multiplier.html" %}
-    {% include "fleetops/operation/_attendance_table.html" %}
+    <div id="pap-preview-fragment">{% include "fleetops/operation/_attendance_table.html" %}</div>
   </div>
 
   <div class="tab-pane fade" id="roles">
@@ -59,8 +66,25 @@ document.querySelectorAll('.end-fleet-form').forEach(form=>form.addEventListener
   const button=form.querySelector('button:not([data-bs-dismiss])');
   if(button){ button.disabled=true; button.textContent='Ending…'; }
 }));
-{% if operation.status == 'active' %}
-// Reload every minute, but wait while a dialog such as a kick list is open or a form is being filled in.
+// A tab named in the address (#fleet, #members, …) opens on load; the open tab is kept in the address.
+(function(){
+  const tabs=document.getElementById('operation-tabs');
+  function button(hash){ return /^#[A-Za-z][\w-]*$/.test(hash) ? tabs.querySelector(`[data-bs-target="${hash}"]`) : null; }
+  function show(target){
+    if(window.bootstrap){ bootstrap.Tab.getOrCreateInstance(target).show(); return; }
+    tabs.querySelectorAll('.nav-link').forEach(link=>link.classList.toggle('active',link===target));
+    document.querySelectorAll('.tab-content > .tab-pane').forEach(pane=>{
+      const shown=`#${pane.id}`===target.dataset.bsTarget;
+      pane.classList.toggle('show',shown);
+      pane.classList.toggle('active',shown);
+    });
+  }
+  document.addEventListener('DOMContentLoaded',()=>{ const target=button(location.hash); if(target){ show(target); } });
+  tabs.addEventListener('shown.bs.tab',event=>history.replaceState(null,'',event.target.dataset.bsTarget));
+})();
+{% if operation.status == 'active' and can_manage and not show_fleet_tab %}
+// Fleets without a Fleet tab (PAP-link and manual fleets) have no live updates: their managers' page
+// reloads every minute, but waits while a dialog is open or a form is being filled in.
 document.addEventListener('input',event=>{ if(event.target.form){ event.target.form.dataset.edited='1'; } });
 function formInUse(){
   const field=document.activeElement;

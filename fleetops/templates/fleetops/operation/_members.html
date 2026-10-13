@@ -1,8 +1,8 @@
-{% load fleetops_operation fleetops_pap %}
+{% load fleetops_fleet fleetops_operation fleetops_pap %}
 {% if show_composition %}
 <div class="table-responsive"><table class="table table-sm align-middle">
   <thead><tr><th>Character</th><th>Main</th><th title="The character's own corporation; statistics use the main's corporation.">Corporation</th><th>Ship</th><th>System</th><th>Role</th><th>Wing</th><th>Squad</th><th>Time in fleet</th><th>Last Seen</th>{% if kick_enabled %}<th></th>{% endif %}</tr></thead>
-  <tbody>{% for m in members %}<tr><td>{{ m.character_name }}{% if not m.auth_user_id %} <span class="badge bg-secondary">Not in Alliance Auth</span>{% endif %} <a class="text-muted ms-1" href="{{ m.character_id|evewho_url }}" target="_blank" rel="noopener noreferrer" title="EveWho"><i class="fa-solid fa-address-card" aria-hidden="true"></i><span class="visually-hidden">EveWho</span></a> <a class="text-muted" href="{{ m.character_id|zkillboard_url }}" target="_blank" rel="noopener noreferrer" title="zKillboard"><i class="fa-solid fa-skull-crossbones" aria-hidden="true"></i><span class="visually-hidden">zKillboard</span></a></td><td>{{ m.main_character_name|default:"—" }}</td><td>{{ m.corporation_name|default:"—" }}{% if m.alliance_name %}<div class="small text-muted">{{ m.alliance_name }}</div>{% endif %}</td><td>{{ m.ship_type_name|default:m.ship_type_id }}</td><td>{{ m.solar_system_name|default:m.solar_system_id }}</td><td>{{ m.fleet_role }}</td><td>{{ m.wing_id|default:"—" }}</td><td>{{ m.squad_id|default:"—" }}</td><td class="text-nowrap">{{ m.accumulated_seconds|minutes|default:"—" }}</td><td>{{ m.last_seen }}</td>{% if kick_enabled %}<td class="text-end">{% if m.is_active and m.character_id not in kick_protected_ids %}<form method="post" action="{% url 'fleetops:kick_member' operation.uuid m.character_id %}" class="d-inline kick-member-form" data-kick-label="{{ m.character_name }} ({{ m.corporation_name|default:'unknown corporation' }})">{% csrf_token %}<button class="btn btn-sm btn-outline-danger"{% if not kick_token_ok %} disabled title="{{ kick_disabled_reason }}"{% endif %}>Kick</button></form>{% endif %}</td>{% endif %}</tr>{% empty %}<tr><td colspan="{% if kick_enabled %}11{% else %}10{% endif %}">No tracked members.</td></tr>{% endfor %}</tbody>
+  <tbody>{% for m in members %}<tr><td>{{ m.character_name }}{% if not m.auth_user_id %} <span class="badge bg-secondary">Not in Alliance Auth</span>{% endif %} <a class="text-muted ms-1" href="{{ m.character_id|evewho_url }}" target="_blank" rel="noopener noreferrer" title="EveWho"><i class="fa-solid fa-address-card" aria-hidden="true"></i><span class="visually-hidden">EveWho</span></a> <a class="text-muted" href="{{ m.character_id|zkillboard_url }}" target="_blank" rel="noopener noreferrer" title="zKillboard"><i class="fa-solid fa-skull-crossbones" aria-hidden="true"></i><span class="visually-hidden">zKillboard</span></a></td><td>{{ m.main_character_name|default:"—" }}</td><td>{{ m.corporation_name|default:"—" }}{% if m.alliance_name %}<div class="small text-muted">{{ m.alliance_name }}</div>{% endif %}</td><td>{{ m.ship_type_name|default:m.ship_type_id }}</td><td>{{ m.solar_system_name|default:m.solar_system_id }}{% if m.station_id %} <i class="fa-solid fa-house text-muted" title="Docked" aria-label="Docked"></i>{% endif %}</td><td>{{ m.fleet_role|role_label|default:"—" }}</td>{% member_position m operation as position %}<td>{{ position.0 }}</td><td>{{ position.1 }}</td><td class="text-nowrap">{{ m.accumulated_seconds|minutes|default:"—" }}</td><td>{{ m.last_seen }}</td>{% if kick_enabled %}<td class="text-end">{% if m.is_active and m.character_id not in kick_protected_ids %}<form method="post" action="{% url 'fleetops:kick_member' operation.uuid m.character_id %}" class="d-inline kick-member-form" data-kick-label="{{ m.character_name }} ({{ m.corporation_name|default:'unknown corporation' }})">{% csrf_token %}<button class="btn btn-sm btn-outline-danger"{% if not kick_token_ok %} disabled title="{{ kick_disabled_reason }}"{% endif %}>Kick</button></form>{% endif %}</td>{% endif %}</tr>{% empty %}<tr><td colspan="{% if kick_enabled %}11{% else %}10{% endif %}">No tracked members.</td></tr>{% endfor %}</tbody>
 </table></div>
 {% if kick_enabled %}
 <div class="modal fade" id="kickMemberModal" tabindex="-1" aria-hidden="true">
@@ -13,25 +13,33 @@
   </div></div>
 </div>
 <script>
+// The member list is replaced while the page is open (Fleet tab updates), so the kick confirmation
+// listens on the document instead of on each form; it is set up once per page.
 (function(){
-  const modal=document.getElementById('kickMemberModal');
+  if(window.FleetOpsKickConfirm){ return; }
+  window.FleetOpsKickConfirm=true;
   let pending=null;
-  document.querySelectorAll('.kick-member-form').forEach(form=>form.addEventListener('submit',event=>{
-    if(form.dataset.confirmed){ return; }
+  document.addEventListener('submit',event=>{
+    const form=event.target;
+    if(!(form instanceof HTMLFormElement) || !form.classList.contains('kick-member-form') || form.dataset.confirmed){ return; }
     event.preventDefault();
     const text=`Kick ${form.dataset.kickLabel} from the fleet? This cannot be undone.`;
-    if(window.bootstrap){
+    const modal=document.getElementById('kickMemberModal');
+    if(window.bootstrap && modal){
       pending=form;
       document.getElementById('kick-member-text').textContent=text;
+      const button=document.getElementById('kick-member-confirm');
+      if(button){ button.disabled=false; }
       bootstrap.Modal.getOrCreateInstance(modal).show();
     } else if(confirm(text)){
       form.dataset.confirmed='1';
       form.submit();
     }
-  }));
-  document.getElementById('kick-member-confirm').addEventListener('click',event=>{
-    if(!pending){ return; }
-    event.target.disabled=true;
+  });
+  document.addEventListener('click',event=>{
+    const button=event.target.closest('#kick-member-confirm');
+    if(!button || !pending || !pending.isConnected){ return; }
+    button.disabled=true;
     pending.dataset.confirmed='1';
     pending.submit();
   });

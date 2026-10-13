@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import permission_required
+from django.db import transaction
 from django.db.models.deletion import ProtectedError
-from django.forms.models import model_to_dict
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
@@ -21,6 +21,7 @@ from fleetops.forms_config import (
     MessageTemplateForm,
     PingRoleForm,
 )
+from fleetops.forms_fleet import FleetStructureTemplateForm, ShipFunctionForm, ShipFunctionRuleForm
 from fleetops.forms_pap import MultiplierTierForm
 from fleetops.forms_records import SpecialRoleForm
 from fleetops.models import (
@@ -29,14 +30,17 @@ from fleetops.models import (
     CommsPreset,
     DiscordWebhook,
     FleetOpsSettings,
+    FleetStructureTemplate,
     FleetType,
     MessageTemplate,
     MultiplierTier,
     PingRole,
+    ShipFunction,
+    ShipFunctionRule,
     SpecialRole,
 )
 from fleetops.services import discord_roles, links
-from fleetops.services.audit import audit
+from fleetops.services.audit import audit, cascaded_config_rows, config_snapshot
 from fleetops.services.mentions import role_delete_refusal
 from fleetops.validators import VOICE_URL_SCHEMES, voice_url_scheme
 from fleetops.views import _render
@@ -152,6 +156,46 @@ CONFIG_SECTIONS = {
             ("Active", "is_active"),
         ],
     },
+    "ship-functions": {
+        "title": "Ship Functions",
+        "description": "Groups of the fleet composition, such as DPS or Logistics, and the fleet positions that count in them.",
+        "model": ShipFunction,
+        "form": ShipFunctionForm,
+        "columns": [
+            ("Name", "name"),
+            ("Colour", "color"),
+            ("Fleet positions", "fleet_roles"),
+            ("Default", "is_default"),
+            ("Active", "is_active"),
+            ("Sort", "sort_order"),
+        ],
+        "default_noun": "ship function",
+    },
+    "ship-function-rules": {
+        "title": "Ship Function Rules",
+        "description": "Which ship types and ship groups count under which ship function in the fleet composition.",
+        "model": ShipFunctionRule,
+        "form": ShipFunctionRuleForm,
+        "columns": [
+            ("Function", "function"),
+            ("Kind", "kind"),
+            ("ID", "target_id"),
+            ("Name", "label"),
+        ],
+    },
+    "structure-templates": {
+        "title": "Fleet Structure Templates",
+        "description": "Wing and squad names FCs can apply to a running fleet from its Fleet tab.",
+        "model": FleetStructureTemplate,
+        "form": FleetStructureTemplateForm,
+        "columns": [
+            ("Name", "name"),
+            ("Layout", "layout"),
+            ("Description", "description"),
+            ("Active", "is_active"),
+            ("Sort", "sort_order"),
+        ],
+    },
 }
 
 
@@ -171,23 +215,6 @@ def _configuration_section(section):
     if config is None:
         raise Http404
     return config
-
-
-def _configuration_snapshot(obj):
-    data = model_to_dict(obj)
-    # Never write Discord webhook secrets into FleetOps audit JSON.
-    if isinstance(obj, DiscordWebhook) and "webhook_url" in data:
-        data["webhook_url"] = "***redacted***" if data["webhook_url"] else ""
-    many_to_many = {field.name for field in obj._meta.many_to_many}
-    for key, value in list(data.items()):
-        if key in many_to_many:
-            # Such as the roles a ping channel allows.
-            data[key] = sorted(item.pk for item in value)
-        elif hasattr(value, "pk"):
-            data[key] = value.pk
-        elif not isinstance(value, (str, int, float, bool, type(None), list, dict)):
-            data[key] = str(value)
-    return data
 
 
 def _link_settings():
@@ -215,7 +242,7 @@ def _cell_value(obj, field_name):
     if field_name == "allowed_roles":
         return ", ".join(str(role) for role in value.all()) or "Every active role"
     display = getattr(obj, f"get_{field_name}_display", None)
-    if field_name in ("channel_type", "template_type") and display is not None:
+    if field_name in ("channel_type", "template_type", "kind") and display is not None:
         return display()
     return value
 
@@ -259,7 +286,7 @@ def configuration_index(request):
 @permission_required("fleetops.manage_configuration", raise_exception=True)
 def configuration_settings(request):
     obj = FleetOpsSettings.get_solo()
-    old = _configuration_snapshot(obj)
+    old = config_snapshot(obj)
     if request.method == "POST":
         form = FleetOpsSettingsForm(request.POST, instance=obj)
         if form.is_valid():
@@ -269,7 +296,7 @@ def configuration_settings(request):
                 "configuration.update",
                 obj,
                 old,
-                _configuration_snapshot(obj),
+                config_snapshot(obj),
                 reason="Updated from FleetOps front-end administration",
             )
             messages.success(request, "FleetOps settings updated.")
@@ -304,7 +331,7 @@ def configuration_edit(request, section, pk=None):
     config = _configuration_section(section)
     model = config["model"]
     obj = get_object_or_404(model, pk=pk) if pk is not None else None
-    old = _configuration_snapshot(obj) if obj is not None else None
+    old = config_snapshot(obj) if obj is not None else None
     if request.method == "POST":
         form = config["form"](request.POST, instance=obj)
         if form.is_valid():
@@ -314,19 +341,19 @@ def configuration_edit(request, section, pk=None):
                 "configuration.update" if obj is not None else "configuration.create",
                 saved,
                 old,
-                {**_configuration_snapshot(saved), **getattr(form, "audit_extra", {})},
+                {**config_snapshot(saved), **getattr(form, "audit_extra", {})},
                 reason="Changed from FleetOps front-end administration",
             )
             # A new default template takes the flag from the previous one.
             for demoted in getattr(saved, "demoted_defaults", ()):
-                new = _configuration_snapshot(demoted)
+                new = config_snapshot(demoted)
                 audit(
                     request.user,
                     "configuration.update",
                     demoted,
                     {**new, "is_default": True},
                     new,
-                    reason="Default template replaced from FleetOps front-end administration",
+                    reason=f"Default {config.get('default_noun', 'template')} replaced from FleetOps front-end administration",
                 )
             messages.success(request, f"{config['title']} saved.")
             for warning in getattr(form, "warnings", ()):
@@ -350,26 +377,29 @@ def configuration_delete(request, section, pk):
     if refusal:
         messages.error(request, refusal)
         return redirect("fleetops:configuration_list", section=section)
-    old = _configuration_snapshot(obj)
-    object_type = obj.__class__.__name__
-    object_id = str(obj.pk)
+    # The parent first, then the rows deleted with it (a ship function's rules).
+    deleted = [
+        (row.__class__.__name__, str(row.pk), config_snapshot(row)) for row in [obj, *cascaded_config_rows(obj)]
+    ]
     try:
-        obj.delete()
+        with transaction.atomic():
+            obj.delete()
+            for object_type, object_id, old in deleted:
+                AuditLog.objects.create(
+                    actor=request.user,
+                    action="configuration.delete",
+                    object_type=object_type,
+                    object_id=object_id,
+                    old_value=old,
+                    new_value=None,
+                    reason="Deleted from FleetOps front-end administration",
+                )
     except ProtectedError:
         messages.error(
             request,
             "This item is referenced by existing fleet data and cannot be deleted. Disable it instead.",
         )
     else:
-        AuditLog.objects.create(
-            actor=request.user,
-            action="configuration.delete",
-            object_type=object_type,
-            object_id=object_id,
-            old_value=old,
-            new_value=None,
-            reason="Deleted from FleetOps front-end administration",
-        )
         messages.warning(request, f"{config['title']} item deleted.")
     return redirect("fleetops:configuration_list", section=section)
 

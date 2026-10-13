@@ -13,6 +13,7 @@ from esi.openapi_clients import ESIClientProvider
 
 from fleetops import __title__, __url__, __version__
 from fleetops.constants import FLEET_READ_SCOPE, FLEET_WRITE_SCOPE
+from fleetops.services.fleet_rules import normalize_wings, position_body
 
 logger = get_extension_logger(__name__)
 
@@ -28,6 +29,14 @@ esi = ESIClientProvider(
         "GetFleetsFleetIdWings",
         "PutFleetsFleetId",
         "DeleteFleetsFleetIdMembersMemberId",
+        "PostFleetsFleetIdWings",
+        "PutFleetsFleetIdWingsWingId",
+        "DeleteFleetsFleetIdWingsWingId",
+        "PostFleetsFleetIdWingsWingIdSquads",
+        "PutFleetsFleetIdSquadsSquadId",
+        "DeleteFleetsFleetIdSquadsSquadId",
+        "PutFleetsFleetIdMembersMemberId",
+        "PostFleetsFleetIdMembers",
         "PostUniverseNames",
         "PostCharactersAffiliation",
         "GetCharactersCharacterIdOnline",
@@ -228,10 +237,18 @@ def as_dict(value: Any) -> dict:
         "solar_system_id", "role_name", "takes_fleet_warp", "is_free_move", "join_time",
         "is_registered", "is_voice_enabled", "motd", "id", "name", "category", "corporation_id",
         "alliance_id", "faction_id", "online", "station_id", "structure_id", "ship_name", "ship_item_id",
+        "squads",
     ):
         if hasattr(value, key):
             result[key] = getattr(value, key)
     return result
+
+
+def _field(value: Any, name: str, default=None):
+    """A field of an ESI answer that is a dict or a response model."""
+    if isinstance(value, dict):
+        return value.get(name, default)
+    return getattr(value, name, default)
 
 
 def get_token(user, character_id: int, write: bool = False):
@@ -333,7 +350,12 @@ def set_fleet_motd(user, character_id: int, fleet_id: int, motd: str) -> None:
 
 
 def kick_fleet_member(user, character_id: int, fleet_id: int, member_id: int) -> None:
-    """Kick one member from an EVE fleet via the fleet boss write token."""
+    """Kick one member from an EVE fleet via the fleet boss write token.
+
+    Failures raise FleetESIError with the code MEMBER_NOT_FOUND for a 404, which ESI also answers
+    after a boss handover, or one of the fleet write codes (FLEET_WRITE_FORBIDDEN, FLEET_WRITE_LIMITED
+    …, see ``_fleet_write``), so a kick batch stops on them like every other fleet job.
+    """
     token = get_token(user, character_id, write=True)
     try:
         _write(
@@ -344,12 +366,179 @@ def kick_fleet_member(user, character_id: int, fleet_id: int, member_id: int) ->
             )
         )
     except Exception as exc:
-        status = _status_code(exc)
-        if status == 404:
+        code = _write_error_code(exc)
+        if code == "FLEET_WRITE_NOT_FOUND":
             raise _esi_failure("MEMBER_NOT_FOUND", f"Fleet member {member_id} was not found", exc) from exc
-        if status in (401, 403):
-            raise _esi_failure("KICK_FORBIDDEN", "ESI denied permission to kick this fleet member", exc) from exc
-        raise _esi_failure("KICK_ERROR", f"Could not kick fleet member {member_id}", exc) from exc
+        if code == "FLEET_WRITE_FORBIDDEN":
+            raise _esi_failure(code, "ESI denied permission to kick this fleet member", exc) from exc
+        raise _esi_failure(code, f"Could not kick fleet member {member_id}", exc) from exc
+
+
+def get_fleet_wings(user, character_id: int, fleet_id: int, fresh: bool = False) -> list[dict]:
+    """Read the wings and squads: ``[{"id", "name", "squads": [{"id", "name"}]}]`` in ESI order."""
+    token = get_token(user, character_id, write=False)
+    try:
+        result = _read(esi.client.Fleets.GetFleetsFleetIdWings(fleet_id=fleet_id, token=token), fresh=fresh)
+    except Exception as exc:
+        # As for the members: only the fleet boss can read the wings.
+        code = "FLEET_NOT_FOUND" if _status_code(exc) == 404 else "ESI_ERROR"
+        raise _esi_failure(code, "Could not read fleet wings", exc) from exc
+    return normalize_wings(result)
+
+
+def _write_error_code(exc) -> str:
+    """The FleetESIError code of a failed fleet write."""
+    status = _status_code(exc)
+    chain = _exception_chain(exc)
+    if status == 420 or any(isinstance(item, (ESIErrorLimitException, ESIBucketLimitException)) for item in chain):
+        return "FLEET_WRITE_LIMITED"
+    if status == 404:
+        # Only the boss can change a fleet, so this also answers a write after a boss handover.
+        return "FLEET_WRITE_NOT_FOUND"
+    if status in (401, 403):
+        return "FLEET_WRITE_FORBIDDEN"
+    if status is not None and 400 <= status < 500:
+        return "FLEET_WRITE_REJECTED"
+    return "FLEET_WRITE_ERROR"
+
+
+def _fleet_write(context: str, user, character_id: int, build):
+    """Send one fleet write with the FC character's write token; ``build(token)`` prepares the operation.
+
+    Failures raise FleetESIError with the short text "<context>: ESI returned HTTP 404 (...)." and one
+    of the codes FLEET_WRITE_NOT_FOUND, FLEET_WRITE_FORBIDDEN, FLEET_WRITE_REJECTED, FLEET_WRITE_LIMITED
+    (error limit or rate limit reached) or FLEET_WRITE_ERROR.
+    """
+    token = get_token(user, character_id, write=True)
+    try:
+        return _write(build(token))
+    except Exception as exc:
+        raise _esi_failure(_write_error_code(exc), context, exc) from exc
+
+
+def _created_id(result, field: str, context: str, unit: str) -> int:
+    value = result if isinstance(result, int) and not isinstance(result, bool) else _field(result, field)
+    try:
+        created = int(value)
+    except (TypeError, ValueError):
+        created = 0
+    if created <= 0:
+        raise FleetESIError("FLEET_WRITE_ERROR", f"{context}: ESI did not return the new {unit} id.")
+    return created
+
+
+def create_fleet_wing(user, character_id: int, fleet_id: int) -> int:
+    """Add a wing (EVE names it); returns the new wing id. The route takes no request body."""
+    context = "Could not create a wing"
+    result = _fleet_write(
+        context,
+        user,
+        character_id,
+        lambda token: esi.client.Fleets.PostFleetsFleetIdWings(fleet_id=fleet_id, token=token),
+    )
+    return _created_id(result, "wing_id", context, "wing")
+
+
+def rename_fleet_wing(user, character_id: int, fleet_id: int, wing_id: int, name: str) -> None:
+    _fleet_write(
+        "Could not rename the wing",
+        user,
+        character_id,
+        lambda token: esi.client.Fleets.PutFleetsFleetIdWingsWingId(
+            fleet_id=fleet_id, wing_id=wing_id, token=token, body={"name": name}
+        ),
+    )
+
+
+def delete_fleet_wing(user, character_id: int, fleet_id: int, wing_id: int) -> None:
+    """Delete an empty wing; it may still hold empty squads."""
+    _fleet_write(
+        "Could not delete the wing",
+        user,
+        character_id,
+        lambda token: esi.client.Fleets.DeleteFleetsFleetIdWingsWingId(fleet_id=fleet_id, wing_id=wing_id, token=token),
+    )
+
+
+def create_fleet_squad(user, character_id: int, fleet_id: int, wing_id: int) -> int:
+    """Add a squad to a wing (EVE names it); returns the new squad id. The route takes no request body."""
+    context = "Could not create a squad"
+    result = _fleet_write(
+        context,
+        user,
+        character_id,
+        lambda token: esi.client.Fleets.PostFleetsFleetIdWingsWingIdSquads(
+            fleet_id=fleet_id, wing_id=wing_id, token=token
+        ),
+    )
+    return _created_id(result, "squad_id", context, "squad")
+
+
+def rename_fleet_squad(user, character_id: int, fleet_id: int, squad_id: int, name: str) -> None:
+    _fleet_write(
+        "Could not rename the squad",
+        user,
+        character_id,
+        lambda token: esi.client.Fleets.PutFleetsFleetIdSquadsSquadId(
+            fleet_id=fleet_id, squad_id=squad_id, token=token, body={"name": name}
+        ),
+    )
+
+
+def delete_fleet_squad(user, character_id: int, fleet_id: int, squad_id: int) -> None:
+    """Delete an empty squad."""
+    _fleet_write(
+        "Could not delete the squad",
+        user,
+        character_id,
+        lambda token: esi.client.Fleets.DeleteFleetsFleetIdSquadsSquadId(
+            fleet_id=fleet_id, squad_id=squad_id, token=token
+        ),
+    )
+
+
+def _member_label(member_id, name) -> str:
+    return name or f"character {member_id}"
+
+
+def move_fleet_member(
+    user, character_id: int, fleet_id: int, member_id: int, role: str, wing_id=None, squad_id=None, *, name=""
+) -> None:
+    """Move a member to a position; ``name`` only labels the error text.
+
+    The body follows EVE's rules (see ``fleet_rules.position_body``), which raise FleetRuleError, a
+    ValueError, before anything is sent.
+    """
+    body = position_body(role, wing_id, squad_id)
+    _fleet_write(
+        f"Could not move {_member_label(member_id, name)}",
+        user,
+        character_id,
+        lambda token: esi.client.Fleets.PutFleetsFleetIdMembersMemberId(
+            fleet_id=fleet_id, member_id=member_id, token=token, body=body
+        ),
+    )
+
+
+def invite_fleet_member(
+    user,
+    character_id: int,
+    fleet_id: int,
+    invitee_id: int,
+    role: str = "squad_member",
+    wing_id=None,
+    squad_id=None,
+    *,
+    name="",
+) -> None:
+    """Invite a character; a squad member without wing and squad joins any squad with free positions."""
+    body = {"character_id": int(invitee_id), **position_body(role, wing_id, squad_id, invite=True)}
+    _fleet_write(
+        f"Could not invite {_member_label(invitee_id, name)}",
+        user,
+        character_id,
+        lambda token: esi.client.Fleets.PostFleetsFleetIdMembers(fleet_id=fleet_id, token=token, body=body),
+    )
 
 
 def _character_read(operation_name, token, code, context):

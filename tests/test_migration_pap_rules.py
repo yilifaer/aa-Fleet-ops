@@ -635,7 +635,10 @@ class UpgradeFrom0010Tests(TransactionTestCase):
         self.check_pap_rules()
         self.check_time_in_fleet()
         self.check_attendance()
-        operation = FleetOperation.objects.get(pk=self.closed.pk)
+        # Only the fields this upgrade knows: later migrations add columns the database does not have yet.
+        operation = FleetOperation.objects.only("fleet_point_weight_snapshot", "attendance_multiplier").get(
+            pk=self.closed.pk
+        )
         self.assertEqual(operation.fc_points, Decimal("3.00"))
 
     def check_seeds(self):

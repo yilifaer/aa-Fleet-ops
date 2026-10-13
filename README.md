@@ -65,6 +65,7 @@ The repository includes the full expected feature target and an explicit distinc
 - Operational dashboard cards, recent participation, top tracked ships, active fleets and FC-month summary.
 - Post-creation/post-close special-role assignments with configurable roles (Back Seat FC, Logi Anchor and Snowflake Member by default). A role's **Gives FC credit** switch decides whether its holder gets FC fleet/point credit for that operation.
 - Kicks from an active fleet using the Fleet Boss ESI write token: one member, everyone outside a chosen system, or the capsule pilots (listed by name). The FC and the fleet boss are never kicked or counted.
+- **Fleet tab** on active fleets: the live fleet tree with wing and squad names, the composition by ship function, type, class and system with the bridgeable mass, and fleet management from the web page (add, rename and delete wings and squads, drag and drop moves, invites of Alliance Auth characters, structure templates). See [Fleet management](#fleet-management).
 
 ## Compatibility target
 
@@ -86,7 +87,7 @@ esi-fleets.read_fleet.v1
 esi-fleets.write_fleet.v1
 ```
 
-The write scope is used for MOTD updates and Fleet Boss controls such as kicks. If MOTD automation fails, the rendered MOTD remains available for manual copy.
+The write scope is used for MOTD updates and Fleet Boss controls: kicks and the fleet management of the Fleet tab (wings, squads, member moves, invites, structure templates). FleetOps always uses the FC character's token for them, never the token of the person clicking. If MOTD automation fails, the rendered MOTD remains available for manual copy.
 
 PAP links read where a pilot is, what they fly and whether they are online, with the pilot's own token:
 
@@ -493,6 +494,52 @@ On an active ESI fleet the FC (and fleet managers) can kick from the fleet page:
 
 ---
 
+# Fleet management
+
+An active ESI fleet opens on the **Fleet** tab: the fleet as EVE shows it, its composition and the recent changes made from FleetOps. The tab updates itself every 10 seconds without reloading the page, and so do the Members tab, the PAP preview and the Fleet Control card while they are shown. PAP-link and manual fleets have no Fleet tab; their page reloads every minute for the people who manage the fleet.
+
+## Who sees and changes what
+
+| | Who |
+|---|---|
+| Fleet tab of a running fleet, with its controls | The fleet's managers: its FC and FC-credited special-role members with `fleetops.manage_own_fleet`, and `fleetops.manage_fleets` |
+| Fleet tab of a running fleet, read-only | `fleetops.view_all_fleets` |
+| Composition of a closed fleet | Everybody who can open the fleet page |
+| Quick classify of a ship from the composition | `fleetops.manage_configuration` |
+| Ship functions, rules and structure templates | `fleetops.manage_configuration` (FleetOps Administration) |
+
+Other members of a running fleet do not see its tree or composition until it closes. See [`docs/PERMISSIONS.md`](docs/PERMISSIONS.md).
+
+## ESI
+
+Every change goes to ESI with the **FC character's** token and needs `esi-fleets.write_fleet.v1` on it (**Authorize / Refresh Fleet ESI** on Start Fleet). ESI only lets the fleet boss change a fleet: after the boss role was handed to another pilot, the Fleet tab and the kick buttons are disabled with "<FC> is not the fleet boss any more (current boss: …)". Changes are also refused while the FC character has no write token, while the fleet cannot be read and while a background job (structure template, moves or invites of several pilots, a big kick batch) runs for the fleet. When ESI answers a change or a kick with "not found", FleetOps checks once whether the FC character is still the boss, so a handover made in game is reported at once and a batch stops instead of sending the rest.
+
+## Working with the fleet
+
+- **Wings and squads**: "+" on the fleet adds a wing and opens its name editor, "+" on a wing adds a squad, the pencil renames (up to 10 characters), the bin deletes an empty wing or squad. EVE allows 5 wings with 5 squads each.
+- **Moves**: drag a member onto a squad (member), a squad head (squad commander), a wing head (wing commander) or the fleet head (fleet commander), or use the member menu (**Move to…**, **Make squad commander** …). Tick members to move up to 50 together; they move as a background job.
+- **Invites**: **Invite…** finds any character registered in Alliance Auth by an active user (at least 3 letters; an empty search lists your own characters). The pilot still accepts in game; the tree shows the invitation for up to two minutes.
+- **Structure templates**: **Apply template…** renames and creates wings and squads in order. **Also delete empty wings and squads that are not in the template** is unticked by default; wings and squads with members are never deleted and members are never moved.
+- **Kicks**: **Kick…** in the member menu, as on the Members tab.
+
+ESI caches fleet reads for 5 seconds, so FleetOps reads the fleet right after a change and once more 6 seconds later, and shows the change with a spinner until ESI confirms it.
+
+## Ship functions and structure templates
+
+FleetOps Administration → **Ship Functions** lists the groups of the composition (Fleet Command, DPS, Logistics, Tackle / EWAR, Interdictors, Boosts, Command Destroyers, Support, Cyno, Newbro and Capsules after the upgrade). A function can count fleet positions (for example the fleet commander, whatever they fly), and one function can be the default for ships no rule matches. **Ship Function Rules** map a ship type or a ship group to a function; enter the ID or the exact English name. A member counts under the first match of: fleet position, ship type rule, ship group rule, the default function. **Fleet Structure Templates** keep wing and squad layouts, one wing per line (`Logi: Logi 1, Logi 2`, names up to 10 characters, up to 5 wings of 5 squads, `#` starts a comment).
+
+FleetOps Administration → General Settings → **Ship groups without bridge** lists the ship groups whose mass is not bridgeable. The default follows the titan bridge rule: capitals, supercapitals, the Rorqual, freighters, jump freighters and the Orca/Porpoise are left out.
+
+## Without django-eveonline-sde
+
+django-eveonline-sde is optional. Without it the composition counts ship functions from fleet positions and ship type rules only, lists the other ships as unclassified, and shows "Ship classes need django-eveonline-sde." and "Bridgeable mass needs django-eveonline-sde." instead of those blocks. Ship groups can still be entered by English name on the rule form; ship types by ID.
+
+## Live refresh and its ESI cost
+
+Tracking reads each active fleet every tracking interval: members and, since 0.1.0a6, wings and squads (two ESI calls). While someone who manages the fleet has its Fleet tab, Members tab or PAP preview open with **Live** on, FleetOps reads the fleet every **Live fleet refresh** seconds (General Settings, 15 by default, 10 to 300, 0 = only the tracking interval and the Refresh button). That is two more ESI calls per interval with the FC character's token: about 120 calls per 15 minutes at 15 seconds, of the 1800 ESI allows per character. However many managers watch, a fleet is read once per interval; viewers with `view_all_fleets` never cause reads. The **Live** switch is remembered per browser.
+
+---
+
 # Upgrading to 0.1.0a6
 
 Read the upgrade notes in [`CHANGELOG.md`](CHANGELOG.md) before running `python manage.py migrate fleetops`. In short: Ping Targets become Ping channels and Ping roles (check each channel's mention switches and allowed roles afterwards), the Default Ping/MOTD templates are replaced only if they were never edited, pasted in-game channel links are split into name and link, and user names are removed from voice links. After the upgrade:
@@ -505,6 +552,8 @@ Read the upgrade notes in [`CHANGELOG.md`](CHANGELOG.md) before running `python 
 - Change comms presets marked "Not a supported voice link" on the Comms Presets list (for example a bare `ts.example.com:9987`) to a `ts3server://…` or `mumble://…` link; until then pings and MOTDs show only the comms name.
 - Custom ping templates keep working: `{{ ping_target }}` now renders the mention selected on Fleet Start.
 - Run `python manage.py fleetops_refresh_names --dry-run`, then without `--dry-run`, if older fleets show ship or system names in another language.
+- Run `python manage.py collectstatic`: the Fleet tab needs its new scripts and stylesheet.
+- FCs need `esi-fleets.write_fleet.v1` on the FC character's token to manage fleets from the Fleet tab; check **Live fleet refresh** and **Ship groups without bridge** in General Settings (see [Fleet management](#fleet-management)).
 
 The PAP rules (see [PAP rules](#pap-rules)) change how PAP and FC points are counted from the upgrade on:
 

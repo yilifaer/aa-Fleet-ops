@@ -22,6 +22,7 @@ from fleetops.models import (
     FleetMemberState,
     FleetOperation,
     FleetStartPreset,
+    FleetStructureTemplate,
     IncentivePeriod,
     MessageTemplate,
     MonthlyFCStatistic,
@@ -29,11 +30,13 @@ from fleetops.models import (
     OperationRoleAssignment,
     PingRole,
     PingTarget,
+    ShipFunction,
 )
 from fleetops.providers.esi import FleetDetectionResult, FleetESIError
 from fleetops.providers.srp import SRPLinkResult
 
 from . import factories as f
+from .fleet_sim import FleetSim
 
 WEBHOOK_SECRET = "s3cr3t-webhook-token"
 WEBHOOK_URL = f"https://discord.com/api/webhooks/1234567890/{WEBHOOK_SECRET}"
@@ -358,6 +361,11 @@ class FleetOpsViewTestCase(TestCase):
 class PermissionMatrixTests(FleetOpsViewTestCase):
     """Every FleetOps URL against every permission bundle."""
 
+    def setUp(self):
+        super().setUp()
+        # The Fleet tab routes read and change the fleet: they reach an in-memory EVE, never ESI.
+        FleetSim().install(self)
+
     def cases(self):
         r = reverse
         member_only = {"member": DENIED, "corp": DENIED, "fc": DENIED, "lead": OK}
@@ -510,7 +518,50 @@ class PermissionMatrixTests(FleetOpsViewTestCase):
                  {"budget": "1000000000", "minimum_fleets": "1"}, lead_post),
         ]
         cases += self.pap_rule_cases(own_and_other, member_only, lead_post)
+        cases += self.fleet_tab_cases(lead_post)
         return cases
+
+    def fleet_tab_cases(self, lead_post):
+        r = reverse
+        own_post = {"member": DENIED, "corp": DENIED, "fc": REDIRECT, "lead": REDIRECT}
+        other_post = {"member": DENIED, "corp": DENIED, "fc": HIDDEN, "lead": REDIRECT}
+        wing_id, squad_id = 2_054_000_000_001, 3_108_000_000_001
+        template, _ = FleetStructureTemplate.objects.get_or_create(name="Matrix", defaults={"layout": "Main: Alpha"})
+        function, _ = ShipFunction.objects.get_or_create(name="Matrix")
+        posts = (
+            ("fleet_refresh", {}, None),
+            ("fleet_wing_add", {}, {"name": "Logi"}),
+            ("fleet_wing_rename", {"wing_id": wing_id}, {"name": "Main"}),
+            ("fleet_wing_delete", {"wing_id": wing_id}, None),
+            ("fleet_squad_add", {"wing_id": wing_id}, None),
+            ("fleet_squad_rename", {"squad_id": squad_id}, {"name": "Alpha"}),
+            ("fleet_squad_delete", {"squad_id": squad_id}, None),
+            ("fleet_members_move", {}, {"character_ids": [str(self.member_main.character_id)], "role": "squad_member",
+                                        "wing_id": str(wing_id), "squad_id": str(squad_id)}),
+            ("fleet_invite", {}, {"character_ids": [str(self.outsider_main.character_id)]}),
+            ("fleet_apply_template", {}, {"template_id": str(template.pk)}),
+        )
+        cases = []
+        fleets = (("own", self.own_active, own_post), ("other", self.other_active, other_post))
+        for name, kwargs, data in posts:
+            for label, operation, expected in fleets:
+                url = r(f"fleetops:{name}", kwargs={"operation_uuid": operation.uuid, **kwargs})
+                cases.append(Case(f"{name} {label}", "post", url, data, expected))
+        # VIS(2): the live fleet is for its managers and viewers of all fleets, not for its members.
+        return cases + [
+            Case("fleet_state own", "get", r("fleetops:fleet_state", args=[self.own_active.uuid]), None,
+                 {"member": HIDDEN, "corp": HIDDEN, "fc": OK, "lead": OK}),
+            Case("fleet_state other", "get", r("fleetops:fleet_state", args=[self.other_active.uuid]), None,
+                 {"member": HIDDEN, "corp": HIDDEN, "fc": OK, "lead": OK}),
+            Case("fleet_invite_candidates own", "get",
+                 r("fleetops:fleet_invite_candidates", args=[self.own_active.uuid]), {"q": "member"},
+                 {"member": DENIED, "corp": DENIED, "fc": OK, "lead": OK}),
+            Case("fleet_invite_candidates other", "get",
+                 r("fleetops:fleet_invite_candidates", args=[self.other_active.uuid]), {"q": "member"},
+                 {"member": DENIED, "corp": DENIED, "fc": HIDDEN, "lead": OK}),
+            Case("fleet_classify", "post", r("fleetops:fleet_classify", args=[self.own_active.uuid]),
+                 {"type_id": "11987", "function_id": str(function.pk)}, lead_post),
+        ]
 
     def pap_rule_cases(self, own_and_other, member_only, lead_post):
         r = reverse
@@ -863,9 +914,15 @@ class ObjectIsolationTests(FleetOpsViewTestCase):
         )
         self.kick.side_effect = [
             None,
-            FleetESIError("KICK_FORBIDDEN", "ESI denied permission to kick this fleet member."),
+            FleetESIError("FLEET_WRITE_FORBIDDEN", "ESI denied permission to kick this fleet member."),
         ]
-        response = self.client_for(self.fc).post(reverse("fleetops:kick_capsules", args=[self.own_active.uuid]))
+        # The fleet is read again after the kicks, at once and after ESI's cache; those reads are not part of this test.
+        with mock.patch("fleetops.services.fleet_controls.sync_operation") as sync, mock.patch(
+            "fleetops.services.fleet_refresh.schedule_refresh"
+        ) as schedule:
+            response = self.client_for(self.fc).post(reverse("fleetops:kick_capsules", args=[self.own_active.uuid]))
+        sync.assert_called_once()
+        schedule.assert_called_once()
         self.assertEqual(response.status_code, 302)
         kicked_ids = sorted(call.args[3] for call in self.kick.call_args_list)
         self.assertEqual(kicked_ids, sorted([self.member_main.character_id, self.pod_pilot.character_id]))

@@ -87,12 +87,12 @@ class OperationPageSplitTests(FleetOpsViewTestCase):
                 "Ping channel: None (copy only) · Mention: No ping",
                 'id="ping-text"',
                 'id="motd-text"',
-                # The minute reload waits while a dialog is open or a form is being filled in.
-                "setTimeout(function reloadPage(){ if(document.querySelector('.modal.show') || formInUse())",
+                # The Fleet tab replaces the minute reload of a running fleet.
+                'id="fleet-root"',
             ],
         )
         self.assertNoneContained(
-            response, ['id="composition-hidden"', 'id="endFleetModal"', "Retry SRP", "Retry Ping"]
+            response, ['id="composition-hidden"', 'id="endFleetModal"', "Retry SRP", "Retry Ping", "location.reload"]
         )
 
     def test_active_fleet_for_a_member_hides_the_composition(self):
