@@ -16,6 +16,9 @@ from fleetops import (
     views_pap,
     views_presets,
     views_records,
+    views_srp,
+    views_srp_review,
+    views_srp_summary,
     views_statistics,
 )
 
@@ -122,6 +125,33 @@ urlpatterns += [
     path("statistics/corporation/<int:corporation_id>/members/", views_members.corporation_members_view, name="corporation_members_detail"),
     path("statistics/leaderboard/", views_members.leaderboard_view, name="leaderboard"),
     path("statistics/export/<slug:dataset>/", views_exports.export_view, name="export"),
+]
+
+# FleetOps SRP: claims, the fleet SRP link, review, payments and summaries.
+urlpatterns += [
+    path("srp/", views_srp.srp_home, name="srp_home"),
+    path("srp/check/", views_srp.srp_check, name="srp_check"),
+    path("srp/link/<str:code>/", views_srp.srp_link, name="srp_link"),
+    path("srp/submit/", views_srp.srp_submit, name="srp_submit"),
+    path("srp/claims/<uuid:claim_uuid>/", views_srp.srp_claim_detail, name="srp_claim"),
+    path("srp/claims/<uuid:claim_uuid>/withdraw/", views_srp.srp_claim_withdraw, name="srp_claim_withdraw"),
+    path("srp/claims/<uuid:claim_uuid>/resubmit/", views_srp.srp_claim_resubmit, name="srp_claim_resubmit"),
+    path("srp/review/", views_srp_review.review_queue, name="srp_review"),
+    path("srp/review/approve-clean/", views_srp_review.bulk_approve, name="srp_review_bulk_approve"),
+    path("srp/review/recalculate/", views_srp_review.recalculate_pending, name="srp_review_recalculate"),
+    path("srp/claims/<uuid:claim_uuid>/<str:action>/", views_srp_review.claim_action, name="srp_claim_action"),
+    path("srp/payments/", views_srp_review.payments, name="srp_payments"),
+    path("srp/links/<str:code>/open/", views_srp_summary.link_toggle, {"is_open": True}, name="srp_link_open"),
+    path("srp/links/<str:code>/close/", views_srp_summary.link_toggle, {"is_open": False}, name="srp_link_close"),
+    path("srp/summary/", views_srp_summary.alliance_summary, name="srp_summary"),
+    path("srp/summary/corporation/", views_srp_summary.corporation_summary, name="srp_summary_own_corporation"),
+    path(
+        "srp/summary/corporation/<int:corporation_id>/",
+        views_srp_summary.corporation_summary,
+        name="srp_summary_corporation",
+    ),
+    path("srp/summary/fc/", views_srp_summary.fc_summary, name="srp_summary_own_fc"),
+    path("srp/summary/fc/<int:user_id>/", views_srp_summary.fc_summary, name="srp_summary_fc"),
 ]
 
 # Public page; it must stay the last pattern. Alliance Auth stops adding its login check at the first

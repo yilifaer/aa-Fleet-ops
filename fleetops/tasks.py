@@ -17,6 +17,8 @@ from fleetops.services.fleet_refresh import REFRESH_TASK_LOCK_SECONDS, refresh_n
 from fleetops.services.names import apply_names_to_operation, resolve_and_store
 from fleetops.services.operations import cancel_abandoned_starts, end_fleet, finish_requested_end
 from fleetops.services.tracking import observe_unreadable_fleet, sync_operation, unreadable_fleet_message
+from fleetops.srp.killmails import prune_unclaimed
+from fleetops.srp.tasks import queue_srp_sweep, refresh_srp_values as sweep_srp_values
 
 logger = get_extension_logger(__name__)
 
@@ -38,6 +40,11 @@ END_LOCK_TIMEOUT = 4 * 60
 # Kick batches queued by earlier versions retry this long while the fleet runs another job.
 KICK_LOCK_TIMEOUT = 10 * 60
 KICK_RETRY_SECONDS = 30
+# One SRP value sweep at a time; a worker killed during a sweep leaves the lock behind until it expires.
+SRP_VALUES_LOCK_KEY = "fleetops:srp:values"
+SRP_VALUES_LOCK_TIMEOUT = 10 * 60
+# Killmails that were looked up for a claim check but never claimed are deleted after this many days.
+SRP_UNCLAIMED_KILLMAIL_DAYS = 7
 
 
 def _poll_attempt_key(operation_id):
@@ -81,7 +88,16 @@ def schedule_active_fleet_tracking():
         queued += 1
     _recover_stuck_ends(now)
     cancel_abandoned_starts(now=now)
+    _queue_srp_sweep(now)
     return queued
+
+
+def _queue_srp_sweep(now):
+    """Queue the SRP value sweep; a problem there must never stop the fleet tracking."""
+    try:
+        queue_srp_sweep(now)
+    except Exception as exc:
+        log_failure(logger, "SRP value sweep", exc)
 
 
 def _recover_stuck_ends(now):
@@ -323,8 +339,30 @@ def resolve_character_names(operation_id, character_ids):
 
 
 @shared_task
+def refresh_srp_values():
+    """Look up the zKillboard values that SRP claims are waiting for (queued by the minute beat)."""
+    if not cache.add(SRP_VALUES_LOCK_KEY, "1", timeout=SRP_VALUES_LOCK_TIMEOUT):
+        return "already-running"
+    try:
+        return sweep_srp_values()
+    except Exception as exc:
+        log_failure(logger, "SRP value sweep", exc)
+        return "error"
+    finally:
+        cache.delete(SRP_VALUES_LOCK_KEY)
+
+
+@shared_task
 def prune_attendance_history():
-    """Apply configured retention and remove attendance for departed alliance members."""
+    """Apply configured retention and remove attendance for departed alliance members.
+
+    Also deletes the killmails that SRP read but nobody claimed.
+    """
     from fleetops.services.history import prune_history
 
-    return prune_history(dry_run=False)
+    result = prune_history(dry_run=False)
+    try:
+        prune_unclaimed(SRP_UNCLAIMED_KILLMAIL_DAYS)
+    except Exception as exc:
+        log_failure(logger, "SRP killmail cleanup", exc)
+    return result

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import itertools
 import secrets
-from datetime import timedelta
+from datetime import timedelta, timezone as dt_timezone
 from decimal import Decimal
 
 from allianceauth.authentication.models import CharacterOwnership
@@ -34,9 +34,16 @@ from fleetops.models import (
     ShipFunction,
     ShipFunctionRule,
     SpecialRole,
+    SrpClaim,
+    SrpClaimEvent,
+    SrpFleetLink,
+    SrpKillmail,
+    SrpPayoutRule,
+    SrpSettings,
     StatisticsTarget,
 )
 from fleetops.services.fleet_rules import normalize_wings
+from fleetops.srp.types import Calculation, PolicySnapshot
 
 _ids = itertools.count(90_000_001)
 
@@ -62,7 +69,12 @@ FC_LEAD_PERMS = [
     "fleetops.manage_incentives",
     "fleetops.manage_configuration",
     "fleetops.view_audit_log",
+    "fleetops.request_srp",
+    "fleetops.manage_srp",
 ]
+# Members get request_srp from the upgrade; tests ask for it explicitly so pages do not pay for the SRP menu.
+SRP_MEMBER_PERMS = MEMBER_PERMS + ["fleetops.request_srp"]
+SRP_MANAGER_PERMS = SRP_MEMBER_PERMS + ["fleetops.manage_srp"]
 
 DEFAULT_CORP = (2_000_001, "Test Corp One")
 OTHER_CORP = (2_000_002, "Test Corp Two")
@@ -549,3 +561,268 @@ def structure_template(name: str = "Standard", layout: str = "Main: Alpha, Bravo
         name=name, defaults={"layout": layout, **extra}
     )
     return template
+
+
+# --- FleetOps SRP ------------------------------------------------------------------------------------
+
+RIFTER = 587
+CAPSULE = 670
+SRP_SYSTEM = (30_002_187, "Amamake")
+_killmail_ids = itertools.count(131_000_001)
+
+
+def srp_settings(**values) -> SrpSettings:
+    """The SRP settings, enabled unless ``enabled=False`` is passed; other fields are set as given."""
+    obj = SrpSettings.get_solo()
+    values.setdefault("enabled", True)
+    for key, value in values.items():
+        setattr(obj, key, value)
+    obj.save()
+    return obj
+
+
+def payout_rule(
+    ship_type_id: int = 0,
+    amount: int = 50_000_000,
+    *,
+    doctrine=None,
+    scope: str = SrpPayoutRule.Scope.ANY,
+    ship_name: str | None = None,
+    **extra,
+) -> SrpPayoutRule:
+    """A payout rule. ``doctrine`` is a name, or ``(source, external_id, name)`` for a doctrine of a doctrine app."""
+    values = dict(
+        ship_type_id=ship_type_id,
+        ship_type_name=ship_name if ship_name is not None else (f"Ship {ship_type_id}" if ship_type_id else ""),
+        scope=scope,
+        amount=amount,
+    )
+    if isinstance(doctrine, str):
+        values["doctrine_name"] = doctrine
+    elif doctrine:
+        values["doctrine_source"], values["doctrine_external_id"], values["doctrine_name"] = doctrine
+    values.update(extra)
+    return SrpPayoutRule.objects.create(**values)
+
+
+def _srp_time(value=None):
+    return value or (timezone.now() - timedelta(hours=1))
+
+
+def esi_killmail_payload(
+    killmail_id: int | None = None,
+    *,
+    victim: EveCharacter | int | None = None,
+    ship_type_id: int = RIFTER,
+    time=None,
+    items=None,
+    solar_system_id: int = SRP_SYSTEM[0],
+    **overrides,
+) -> dict:
+    """A killmail shaped like ESI's GetKillmailsKillmailIdKillmailHash answer, with nested items allowed.
+
+    ``victim`` is the victim character (or its ID); without one the victim is a structure-like loss.
+    ``items`` are ESI item dicts (``flag``, ``item_type_id``, ``quantity_destroyed``, ``singleton``, ``items``).
+    """
+    killmail_id = killmail_id or next(_killmail_ids)
+    when = _srp_time(time).astimezone(dt_timezone.utc)
+    victim_row = {
+        "ship_type_id": ship_type_id,
+        "damage_taken": 2_345,
+        "position": {"x": 1.0, "y": 2.0, "z": 3.0},
+        "items": list(items if items is not None else [{"flag": 27, "item_type_id": 2_873, "quantity_destroyed": 1}]),
+    }
+    if isinstance(victim, EveCharacter):
+        victim_row.update(
+            character_id=victim.character_id,
+            corporation_id=victim.corporation_id,
+            alliance_id=victim.alliance_id,
+        )
+    elif victim:
+        victim_row["character_id"] = int(victim)
+    payload = {
+        "killmail_id": killmail_id,
+        "killmail_time": when.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "solar_system_id": solar_system_id,
+        "moon_id": None,
+        "war_id": None,
+        "attackers": [
+            {"character_id": 95_000_001, "corporation_id": 98_000_001, "ship_type_id": 17_738, "final_blow": True},
+            {"character_id": None, "corporation_id": 1_000_125, "ship_type_id": None, "final_blow": False},
+        ],
+        "victim": victim_row,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def zkill_payload(
+    killmail_id: int,
+    *,
+    killmail_hash: str | None = None,
+    fitted=10_234_567.89,
+    total=12_500_000.25,
+    victim: EveCharacter | int | None = None,
+    **zkb,
+) -> list[dict]:
+    """The answer of zKillboard's ``/api/killID/<id>/``: a list with the ESI killmail and its ``zkb`` block.
+
+    ``fitted`` or ``total`` None leaves that value out; ``zkb`` fields override the block.
+    """
+    block = {
+        "locationID": 40_139_385,
+        "hash": killmail_hash or secrets.token_hex(20),
+        "droppedValue": 120_000.5,
+        "destroyedValue": 9_800_000,
+        "points": 1,
+        "npc": False,
+        "solo": True,
+        "awox": False,
+        "labels": ["cat:6", "solo", "pvp", "loc:lowsec"],
+    }
+    if fitted is not None:
+        block["fittedValue"] = fitted
+    if total is not None:
+        block["totalValue"] = total
+    block.update(zkb)
+    return [dict(esi_killmail_payload(killmail_id, victim=victim), zkb=block)]
+
+
+def srp_killmail(
+    character: EveCharacter | int | None = None,
+    *,
+    killmail_id: int | None = None,
+    ship_type_id: int = RIFTER,
+    ship_name: str | None = None,
+    time=None,
+    fitted=None,
+    total=None,
+    items=None,
+    zkill_status: str | None = None,
+    **extra,
+) -> SrpKillmail:
+    """A stored killmail of ``character`` (an EveCharacter or an ID; None = no pilot).
+
+    ``fitted`` and ``total`` are the zKillboard values; with either the zKillboard state is ``ok``,
+    otherwise ``pending`` unless ``zkill_status`` says otherwise.
+    """
+    killmail_id = killmail_id or next(_killmail_ids)
+    has_value = fitted is not None or total is not None
+    values = dict(
+        killmail_id=killmail_id,
+        killmail_hash=secrets.token_hex(20),
+        killmail_time=_srp_time(time),
+        solar_system_id=SRP_SYSTEM[0],
+        solar_system_name=SRP_SYSTEM[1],
+        ship_type_id=ship_type_id,
+        ship_type_name=ship_name if ship_name is not None else f"Ship {ship_type_id}",
+        attacker_count=2,
+        items=list(items if items is not None else [{"flag": 27, "item_type_id": 2_873, "quantity_destroyed": 1}]),
+        zkill_status=zkill_status or (SrpKillmail.ZkillStatus.OK if has_value else SrpKillmail.ZkillStatus.PENDING),
+        zkill_fitted_value=None if fitted is None else Decimal(str(fitted)),
+        zkill_total_value=None if total is None else Decimal(str(total)),
+    )
+    if isinstance(character, EveCharacter):
+        values.update(
+            victim_character_id=character.character_id,
+            victim_corporation_id=character.corporation_id,
+            victim_alliance_id=character.alliance_id,
+        )
+    elif character:
+        values["victim_character_id"] = int(character)
+    values.update(extra)
+    return SrpKillmail.objects.create(**values)
+
+
+def fleet_link(operation: FleetOperation, *, code: str | None = None, **extra) -> SrpFleetLink:
+    """The SRP link of a fleet, led by the fleet's FC."""
+    values = dict(
+        code=code or secrets.token_urlsafe(12),
+        fc_user=operation.fc_user,
+        fc_main_character_id=operation.fc_main_character_id,
+        fc_main_character_name=operation.fc_main_character_name,
+        created_by=operation.fc_user,
+    )
+    values.update(extra)
+    return SrpFleetLink.objects.create(operation=operation, **values)
+
+
+def srp_claim(
+    user,
+    *,
+    killmail: SrpKillmail | None = None,
+    character: EveCharacter | None = None,
+    scope: str = SrpClaim.Scope.OUT_OF_FLEET,
+    status: str = SrpClaim.Status.PENDING,
+    amount: int = 10_000_000,
+    approved_amount: int | None = None,
+    link: SrpFleetLink | None = None,
+    decided_by=None,
+    time=None,
+    **extra,
+) -> SrpClaim:
+    """A claim of ``user`` for a loss of ``character`` (the user's main by default).
+
+    ``amount`` is the base, suggested and limited amount. Approved and paid claims get ``approved_amount``
+    (``amount`` by default) and the decision and payment fields; ``link`` makes it an in-fleet claim of that
+    fleet. Any claim field can be passed to override the defaults.
+    """
+    character = character or main_of(user)
+    killmail = killmail or srp_killmail(character, time=time)
+    main = main_of(user)
+    now = timezone.now()
+    values = dict(
+        killmail=killmail,
+        scope=scope,
+        user=user,
+        character_id=character.character_id,
+        character_name=character.character_name,
+        main_character_id=main.character_id if main else None,
+        main_character_name=main.character_name if main else "",
+        corporation_id=main.corporation_id if main else None,
+        corporation_name=main.corporation_name if main else "",
+        corporation_ticker=main.corporation_ticker if main else "",
+        alliance_id=main.alliance_id if main else None,
+        alliance_name=main.alliance_name if main else "",
+        killmail_time=killmail.killmail_time,
+        ship_type_id=killmail.ship_type_id,
+        ship_type_name=killmail.ship_type_name,
+        solar_system_name=killmail.solar_system_name,
+        loss_value=killmail.zkill_fitted_value,
+        value_source="zkill_fitted" if killmail.zkill_fitted_value is not None else "",
+        payout_basis=SrpClaim.PayoutBasis.NONE,
+        policy=PolicySnapshot().as_json(),
+        calculation=Calculation(base=amount, suggested=amount, limited=amount).as_json(),
+        base_amount=amount,
+        suggested_amount=amount,
+        limited_amount=amount,
+        status=status,
+    )
+    if link is not None:
+        operation = link.operation
+        values.update(
+            scope=SrpClaim.Scope.IN_FLEET,
+            link=link,
+            operation=operation,
+            fleet_label=f"{operation.fleet_type} — {operation.fc_character_name}",
+            fc_user=link.fc_user,
+            fc_main_character_name=link.fc_main_character_name,
+        )
+    if status in (SrpClaim.Status.APPROVED, SrpClaim.Status.PAID):
+        values.update(
+            approved_amount=amount if approved_amount is None else approved_amount,
+            decided_by=decided_by,
+            decided_at=now,
+        )
+    elif approved_amount is not None:
+        values["approved_amount"] = approved_amount
+    if status == SrpClaim.Status.PAID:
+        values.update(paid_by=decided_by, paid_at=now)
+    if status == SrpClaim.Status.REJECTED:
+        values.update(decided_by=decided_by, decided_at=now, decision_reason="Not covered")
+    values.update(extra)
+    return SrpClaim.objects.create(**values)
+
+
+def claim_event(claim: SrpClaim, action: str = SrpClaimEvent.Action.NOTE, *, actor=None, **extra) -> SrpClaimEvent:
+    return SrpClaimEvent.objects.create(claim=claim, action=action, actor=actor, **extra)

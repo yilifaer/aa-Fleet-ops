@@ -343,10 +343,10 @@ class AaSrpNotInstalledTests(TestCase):
 
         form = settings_admin.get_form(request)()
 
-        self.assertEqual(srp_module.AUTO_PROVIDER_ORDER, ("aasrp", "allianceauth_builtin"))
+        self.assertEqual(srp_module.AUTO_PROVIDER_ORDER, ("fleetops", "aasrp", "allianceauth_builtin"))
         self.assertEqual(
             form.fields["srp_provider"].help_text,
-            "SRP provider key. 'auto' uses aasrp, then Alliance Auth SRP, then any other registered provider.",
+            "SRP provider. 'auto' uses FleetOps SRP when it is enabled, then aa-srp, then Alliance Auth SRP.",
         )
 
     def test_explicit_key_reports_the_missing_app(self):

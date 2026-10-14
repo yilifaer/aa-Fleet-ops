@@ -1,0 +1,149 @@
+{% extends "fleetops/base.html" %}
+{% load static fleetops_srp fleetops_messages %}
+{% block fleetops_content %}
+<div class="d-flex flex-wrap align-items-start gap-3 mb-3">
+  <img class="fleetops-srp-ship" src="{% ship_render_url claim.ship_type_id 64 %}" width="64" height="64" alt="" loading="lazy">
+  <div class="flex-grow-1">
+    <h2 class="mb-1">{{ claim.reference }} {{ claim|srp_status_badge }}{% if claim.auto_rejected %} <span class="badge text-bg-secondary">Automatic</span>{% endif %}</h2>
+    <div class="text-muted">{{ claim.ship_type_name|default:claim.ship_type_id }} lost {{ claim.killmail_time|eve_time }} EVE &middot; {{ claim.character_name }}</div>
+  </div>
+  <div class="text-end">
+    {% if claim.status == "approved" or claim.status == "paid" %}<div class="text-muted small">{% if claim.status == "paid" %}Paid{% else %}Approved{% endif %}</div><div class="fs-4 fw-semibold">{{ claim.approved_amount|isk }}</div>
+    {% elif claim.status == "pending" %}<div class="text-muted small">Requested</div><div class="fs-4 fw-semibold">{{ claim.suggested_amount|isk }}</div>{% if claim.limited_amount != claim.suggested_amount %}<div class="small text-muted">Within limits: <span{% if claim.over_limit %} class="text-danger fw-semibold"{% endif %}>{{ claim.limited_amount|isk }}</span></div>{% endif %}{% endif %}
+  </div>
+</div>
+
+{% if claim.decision_reason and claim.status != "pending" %}
+<div class="alert {% if claim.status == 'rejected' %}alert-danger{% else %}alert-secondary{% endif %}">
+  <strong>{% if claim.status == "rejected" %}Rejected{% else %}Decision{% endif %}{% if claim.decided_at %} {{ claim.decided_at|eve_time }} EVE{% endif %}:</strong> {{ claim.decision_reason|linebreaksbr }}
+</div>
+{% endif %}
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-7">
+    <div class="card mb-3">
+      <div class="card-header"><strong>Loss</strong></div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-4">Pilot</dt>
+          <dd class="col-sm-8">{{ claim.character_name }}{% if claim.main_character_name and claim.main_character_name != claim.character_name %} <span class="text-muted">(main {{ claim.main_character_name }})</span>{% endif %}</dd>
+          <dt class="col-sm-4">Corporation</dt>
+          <dd class="col-sm-8">{{ claim.corporation_name|default:"Unknown" }}{% if claim.corporation_ticker %} [{{ claim.corporation_ticker }}]{% endif %}{% if claim.alliance_name %} &middot; {{ claim.alliance_name }}{% endif %}</dd>
+          <dt class="col-sm-4">Ship</dt>
+          <dd class="col-sm-8">{{ claim.ship_type_name|default:claim.ship_type_id }}</dd>
+          <dt class="col-sm-4">Time</dt>
+          <dd class="col-sm-8">{{ claim.killmail_time|eve_time }} EVE{% if claim.solar_system_name %} &middot; {{ claim.solar_system_name }}{% endif %}</dd>
+          <dt class="col-sm-4">Killmail</dt>
+          <dd class="col-sm-8"><a href="{{ claim.killmail_id|zkill_url }}" target="_blank" rel="noopener noreferrer">{{ claim.killmail_id }} on zKillboard</a></dd>
+          <dt class="col-sm-4">Where</dt>
+          <dd class="col-sm-8">{% if claim.scope == "in_fleet" %}In fleet: {{ claim.fleet_label|default:"fleet" }}{% if claim.operation_id and perms.fleetops.view_all_fleets or claim.operation_id and perms.fleetops.manage_fleets %} <a href="{% url 'fleetops:operation_detail' claim.operation.uuid %}">Open the fleet</a>{% endif %}{% else %}Outside a FleetOps fleet{% endif %}</dd>
+          <dt class="col-sm-4">Submitted</dt>
+          <dd class="col-sm-8">{{ claim.submitted_at|eve_time }} EVE</dd>
+          {% if claim.member_comment %}<dt class="col-sm-4">Comment</dt><dd class="col-sm-8">{{ claim.member_comment|linebreaksbr }}</dd>{% endif %}
+          {% if claim.status == "paid" %}<dt class="col-sm-4">Paid</dt><dd class="col-sm-8">{{ claim.paid_at|eve_time }} EVE{% if claim.payment_note %} &middot; {{ claim.payment_note }}{% endif %}</dd>{% endif %}
+        </dl>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center"><strong>Calculation</strong>{% if calculation.computed_at %}<span class="small text-muted">{{ calculation.computed_at|eve_time }} EVE</span>{% endif %}</div>
+      <div class="card-body">{% include "fleetops/srp/_calculation.html" %}</div>
+    </div>
+
+    {% if show_limits %}
+    <div class="card mb-3">
+      <div class="card-header"><strong>Monthly limits</strong> <span class="small text-muted">as calculated for this claim</span></div>
+      <div class="card-body p-0">{% include "fleetops/srp/_limits.html" %}</div>
+    </div>
+    {% endif %}
+
+    {% if item_groups %}
+    <details class="card mb-3">
+      <summary class="card-header"><strong>Items on the killmail</strong></summary>
+      <div class="card-body">
+        {% for group in item_groups %}
+        <h3 class="h6 mt-2">{{ group.name }}</h3>
+        <ul class="list-unstyled small mb-0">
+          {% for row in group.rows %}<li>{{ row.name }}{% if row.destroyed %} &times;{{ row.destroyed }} destroyed{% endif %}{% if row.dropped %} &times;{{ row.dropped }} dropped{% endif %}</li>{% endfor %}
+        </ul>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card mb-3">
+      <div class="card-header"><strong>Amounts</strong></div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-6">Suggested</dt><dd class="col-sm-6 text-sm-end">{{ claim.suggested_amount|isk }}</dd>
+          <dt class="col-sm-6">Within limits</dt><dd class="col-sm-6 text-sm-end{% if claim.over_limit %} text-danger fw-semibold{% endif %}">{{ claim.limited_amount|isk }}</dd>
+          <dt class="col-sm-6">Approved</dt><dd class="col-sm-6 text-sm-end">{% if claim.approved_amount is None %}<span class="text-muted">&ndash;</span>{% else %}<strong>{{ claim.approved_amount|isk }}</strong>{% endif %}</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-header"><strong>Checks</strong></div>
+      <div class="card-body fleetops-srp-checks">
+        {% if claim.scope == "in_fleet" %}<div class="mb-2"><span class="text-muted">Fleet presence:</span> {% include "fleetops/srp/_fleet_check.html" %}</div>{% endif %}
+        {% for warning in claim_warnings|srp_flags %}<div class="mb-2">{{ warning|srp_warning_badge }}</div>{% empty %}<span class="text-muted">No warnings.</span>{% endfor %}
+      </div>
+    </div>
+
+    {% if can_withdraw or can_resubmit %}
+    <div class="card mb-3">
+      <div class="card-header"><strong>Your claim</strong></div>
+      <div class="card-body">
+        {% if can_withdraw %}
+        <form method="post" action="{% url 'fleetops:srp_claim_withdraw' claim.uuid %}" class="fleetops-srp-form" data-srp-once>
+          {% csrf_token %}
+          <label class="form-label" for="{{ withdraw_form.reason.id_for_label }}">Reason <span class="text-muted">(optional)</span></label>
+          {{ withdraw_form.reason }}
+          <button type="submit" class="btn btn-outline-danger mt-2">Withdraw claim</button>
+        </form>
+        {% else %}
+        <form method="post" action="{% url 'fleetops:srp_claim_resubmit' claim.uuid %}" class="fleetops-srp-form" data-srp-once>
+          {% csrf_token %}
+          <div class="small text-muted mb-2">The claim is calculated again with the current rules.</div>
+          <button type="submit" class="btn btn-primary">Submit again</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if is_manager %}
+    <div class="card mb-3">
+      <div class="card-header"><strong>Review</strong></div>
+      <div class="card-body">{% include "fleetops/srp/_decision_forms.html" %}</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header"><strong>History</strong></div>
+  <ul class="list-group list-group-flush fleetops-srp-timeline">
+    {% for event in events %}
+    <li class="list-group-item">
+      <div class="d-flex flex-wrap justify-content-between gap-2">
+        <strong>{{ event.get_action_display }}{% if event.internal %} <span class="badge text-bg-secondary">Internal note</span>{% endif %}</strong>
+        <span class="text-muted small">{{ event.created_at|eve_time }} EVE</span>
+      </div>
+      <div class="small text-muted">
+        {% if is_manager %}{{ event.actor|default:"System" }}{% else %}{{ event|srp_actor:user }}{% endif %}
+        {% if event.from_status or event.to_status %}&middot; {% if event.from_status %}{{ event.from_status|srp_status_label }} &rarr; {% endif %}{{ event.to_status|srp_status_label }}{% endif %}
+        {% if event.amount is not None %}&middot; {{ event.amount|isk }}{% endif %}
+      </div>
+      {% if event.reason %}<div>{{ event.reason|linebreaksbr }}</div>{% endif %}
+    </li>
+    {% empty %}
+    <li class="list-group-item text-muted">Nothing has happened to this claim yet.</li>
+    {% endfor %}
+  </ul>
+</div>
+<a class="btn btn-outline-secondary" href="{% if is_owner %}{% url 'fleetops:srp_home' %}{% elif is_manager %}{% url 'fleetops:srp_review' %}{% else %}{% url 'fleetops:dashboard' %}{% endif %}">{% if is_owner %}Back to My SRP{% elif is_manager %}Back to the review queue{% else %}Back{% endif %}</a>
+<script src="{% static 'fleetops/srp.js' %}?v={{ fleetops_version }}" defer></script>
+{% endblock %}

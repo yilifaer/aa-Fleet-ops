@@ -1,0 +1,33 @@
+{% load fleetops_srp %}{# How the amount came about. Context: calculation (Calculation) and policy (PolicySnapshot). #}
+<dl class="row mb-0 fleetops-srp-calculation">
+  <dt class="col-sm-5">Loss value</dt>
+  <dd class="col-sm-7">
+    {% if calculation.loss_value is None %}<span class="text-muted">Not available yet</span>
+    {% else %}{{ calculation.loss_value|isk }}
+      <div class="small text-muted">{% if calculation.value_source == "zkill_fitted" %}zKillboard fitted value{% elif calculation.value_source == "zkill_total" %}zKillboard total value{% elif calculation.value_source == "esi_estimate" %}<span class="badge text-bg-warning">Estimate</span> ESI market estimate{% endif %}</div>
+    {% endif %}
+  </dd>
+  <dt class="col-sm-5">Payout basis</dt>
+  <dd class="col-sm-7">
+    {% if calculation.basis == "rule" %}Payout table
+      {% with rule=policy.rule %}{% if rule %}<div class="small text-muted">{{ rule.label|default:rule.ship_type_name|default:"Any ship" }}{% if rule.ship_type_name and rule.label %} &middot; {{ rule.ship_type_name }}{% endif %}{% if rule.doctrine_name %} &middot; doctrine {{ rule.doctrine_name }}{% endif %} &middot; {{ rule.match|srp_match_label }} &middot; {{ rule.amount|isk }}</div>{% endif %}{% endwith %}
+    {% elif calculation.basis == "percentage" %}{{ policy.percentage|floatformat:"-2" }}% of the loss value
+    {% else %}<span class="text-muted">No automatic amount</span>{% endif %}
+  </dd>
+  <dt class="col-sm-5">Amount before caps</dt>
+  <dd class="col-sm-7">{{ calculation.base|isk }}</dd>
+  <dt class="col-sm-5">Per-loss cap</dt>
+  <dd class="col-sm-7">{% if calculation.cap is None %}<span class="text-muted">No cap</span>{% else %}{{ calculation.cap|isk }}{% endif %}</dd>
+  <dt class="col-sm-5">Suggested amount</dt>
+  <dd class="col-sm-7"><strong>{{ calculation.suggested|isk }}</strong></dd>
+  <dt class="col-sm-5">Within the monthly limits</dt>
+  <dd class="col-sm-7">
+    <strong{% if calculation.over_limit %} class="text-danger"{% endif %}>{{ calculation.limited|isk }}</strong>
+    {% if calculation.over_limit %}<span class="badge text-bg-danger">Over limit</span>{% if calculation.binding_limit %}<div class="small text-muted">Held down by the {{ calculation.binding_limit|srp_limit_label }}.</div>{% endif %}{% endif %}
+  </dd>
+</dl>
+{% if calculation.notes %}
+<ul class="small text-muted mb-0 mt-2">
+  {% for note in calculation.notes %}<li>{{ note|srp_note_text }}</li>{% endfor %}
+</ul>
+{% endif %}

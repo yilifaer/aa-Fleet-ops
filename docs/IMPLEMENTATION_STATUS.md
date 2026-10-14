@@ -41,7 +41,7 @@ The presence of a feature in `FEATURES.md` does not by itself mean it has been p
 - Optional SDE routing/proximity service
 - Test seed command
 - Basic calculation unit tests
-- SRP provider registry with an aa-srp provider and a best-effort built-in Alliance Auth SRP adapter (`auto` uses aa-srp first)
+- SRP provider registry with a FleetOps SRP provider, an aa-srp provider and a best-effort built-in Alliance Auth SRP adapter (`auto` uses FleetOps SRP while enabled, then aa-srp)
 - FleetOperation SRP provider/reference/URL/error snapshot and non-blocking Fleet Start SRP action
 - Historical manual-attendance front-end with closed-fleet selection and repeated/manual multi-credit support
 - Personal/corporation/alliance 365-day attendance-history pages

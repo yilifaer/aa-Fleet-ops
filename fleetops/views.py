@@ -121,6 +121,8 @@ from fleetops.services.scheduling import (
 from fleetops.services.stats_access import leaderboard_visible
 from fleetops.services.statistics import fc_statistics
 from fleetops.services.tracking import unreadable_fleet_warning
+from fleetops.srp import access as srp_access
+from fleetops.srp.links import link_made_at_start, operation_srp_context
 
 logger = get_extension_logger(__name__)
 
@@ -148,6 +150,7 @@ def _render(request, template_name, context=None):
         and FleetOpsSettings.get_solo().incentive_enabled
     )
     context["leaderboard_visible"] = leaderboard_visible(request.user)
+    context["srp_nav"] = srp_access.srp_nav(request.user)
     if is_approver(request.user):
         context["pending_approval_count"] = pending_approval_count()
     return render(request, template_name, context)
@@ -421,6 +424,9 @@ def _form_errors_payload(form):
     return JsonResponse({"ok": False, "missing": missing, "errors": form.errors.get_json_data()})
 
 
+SRP_LINK_NOTE = "The SRP link is added when the fleet starts."
+
+
 def _preview_payload(operation, *, actor, pre_ping):
     try:
         rendered = render_messages(operation, actor=actor, pre_ping=pre_ping)
@@ -433,6 +439,9 @@ def _preview_payload(operation, *, actor, pre_ping):
     sends = operation.ping_channel is not None and operation.send_ping
     # A ping that is only copied is never blocked; render_messages lists its length as a warning.
     warnings = [*rendered.errors, *rendered.warnings]
+    notes = []
+    if operation.pk is None and operation.send_ping and link_made_at_start():
+        notes.append(SRP_LINK_NOTE)
     # Template problems only name the template and the error class, so they are safe to show.
     return JsonResponse(
         {
@@ -441,6 +450,7 @@ def _preview_payload(operation, *, actor, pre_ping):
             "ping_display": rendered.ping_display or rendered.ping,
             "motd": rendered.motd,
             "warnings": warnings,
+            "notes": notes,
             "blocking": list(rendered.blocking) if sends else [],
             "ping_length": rendered.ping_length,
             "motd_length": rendered.motd_length,
@@ -943,6 +953,7 @@ def operation_detail(request, operation_uuid):
         views_fleet_state.fleet_context,
     ):
         context.update(provider(request, operation))
+    context.update(operation_srp_context(operation, request.user))
     return _render(request, "fleetops/operation_detail.html", context)
 
 

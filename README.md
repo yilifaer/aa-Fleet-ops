@@ -60,7 +60,8 @@ The repository includes the full expected feature target and an explicit distinc
 - End Fleet returns at once: the final sync, the attendance multiplier and the close run in a Celery task while the page shows "Ending…". A fleet that is still Ending after about five minutes (for example after a worker restart) is finished by the tracking beat.
 - Every operation step keeps its attempt history, so the reason of an earlier failure stays visible after a retry succeeds.
 - ESI errors are shown as a short status line such as `Could not read fleet members: ESI returned HTTP 503 (Service unavailable).`; the HTTP status and ESI's `x-esi-request-id` are logged.
-- Automatic SRP fleet/link creation through an SRP provider abstraction: aa-srp (`aasrp`) when installed, otherwise the Alliance Auth built-in SRP app, plus a registration interface for other SRP apps.
+- Automatic SRP fleet/link creation through an SRP provider abstraction: FleetOps SRP when it is enabled, then aa-srp (`aasrp`) when installed, then the Alliance Auth built-in SRP app, plus a registration interface for other SRP apps.
+- **FleetOps SRP**: members claim ship losses with an in-game killmail link or a zKillboard link; payout table by ship or doctrine, otherwise a percentage of the loss value; per-loss caps and monthly limits per player and per corporation; review, changed amounts with a reason, manual payment with a copy-ready payments page; summaries and exports by EVE month of the loss. See [FleetOps SRP](#fleetops-srp).
 - Front-end historical manual-attendance page for permitted FCs/admins, including closed fleets and multiple manual credits.
 - Manual fleet records take their start and end time in EVE time (UTC), whatever the site or browser time zone; the end time is required, must be after the start, and a fleet longer than 6 hours needs an extra confirmation.
 - At least 365-day attendance-history views for personal, corporation and alliance scopes, with optional current-alliance membership pruning.
@@ -100,6 +101,8 @@ esi-location.read_online.v1
 ```
 
 These are the same scopes as AFAT's click tracking and CharLink's "AFAT Click Tracking" import, so tokens they already hold are reused. Enable them in your EVE SSO application (they already are where AFAT click tracking works).
+
+FleetOps SRP needs no scope: it reads killmails and market prices from public ESI endpoints with the same client.
 
 Your Alliance Auth installation must also have a valid `ESI_USER_CONTACT_EMAIL` configured as required by current django-esi guidance.
 
@@ -216,6 +219,8 @@ fleetops.manage_attendance
 fleetops.manage_incentives
 fleetops.manage_configuration
 fleetops.view_audit_log
+fleetops.request_srp
+fleetops.manage_srp
 ```
 
 `fleetops.manage_incentives` alone does not show the FC Incentive pages: FC incentives are off by default on a new install. Tick **Incentive enabled** in FleetOps Administration → General Settings (see step 2) to test them.
@@ -287,7 +292,7 @@ Open **My Statistics** and the corporation pages for a month with PAP (see [Stat
 
 ## SRP
 
-FleetOps can automatically create/link an SRP fleet at Fleet Start when a supported provider is available and **SRP auto create** is on. `auto` tries aa-srp (`aasrp`) first, then the Alliance Auth built-in SRP app, and is deliberately non-blocking: an SRP mismatch must not stop the FleetOperation from starting. The aa-srp link is created for the FC and points back to the FleetOps fleet page. See [`docs/SRP_PROVIDER.md`](docs/SRP_PROVIDER.md) for the providers and the interface for other SRP apps.
+FleetOps can automatically create/link an SRP fleet at Fleet Start when a supported provider is available and **SRP auto create** is on. `auto` tries FleetOps SRP first (while it is enabled, see [FleetOps SRP](#fleetops-srp)), then aa-srp (`aasrp`), then the Alliance Auth built-in SRP app, and is deliberately non-blocking: an SRP mismatch must not stop the FleetOperation from starting. The aa-srp link is created for the FC and points back to the FleetOps fleet page. See [`docs/SRP_PROVIDER.md`](docs/SRP_PROVIDER.md) for the providers and the interface for other SRP apps.
 
 ## Attendance history
 
@@ -363,6 +368,7 @@ Ping and MOTD templates use the Django template language. Both get the variables
 | `comms_channel` | Comms channel name of the preset. |
 | `comms_link` | Link to open the comms: the join page for voice client links, the link itself for `http`/`https`. |
 | `comms_voice_url` | The preset's voice link as stored, without a user name or password. |
+| `srp_url` | Full address of the fleet's SRP link (the FleetOps SRP page of the fleet, or the link of aa-srp / Alliance Auth SRP); empty while the fleet has none, also in the Fleet Start preview. The SRP step runs before the ping and the MOTD, so it is available in both. |
 | `logi_channel`, `boost_channel` | Logi/Boost channel names. |
 | `logi_channel_link`, `boost_channel_link` | In-game channel links for the MOTD (`<a href="joinChannel:…">Name</a>`), or the plain name when no in-game link is set. |
 | `fleet_time` | `YYYY-MM-DD HH:MM EVE` for a pre-pinged fleet, otherwise `Now`. |
@@ -395,7 +401,7 @@ The built-in **Default Ping**:
 The built-in **Default MOTD** (one line):
 
 ```django
-<font color="#bfffffff"><b>{{ fleet_type }}</b><br>FC: {{ fc }}<br>Form Up: {{ formup }}{% if doctrine_name %}<br>Doctrine: {% if doctrine_url %}<a href="{{ doctrine_url }}">{{ doctrine_name }}</a>{% else %}{{ doctrine_name }}{% endif %}{% if doctrine_ships %} ({{ doctrine_ships }}){% endif %}{% endif %}{% if comms %}<br>Comms: {% if comms_link %}<a href="{{ comms_link }}">{{ comms }}</a>{% else %}{{ comms }}{% endif %}{% endif %}{% if logi_channel %}<br>Logi: {{ logi_channel_link }}{% endif %}{% if boost_channel %}<br>Boost: {{ boost_channel_link }}{% endif %}{% if additional_message %}<br><br>{{ additional_message|linebreaksbr }}{% endif %}</font>
+<font color="#bfffffff"><b>{{ fleet_type }}</b><br>FC: {{ fc }}<br>Form Up: {{ formup }}{% if doctrine_name %}<br>Doctrine: {% if doctrine_url %}<a href="{{ doctrine_url }}">{{ doctrine_name }}</a>{% else %}{{ doctrine_name }}{% endif %}{% if doctrine_ships %} ({{ doctrine_ships }}){% endif %}{% endif %}{% if comms %}<br>Comms: {% if comms_link %}<a href="{{ comms_link }}">{{ comms }}</a>{% else %}{{ comms }}{% endif %}{% endif %}{% if logi_channel %}<br>Logi: {{ logi_channel_link }}{% endif %}{% if boost_channel %}<br>Boost: {{ boost_channel_link }}{% endif %}{% if srp_url %}<br>SRP: <a href="{{ srp_url }}">Request SRP</a>{% endif %}{% if additional_message %}<br><br>{{ additional_message|linebreaksbr }}{% endif %}</font>
 ```
 
 The MOTD gets a warning above 1000 characters, because the game may cut longer MOTDs.
@@ -586,6 +592,90 @@ Tracking reads each active fleet every tracking interval: members and, since 0.1
 
 ---
 
+# FleetOps SRP
+
+FleetOps has its own ship replacement program (SRP). It is **off** until you enable it, and it replaces neither aa-srp nor Alliance Auth SRP: both stay optional link providers (see [`docs/SRP_PROVIDER.md`](docs/SRP_PROVIDER.md)). No data of the old SRP apps is imported. Members claim a loss, an SRP manager reviews it, pays it in game and marks it paid; FleetOps keeps the numbers, the limits and the history. FleetOps never moves ISK.
+
+## Enabling
+
+1. Run `python manage.py migrate fleetops` and `python manage.py collectstatic`.
+2. Open FleetOps Administration → **FleetOps SRP**, tick **Enabled** and set the value source, the payout percentage, the caps and the monthly limits (see below). **Out-of-fleet losses** off limits claims to the SRP links of fleets (My SRP then has no out-of-fleet form and refuses one); **Member instructions** is free text (up to 2000 characters) shown on My SRP and on the SRP page of a fleet. Add ships to **SRP Payout Table** and, where a corporation needs its own monthly limit, to **SRP Corporation Limits**.
+3. Permissions: `fleetops.request_srp` lets a member claim losses (the upgrade gives it to every group, state and user that holds `basic_access`; give it to groups created later), `fleetops.manage_srp` is for the SRP managers who review and pay. See [`docs/PERMISSIONS.md`](docs/PERMISSIONS.md).
+4. General Settings → **SRP provider** → *Automatic* (FleetOps SRP while enabled, then aa-srp, then Alliance Auth SRP) or *FleetOps SRP*, and **SRP auto create** on: every fleet then gets a FleetOps SRP link when it starts, before the ping and the MOTD.
+5. Add `{{ srp_url }}` to custom ping and MOTD templates (the untouched Default MOTD already has an `SRP: Request SRP` line).
+6. Keep the Celery worker and beat running: they fill in loss values that zKillboard did not have yet.
+
+## Claims
+
+- **Out of fleet:** SRP → **My SRP** has a form for any loss. **In fleet:** the fleet's SRP link (`/fleetops/srp/link/<code>/`, in the MOTD and on the fleet page) opens the same form for that fleet; **My SRP** also lists the recent fleets of the member that have an open link.
+- The member pastes an in-game killmail link (works at once), a zKillboard link (the hash comes from zKillboard, which has a kill only after about 5 minutes), an `esi.evetech.net` killmail URL, or the killmail ID and hash. FleetOps reads the killmail from ESI. The victim must be one of the member's characters; the claim belongs to the player and is counted for the **main character's corporation at the time of the claim**.
+- The preview shows the loss, the value and where it came from (zKillboard fitted/total value or an estimate), the payout rule or percentage, the per-loss cap, what is left of the monthly limits, the fleet presence check and any warnings. Blockers (a loss of somebody else, no pilot, a capsule without a rule, a closed link, a loss older than the **Claim deadline**) are shown without a submit button. A loss that happened in a fleet with an open link, submitted as out of fleet, offers "Submit it as a fleet loss?".
+- One killmail is one claim, whatever link was pasted and however often. The pilot can withdraw a pending claim and submit it again.
+- Warnings never block a claim: a pilot who was not in the fleet at the time of the loss (**Fleet presence check**, from the tracking data, or from PAP registrations for fleets without tracking), a value that is still missing or only an estimate, a ship that differs from the tracked one, a claim over a limit, and a killmail that is also claimed in aa-srp or Alliance Auth SRP.
+
+## Loss value and zKillboard
+
+**Value source** is the zKillboard fitted value (ship, modules, drones, implants; no cargo, so hauled goods do not inflate a claim) by default, the zKillboard total value, or the ESI market estimate. The value only matters for ships that are not in the payout table.
+
+- A loss younger than 6 minutes is not asked about at zKillboard (it withholds new kills, and an empty answer can sit in its cache for an hour). The claim waits with a "value not available yet" warning; the value sweep fetches it later and calculates the claim again (the claim's timeline shows the change). Retries follow 65 minutes, 3 hours, 12 hours and 24 hours; after the fifth try the ESI market estimate is used and the claim says "Value is an ESI market estimate".
+- The ESI estimate adds the ESI average price of the ship and its fitted items (blueprint copies count 0). It is a CCP-wide average, not a Jita price, so prefer zKillboard.
+- Switch **Use zKillboard** off to stay away from it: only in-game links work then, and **Value source** must be the ESI estimate.
+- zKillboard etiquette: requests carry a descriptive `User-Agent` such as `AA-FleetOps/<version> (+<project url>; <contact>) requests/<version>`, where the contact is `ESI_USER_CONTACT_EMAIL` (else `SITE_URL`), so set one of them. At most one request goes out every 2 seconds for the whole site, a query string is never sent, the answers' bodies are never logged. After a block (a redirect to `/api/blocked.json` or HTTP 403) FleetOps stops asking for 60 minutes; after HTTP 429 or 503 for the time zKillboard names in `Retry-After` (15 minutes otherwise); after three failures within five minutes for 15 minutes. In-game links, payout-table claims and the ESI estimate keep working meanwhile.
+- The minute beat queues the sweep (`fleetops.tasks.refresh_srp_values`) at most every 5 minutes (cache key `fleetops:srp:sweep`); the task keeps its own lock (`fleetops:srp:values`) so two sweeps never overlap, and handles up to 20 killmails per run. Killmails nobody claimed are removed after 7 days.
+
+## Payout table
+
+FleetOps Administration → **SRP Payout Table** holds fixed amounts. A rule names a ship type (by ID or exact English name), a doctrine (a Fittings doctrine or a custom name), or both, and applies to losses in a fleet, outside a fleet or both. The most specific active rule wins: doctrine and ship, then doctrine (any ship), then ship; a rule for the scope of the claim beats one for both. Doctrine rules match losses in a fleet that has that doctrine. Ships without a rule are paid **Payout percentage** of the loss value (rounded down to whole ISK); with 0 % they get no automatic amount and the reviewer decides. Every claim keeps the rule and the settings it was calculated with; **Recalculate** applies the current ones to pending claims.
+
+**Capsules** are only paid from a capsule entry of the payout table (a fixed amount). While **Capsules need a payout rule** is on (the default), neither the percentage nor a doctrine rule for any ship covers a pod, because the value of a pod includes its implants.
+
+## Caps and monthly limits
+
+- **In-fleet loss cap** and **Out-of-fleet loss cap** limit one loss, whatever its rule or percentage.
+- **Personal monthly cap** limits what one player (all characters) gets in an EVE month; **Corporation monthly cap** is the default for every corporation, and SRP Corporation Limits overrides it per corporation (an override with no cap means no limit for that corporation). Two switches decide whether losses in a fleet count toward the personal and the corporation cap.
+- Usage is the sum of approved and paid claims; claims in review are shown but not deducted. A revoked approval releases its amount, a paid claim keeps counting.
+- A claim counts in the **EVE (UTC) month of the loss**, whenever it is submitted or decided. The most restrictive limit wins.
+- **Over limit action**: *Send to review with a warning* keeps a claim that does not fit and flags it red. *Reject automatically* cuts a claim that only partly fits to what is left (amber warning, normal review) and rejects it on the spot, with the cap in the reason, only when nothing is left.
+- Limits are checked again under a lock when a claim is submitted or approved, so two managers approving at the same moment cannot both use the last of a limit.
+
+## Review and payment
+
+- SRP → **Review** lists claims (pending first, oldest first) with filters for status, scope, flag, corporation, FC, loss month and a search for a pilot, ship or `SRP-123`. Red rows are over a limit, amber rows need a look. **Approve selected at the suggested amount** approves ticked claims without warnings; **Recalculate all pending** applies the current rules.
+- The claim page shows the calculation, the limits, the fleet check, the warnings, the items of the killmail and the timeline. A reviewer approves the suggested amount, the amount within the limit, or a typed amount (`250m`, `1.2b`). Any other amount needs a **reason**; more than the policy amount needs "Pay more than the policy amount"; more than the remaining monthly limit needs "Approve over the monthly limit" (and is refused in *Reject automatically* mode). Changing the amount of an approved claim always needs a reason, also when it goes back to the suggested amount. Reject, revoke, undo payment, reopen and move between fleet and out of fleet need a reason; reviewers can also check the fleet presence again and leave an internal note. Internal notes are never copied into the audit log (it only records that a note of that length was written).
+- SRP → **Payments** groups approved claims by player and names each group after the player's **main character as it is now** (a main the player has left behind is not paid; only a claim of a deleted account or an account without a main falls back to the main recorded with the claim). It has copy buttons for the name and the amount (digits only, for the in-game *Give ISK* field). Pay in game, tick the claims, add an optional note and **Mark selected paid**. The paid list can be filtered by payment date (EVE time) and the page by the month of the loss.
+- A decision is made on the claim the reviewer looked at. If the suggested amount changed while the page was open (a loss value arrived, another reviewer recalculated), **Approve suggested** and **Approve within limit** are refused with the old and new amount, and so are the ticked claims of **Approve selected** (they are listed as skipped). A **Change the amount** form of a claim that was revoked meanwhile does not approve it again. **Mark paid** is refused when the approved amount is not the one the payer was asked to send, so the books show what was sent. Pressing Enter in the amount field approves the typed amount.
+- **SRP managers cannot decide on their own claims** (approve, reject, change an amount, mark paid): another SRP manager does. Small alliances can tick **SRP managers may decide on their own claims**.
+- The pilot gets an Alliance Auth notification when a claim is approved, changed, paid, rejected, revoked or reopened (switch **Notify members** off to stop them).
+
+## Who sees what
+
+| Viewer | Sees |
+|---|---|
+| Member (`request_srp`) | Own claims, own allowance, the SRP link pages. Never a claim of somebody else. |
+| FC | The claims and totals of the fleets they led (SRP → My fleets, the fleet page). |
+| `view_corp_stats` | The summary of the own corporation and the claims of its members, and the Excel/CSV files of those. |
+| `view_all_stats` | Every summary and claim, read-only. |
+| `manage_srp` | Everything, and the decisions. Internal notes and the names of the people who decided on and paid a claim are visible to SRP managers only (the history shows "Claimant", "Reviewer" or "System" to everybody else, and the *Decided by* and *Paid by* columns of the `srp-claims` file are empty for other roles). |
+
+The monthly usage on a claim page (what the claimant and the corporation have used) is shown to the claimant, SRP managers, `view_all_stats` and `view_corp_stats` of the claim's corporation, not to the FC of the fleet, who sees the claims and totals of their fleets only.
+
+Summaries (SRP → Summary, Corporation, My fleets) are by EVE month of the loss and exclude withdrawn claims. The files are `srp-claims`, `srp-members`, `srp-corporations` and `srp-fcs` at `/fleetops/statistics/export/<dataset>/`; every download is audited as `srp.export`.
+
+## Fleet page and links
+
+The fleet page has an SRP card with the link and a Copy button, **Open**/**Close** for SRP managers (a closed link takes no new claims; claims already made stay), **Request SRP for this fleet** for pilots and the claims of the fleet with totals for SRP managers, `view_all_stats` and the FC. A fleet without a link (SRP auto create off, or started before FleetOps SRP was enabled) has **Create SRP link**; creating it twice changes nothing. Fleets started from a PAP link get their link when they are created.
+
+## SRP test checklist
+
+1. Enable FleetOps SRP, set the provider to *Automatic*, add `{{ srp_url }}` to a custom MOTD and ping, give `manage_srp` to an SRP manager group.
+2. Add one doctrine ship to the payout table, set the percentage (for example 80) and the caps and monthly limits you want.
+3. Start a fleet: the link is in the MOTD and the ping; click it in game.
+4. Lose a cheap ship in the fleet and submit its in-game link at once, then a zKillboard link of a second loss after ten minutes. Lose a ship out of fleet and submit it from My SRP.
+5. Try an over-limit case in both modes, approve with a changed amount, mark paid, revoke, and open the summaries and the Excel file.
+6. If aa-srp or Alliance Auth SRP holds a request for the same killmail, the preview shows "Also claimed in …".
+
+---
+
 # Upgrading to 0.1.0a6
 
 Read the upgrade notes in [`CHANGELOG.md`](CHANGELOG.md) before running `python manage.py migrate fleetops`. In short: Ping Targets become Ping channels and Ping roles (check each channel's mention switches and allowed roles afterwards), the Default Ping/MOTD templates are replaced only if they were never edited, pasted in-game channel links are split into name and link, and user names are removed from voice links. After the upgrade:
@@ -614,6 +704,9 @@ The PAP rules (see [PAP rules](#pap-rules)) change how PAP and FC points are cou
 - Ping channel webhook URLs are no longer shown; keep a copy of a URL elsewhere if you need it.
 - Statistics are counted in EVE time (UTC) from this release; totals of months with fleets near midnight UTC on the edge of a month can differ from earlier versions. Disabled accounts, users without a main and biomassed mains no longer count as members.
 - Set **Member alliance IDs** in General Settings and add your first **Monthly Targets** (see [Statistics](#statistics)).
+- FleetOps SRP (see [FleetOps SRP](#fleetops-srp)) is new and **off** until you enable it. The upgrade gives `fleetops.request_srp` to everyone who holds `basic_access` and `fleetops.manage_srp` to nobody; add `manage_srp` to your SRP managers. Run `python manage.py collectstatic`, keep the Celery worker and beat running, and set `ESI_USER_CONTACT_EMAIL` (or `SITE_URL`) for the zKillboard User-Agent.
+- The SRP step of a fleet start now runs before the ping and the MOTD. Add `{{ srp_url }}` to custom ping and MOTD templates; the untouched Default MOTD gets the SRP line by itself.
+- With FleetOps SRP enabled the *Automatic* SRP provider creates FleetOps links before aa-srp and Alliance Auth SRP. Choose the provider you keep in General Settings if you stay with one of them.
 
 ---
 
@@ -715,5 +808,7 @@ GPL-3.0-only.
 ## Permission bundles
 
 FleetOps 0.1.0a5 defines recommended Member, Corporation Management, FC and FC Lead permission bundles. See [`docs/PERMISSIONS.md`](docs/PERMISSIONS.md).
+
+The SRP permissions `fleetops.request_srp` (Member) and `fleetops.manage_srp` (SRP Manager) are listed there too.
 
 FCs can be given read-only access to every historical fleet with `fleetops.view_all_fleets` while `fleetops.manage_own_fleet` continues to restrict edit/control operations to their own FC-credited fleets.

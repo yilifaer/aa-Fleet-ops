@@ -1,12 +1,24 @@
 """Reading killmail references pasted by members and the killmails ESI returns for them."""
 
 import re
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime, timedelta, timezone as dt_timezone
 
+from allianceauth.services.hooks import get_extension_logger
+from django.db import IntegrityError, transaction
+from django.db.models import ProtectedError
+from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from fleetops.models import MAX_DATABASE_ID
-from fleetops.srp.types import KillmailRef, SrpError
+from fleetops.models import MAX_DATABASE_ID, SrpKillmail, SrpSettings
+from fleetops.providers import zkillboard
+from fleetops.providers.esi import FleetESIError
+from fleetops.providers.esi_killmails import KILLMAIL_NOT_FOUND, get_killmail
+from fleetops.services import names, sde
+from fleetops.services.errors import log_failure
+from fleetops.srp import values
+from fleetops.srp.types import KillmailRef, SrpError, ZkillResult
+
+logger = get_extension_logger(__name__)
 
 MAX_INPUT_LENGTH = 2000
 
@@ -40,6 +52,18 @@ UNRECOGNISED = "Paste an in-game killmail link, a zKillboard link, or the killma
 
 MAX_ITEMS = 5000
 MAX_ITEM_DEPTH = 3
+
+ZkillStatus = SrpKillmail.ZkillStatus
+HASH_RE = re.compile(r"[0-9a-f]{40}")
+SHIP_NAME_LENGTH = 255
+SYSTEM_NAME_LENGTH = 100
+
+NO_HASH = (
+    "zKillboard does not have this killmail yet (new killmails appear after about 5 minutes). "
+    "Paste the in-game killmail link instead."
+)
+USE_INGAME_LINK = "Paste the in-game killmail link instead."
+ZKILLBOARD_OFF = f"Killboard links are not accepted at the moment. {USE_INGAME_LINK}"
 
 
 def _ref(killmail_id: str, killmail_hash: str | None, source: str) -> KillmailRef:
@@ -155,3 +179,155 @@ def killmail_fields(payload: dict) -> dict:
         }
     except (KeyError, TypeError, ValueError) as exc:
         raise SrpError("invalid_killmail", "ESI returned an incomplete killmail. Try again later.") from exc
+
+
+def _hash_from_zkillboard(killmail_id: int) -> ZkillResult:
+    """zKillboard's answer for a killmail pasted as a killboard link; raises ``SrpError`` without a hash."""
+    result = zkillboard.fetch_kill(killmail_id)
+    if result.ok and result.killmail_hash:
+        return result
+    if result.status == "missing":
+        raise SrpError("no_hash", NO_HASH)
+    if result.status == "throttled":
+        raise SrpError("zkill_busy", result.message)
+    raise SrpError("zkill_unavailable", f"{result.message} {USE_INGAME_LINK}".strip())
+
+
+def _read_and_store(killmail_id: int, killmail_hash: str) -> SrpKillmail:
+    try:
+        payload = get_killmail(killmail_id, killmail_hash)
+    except FleetESIError as exc:
+        code = "not_found" if exc.code == "KILLMAIL_NOT_FOUND" else "esi_unavailable"
+        raise SrpError(code, str(exc)) from exc
+    if killmail_fields(payload)["killmail_id"] != killmail_id:
+        raise SrpError("invalid_killmail", "ESI returned an incomplete killmail. Try again later.")
+    return store_killmail(payload, killmail_hash)
+
+
+def _wants_estimate(km: SrpKillmail) -> bool:
+    """Whether the ESI estimate is the value source the admin chose and the killmail has none yet."""
+    return km.esi_estimate is None and SrpSettings.get_solo().value_source == SrpSettings.ValueSource.ESI_ESTIMATE
+
+
+def _update_value(km: SrpKillmail, zkill_ok: bool, zkill_result: ZkillResult | None) -> None:
+    """Bring the value of a killmail up to date for the claim check; never raises for a value problem."""
+    now = timezone.now()
+    if zkill_result is not None:
+        values.apply_zkill_result(km, zkill_result, now=now)
+    if not zkill_ok:
+        if km.zkill_status in values.WAITING_STATUSES or (
+            km.zkill_status == ZkillStatus.DISABLED and km.esi_estimate is None
+        ):
+            values.settle_without_zkill(km, ZkillStatus.DISABLED, now=now)
+        return
+    if km.zkill_status == ZkillStatus.DISABLED:
+        # zKillboard was switched off when the killmail was read and is on again.
+        schedule_zkill(km, now=now)
+    due = km.zkill_next_attempt_at is not None and km.zkill_next_attempt_at <= now
+    if km.zkill_status in values.WAITING_STATUSES and due:
+        values.refresh_zkill(km, now=now)
+    if _wants_estimate(km):
+        values.esi_estimate(km)
+
+
+def fetch_killmail(ref: KillmailRef, *, zkill_ok: bool) -> SrpKillmail:
+    """The stored killmail for a pasted reference.
+
+    Uses the stored row when there is one (a given hash must match it), else takes the hash from the
+    reference or from zKillboard (``zkill_ok``), reads the killmail from ESI and stores it. The value is
+    looked up as far as it can be now: from zKillboard once the killmail is old enough, or as an ESI
+    estimate. Raises ``SrpError``.
+    """
+    km = SrpKillmail.objects.filter(pk=ref.killmail_id).first()
+    zkill_result = None
+    if km is None:
+        killmail_hash = ref.killmail_hash
+        if killmail_hash is None:
+            if not zkill_ok:
+                raise SrpError("zkill_off", ZKILLBOARD_OFF)
+            zkill_result = _hash_from_zkillboard(ref.killmail_id)
+            killmail_hash = zkill_result.killmail_hash
+        km = _read_and_store(ref.killmail_id, killmail_hash.lower())
+    elif ref.killmail_hash and ref.killmail_hash.lower() != km.killmail_hash:
+        # The same answer as for a hash ESI does not know, so the stored hash is not given away.
+        raise SrpError("not_found", KILLMAIL_NOT_FOUND)
+    try:
+        _update_value(km, zkill_ok, zkill_result)
+    except Exception as exc:  # the value is a convenience here; the claim check goes on without it
+        log_failure(logger, "SRP loss value lookup", exc)
+        km.refresh_from_db()
+    return km
+
+
+def _names(ship_type_id: int, solar_system_id: int) -> tuple[str, str]:
+    """English ship and system names: from the SDE when installed, else from ESI (cached); '' when unknown."""
+    ship = sde.item_type_names([ship_type_id]).get(ship_type_id, "")
+    system = sde.solar_system_names([solar_system_id]).get(solar_system_id, "")
+    unknown = [pk for pk, name in ((ship_type_id, ship), (solar_system_id, system)) if not name]
+    if unknown:
+        try:
+            found = names.entity_names(unknown)
+        except Exception as exc:  # names are a convenience; the claim does not depend on them
+            log_failure(logger, "SRP killmail name lookup", exc)
+            found = {}
+        ship = ship or found.get(ship_type_id, "")
+        system = system or found.get(solar_system_id, "")
+    return ship[:SHIP_NAME_LENGTH], system[:SYSTEM_NAME_LENGTH]
+
+
+def store_killmail(payload: dict, killmail_hash: str) -> SrpKillmail:
+    """Create the ``SrpKillmail`` row for an ESI killmail (a concurrent create returns the existing row),
+    with ship and system names, and schedule the zKillboard lookup."""
+    fields = killmail_fields(payload)
+    killmail_hash = killmail_hash.lower() if isinstance(killmail_hash, str) else ""
+    if not HASH_RE.fullmatch(killmail_hash):
+        raise SrpError("invalid_hash", KILLMAIL_NOT_FOUND)
+    killmail_id = fields["killmail_id"]
+    existing = SrpKillmail.objects.filter(pk=killmail_id).first()
+    if existing is not None:
+        return existing
+    ship_name, system_name = _names(fields["ship_type_id"], fields["solar_system_id"])
+    try:
+        with transaction.atomic():
+            km = SrpKillmail.objects.create(
+                killmail_hash=killmail_hash,
+                ship_type_name=ship_name,
+                solar_system_name=system_name,
+                **fields,
+            )
+    except IntegrityError:
+        # Another request stored the same killmail first.
+        km = SrpKillmail.objects.filter(pk=killmail_id).first()
+        if km is None:
+            raise
+        return km
+    schedule_zkill(km)
+    return km
+
+
+def schedule_zkill(km: SrpKillmail, *, now: datetime | None = None) -> None:
+    """Set when zKillboard is asked about the killmail first (never before it is six minutes old).
+
+    A killmail that has its value, or that zKillboard gave up on, is left alone.
+    """
+    if km.zkill_status in (ZkillStatus.OK, ZkillStatus.UNAVAILABLE):
+        return
+    km.zkill_next_attempt_at = values.first_zkill_check(km.killmail_time, now=now)
+    fields = ["zkill_next_attempt_at"]
+    if km.zkill_status == ZkillStatus.DISABLED:
+        km.zkill_status = ZkillStatus.PENDING
+        fields.append("zkill_status")
+    km.save(update_fields=fields)
+
+
+def prune_unclaimed(days: int = 7) -> int:
+    """Delete killmails without a claim that were fetched more than ``days`` days ago; returns how many."""
+    cutoff = timezone.now() - timedelta(days=days)
+    for _attempt in range(2):
+        try:
+            deleted, _by_model = SrpKillmail.objects.filter(claim__isnull=True, fetched_at__lt=cutoff).delete()
+        except ProtectedError:
+            # A claim was created for one of them while it was being deleted; the next try leaves it out.
+            continue
+        return deleted
+    return 0

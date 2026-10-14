@@ -17,6 +17,9 @@ from fleetops.services.fleet_rules import normalize_wings, position_body
 
 logger = get_extension_logger(__name__)
 
+# Public reads for SRP: a killmail by ID and hash, and CCP's market prices (see providers/esi_killmails.py).
+KILLMAIL_OPERATIONS = ("GetKillmailsKillmailIdKillmailHash", "GetMarketsPrices")
+
 esi = ESIClientProvider(
     compatibility_date="2025-11-06",
     ua_appname=__title__,
@@ -43,6 +46,7 @@ esi = ESIClientProvider(
         "GetCharactersCharacterIdLocation",
         "GetCharactersCharacterIdShip",
         "PostUniverseIds",
+        *KILLMAIL_OPERATIONS,
     ],
 )
 
@@ -676,13 +680,8 @@ def _unique_names(names) -> list[str]:
     return list(unique.values())
 
 
-def universe_ids(names) -> dict[str, tuple[int, str]]:
-    """Character IDs of exact character names.
-
-    Returns ``{casefolded name: (character_id, name as ESI spells it)}``; names ESI does not know as a
-    character are missing. Other categories in the answer (corporations, systems …) are ignored.
-    Any failed call raises FleetESIError with a short message.
-    """
+def _universe_lookup(names, category: str, code: str, failure: str) -> dict[str, tuple[int, str]]:
+    """``{casefolded name: (id, name as ESI spells it)}`` of the exact names ESI knows in one category."""
     names = _unique_names(names)
     result = {}
     for start in range(0, len(names), MAX_NAMES_PER_POST):
@@ -690,14 +689,32 @@ def universe_ids(names) -> dict[str, tuple[int, str]]:
         try:
             answer = _post(esi.client.Universe.PostUniverseIds(body=chunk))
         except Exception as exc:
-            raise _esi_failure("IDS_ERROR", "Could not look up character names", exc) from exc
+            raise _esi_failure(code, failure, exc) from exc
         # The answer is untyped in the client: a dict, or an object with one list attribute per category.
-        characters = answer.get("characters") if isinstance(answer, dict) else getattr(answer, "characters", None)
-        for row in characters or []:
+        rows = answer.get(category) if isinstance(answer, dict) else getattr(answer, category, None)
+        for row in rows or []:
             row = as_dict(row)
             if row.get("id") and row.get("name"):
                 result[str(row["name"]).casefold()] = (int(row["id"]), str(row["name"]))
     return result
+
+
+def universe_ids(names) -> dict[str, tuple[int, str]]:
+    """Character IDs of exact character names.
+
+    Returns ``{casefolded name: (character_id, name as ESI spells it)}``; names ESI does not know as a
+    character are missing. Other categories in the answer (corporations, systems …) are ignored.
+    Any failed call raises FleetESIError with a short message.
+    """
+    return _universe_lookup(names, "characters", "IDS_ERROR", "Could not look up character names")
+
+
+def universe_type_ids(names) -> dict[str, tuple[int, str]]:
+    """Item type IDs of exact English type names, in the same shape as ``universe_ids``.
+
+    Used to turn the ship name of a payout rule into its type ID. Any failed call raises FleetESIError.
+    """
+    return _universe_lookup(names, "inventory_types", "TYPE_IDS_ERROR", "Could not look up item names")
 
 
 # Alias for name entry and the roster import.

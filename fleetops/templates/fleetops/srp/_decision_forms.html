@@ -1,0 +1,136 @@
+{% load fleetops_srp fleetops_messages %}{# The forms of a claim for SRP managers. Context: claim, actions, forms, reason_actions, link_candidates, note_form, self_review_blocked, pay_to. #}
+{% if self_review_blocked %}
+<div class="alert alert-secondary">This is your own claim. Another SRP manager has to decide on it. You can still add a note or check the fleet presence.</div>
+{% endif %}
+
+{% if "approve" in actions %}
+{% with form=forms.approve %}
+<form method="post" action="{% url 'fleetops:srp_claim_action' claim.uuid 'approve' %}" class="fleetops-srp-form fleetops-srp-approve mb-4" data-srp-once data-srp-suggested="{{ claim.suggested_amount }}" data-srp-limited="{{ claim.limited_amount }}" data-srp-limit-reason="{{ limit_reason }}"{% if claim.status == "approved" %} data-srp-approved="{{ claim.approved_amount }}"{% endif %}>
+  {% csrf_token %}
+  {# The first submit button is the one Enter in the amount field presses: it approves the typed amount. #}
+  <button type="submit" name="mode" value="amount" class="visually-hidden" tabindex="-1" aria-hidden="true"></button>
+  {# What this page shows. The decision is refused when the claim is not like this any more. #}
+  <input type="hidden" name="shown_status" value="{{ claim.status }}">
+  <input type="hidden" name="shown_suggested" value="{{ claim.suggested_amount }}">
+  <input type="hidden" name="shown_limited" value="{{ claim.limited_amount }}">
+  <h3 class="h6">{% if claim.status == "approved" %}Change the amount{% else %}Approve{% endif %}</h3>
+  {{ form.non_field_errors }}
+  {% if claim.status == "pending" %}
+  <div class="d-flex flex-wrap gap-2 mb-2">
+    {% if claim.suggested_amount %}<button type="submit" name="mode" value="suggested" class="btn btn-success">Approve suggested ({{ claim.suggested_amount|isk_short }})</button>{% endif %}
+    {% if claim.over_limit and claim.limited_amount %}<button type="submit" name="mode" value="within_limit" class="btn btn-warning">Approve within limit ({{ claim.limited_amount|isk_short }})</button>{% endif %}
+  </div>
+  {% if not claim.suggested_amount %}<div class="small text-muted mb-2">There is no automatic amount for this claim. Enter the amount to pay.</div>{% endif %}
+  {% endif %}
+  <div class="mb-2">
+    <label class="form-label" for="{{ form.amount.id_for_label }}">Amount</label>
+    {{ form.amount }}
+    {{ form.amount.errors }}
+  </div>
+  <div class="mb-2">
+    <label class="form-label" for="{{ form.reason.id_for_label }}">Reason</label>
+    {{ form.reason }}
+    <div class="form-text" data-srp-reason-hint>{% if claim.status == "approved" %}Required: say why the amount changes.{% else %}Required when the amount differs from the suggested amount or goes over a monthly limit.{% endif %}</div>
+    {{ form.reason.errors }}
+  </div>
+  <div class="form-check">
+    {{ form.confirm_above_policy }}
+    <label class="form-check-label" for="{{ form.confirm_above_policy.id_for_label }}">{{ form.confirm_above_policy.label }}</label>
+  </div>
+  <div class="form-check mb-2">
+    {{ form.confirm_over_limit }}
+    <label class="form-check-label" for="{{ form.confirm_over_limit.id_for_label }}">{{ form.confirm_over_limit.label }}</label>
+    <div class="form-text">Ticking a box needs a reason.{% if srp_settings.over_limit_action == "reject" %} While limits reject automatically, an amount over the monthly limit is refused.{% endif %}</div>
+  </div>
+  <button type="submit" name="mode" value="amount" class="btn btn-primary">{% if claim.status == "approved" %}Change amount{% else %}Approve this amount{% endif %}</button>
+</form>
+{% endwith %}
+{% endif %}
+
+{% for item in reason_actions %}
+<form method="post" action="{% url 'fleetops:srp_claim_action' claim.uuid item.action %}" class="fleetops-srp-form mb-4" data-srp-once>
+  {% csrf_token %}
+  <h3 class="h6">{{ item.title }}</h3>
+  <div class="mb-2">
+    <label class="form-label" for="{{ item.form.reason.id_for_label }}">Reason</label>
+    {{ item.form.reason }}
+    <div class="form-text">{{ item.help }}</div>
+    {{ item.form.reason.errors }}
+  </div>
+  <button type="submit" class="btn {{ item.css }}">{{ item.button }}</button>
+</form>
+{% endfor %}
+
+{% if "paid" in actions %}
+{% with form=forms.paid %}
+<form method="post" action="{% url 'fleetops:srp_claim_action' claim.uuid 'paid' %}" class="fleetops-srp-form mb-4" data-srp-once>
+  {% csrf_token %}
+  <input type="hidden" name="shown_amount" value="{{ claim.approved_amount }}">
+  <h3 class="h6">Mark paid</h3>
+  <div class="small text-muted mb-2">Send {{ claim.approved_amount|isk }} to {{ pay_to }} in game first. <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ claim.approved_amount|isk_plain }}" hidden>Copy amount</button></div>
+  <div class="mb-2">
+    <label class="form-label" for="{{ form.note.id_for_label }}">Payment note <span class="text-muted">(optional)</span></label>
+    {{ form.note }}
+    {{ form.note.errors }}
+  </div>
+  <button type="submit" class="btn btn-success">Mark paid</button>
+</form>
+{% endwith %}
+{% endif %}
+
+{% if "reclassify" in actions %}
+{% with form=forms.reclassify %}
+<form method="post" action="{% url 'fleetops:srp_claim_action' claim.uuid 'reclassify' %}" class="fleetops-srp-form mb-4" data-srp-once>
+  {% csrf_token %}
+  <h3 class="h6">Move between fleet and out of fleet</h3>
+  {{ form.non_field_errors }}
+  <div class="mb-2">
+    <label class="form-label" for="{{ form.scope.id_for_label }}">{{ form.scope.label }}</label>
+    {{ form.scope }}
+    {{ form.scope.errors }}
+  </div>
+  <div class="mb-2">
+    <label class="form-label" for="{{ form.link.id_for_label }}">Fleet (for an in-fleet loss)</label>
+    <select name="link" id="{{ form.link.id_for_label }}" class="form-select">
+      <option value="">Choose a fleet</option>
+      {% for candidate in link_candidates %}<option value="{{ candidate.code }}"{% if form.link.value == candidate.code %} selected{% endif %}>{{ candidate.operation.fleet_type }} &middot; FC {{ candidate.fc_main_character_name|default:candidate.operation.fc_character_name }} &middot; {{ candidate.operation.started_at|eve_time }} EVE</option>{% endfor %}
+    </select>
+    {{ form.link.errors }}
+  </div>
+  <div class="mb-2">
+    <label class="form-label" for="{{ form.reason.id_for_label }}">Reason</label>
+    {{ form.reason }}
+    {{ form.reason.errors }}
+  </div>
+  <button type="submit" class="btn btn-outline-primary">Move and recalculate</button>
+</form>
+{% endwith %}
+{% endif %}
+
+{% if "recalculate" in actions %}
+<form method="post" action="{% url 'fleetops:srp_claim_action' claim.uuid 'recalculate' %}" class="fleetops-srp-form mb-4" data-srp-once>
+  {% csrf_token %}
+  <h3 class="h6">Recalculate</h3>
+  <div class="small text-muted mb-2">Apply the current payout table, caps and limits to this claim.</div>
+  <button type="submit" class="btn btn-outline-secondary">Recalculate with current rules</button>
+</form>
+{% endif %}
+
+<form method="post" action="{% url 'fleetops:srp_claim_action' claim.uuid 'recheck' %}" class="fleetops-srp-form mb-4" data-srp-once>
+  {% csrf_token %}
+  <h3 class="h6">Fleet presence</h3>
+  <div class="small text-muted mb-2">Look at the tracking data of the fleet again, for example after the tracking caught up.</div>
+  <button type="submit" class="btn btn-outline-secondary">Check fleet presence again</button>
+</form>
+
+<form method="post" action="{% url 'fleetops:srp_claim_action' claim.uuid 'note' %}" class="fleetops-srp-form" data-srp-once>
+  {% csrf_token %}
+  <h3 class="h6">Internal note</h3>
+  <div class="mb-2">
+    <label class="visually-hidden" for="{{ note_form.text.id_for_label }}">Internal note</label>
+    {{ note_form.text }}
+    <div class="form-text">Only SRP managers see notes. The pilot does not.</div>
+    {{ note_form.text.errors }}
+  </div>
+  <button type="submit" class="btn btn-outline-secondary">Add note</button>
+</form>

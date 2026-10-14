@@ -105,6 +105,7 @@
     <div class="col-12 d-none" id="preview-missing"><div class="alert alert-info mb-0" role="status"></div></div>
     <div class="col-12 d-none" id="preview-blocking"><div class="alert alert-danger mb-0" role="alert"></div></div>
     <div class="col-12 d-none" id="preview-warnings"><div class="alert alert-warning mb-0" role="status"></div></div>
+    <div class="col-12 d-none" id="preview-notes"><div class="alert alert-info mb-0" role="status"></div></div>
   </div>
   {% if operation %}
   <div class="form-check mt-3">{{ form.send_update }} <label class="form-check-label" for="{{ form.send_update.id_for_label }}">{{ form.send_update.label }}{% if operation.ping_channel_name %} in {{ operation.ping_channel_name }}{% endif %}</label>{{ form.send_update.errors }}</div>
@@ -134,6 +135,7 @@
  const channelRules = JSON.parse(document.getElementById('ping-channel-rules').textContent);
  const previewWarnings = document.getElementById('preview-warnings');
  const previewBlocking = document.getElementById('preview-blocking');
+ const previewNotes = document.getElementById('preview-notes');
  const previewMissing = document.getElementById('preview-missing');
  const pingPreview = document.getElementById('ping-preview');
  const motdPreview = document.getElementById('motd-preview');
@@ -258,7 +260,7 @@
  function clearPreview(text){
    pingPreview.textContent = text; motdPreview.textContent = text;
    delete pingPreview.dataset.copyText;
-   showLengths(null); showList(previewWarnings, []); showList(previewBlocking, []);
+   showLengths(null); showList(previewWarnings, []); showList(previewBlocking, []); showList(previewNotes, []);
  }
  async function preview(){
    const body = new FormData(form);
@@ -270,7 +272,7 @@
      if(d.ok){
        // Roles are shown by name; Copy Ping copies the text that is posted.
        pingPreview.textContent=d.ping_display; pingPreview.dataset.copyText=d.ping; motdPreview.textContent=d.motd;
-       showLengths(d); showList(previewWarnings, d.warnings); showList(previewBlocking, d.blocking); showMissing([], {});
+       showLengths(d); showList(previewWarnings, d.warnings); showList(previewBlocking, d.blocking); showList(previewNotes, d.notes); showMissing([], {});
      }
      else if(d.missing || d.errors){ clearPreview('Complete the form to render a preview.'); showMissing(d.missing, d.errors); }
      else if(d.error){ clearPreview(d.error); showMissing([], {}); }

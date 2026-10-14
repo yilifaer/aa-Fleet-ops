@@ -321,6 +321,8 @@ When a FleetOperation starts, FleetOps should be able to create or link the corr
 
 SRP integration must use a provider boundary rather than hard-coding one app so other SRP apps can register their own provider without changing FleetOps core.
 
+FleetOps also has its own SRP (FleetOps SRP, key `fleetops`), off until an admin enables it and first in the automatic provider order: members claim losses with an in-game killmail link or a zKillboard link, a payout table by ship or doctrine (otherwise a percentage of the loss value), per-loss caps and monthly limits per player and corporation, review, changed amounts with a reason, manual payment and summaries by EVE month of the loss. Each fleet has an SRP link that is created before the ping and the MOTD, so `{{ srp_url }}` can be in both. The old SRP apps stay optional link providers and no data is imported from them. See the README section "FleetOps SRP".
+
 ## 21. Historical Manual Attendance
 
 Authorized FCs may receive `fleetops.manage_attendance` without full alliance-admin access. They can add manual attendance to their own credited historical fleets as well as active fleets.
@@ -399,7 +401,7 @@ Personal statistics should present selected-period attendance, unique fleets, FC
 - New default Ping (broadcast format with sender footer) and MOTD (normal text colour, line breaks, comms/doctrine/channel links); Discord's 2000-character limit is enforced before posting.
 - Public comms join page for voice client links, and in-game channel links for Logi/Boost.
 - Regenerate & Push MOTD on an active fleet.
-- aa-srp provider, preferred in automatic mode.
+- aa-srp provider, used in automatic mode after FleetOps SRP (when that is enabled).
 - Names, corporations and alliances of pilots without an Alliance Auth account from ESI, with a "Not in Alliance Auth" badge.
 - A new fleet boss confirmed by ESI ends the previous FC's record at once and starts an independent record.
 - Ship and system names always in English.

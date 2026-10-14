@@ -290,6 +290,7 @@ class PreviewTests(StartFormTestBase):
                 "ping_display": "@Sig A Ping",
                 "motd": "MOTD",
                 "warnings": ["The ping template does not contain {{ ping_mention }}; nobody will be notified."],
+                "notes": [],
                 "blocking": [],
                 "ping_length": 10,
                 "motd_length": 4,

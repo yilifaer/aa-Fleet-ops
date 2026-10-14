@@ -34,6 +34,8 @@ from fleetops.models import (
     PingRole,
     PingTarget,
     ShipFunction,
+    SrpClaim,
+    SrpSettings,
 )
 from fleetops.providers.esi import FleetDetectionResult, FleetESIError
 from fleetops.providers.srp import SRPLinkResult
@@ -63,6 +65,30 @@ ROLES = ("member", "corp", "fc", "lead")
 STATS = "stats"
 
 Case = namedtuple("Case", "label method url data expected")
+
+REQUEST_SRP = "fleetops.request_srp"
+MANAGE_SRP = "fleetops.manage_srp"
+# The SRP rows name their own roles, built from explicit permissions, so they do not depend on the bundles above.
+SRP_ROLES = (
+    "srp_none",  # FleetOps access without request_srp
+    "srp_member",  # request_srp; the claimant of most claims
+    "srp_other",  # request_srp; claimed nothing
+    "srp_fc",  # request_srp and FC permissions; led the fleet of the fleet claim
+    "srp_corp",  # request_srp and view_corp_stats, same corporation as the claimants
+    "srp_corp_other",  # request_srp and view_corp_stats of another corporation
+    "srp_stats",  # view_all_stats only
+    "srp_manager",  # manage_srp; has a claim of their own
+    "srp_manager2",  # manage_srp; no claim of their own
+)
+SRP_REQUESTERS = frozenset(SRP_ROLES) - {"srp_none", "srp_stats"}
+SRP_MANAGERS = frozenset({"srp_manager", "srp_manager2"})
+
+
+def by_srp_role(allowed, *, granted=OK, otherwise=DENIED, **overrides):
+    """Expected status per SRP role: ``granted`` for the roles in ``allowed``, ``otherwise`` for the rest."""
+    expected = {role: (granted if role in allowed else otherwise) for role in SRP_ROLES}
+    expected.update(overrides)
+    return expected
 
 CONFIG_SECTIONS = (
     "fleet-types", "multiplier-tiers", "special-roles", "comms", "channels", "ping-channels", "ping-roles", "templates",
@@ -367,7 +393,62 @@ class FleetOpsViewTestCase(TestCase):
         return reverse("fleetops:operation_detail", args=[operation.uuid])
 
 
-class PermissionMatrixTests(FleetOpsViewTestCase):
+class SrpViewTestCase(FleetOpsViewTestCase):
+    """The alliance above plus the people, the fleet SRP links and the claims the SRP routes are tested with."""
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        now = timezone.now()
+        f.srp_settings(enabled=True)
+        access = ["fleetops.basic_access"]
+        cls.srp_users = {
+            "srp_none": f.create_user("srpnone", perms=access),
+            "srp_member": f.create_user("srpmember", perms=[*access, REQUEST_SRP]),
+            "srp_other": f.create_user("srpother", perms=[*access, REQUEST_SRP]),
+            "srp_fc": f.create_user("srpfc", perms=[*f.FC_PERMS, REQUEST_SRP]),
+            "srp_corp": f.create_user("srpcorp", perms=[*access, REQUEST_SRP, "fleetops.view_corp_stats"]),
+            "srp_corp_other": f.create_user(
+                "srpcorpother", perms=[*access, REQUEST_SRP, "fleetops.view_corp_stats"], corporation=f.OTHER_CORP
+            ),
+            "srp_stats": f.create_user("srpstats", perms=[*access, "fleetops.view_all_stats"]),
+            "srp_manager": f.create_user("srpmanager", perms=[*access, REQUEST_SRP, MANAGE_SRP]),
+            "srp_manager2": f.create_user("srpmanagertwo", perms=[*access, REQUEST_SRP, MANAGE_SRP]),
+        }
+        cls.users = {**cls.users, **cls.srp_users}
+        fc = cls.srp_users["srp_fc"]
+        member = cls.srp_users["srp_member"]
+
+        # The fleet the member lost a ship in, and a second fleet whose SRP link was closed.
+        cls.srp_fleet = f.create_operation(
+            fc, status=CLOSED, type_obj=cls.stratop, started_at=now - timedelta(days=1), doctrine_name="Muninn Fleet"
+        )
+        cls.srp_link = f.fleet_link(cls.srp_fleet)
+        cls.srp_closed_fleet = f.create_operation(
+            fc, status=CLOSED, type_obj=cls.home_defense, started_at=now - timedelta(days=2)
+        )
+        cls.srp_closed_link = f.fleet_link(cls.srp_closed_fleet, is_open=False)
+
+        loss_time = now - timedelta(hours=20)
+        cls.claim_fleet = f.srp_claim(member, link=cls.srp_link, time=loss_time)
+        cls.claim_out = f.srp_claim(member, time=loss_time)
+        cls.claim_other_corp = f.srp_claim(cls.outsider, time=loss_time)
+        cls.claim_manager = f.srp_claim(cls.srp_users["srp_manager"], time=loss_time)
+        # An internal note of a reviewer and a line every viewer sees.
+        f.claim_event(
+            cls.claim_fleet, "note", actor=cls.srp_users["srp_manager2"], internal=True,
+            reason="Looks like an alt of a spy",
+        )
+        f.claim_event(cls.claim_fleet, "submit", actor=member, to_status="pending", reason="Submitted by the pilot")
+
+    def srp_url(self, name, *args):
+        return reverse(f"fleetops:{name}", args=args)
+
+    def claim_url(self, claim, name="srp_claim", *args):
+        return reverse(f"fleetops:{name}", args=[claim.uuid, *args])
+
+
+class PermissionMatrixTests(SrpViewTestCase):
     """Every FleetOps URL against every permission bundle."""
 
     def setUp(self):
@@ -531,7 +612,131 @@ class PermissionMatrixTests(FleetOpsViewTestCase):
         cases += self.pap_rule_cases(own_and_other, member_only, lead_post)
         cases += self.fleet_tab_cases(lead_post)
         cases += self.statistics_cases()
+        cases += self.srp_cases()
         return cases
+
+    def srp_cases(self):
+        """FleetOps SRP: claims, the fleet SRP link, review, payments and the summaries.
+
+        A claim of the matrix is one of the member's (in a fleet the SRP FC led, and outside a fleet), the outsider's
+        in another corporation, or the SRP manager's own. Routes that accept GET and POST have their POST rows in
+        SrpRouteTests, because the matrix also checks that every POST row refuses GET.
+        """
+        r = reverse
+        managers = by_srp_role(SRP_MANAGERS)
+        manager_redirects = by_srp_role(SRP_MANAGERS, granted=REDIRECT)
+        requesters = by_srp_role(SRP_REQUESTERS)
+        # SRP managers and view_all_stats open every claim. Every role has FleetOps access, so a claim a role may
+        # not open is hidden, not denied.
+        everybody_reading = SRP_MANAGERS | {"srp_stats"}
+
+        def claim_page(label, claim, *also):
+            return Case(label, "get", self.claim_url(claim), None, by_srp_role(everybody_reading | set(also), otherwise=HIDDEN))
+
+        def claimant_only(label, name, claim, claimant):
+            expected = {
+                role: (REDIRECT if role == claimant else HIDDEN if role in SRP_REQUESTERS else DENIED)
+                for role in SRP_ROLES
+            }
+            return Case(label, "post", self.claim_url(claim, name), None, expected)
+
+        def decision(action, data=None):
+            return Case(
+                f"srp_claim_action {action}", "post", self.claim_url(self.claim_fleet, "srp_claim_action", action),
+                data, manager_redirects,
+            )
+
+        # Deciding on one's own claim needs allow_self_review; a note or a re-check does not.
+        own_claim = {**manager_redirects, "srp_manager": DENIED}
+        no_claim = self.claim_url(self.claim_fleet, "srp_claim_action", "approve").replace(
+            str(self.claim_fleet.uuid), str(uuid.uuid4())
+        )
+        everyone_with_access = dict.fromkeys(SRP_ROLES, HIDDEN)
+        return [
+            Case("srp_home", "get", r("fleetops:srp_home"), None, requesters),
+            Case("srp_home month", "get", r("fleetops:srp_home"), {"year": "2026", "month": "3"}, requesters),
+            Case("srp_home invalid month", "get", r("fleetops:srp_home"), {"year": "99999", "month": "13"}, requesters),
+            Case("srp_check", "post", r("fleetops:srp_check"), {"killmail": "not a killmail"}, requesters),
+            Case("srp_check empty", "post", r("fleetops:srp_check"), {"killmail": ""}, requesters),
+            Case("srp_link", "get", r("fleetops:srp_link", args=[self.srp_link.code]), None, requesters),
+            Case("srp_link closed", "get", r("fleetops:srp_link", args=[self.srp_closed_link.code]), None, requesters),
+            Case("srp_link unknown", "get", r("fleetops:srp_link", args=["nosuchcode"]), None,
+                 by_srp_role(SRP_REQUESTERS, granted=HIDDEN)),
+            Case("srp_submit", "post", r("fleetops:srp_submit"), {"token": "invalid", "comment": ""},
+                 by_srp_role(SRP_REQUESTERS, granted=REDIRECT)),
+            # VIS(3): the claimant, SRP managers, view_all_stats, the FC of the fleet and the corporation's managers.
+            claim_page("srp_claim fleet loss", self.claim_fleet, "srp_member", "srp_fc", "srp_corp"),
+            claim_page("srp_claim loss outside a fleet", self.claim_out, "srp_member", "srp_corp"),
+            claim_page("srp_claim other corporation", self.claim_other_corp, "srp_corp_other"),
+            claim_page("srp_claim manager's own", self.claim_manager, "srp_corp"),
+            Case("srp_claim unknown", "get", r("fleetops:srp_claim", args=[uuid.uuid4()]), None, everyone_with_access),
+            claimant_only("srp_claim_withdraw", "srp_claim_withdraw", self.claim_fleet, "srp_member"),
+            claimant_only("srp_claim_withdraw outside a fleet", "srp_claim_withdraw", self.claim_out, "srp_member"),
+            claimant_only("srp_claim_resubmit", "srp_claim_resubmit", self.claim_fleet, "srp_member"),
+            claimant_only("srp_claim_resubmit manager", "srp_claim_resubmit", self.claim_manager, "srp_manager"),
+            Case("srp_review", "get", r("fleetops:srp_review"), None, managers),
+            Case("srp_review filters", "get", r("fleetops:srp_review"),
+                 {"status": "paid", "scope": "zzz", "flag": "over_limit", "corporation": "x", "fc": "-1", "q": "pilot",
+                  "year": "99999", "month": "13", "page": "abc"}, managers),
+            Case("srp_review_bulk_approve", "post", r("fleetops:srp_review_bulk_approve"),
+                 {"claim": [str(self.claim_fleet.uuid)]}, manager_redirects),
+            Case("srp_review_recalculate", "post", r("fleetops:srp_review_recalculate"), None, manager_redirects),
+            decision("approve", {"mode": "suggested"}),
+            decision("reject", {"reason": "Not in the fleet"}),
+            decision("revoke", {"reason": "Wrong amount"}),
+            decision("paid", {"note": "Sent in game"}),
+            decision("unpaid", {"reason": "Not received"}),
+            decision("reopen", {"reason": "Appeal"}),
+            decision("reclassify", {"scope": "out_of_fleet", "reason": "Lost on the way home"}),
+            decision("recalculate"),
+            decision("recheck"),
+            decision("note", {"text": "Asked the pilot"}),
+            Case("srp_claim_action approve own claim", "post",
+                 self.claim_url(self.claim_manager, "srp_claim_action", "approve"), {"mode": "suggested"}, own_claim),
+            Case("srp_claim_action reject own claim", "post",
+                 self.claim_url(self.claim_manager, "srp_claim_action", "reject"), {"reason": "Mistake"}, own_claim),
+            Case("srp_claim_action paid own claim", "post",
+                 self.claim_url(self.claim_manager, "srp_claim_action", "paid"), None, own_claim),
+            Case("srp_claim_action note on own claim", "post",
+                 self.claim_url(self.claim_manager, "srp_claim_action", "note"), {"text": "Mine"}, manager_redirects),
+            Case("srp_claim_action recheck own claim", "post",
+                 self.claim_url(self.claim_manager, "srp_claim_action", "recheck"), None, manager_redirects),
+            Case("srp_claim_action unknown action", "post", self.claim_url(self.claim_fleet, "srp_claim_action", "explode"),
+                 None, by_srp_role(SRP_MANAGERS, granted=HIDDEN)),
+            Case("srp_claim_action unknown claim", "post", no_claim, {"mode": "suggested"},
+                 by_srp_role(SRP_MANAGERS, granted=HIDDEN)),
+            Case("srp_payments", "get", r("fleetops:srp_payments"), None, managers),
+            Case("srp_payments dates", "get", r("fleetops:srp_payments"),
+                 {"paid_from": "2026-01-01", "paid_to": "nonsense"}, managers),
+            Case("srp_link_close", "post", r("fleetops:srp_link_close", args=[self.srp_link.code]), None,
+                 manager_redirects),
+            Case("srp_link_open", "post", r("fleetops:srp_link_open", args=[self.srp_closed_link.code]), None,
+                 manager_redirects),
+            Case("srp_link_open unknown", "post", r("fleetops:srp_link_open", args=["nosuchcode"]), None,
+                 by_srp_role(SRP_MANAGERS, granted=HIDDEN)),
+            # Summaries: SRP managers and view_all_stats read all of them, corporation managers their own
+            # corporation, FCs the fleets they led.
+            Case("srp_summary", "get", r("fleetops:srp_summary"), None, by_srp_role(SRP_MANAGERS | {"srp_stats"})),
+            Case("srp_summary month", "get", r("fleetops:srp_summary"), {"year": "2026", "month": "3"},
+                 by_srp_role(SRP_MANAGERS | {"srp_stats"})),
+            Case("srp_summary invalid month", "get", r("fleetops:srp_summary"), {"year": "x", "month": "13"},
+                 by_srp_role(SRP_MANAGERS | {"srp_stats"})),
+            Case("srp_summary_own_corporation", "get", r("fleetops:srp_summary_own_corporation"), None,
+                 by_srp_role(SRP_MANAGERS | {"srp_stats", "srp_corp", "srp_corp_other"})),
+            Case("srp_summary_corporation", "get", r("fleetops:srp_summary_corporation", args=[f.DEFAULT_CORP[0]]), None,
+                 by_srp_role(SRP_MANAGERS | {"srp_stats"})),
+            Case("srp_summary_corporation other", "get",
+                 r("fleetops:srp_summary_corporation", args=[f.OTHER_CORP[0]]), None,
+                 by_srp_role(SRP_MANAGERS | {"srp_stats"})),
+            Case("srp_summary_corporation unknown", "get", r("fleetops:srp_summary_corporation", args=[2_999_999]), None,
+                 by_srp_role(SRP_MANAGERS | {"srp_stats"}, granted=HIDDEN)),
+            Case("srp_summary_own_fc", "get", r("fleetops:srp_summary_own_fc"), None,
+                 by_srp_role(SRP_MANAGERS | {"srp_stats", "srp_fc"})),
+            Case("srp_summary_fc", "get", r("fleetops:srp_summary_fc", args=[self.srp_users["srp_fc"].pk]), None,
+                 by_srp_role(SRP_MANAGERS | {"srp_stats"})),
+            Case("srp_summary_fc unknown", "get", r("fleetops:srp_summary_fc", args=[99_999_999]), None,
+                 by_srp_role(SRP_MANAGERS | {"srp_stats"}, granted=HIDDEN)),
+        ]
 
     def statistics_cases(self):
         """Member lists, leaderboard, member details and exports of the statistics."""
@@ -777,6 +982,10 @@ class PermissionMatrixTests(FleetOpsViewTestCase):
     def test_statistics_manager_matrix(self):
         self.run_matrix(STATS)
 
+    def test_srp_matrices(self):
+        for role in SRP_ROLES:
+            self.run_matrix(role)
+
     def test_post_only_endpoints_reject_get(self):
         client = self.client_for(self.lead)
         for case in self.cases():
@@ -793,6 +1002,165 @@ class PermissionMatrixTests(FleetOpsViewTestCase):
         self.other_active.refresh_from_db()
         self.assertEqual(self.other_active.status, ACTIVE)
         self.kick.assert_not_called()
+
+
+class SrpRouteTests(SrpViewTestCase):
+    """SRP routes beyond the matrix: the GET-and-POST routes, the self-review setting, notes and the menu."""
+
+    def as_role(self, role, method, url, data=None):
+        client = self.client_for(self.srp_users[role])
+        return client.post(url, data or {}) if method == "post" else client.get(url, data or {})
+
+    def test_member_pages_say_when_srp_is_switched_off(self):
+        SrpSettings.objects.filter(pk=1).update(enabled=False)
+
+        for url in (self.srp_url("srp_home"), self.srp_url("srp_link", self.srp_link.code)):
+            with self.subTest(url=url):
+                response = self.as_role("srp_member", "get", url)
+                self.assertEqual(response.status_code, OK)
+                self.assertContains(response, "FleetOps SRP is not enabled.")
+        # Managers still review and pay what was claimed before.
+        for name in ("srp_review", "srp_payments"):
+            self.assertEqual(self.as_role("srp_manager", "get", self.srp_url(name)).status_code, OK)
+        self.assertEqual(self.as_role("srp_member", "get", self.claim_url(self.claim_fleet)).status_code, OK)
+
+    def test_open_link_page_has_the_claim_form(self):
+        response = self.as_role("srp_member", "get", self.srp_url("srp_link", self.srp_link.code))
+
+        self.assertEqual(response.status_code, OK)
+        self.assertContains(response, 'name="killmail"')
+        self.assertContains(response, f'action="{self.srp_url("srp_link", self.srp_link.code)}"')
+
+    def test_closed_link_page_has_no_claim_form(self):
+        url = self.srp_url("srp_link", self.srp_closed_link.code)
+
+        response = self.as_role("srp_member", "get", url)
+
+        self.assertEqual(response.status_code, OK)
+        self.assertContains(response, "closed")
+        self.assertNotContains(response, 'name="killmail"')
+        self.assertEqual(self.as_role("srp_member", "post", url, {"killmail": "not a killmail"}).status_code, OK)
+
+    def test_fleet_link_page_accepts_post(self):
+        url = self.srp_url("srp_link", self.srp_link.code)
+
+        self.assertEqual(self.as_role("srp_member", "post", url, {"killmail": "not a killmail"}).status_code, OK)
+        self.assertEqual(self.as_role("srp_none", "post", url, {"killmail": "not a killmail"}).status_code, DENIED)
+
+    def test_payments_accept_post_from_managers_only(self):
+        url = self.srp_url("srp_payments")
+
+        self.assertEqual(self.as_role("srp_manager", "post", url).status_code, REDIRECT)
+        self.assertEqual(self.as_role("srp_member", "post", url).status_code, DENIED)
+        self.assertEqual(self.as_role("srp_stats", "post", url).status_code, DENIED)
+
+    def test_srp_routes_refuse_unsupported_methods(self):
+        self.assertEqual(self.as_role("srp_manager", "post", self.srp_url("srp_review")).status_code, NOT_ALLOWED)
+        self.assertEqual(self.as_role("srp_member", "post", self.srp_url("srp_home")).status_code, NOT_ALLOWED)
+        self.assertEqual(self.as_role("srp_manager", "get", self.srp_url("srp_check")).status_code, NOT_ALLOWED)
+
+    def test_internal_notes_are_for_managers_only(self):
+        url = self.claim_url(self.claim_fleet)
+
+        for role, sees_note in (
+            ("srp_member", False),
+            ("srp_fc", False),
+            ("srp_corp", False),
+            ("srp_stats", False),
+            ("srp_manager", True),
+            ("srp_manager2", True),
+        ):
+            with self.subTest(role=role):
+                response = self.as_role(role, "get", url)
+                self.assertContains(response, "Submitted by the pilot")
+                if sees_note:
+                    self.assertContains(response, "Looks like an alt of a spy")
+                else:
+                    self.assertNotContains(response, "Looks like an alt of a spy")
+
+    def test_claim_page_offers_decisions_by_the_self_review_rule(self):
+        expected = {
+            ("srp_manager2", "claim_fleet"): True,
+            ("srp_manager", "claim_fleet"): True,
+            ("srp_manager", "claim_manager"): False,
+            ("srp_manager2", "claim_manager"): True,
+            ("srp_stats", "claim_fleet"): False,
+            ("srp_member", "claim_fleet"): False,
+            ("srp_fc", "claim_fleet"): False,
+        }
+        for (role, name), can_decide in expected.items():
+            with self.subTest(role=role, claim=name):
+                response = self.as_role(role, "get", self.claim_url(getattr(self, name)))
+                self.assertEqual(response.context["can_decide"], can_decide)
+
+    def test_self_review_setting_lets_managers_decide_on_their_own_claims(self):
+        approve = self.claim_url(self.claim_manager, "srp_claim_action", "approve")
+        self.assertEqual(self.as_role("srp_manager", "post", approve, {"mode": "suggested"}).status_code, DENIED)
+
+        SrpSettings.objects.filter(pk=1).update(allow_self_review=True)
+
+        self.assertEqual(self.as_role("srp_manager", "post", approve, {"mode": "suggested"}).status_code, REDIRECT)
+        response = self.as_role("srp_manager", "get", self.claim_url(self.claim_manager))
+        self.assertTrue(response.context["can_decide"])
+
+    def test_only_the_claimant_sees_withdraw_and_resubmit(self):
+        claim = SrpClaim.objects.get(pk=self.claim_fleet.pk)
+        for role, can_withdraw in (("srp_member", True), ("srp_manager", False), ("srp_stats", False)):
+            with self.subTest(role=role):
+                response = self.as_role(role, "get", self.claim_url(claim))
+                self.assertEqual(response.context["can_withdraw"], can_withdraw)
+                self.assertFalse(response.context["can_resubmit"])
+        SrpClaim.objects.filter(pk=claim.pk).update(status="withdrawn")
+        response = self.as_role("srp_member", "get", self.claim_url(claim))
+        self.assertTrue(response.context["can_resubmit"])
+        self.assertFalse(response.context["can_withdraw"])
+
+    def test_menu_follows_the_permissions(self):
+        links = {name: self.srp_url(name) for name in ("srp_home", "srp_review", "srp_payments", "srp_summary")}
+        links["corporation"] = self.srp_url("srp_summary_own_corporation")
+        links["fleets"] = self.srp_url("srp_summary_own_fc")
+        expected = {
+            "srp_none": set(),
+            "srp_member": {"srp_home"},
+            "srp_corp": {"srp_home", "corporation"},
+            "srp_fc": {"srp_home", "fleets"},
+            "srp_stats": {"srp_summary"},
+            "srp_manager": {"srp_home", "srp_review", "srp_payments", "srp_summary"},
+        }
+        for role, shown in expected.items():
+            with self.subTest(role=role):
+                html = self.as_role(role, "get", reverse("fleetops:dashboard")).content.decode()
+                for name, url in links.items():
+                    self.assertEqual(f'href="{url}"' in html, name in shown, name)
+
+    def test_menu_offers_my_fleets_to_every_fc_permission_holder_who_led_a_fleet(self):
+        for name, perm in (("fleetsmanage", "fleetops.manage_fleets"), ("fleetsmanual", "fleetops.create_manual_fleet")):
+            with self.subTest(permission=perm):
+                lead = f.create_user(name, perms=["fleetops.basic_access", perm])
+                f.fleet_link(f.create_operation(lead, status=CLOSED, type_obj=self.stratop))
+
+                html = self.client_for(lead).get(reverse("fleetops:dashboard")).content.decode()
+
+                self.assertIn(f'href="{self.srp_url("srp_summary_own_fc")}"', html)
+                self.assertNotIn(f'href="{self.srp_url("srp_home")}"', html)
+
+    def test_menu_counts_the_claims_a_manager_can_decide(self):
+        for role, count in (("srp_manager", 3), ("srp_manager2", 4)):
+            with self.subTest(role=role):
+                html = self.as_role(role, "get", reverse("fleetops:dashboard")).content.decode()
+                self.assertIn(f'<span class="badge bg-danger">{count}</span>', html)
+        html = self.as_role("srp_member", "get", reverse("fleetops:dashboard")).content.decode()
+        self.assertNotIn("badge bg-danger", html)
+
+    def test_menu_hides_my_srp_while_srp_is_off(self):
+        SrpSettings.objects.filter(pk=1).update(enabled=False)
+
+        member = self.as_role("srp_member", "get", reverse("fleetops:dashboard")).content.decode()
+        manager = self.as_role("srp_manager", "get", reverse("fleetops:dashboard")).content.decode()
+
+        self.assertNotIn(f'href="{self.srp_url("srp_home")}"', member)
+        self.assertIn(f'href="{self.srp_url("srp_review")}"', manager)
+        self.assertNotIn(f'href="{self.srp_url("srp_home")}"', manager)
 
 
 class StatisticsRouteTests(FleetOpsViewTestCase):

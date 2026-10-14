@@ -1,0 +1,68 @@
+{% extends "fleetops/base.html" %}
+{% load static fleetops_srp fleetops_messages %}
+{% block fleetops_content %}
+<div class="mb-3">
+  <h2 class="mb-1">My SRP</h2>
+  <div class="text-muted">Ship replacement for your losses{% if srp_enabled %} &middot; {{ month_ref.label }} (EVE time){% endif %}</div>
+</div>
+{% if not srp_enabled %}
+<div class="alert alert-info">FleetOps SRP is not enabled.</div>
+{% else %}
+{% include "fleetops/month_selector.html" %}
+{% if srp_settings.member_instructions %}<div class="alert alert-secondary">{{ srp_settings.member_instructions|linebreaksbr }}</div>{% endif %}
+
+<div class="row g-3 mb-3">
+  <div class="col-sm-6 col-xl"><div class="stat-card"><span>Claims</span><strong>{{ totals.claims }}</strong><small class="text-muted">{{ totals.pending }} waiting for a decision</small></div></div>
+  <div class="col-sm-6 col-xl"><div class="stat-card"><span>Requested</span><strong>{{ totals.requested|isk_short|default:"0 ISK" }}</strong><small class="text-muted">Suggested amounts of your claims</small></div></div>
+  <div class="col-sm-6 col-xl"><div class="stat-card"><span>Approved</span><strong>{{ totals.approved|isk_short|default:"0 ISK" }}</strong><small class="text-muted">{{ totals.approved_count }} claim{{ totals.approved_count|pluralize }}</small></div></div>
+  <div class="col-sm-6 col-xl"><div class="stat-card"><span>Paid</span><strong>{{ totals.paid|isk_short|default:"0 ISK" }}</strong><small class="text-muted">{{ totals.paid_count }} claim{{ totals.paid_count|pluralize }}</small></div></div>
+  <div class="col-sm-6 col-xl"><div class="stat-card"><span>Still to be paid</span><strong>{{ totals.outstanding|isk_short|default:"0 ISK" }}</strong><small class="text-muted">Approved, not paid yet</small></div></div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header"><strong>Your monthly allowance</strong></div>
+  <div class="card-body p-0">{% include "fleetops/srp/_limits.html" %}</div>
+  <div class="card-footer small text-muted">A loss counts in the EVE month (UTC) it happened in, whenever it is submitted or approved.</div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header"><strong>Recent fleets with SRP</strong></div>
+      <div class="list-group list-group-flush">
+        {% for link in recent_links %}
+        <div class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <div>{{ link.operation.fleet_type }} <span class="text-muted">&middot; FC {{ link.fc_main_character_name|default:link.operation.fc_character_name }}</span><div class="small text-muted">{{ link.operation.started_at|eve_time }} EVE</div></div>
+          <a class="btn btn-sm btn-primary" href="{% url 'fleetops:srp_link' link.code %}">Request SRP</a>
+        </div>
+        {% empty %}
+        <div class="list-group-item text-muted">No fleet of yours has an open SRP link. Use the SRP link the FC posted, or the form for a loss outside a fleet.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    {% if srp_settings.out_of_fleet_enabled %}
+    <div class="card h-100">
+      <div class="card-header"><strong>Out-of-fleet loss</strong></div>
+      <div class="card-body">
+        <form method="post" action="{% url 'fleetops:srp_check' %}" class="fleetops-srp-form" data-srp-once>
+          {% csrf_token %}
+          {{ claim_form.as_div }}
+          <button type="submit" class="btn btn-primary mt-2">Check loss</button>
+        </form>
+      </div>
+    </div>
+    {% else %}
+    <div class="card h-100"><div class="card-body text-muted">Only losses in FleetOps fleets are covered. Use the SRP link of the fleet.</div></div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header"><strong>My claims</strong> <span class="text-muted">&middot; losses of {{ month_ref.label }}</span></div>
+  <div class="card-body p-0">{% include "fleetops/srp/_claims_table.html" with mine=True %}</div>
+</div>
+<script src="{% static 'fleetops/srp.js' %}?v={{ fleetops_version }}" defer></script>
+{% endif %}
+{% endblock %}

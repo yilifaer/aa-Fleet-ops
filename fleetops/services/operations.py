@@ -50,6 +50,8 @@ NOT_OWNED_MESSAGE = "Selected character is not owned by the current Alliance Aut
 NO_PING_CHANNEL = "No Discord channel selected; the ping is available to copy."
 PING_NOT_REQUESTED = "Form-up ping not requested."
 EMPTY_PING = "Not sent because the ping text is empty."
+# What the SRP step stores on the fleet record.
+SRP_FIELDS = ["srp_provider", "srp_reference", "srp_url", "srp_error", "updated_at"]
 
 
 def _record_attempt(obj):
@@ -443,11 +445,40 @@ def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None
     return operation
 
 
-def run_start_steps(operation, *, user, character_id, full_mode, send_ping=True) -> None:
-    """Messages, ping, MOTD, tracking and SRP of a fleet whose record is Starting; then Active.
+def create_srp_at_start(operation) -> None:
+    """The SRP step of a start: create the fleet's SRP link and keep it on the record.
 
-    Every step is best effort: failures are recorded and the fleet still becomes active.
+    Best effort like every start step: a failure is recorded as the ``srp_link`` step and never stops the
+    start. The link is stored on ``operation`` (and saved) at once, so the messages that follow can use
+    ``{{ srp_url }}``. A fleet that has its link already keeps it.
     """
+    try:
+        settings_obj = FleetOpsSettings.get_solo()
+        if settings_obj.srp_auto_create:
+            with transaction.atomic():
+                srp = create_srp_link(operation, settings_obj.srp_provider)
+            _apply_srp_result(operation, srp)
+            set_action(operation, "srp_link", True if srp.created else None, srp.message)
+        else:
+            set_action(operation, "srp_link", None, "Automatic SRP link creation is disabled.")
+    except Exception as exc:
+        operation.srp_error = report_failure(logger, "SRP creation", exc, operation)[:4000]
+        set_action(operation, "srp_link", False, operation.srp_error)
+    operation.save(update_fields=SRP_FIELDS)
+
+
+def run_start_steps(operation, *, user, character_id, full_mode, send_ping=True) -> None:
+    """SRP, messages, ping, MOTD and tracking of a fleet whose record is Starting; then Active.
+
+    The SRP link comes first, so the ping and the MOTD can carry ``{{ srp_url }}``; creating it only writes
+    to the FleetOps database or the SRP app, nothing that waits for a network. Every step is best effort:
+    failures are recorded and the fleet still becomes active.
+    """
+    if not full_mode:
+        set_action(operation, "srp_link", None, _skipped_message(operation, "SRP creation"))
+    else:
+        create_srp_at_start(operation)
+
     messages_ready = False
     try:
         with transaction.atomic():
@@ -484,32 +515,15 @@ def run_start_steps(operation, *, user, character_id, full_mode, send_ping=True)
         operation.last_error = report_failure(logger, "Fleet tracking", exc, operation)[:4000]
         set_action(operation, "tracking_start", False, operation.last_error)
 
-    if not full_mode:
-        set_action(operation, "srp_link", None, _skipped_message(operation, "SRP creation"))
-    else:
-        try:
-            settings_obj = FleetOpsSettings.get_solo()
-            if settings_obj.srp_auto_create:
-                with transaction.atomic():
-                    srp = create_srp_link(operation, settings_obj.srp_provider)
-                _apply_srp_result(operation, srp)
-                set_action(operation, "srp_link", True if srp.created else None, srp.message)
-            else:
-                set_action(operation, "srp_link", None, "Automatic SRP link creation is disabled.")
-        except Exception as exc:
-            operation.srp_error = report_failure(logger, "SRP creation", exc, operation)[:4000]
-            set_action(operation, "srp_link", False, operation.srp_error)
-
-    srp_fields = ["srp_provider", "srp_reference", "srp_url", "srp_error", "updated_at"]
     with transaction.atomic():
         # A start that stalled for STARTING_ABANDONED_AFTER may have been cancelled meanwhile, or a
         # new boss took the fleet over; it must not come back as a second active record.
         current = FleetOperation.objects.select_for_update().only("status").get(pk=operation.pk)
         if current.status == FleetOperation.Status.STARTING:
             operation.status = FleetOperation.Status.ACTIVE
-            operation.save(update_fields=["status", "last_error", *srp_fields])
+            operation.save(update_fields=["status", "last_error", *SRP_FIELDS])
         else:
-            operation.save(update_fields=srp_fields)
+            operation.save(update_fields=SRP_FIELDS)
             operation.refresh_from_db()
 
 

@@ -1,0 +1,50 @@
+{% extends "fleetops/base.html" %}
+{% load fleetops_srp fleetops_stats %}
+{% block fleetops_content %}
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+  <div>
+    <h2 class="mb-1">{% if tab == "alliance" %}SRP Summary{% elif tab == "corporation" %}SRP Summary &middot; {{ corporation_name|default:corporation_id }}{% else %}SRP Summary &middot; Fleets of {{ fc_name }}{% endif %}</h2>
+    <div class="text-muted">Claims count in the EVE month of the loss &middot; {{ month_ref.label }} (EVE time){% if tab == "alliance" %} &middot; read only{% endif %}</div>
+  </div>
+</div>
+
+<ul class="nav nav-tabs mb-3 fleetops-srp-tabs">
+  {% if summary_access.alliance %}<li class="nav-item"><a class="nav-link{% if tab == 'alliance' %} active{% endif %}"{% if tab == 'alliance' %} aria-current="page"{% endif %} href="{% url 'fleetops:srp_summary' %}?year={{ year }}&amp;month={{ month }}">Alliance</a></li>{% endif %}
+  {% if summary_access.own_corporation %}<li class="nav-item"><a class="nav-link{% if tab == 'corporation' and own_corporation %} active{% endif %}"{% if tab == 'corporation' and own_corporation %} aria-current="page"{% endif %} href="{% url 'fleetops:srp_summary_own_corporation' %}?year={{ year }}&amp;month={{ month }}">My corporation</a></li>{% endif %}
+  {% if summary_access.own_fc %}<li class="nav-item"><a class="nav-link{% if tab == 'fc' and own_fc %} active{% endif %}"{% if tab == 'fc' and own_fc %} aria-current="page"{% endif %} href="{% url 'fleetops:srp_summary_own_fc' %}?year={{ year }}&amp;month={{ month }}">My fleets</a></li>{% endif %}
+  {% if tab == 'corporation' and not own_corporation %}<li class="nav-item"><span class="nav-link active" aria-current="page">{{ corporation_name|default:corporation_id }}</span></li>{% endif %}
+  {% if tab == 'fc' and not own_fc %}<li class="nav-item"><span class="nav-link active" aria-current="page">{{ fc_name }}</span></li>{% endif %}
+</ul>
+
+{% include "fleetops/month_selector.html" %}
+
+{% if tab == "alliance" %}
+  {% include "fleetops/srp/_summary_table.html" with kind="totals" totals=summary.totals %}
+  <div class="row g-3">
+    <div class="col-lg-7">{% include "fleetops/srp/_summary_table.html" with kind="split" %}</div>
+    <div class="col-lg-5">{% include "fleetops/srp/_summary_table.html" with kind="status" %}</div>
+  </div>
+  {% include "fleetops/srp/_summary_table.html" with kind="corporations" %}
+  {% include "fleetops/srp/_summary_table.html" with kind="fcs" %}
+  {% include "fleetops/srp/_summary_table.html" with kind="ships" %}
+  <div class="d-flex flex-wrap gap-2 mb-3">
+    <div class="btn-group btn-group-sm fleetops-export" role="group" aria-label="Export claims"><a class="btn btn-outline-secondary" href="{% export_url 'srp-claims' 'xlsx' %}">All claims (Excel)</a><a class="btn btn-outline-secondary" href="{% export_url 'srp-claims' 'csv' %}">All claims (CSV)</a></div>
+    <div class="btn-group btn-group-sm fleetops-export" role="group" aria-label="Export members"><a class="btn btn-outline-secondary" href="{% export_url 'srp-members' 'xlsx' %}">All members (Excel)</a><a class="btn btn-outline-secondary" href="{% export_url 'srp-members' 'csv' %}">All members (CSV)</a></div>
+  </div>
+
+{% elif tab == "corporation" %}
+  {% include "fleetops/srp/_summary_table.html" with kind="totals" totals=corporation.totals %}
+  <div class="card mb-3"><div class="card-body d-flex flex-wrap gap-4">
+    <div><div class="text-muted small">Monthly cap</div><strong>{% if corporation.cap is None %}No limit{% else %}{{ corporation.cap|isk }}{% endif %}</strong></div>
+    <div><div class="text-muted small">Used (approved and paid)</div><strong>{{ corporation.used|isk }}</strong></div>
+    <div><div class="text-muted small">Remaining</div><strong>{% if corporation.remaining is None %}-{% else %}{{ corporation.remaining|isk }}{% endif %}</strong></div>
+  </div></div>
+  {% include "fleetops/srp/_summary_table.html" with kind="members" %}
+  {% include "fleetops/srp/_summary_table.html" with kind="claims" %}
+
+{% else %}
+  {% include "fleetops/srp/_summary_table.html" with kind="totals" %}
+  {% include "fleetops/srp/_summary_table.html" with kind="fleets" %}
+  {% include "fleetops/srp/_summary_table.html" with kind="claims" %}
+{% endif %}
+{% endblock %}

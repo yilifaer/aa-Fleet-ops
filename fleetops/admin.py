@@ -33,6 +33,13 @@ from fleetops.models import (
     ShipFunction,
     ShipFunctionRule,
     SpecialRole,
+    SrpClaim,
+    SrpClaimEvent,
+    SrpCorporationLimit,
+    SrpFleetLink,
+    SrpKillmail,
+    SrpPayoutRule,
+    SrpSettings,
     StatisticsTarget,
 )
 from fleetops.services.audit import audit, cascaded_config_rows
@@ -315,6 +322,73 @@ class PapRegistrationAdmin(admin.ModelAdmin):
 class FleetStartPresetAdmin(admin.ModelAdmin):
     list_display = ("name", "owner", "is_default", "is_last_used", "updated_at")
     list_filter = ("is_default", "is_last_used")
+
+
+@admin.register(SrpSettings)
+class SrpSettingsAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
+    list_display = ("__str__", "enabled", "value_source", "percentage", "over_limit_action", "updated_at")
+
+    def has_add_permission(self, request):
+        return not SrpSettings.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(SrpPayoutRule)
+class SrpPayoutRuleAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
+    list_display = ("__str__", "scope", "amount", "is_active", "updated_at")
+    list_filter = ("scope", "is_active")
+    search_fields = ("ship_type_name", "doctrine_name", "label")
+
+
+@admin.register(SrpCorporationLimit)
+class SrpCorporationLimitAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
+    list_display = ("corporation_name", "corporation_id", "monthly_cap", "note")
+    search_fields = ("corporation_name", "corporation_id")
+
+
+class SrpReadOnlyAdmin(ReadOnlyAdmin):
+    """SRP records change only through the audited SRP actions, never in the admin."""
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(SrpFleetLink)
+class SrpFleetLinkAdmin(SrpReadOnlyAdmin):
+    list_display = ("operation", "fc_main_character_name", "is_open", "created_at")
+    list_filter = ("is_open",)
+    search_fields = ("fc_main_character_name",)
+
+
+@admin.register(SrpKillmail)
+class SrpKillmailAdmin(SrpReadOnlyAdmin):
+    list_display = ("killmail_id", "ship_type_name", "killmail_time", "zkill_status", "fetched_at")
+    list_filter = ("zkill_status",)
+    search_fields = ("killmail_id", "ship_type_name")
+
+
+@admin.register(SrpClaim)
+class SrpClaimAdmin(SrpReadOnlyAdmin):
+    list_display = (
+        "pk",
+        "character_name",
+        "main_character_name",
+        "ship_type_name",
+        "scope",
+        "status",
+        "approved_amount",
+        "killmail_time",
+    )
+    list_filter = ("status", "scope", "over_limit")
+    search_fields = ("character_name", "main_character_name", "corporation_name", "killmail__killmail_id")
+
+
+@admin.register(SrpClaimEvent)
+class SrpClaimEventAdmin(SrpReadOnlyAdmin):
+    list_display = ("claim", "action", "actor", "amount", "created_at")
+    list_filter = ("action", "internal")
 
 
 admin.site.register(OperationAction)

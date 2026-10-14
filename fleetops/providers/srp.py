@@ -1,7 +1,8 @@
 """SRP provider abstraction.
 
 FleetOps deliberately keeps SRP integration behind a tiny provider interface so any
-community SRP app can register without changing FleetOperation core logic.
+community SRP app can register without changing FleetOperation core logic. FleetOps' own SRP is the
+first provider the automatic mode tries (when it is enabled); aa-srp and Alliance Auth's SRP follow.
 """
 from __future__ import annotations
 
@@ -15,11 +16,14 @@ from django.utils import timezone
 
 from allianceauth.eveonline.models import EveCharacter
 
+from fleetops.models import SrpSettings
 from fleetops.services import links
 from fleetops.services.periods import format_eve
+from fleetops.srp.links import ensure_fleet_link, link_path
 
-# "auto" tries these first, then any other registered provider that is available.
-AUTO_PROVIDER_ORDER = ("aasrp", "allianceauth_builtin")
+# "auto" tries these first, then any other registered provider that is available. FleetOps SRP is only
+# available while it is enabled in the SRP settings.
+AUTO_PROVIDER_ORDER = ("fleetops", "aasrp", "allianceauth_builtin")
 # Keys stored by earlier versions.
 PROVIDER_ALIASES = {"aa_srp": "aasrp"}
 
@@ -265,6 +269,36 @@ class AaSrpProvider:
         return self._result(link, "aa-srp link created.")
 
 
+class FleetOpsSRPProvider:
+    """FleetOps' own SRP: the fleet gets a link its members open to claim their losses.
+
+    Available while FleetOps SRP is enabled. The link lives in the FleetOps database, so creating it
+    is quick and never fails on a missing app; it is idempotent (one link per fleet).
+    """
+
+    key = "fleetops"
+    label = "FleetOps SRP"
+    # What the settings page says about the provider instead of "installed" / "not installed".
+    state_labels = ("enabled", "not enabled")
+    unavailable_message = "FleetOps SRP is not enabled."
+
+    def available(self) -> bool:
+        return bool(SrpSettings.get_solo().enabled)
+
+    def create_for_operation(self, operation) -> SRPLinkResult:
+        if not self.available():
+            return SRPLinkResult(self.key, message=self.unavailable_message)
+        link, created = ensure_fleet_link(operation)
+        return SRPLinkResult(
+            provider=self.key,
+            reference=link.code,
+            url=link_path(link),
+            created=True,
+            message="FleetOps SRP link created." if created else "FleetOps SRP link already exists.",
+        )
+
+
+register_srp_provider(FleetOpsSRPProvider())
 register_srp_provider(AllianceAuthBuiltinSRPProvider())
 register_srp_provider(AaSrpProvider())
 
@@ -295,5 +329,7 @@ def create_srp_link(operation, provider_key: str = "auto") -> SRPLinkResult:
         key = (provider_key or "auto").strip() or "auto"
         if key == "auto":
             return SRPLinkResult(key, message="No supported SRP provider is available.")
-        return SRPLinkResult(key, message=f"SRP provider '{key}' is not installed.")
+        # A provider that is registered but switched off says so (FleetOps SRP while it is not enabled).
+        message = getattr(_PROVIDERS.get(_provider_key(key)), "unavailable_message", "")
+        return SRPLinkResult(key, message=message or f"SRP provider '{key}' is not installed.")
     return provider.create_for_operation(operation)

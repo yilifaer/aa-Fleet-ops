@@ -12,6 +12,7 @@ import tempfile
 import uuid
 from contextlib import contextmanager
 from datetime import timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest import mock
 
@@ -31,7 +32,7 @@ from esi.openapi_clients import ESIClientProvider
 
 from fleetops.constants import CLICK_SCOPES, FLEET_READ_SCOPE, FLEET_WRITE_SCOPE
 from fleetops.models import AttendanceRecord, FleetMemberEvent, FleetMemberState, FleetOperation, OperationAction
-from fleetops.providers import esi as esi_provider
+from fleetops.providers import esi as esi_provider, esi_killmails
 from fleetops.providers.esi import (
     FleetESIError,
     character_affiliations,
@@ -47,6 +48,7 @@ from fleetops.providers.esi import (
     universe_ids,
 )
 from fleetops.services.operations import end_fleet, retry_motd, start_fleet
+from fleetops.srp.killmails import killmail_fields
 from fleetops.tasks import POLL_SLACK_SECONDS, schedule_active_fleet_tracking, track_operation
 
 from . import factories as f
@@ -639,6 +641,25 @@ def _fleet_spec():
             "x-compatibility-date": "2020-01-01",
         }
 
+    def public_read(operation_id, tag, path_params, schema):
+        # Public reads without a token (killmails and market prices).
+        return {
+            "operationId": operation_id,
+            "tags": [tag],
+            "parameters": [
+                {"name": name, "in": "path", "required": True, "schema": schema_type}
+                for name, schema_type in path_params
+            ],
+            "responses": {
+                "200": {
+                    "description": "OK",
+                    "content": {"application/json": {"schema": {"$ref": f"#/components/schemas/{schema}"}}},
+                },
+                "default": error,
+            },
+            "x-compatibility-date": "2020-01-01",
+        }
+
     def location(operation_id, scope, schema):
         spec = operation(operation_id, scope, ["character_id"], "200", schema, tag="Location")
         spec["x-rate-limit"] = {"group": "char-location", "max-tokens": 1200, "window-size": "15m"}
@@ -659,7 +680,14 @@ def _fleet_spec():
         "openapi": "3.1.0",
         "info": {"title": "EVE Stable Infrastructure (ESI) - tranquility", "version": "2025-11-06"},
         "servers": [{"url": "https://esi.evetech.net"}],
-        "tags": [{"name": "Fleets"}, {"name": "Universe"}, {"name": "Character"}, {"name": "Location"}],
+        "tags": [
+            {"name": "Fleets"},
+            {"name": "Universe"},
+            {"name": "Character"},
+            {"name": "Location"},
+            {"name": "Killmails"},
+            {"name": "Market"},
+        ],
         "paths": {
             "/characters/{character_id}/fleet": {
                 "get": operation("GetCharactersCharacterIdFleet", FLEET_READ_SCOPE, ["character_id"], "200", "CharacterFleet"),
@@ -717,6 +745,15 @@ def _fleet_spec():
             "/characters/affiliation": {
                 "post": lookup("PostCharactersAffiliation", "Character", "CharactersAffiliationPost"),
             },
+            "/killmails/{killmail_id}/{killmail_hash}": {
+                "get": public_read(
+                    "GetKillmailsKillmailIdKillmailHash",
+                    "Killmails",
+                    [("killmail_id", integer), ("killmail_hash", {"type": "string"})],
+                    "Killmail",
+                ),
+            },
+            "/markets/prices": {"get": public_read("GetMarketsPrices", "Market", [], "MarketPrices")},
         },
         "components": {
             "schemas": {
@@ -794,6 +831,86 @@ def _fleet_spec():
                             "faction_id": integer,
                         },
                         "required": ["character_id", "corporation_id"],
+                    },
+                },
+                "Killmail": {
+                    "type": "object",
+                    "properties": {
+                        "killmail_id": integer,
+                        "killmail_time": {"type": "string", "format": "date-time"},
+                        "solar_system_id": integer,
+                        "moon_id": integer,
+                        "war_id": integer,
+                        "attackers": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "alliance_id": integer,
+                                    "character_id": integer,
+                                    "corporation_id": integer,
+                                    "damage_done": integer,
+                                    "final_blow": {"type": "boolean"},
+                                    "security_status": {"type": "number"},
+                                    "ship_type_id": integer,
+                                    "weapon_type_id": integer,
+                                },
+                                "required": ["damage_done", "final_blow", "security_status"],
+                            },
+                        },
+                        "victim": {
+                            "type": "object",
+                            "properties": {
+                                "alliance_id": integer,
+                                "character_id": integer,
+                                "corporation_id": integer,
+                                "damage_taken": integer,
+                                "ship_type_id": integer,
+                                "position": {
+                                    "type": "object",
+                                    "properties": {"x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}},
+                                    "required": ["x", "y", "z"],
+                                },
+                                "items": {"type": "array", "items": {"$ref": "#/components/schemas/KillmailItem"}},
+                            },
+                            "required": ["damage_taken", "ship_type_id"],
+                        },
+                    },
+                    "required": ["attackers", "killmail_id", "killmail_time", "solar_system_id", "victim"],
+                },
+                "KillmailItem": {
+                    "type": "object",
+                    "properties": {
+                        "flag": integer,
+                        "item_type_id": integer,
+                        "quantity_destroyed": integer,
+                        "quantity_dropped": integer,
+                        "singleton": integer,
+                        "items": {"type": "array", "items": {"$ref": "#/components/schemas/KillmailChildItem"}},
+                    },
+                    "required": ["flag", "item_type_id", "singleton"],
+                },
+                "KillmailChildItem": {
+                    "type": "object",
+                    "properties": {
+                        "flag": integer,
+                        "item_type_id": integer,
+                        "quantity_destroyed": integer,
+                        "quantity_dropped": integer,
+                        "singleton": integer,
+                    },
+                    "required": ["flag", "item_type_id", "singleton"],
+                },
+                "MarketPrices": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "adjusted_price": {"type": "number"},
+                            "average_price": {"type": "number"},
+                            "type_id": integer,
+                        },
+                        "required": ["type_id"],
                     },
                 },
                 "FleetMembers": {
@@ -881,7 +998,12 @@ class DjangoEsiOperationTests(TestCase):
             ua_appname="aa-fleetops-tests",
             ua_version="0.0.0",
             spec_file=spec_file,
-            operations=[*FakeFleetsAPI.OPERATIONS, *POST_OPERATIONS, *LOCATION_OPERATIONS],
+            operations=[
+                *FakeFleetsAPI.OPERATIONS,
+                *POST_OPERATIONS,
+                *LOCATION_OPERATIONS,
+                *esi_killmails.KILLMAIL_OPERATIONS,
+            ],
         )
 
     @classmethod
@@ -1326,3 +1448,186 @@ class DjangoEsiOperationTests(TestCase):
 
         self.assertEqual(ctx.exception.code, "ONLINE_ERROR")
         self.assertEqual(self.server.requests, [])
+
+    # -- Killmails and market prices of SRP ----------------------------------------------------
+
+    KILLMAIL_ID = 131_234_567
+    KILLMAIL_HASH = "0123456789abcdef0123456789abcdef01234567"
+
+    def killmail_body(self, **overrides):
+        body = {
+            "killmail_id": self.KILLMAIL_ID,
+            "killmail_time": "2026-10-01T19:30:00Z",
+            "solar_system_id": 30_002_187,
+            "attackers": [
+                {
+                    "character_id": 95_000_001,
+                    "corporation_id": 98_000_001,
+                    "damage_done": 2_345,
+                    "final_blow": True,
+                    "security_status": -1.5,
+                    "ship_type_id": 17_738,
+                },
+                {"damage_done": 10, "final_blow": False, "security_status": 0, "corporation_id": 1_000_125},
+            ],
+            "victim": {
+                "character_id": 95_000_100,
+                "corporation_id": 98_000_100,
+                "alliance_id": 99_000_100,
+                "damage_taken": 2_355,
+                "ship_type_id": 587,
+                "position": {"x": 1.0, "y": 2.0, "z": 3.0},
+                "items": [
+                    {"flag": 27, "item_type_id": 2_873, "quantity_destroyed": 1, "singleton": 0},
+                    {"flag": 5, "item_type_id": 34, "quantity_dropped": 1000, "singleton": 0},
+                    {
+                        "flag": 5,
+                        "item_type_id": 33_474,
+                        "quantity_dropped": 1,
+                        "singleton": 1,
+                        "items": [{"flag": 5, "item_type_id": 34, "quantity_destroyed": 5, "singleton": 0}],
+                    },
+                ],
+            },
+        }
+        body.update(overrides)
+        return body
+
+    @property
+    def killmail_route(self):
+        return ("GET", f"/killmails/{self.KILLMAIL_ID}/{self.KILLMAIL_HASH}")
+
+    def test_the_killmail_operations_are_part_of_the_client(self):
+        operations = getattr(esi_provider.esi, "_operations", None)
+        if operations is None:
+            self.skipTest("django-esi no longer keeps the operation list of the provider")
+
+        self.assertLessEqual(set(esi_killmails.KILLMAIL_OPERATIONS), set(operations))
+        self.assertEqual(esi_killmails.KILLMAIL_OPERATIONS, esi_provider.KILLMAIL_OPERATIONS)
+
+    def test_a_killmail_is_read_as_plain_data_without_a_token(self):
+        self.server.routes[self.killmail_route] = (200, self.killmail_body())
+
+        payload = esi_killmails.get_killmail(self.KILLMAIL_ID, self.KILLMAIL_HASH)
+
+        self.assertEqual(self.server.requests, [("GET", self.killmail_route[1], None, None)])
+        self.assertIsInstance(payload, dict)
+        self.assertEqual(payload["victim"]["items"][2]["items"][0]["item_type_id"], 34)
+        fields = killmail_fields(payload)
+        self.assertEqual(
+            (fields["killmail_id"], fields["victim_character_id"], fields["ship_type_id"], fields["attacker_count"]),
+            (self.KILLMAIL_ID, 95_000_100, 587, 2),
+        )
+        self.assertEqual(fields["killmail_time"].isoformat(), "2026-10-01T19:30:00+00:00")
+        self.assertEqual(len(fields["items"]), 3)
+        self.assertEqual(fields["items"][2]["items"][0]["quantity_destroyed"], 5)
+
+    def test_a_structure_killmail_has_no_victim_character(self):
+        body = self.killmail_body()
+        for key in ("character_id", "corporation_id", "alliance_id"):
+            del body["victim"][key]
+        self.server.routes[self.killmail_route] = (200, body)
+
+        fields = killmail_fields(esi_killmails.get_killmail(self.KILLMAIL_ID, self.KILLMAIL_HASH))
+
+        self.assertIsNone(fields["victim_character_id"])
+
+    def test_a_killmail_is_returned_on_every_read(self):
+        self.server.routes[self.killmail_route] = (200, self.killmail_body())
+
+        for _ in range(2):
+            self.assertEqual(
+                esi_killmails.get_killmail(self.KILLMAIL_ID, self.KILLMAIL_HASH)["killmail_id"], self.KILLMAIL_ID
+            )
+
+        self.assertEqual({request[2] for request in self.server.requests}, {None})
+
+    def test_an_unknown_killmail_or_a_wrong_hash(self):
+        for status in (404, 422):
+            with self.subTest(status=status):
+                cache.clear()
+                self.server.routes[self.killmail_route] = (status, {"error": "Not found or hash does not match"})
+
+                with self.assertRaises(FleetESIError) as ctx:
+                    esi_killmails.get_killmail(self.KILLMAIL_ID, self.KILLMAIL_HASH)
+
+                self.assertEqual(ctx.exception.code, "KILLMAIL_NOT_FOUND")
+                self.assertEqual(str(ctx.exception), "Killmail not found. Check the link or the hash.")
+                self.assertEqual(ctx.exception.status_code, status)
+
+    def test_killmail_errors_have_short_texts_without_headers(self):
+        self.server.error_headers = {"X-ESI-Request-ID": "esi-request-9", "X-Private-Header": "header-secret-value"}
+        cases = (
+            (403, {"error": "Forbidden"}, "Could not read the killmail: ESI returned HTTP 403."),
+            (500, {"error": "Internal error occurred"}, "Could not read the killmail: ESI returned HTTP 500."),
+        )
+        for status, body, text in cases:
+            with self.subTest(status=status):
+                cache.clear()
+                self.server.routes[self.killmail_route] = (status, body)
+
+                # One attempt: django-esi would otherwise wait between its retries of a 500.
+                with mock.patch("esi.app_settings.ESI_SERVER_ERROR_MAX_RETRIES", 1), self.assertLogs(
+                    esi_killmails.logger, "WARNING"
+                ) as logs, self.assertRaises(FleetESIError) as ctx:
+                    esi_killmails.get_killmail(self.KILLMAIL_ID, self.KILLMAIL_HASH)
+
+                self.assertEqual((ctx.exception.code, str(ctx.exception)), ("ESI_ERROR", text))
+                log = "\n".join(logs.output)
+                self.assertIn(f"HTTP status {status}", log)
+                for value in (str(ctx.exception), log):
+                    self.assertNotIn("header-secret-value", value)
+
+    def test_the_error_limit_is_described_without_headers(self):
+        self.server.error_headers = {"X-ESI-Request-ID": "esi-request-420", "X-RateLimit-Reset": "33"}
+        self.server.routes[self.killmail_route] = (420, {"error": "This software has exceeded the error limit for ESI."})
+
+        with self.assertLogs(esi_killmails.logger, "WARNING"), self.assertRaises(FleetESIError) as ctx:
+            esi_killmails.get_killmail(self.KILLMAIL_ID, self.KILLMAIL_HASH)
+
+        self.assertEqual(
+            str(ctx.exception), "Could not read the killmail: ESI error limit reached; try again in a minute."
+        )
+        self.assertNotIn("esi-request-420", str(ctx.exception))
+
+    def test_market_prices_prefer_the_average_and_fall_back_to_the_adjusted_price(self):
+        self.server.routes[("GET", "/markets/prices")] = (
+            200,
+            [
+                {"type_id": 587, "average_price": 450_000.5, "adjusted_price": 400_000.0},
+                {"type_id": 2_873, "adjusted_price": 12_000.0},
+                {"type_id": 34, "average_price": 5.25},
+                {"type_id": 99},
+            ],
+        )
+
+        prices = esi_killmails.get_market_prices()
+
+        self.assertEqual(prices, {587: Decimal("450000.5"), 2_873: Decimal("12000.0"), 34: Decimal("5.25")})
+        self.assertEqual(self.server.requests, [("GET", "/markets/prices", None, None)])
+
+    def test_market_prices_are_cached_by_django_esi_until_esi_says_otherwise(self):
+        self.server.cache_seconds = 300
+        self.server.routes[("GET", "/markets/prices")] = (200, [{"type_id": 587, "average_price": 450_000.5}])
+
+        first = esi_killmails.get_market_prices()
+        second = esi_killmails.get_market_prices()
+
+        self.assertEqual(first, second)
+        self.assertEqual(len(self.server.requests), 1)
+
+    def test_market_prices_are_returned_on_every_read_when_nothing_is_cached(self):
+        self.server.routes[("GET", "/markets/prices")] = (200, [{"type_id": 587, "average_price": 450_000.5}])
+
+        for _ in range(2):
+            self.assertEqual(esi_killmails.get_market_prices(), {587: Decimal("450000.5")})
+
+        self.assertEqual({request[2] for request in self.server.requests}, {None})
+
+    def test_a_market_price_failure_is_a_short_error(self):
+        self.server.routes[("GET", "/markets/prices")] = (403, {"error": "Forbidden"})
+
+        with self.assertLogs(esi_killmails.logger, "WARNING"), self.assertRaises(FleetESIError) as ctx:
+            esi_killmails.get_market_prices()
+
+        self.assertEqual(str(ctx.exception), "Could not read market prices: ESI returned HTTP 403.")

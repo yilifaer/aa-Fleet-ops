@@ -30,6 +30,8 @@ from fleetops.models import (
     ShipFunction,
     ShipFunctionRule,
     SpecialRole,
+    SrpCorporationLimit,
+    SrpPayoutRule,
     StatisticsTarget,
 )
 from fleetops.providers import srp as srp_providers
@@ -67,6 +69,8 @@ FLEET_SECTION_MODELS = {
     "ship-function-rules": ShipFunctionRule,
     "structure-templates": FleetStructureTemplate,
 }
+# Sections of FleetOps SRP; tests/test_srp_config.py covers their pages.
+SRP_SECTION_MODELS = {"srp-rules": SrpPayoutRule, "srp-corporation-limits": SrpCorporationLimit}
 
 
 def create_sample_objects():
@@ -237,12 +241,20 @@ class ConfigurationAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         cards = {card["key"]: card["count"] for card in response.context["cards"]}
-        models = {**SECTION_MODELS, **PAP_SECTION_MODELS, **STATISTICS_SECTION_MODELS, **FLEET_SECTION_MODELS}
+        models = {
+            **SECTION_MODELS,
+            **PAP_SECTION_MODELS,
+            **STATISTICS_SECTION_MODELS,
+            **FLEET_SECTION_MODELS,
+            **SRP_SECTION_MODELS,
+        }
         self.assertEqual(set(cards), set(models))
         for section, model in models.items():
             self.assertEqual(cards[section], model.objects.count(), section)
             self.assertContains(response, reverse("fleetops:configuration_list", args=[section]))
         self.assertContains(response, reverse("fleetops:configuration_settings"))
+        # The SRP settings page is not a list of rows, so it has a card of its own.
+        self.assertContains(response, reverse("fleetops:configuration_list", args=["srp"]))
 
     def test_unknown_section_returns_404(self):
         user = f.create_user(perms=CONFIG_PERMS)
@@ -845,12 +857,38 @@ class SrpProviderChoiceTests(TestCase):
         self.assertEqual(
             self.choices(),
             [
-                ("auto", "Automatic (aasrp, then Alliance Auth SRP)"),
+                ("auto", "Automatic (FleetOps SRP when enabled, then aa-srp, then Alliance Auth SRP)"),
                 ("aasrp", "aasrp (installed)"),
                 ("allianceauth_builtin", "Alliance Auth SRP (not installed)"),
                 ("zz_custom", "Custom SRP (installed)"),
             ],
         )
+
+    def test_fleetops_srp_comes_first_and_shows_whether_it_is_enabled(self):
+        self.register(
+            FakeSrpProvider("aasrp", installed=True),
+            srp_providers.FleetOpsSRPProvider(),
+            FakeSrpProvider("allianceauth_builtin", installed=False),
+        )
+
+        f.srp_settings(enabled=False)
+        self.assertEqual(self.choices()[1], ("fleetops", "FleetOps SRP (not enabled)"))
+        self.assertEqual([key for key, _label in self.choices()], ["auto", "fleetops", "aasrp", "allianceauth_builtin"])
+        f.srp_settings(enabled=True)
+        self.assertEqual(self.choices()[1], ("fleetops", "FleetOps SRP (enabled)"))
+
+    def test_fleetops_srp_can_be_chosen_on_the_page_even_before_it_is_enabled(self):
+        self.register(srp_providers.FleetOpsSRPProvider(), FakeSrpProvider("aasrp"))
+        f.srp_settings(enabled=False)
+
+        page = self.client.get(reverse("fleetops:configuration_settings"))
+        response = self.client.post(reverse("fleetops:configuration_settings"), settings_payload(srp_provider="fleetops"))
+
+        self.assertContains(page, '<option value="fleetops">FleetOps SRP (not enabled)</option>', html=True)
+        self.assertRedirects(response, reverse("fleetops:configuration_index"))
+        self.assertEqual(FleetOpsSettings.get_solo().srp_provider, "fleetops")
+        entry = AuditLog.objects.get(action="configuration.update", object_type="FleetOpsSettings")
+        self.assertEqual((entry.old_value["srp_provider"], entry.new_value["srp_provider"]), ("auto", "fleetops"))
 
     def test_provider_that_fails_its_check_counts_as_not_installed(self):
         self.register(FakeSrpProvider("aasrp", installed=RuntimeError("broken")))

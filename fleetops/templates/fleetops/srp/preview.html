@@ -1,0 +1,95 @@
+{% extends "fleetops/base.html" %}
+{% load static fleetops_srp fleetops_messages %}
+{% block fleetops_content %}
+{% with km=preview.killmail identity=preview.identity calculation=preview.calculation policy=preview.policy %}
+<div class="mb-3">
+  <h2 class="mb-1">Check your claim</h2>
+  <div class="text-muted">{% if link %}Loss in {{ operation.fleet_type }} &middot; FC {{ link.fc_main_character_name|default:operation.fc_character_name }}{% else %}Loss outside a FleetOps fleet{% endif %}</div>
+</div>
+
+{% if preview.blockers %}
+<div class="alert alert-danger" role="alert">
+  <strong>This loss cannot be submitted.</strong>
+  <ul class="mb-0">{% for blocker in preview.blockers %}<li>{{ blocker }}</li>{% endfor %}</ul>
+  {% if preview.existing_claim and preview.existing_claim.user_id == user.pk %}<div class="mt-2"><a href="{% url 'fleetops:srp_claim' preview.existing_claim.uuid %}">Open your claim {{ preview.existing_claim.reference }}</a> &middot; {{ preview.existing_claim|srp_status_label }}</div>{% endif %}
+</div>
+{% endif %}
+
+{% if preview.suggested_link %}
+<div class="alert alert-info">
+  This loss happened in <strong>{{ preview.suggested_link.operation.fleet_type }}</strong> (FC {{ preview.suggested_link.fc_main_character_name|default:preview.suggested_link.operation.fc_character_name }}). Submit it as a fleet loss?
+  <form method="post" action="{% url 'fleetops:srp_link' preview.suggested_link.code %}" class="d-inline ms-2">
+    {% csrf_token %}<input type="hidden" name="killmail" value="{{ input_text }}">
+    <button type="submit" class="btn btn-sm btn-primary">Check it as a fleet loss</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header"><strong>Loss</strong></div>
+      <div class="card-body d-flex gap-3">
+        <img class="fleetops-srp-ship" src="{% ship_render_url km.ship_type_id 64 %}" width="64" height="64" alt="" loading="lazy">
+        <div>
+          <h3 class="h5 mb-1">{{ km.ship_type_name|default:km.ship_type_id }}</h3>
+          {% if identity %}<div>{{ identity.character_name }}{% if identity.main_character_name and identity.main_character_name != identity.character_name %} <span class="text-muted">(main {{ identity.main_character_name }})</span>{% endif %}</div>
+          {% if identity.corporation_name %}<div class="small text-muted">{{ identity.corporation_name }}{% if identity.alliance_name %} &middot; {{ identity.alliance_name }}{% endif %}</div>{% endif %}{% endif %}
+          <div class="small text-muted">{{ km.killmail_time|eve_time }} EVE &middot; {{ km.solar_system_name|default:"Unknown system" }}</div>
+          <div class="small"><a href="{{ km.killmail_id|zkill_url }}" target="_blank" rel="noopener noreferrer">Killmail {{ km.killmail_id }} on zKillboard</a></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% if calculation %}<div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between align-items-center"><strong>Calculation</strong><span class="fs-5 fw-semibold">{{ calculation.limited|isk }}</span></div>
+      <div class="card-body">
+        {% include "fleetops/srp/_calculation.html" %}
+        {% if calculation.suggested == 0 and calculation.basis == "none" %}<div class="small text-muted mt-2">There is no automatic amount for this loss. A reviewer decides what is paid.</div>{% endif %}
+      </div>
+    </div>
+  </div>{% endif %}
+</div>
+
+<div class="row g-3 mb-3">
+  {% if calculation %}<div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header"><strong>Your monthly allowance</strong> <span class="text-muted small">for the month of the loss</span></div>
+      <div class="card-body p-0">{% include "fleetops/srp/_limits.html" with limits=calculation.limits %}</div>
+    </div>
+  </div>{% endif %}
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header"><strong>Checks</strong></div>
+      <div class="card-body fleetops-srp-checks">
+        {% if link %}<div class="mb-2"><span class="text-muted">Fleet presence:</span> {% include "fleetops/srp/_fleet_check.html" with presence=preview.presence %}</div>{% endif %}
+        {% for warning in preview.warnings|srp_flags %}<div class="mb-2">{{ warning|srp_warning_badge }}</div>{% empty %}{% if not link %}<span class="text-muted">Nothing to warn about.</span>{% endif %}{% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if preview.eligible and not preview.blockers %}
+<div class="card mb-3">
+  <div class="card-header"><strong>Submit</strong></div>
+  <div class="card-body">
+    <form method="post" action="{% url 'fleetops:srp_submit' %}" class="fleetops-srp-form" data-srp-once>
+      {% csrf_token %}
+      {{ submit_form.token }}
+      <div class="mb-3">
+        <label class="form-label" for="{{ submit_form.comment.id_for_label }}">Comment <span class="text-muted">(optional)</span></label>
+        {{ submit_form.comment }}
+        <div class="form-text">Anything the reviewer should know.</div>
+      </div>
+      <button type="submit" class="btn btn-primary">Submit claim</button>
+      <a class="btn btn-outline-secondary" href="{% if link %}{% url 'fleetops:srp_link' link.code %}{% else %}{% url 'fleetops:srp_home' %}{% endif %}">Cancel</a>
+    </form>
+  </div>
+</div>
+{% else %}
+<a class="btn btn-outline-secondary" href="{% if link %}{% url 'fleetops:srp_link' link.code %}{% else %}{% url 'fleetops:srp_home' %}{% endif %}">Back</a>
+{% endif %}
+{% endwith %}
+<script src="{% static 'fleetops/srp.js' %}?v={{ fleetops_version }}" defer></script>
+{% endblock %}

@@ -16,10 +16,12 @@ from fleetops.constants import CLICK_SCOPES, FLEET_SCOPES
 from fleetops.models import (
     AuditLog,
     FleetOperation,
+    FleetOpsSettings,
     OperationAction,
     PapLink,
     PapRegistration,
     ReviewStatus,
+    SrpFleetLink,
 )
 from fleetops.providers import esi as esi_provider
 from fleetops.providers.doctrines import DoctrineChoice
@@ -762,6 +764,53 @@ class LinkOnlyFleetTests(PapLinkTestCase):
         self.assertEqual(entry.new_value["review_status"], ReviewStatus.PENDING)
         self.assertEqual(entry.new_value["link_minutes"], 90)
         self.assertTrue(AuditLog.objects.filter(action="pap_link.create", object_id=str(operation.pk)).exists())
+
+    def test_srp_step_is_skipped_without_a_provider(self):
+        self.start(self.fc)
+
+        operation = FleetOperation.objects.get(link_only=True)
+        step = operation.actions.get(action="srp_link")
+        self.assertEqual(step.status, OperationAction.Status.SKIPPED)
+        self.assertEqual(step.error_message, "No supported SRP provider is available.")
+        self.assertEqual(operation.srp_url, "")
+
+    def test_link_only_fleet_gets_a_fleetops_srp_link(self):
+        f.srp_settings(enabled=True)
+
+        self.start(self.fc)
+
+        operation = FleetOperation.objects.get(link_only=True)
+        link = operation.srp_link
+        self.assertEqual((operation.srp_provider, operation.srp_reference), ("fleetops", link.code))
+        self.assertEqual(operation.srp_url, reverse("fleetops:srp_link", args=[link.code]))
+        self.assertEqual(operation.srp_error, "")
+        self.assertEqual(operation.actions.get(action="srp_link").status, OperationAction.Status.SUCCESS)
+        self.assertEqual((link.fc_user, link.fc_main_character_name), (self.fc, "FC Main"))
+        # The other steps stay skipped.
+        for action in ("discord_ping", "motd_update", "tracking_start"):
+            self.assertEqual(operation.actions.get(action=action).status, OperationAction.Status.SKIPPED)
+        self.assertTrue(AuditLog.objects.filter(action="srp.link_create").exists())
+
+    def test_link_only_fleet_has_no_srp_link_when_auto_create_is_off(self):
+        f.srp_settings(enabled=True)
+        FleetOpsSettings.objects.update(srp_auto_create=False)
+
+        self.start(self.fc)
+
+        operation = FleetOperation.objects.get(link_only=True)
+        self.assertFalse(SrpFleetLink.objects.exists())
+        step = operation.actions.get(action="srp_link")
+        self.assertEqual(step.status, OperationAction.Status.SKIPPED)
+        self.assertEqual(step.error_message, "Automatic SRP link creation is disabled.")
+
+    def test_resubmitted_start_keeps_the_one_srp_link(self):
+        f.srp_settings(enabled=True)
+
+        self.start(self.fc)
+        self.start(self.fc)
+
+        self.assertEqual(FleetOperation.objects.filter(link_only=True).count(), 1)
+        self.assertEqual(SrpFleetLink.objects.count(), 1)
 
     def test_fc_lead_start_is_approved(self):
         self.start(self.lead)

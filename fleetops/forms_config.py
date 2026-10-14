@@ -2,8 +2,11 @@
 
 import re
 import uuid
+from dataclasses import dataclass
 from urllib.parse import urlsplit
 
+from allianceauth.eveonline.models import EveCorporationInfo
+from allianceauth.services.hooks import get_extension_logger
 from django import forms
 from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
 
@@ -17,19 +20,31 @@ from fleetops.models import (
     MessageTemplate,
     PingRole,
     PingTarget,
+    SrpCorporationLimit,
+    SrpPayoutRule,
+    SrpSettings,
     StatisticsTarget,
     validate_discord_webhook_url,
 )
+from fleetops.providers import esi as esi_provider
+from fleetops.providers.doctrines import get_doctrines
+from fleetops.providers.esi import FleetESIError
 from fleetops.providers.srp import get_registered_srp_providers
+from fleetops.services import sde as sde_service
 from fleetops.services.links import extract_ingame_channel_id, extract_link_text, strip_url_userinfo
+from fleetops.services.names import entity_names
 from fleetops.services.periods import MONTH_NAMES, current_year_month
 
+logger = get_extension_logger(__name__)
+
 SRP_AUTO = "auto"
-SRP_AUTO_LABEL = "Automatic (aasrp, then Alliance Auth SRP)"
-SRP_PROVIDER_LABELS = {"aasrp": "aasrp", "allianceauth_builtin": "Alliance Auth SRP"}
+SRP_AUTO_LABEL = "Automatic (FleetOps SRP when enabled, then aa-srp, then Alliance Auth SRP)"
+SRP_PROVIDER_LABELS = {"fleetops": "FleetOps SRP", "aasrp": "aasrp", "allianceauth_builtin": "Alliance Auth SRP"}
 # Stored keys that earlier versions used for a provider that is now registered under another key.
 SRP_PROVIDER_ALIASES = {"aa_srp": "aasrp"}
-_SRP_PROVIDER_ORDER = ("aasrp", "allianceauth_builtin")
+_SRP_PROVIDER_ORDER = ("fleetops", "aasrp", "allianceauth_builtin")
+# How a provider's state reads next to its name, unless the provider has its own words.
+SRP_PROVIDER_STATES = ("installed", "not installed")
 
 _ROLE_MENTION_RE = re.compile(r"<@&(\d+)>")
 
@@ -49,7 +64,8 @@ def srp_provider_choices(current=""):
     for key in sorted(providers, key=lambda key: (order.get(key, len(order)), key)):
         provider = providers[key]
         label = getattr(provider, "label", "") or SRP_PROVIDER_LABELS.get(key, key)
-        state = "installed" if _srp_provider_installed(provider) else "not installed"
+        states = getattr(provider, "state_labels", None) or SRP_PROVIDER_STATES
+        state = states[0] if _srp_provider_installed(provider) else states[1]
         choices.append((key, f"{label} ({state})"))
     current = (current or "").strip()
     if current and current != SRP_AUTO and current not in providers:
@@ -365,6 +381,309 @@ class MessageTemplateForm(forms.ModelForm):
         widgets = {"content": forms.Textarea(attrs={"rows": 12, "class": "font-monospace form-control"})}
 
 
+# --- FleetOps SRP ---------------------------------------------------------------------------------------
+
+
+def _isk_field(**kwargs):
+    """An ``IskField``; imported here because the SRP forms import ``fleetops.forms``, which imports this module."""
+    from fleetops.forms_srp import IskField
+
+    return IskField(**kwargs)
+
+
+class SrpSettingsForm(forms.ModelForm):
+    """The SRP settings page. Caps are typed the way players write ISK (``250m``, ``1.2b``); empty means no cap."""
+
+    # Field groups of the page, in order.
+    GROUPS = [
+        (
+            "General",
+            "Members can only submit claims while FleetOps SRP is enabled. The SRP provider and the automatic "
+            "link creation at fleet start are set in the general settings.",
+            ["enabled", "out_of_fleet_enabled", "claim_deadline_days"],
+        ),
+        (
+            "Value",
+            "Where the loss value comes from. It is only used for ships that are not in the payout table.",
+            ["zkillboard_enabled", "value_source", "percentage"],
+        ),
+        (
+            "Payouts and caps",
+            "Ships in the payout table get their fixed amount; every other ship gets the percentage of its value. "
+            "The per-loss caps apply to both.",
+            ["in_fleet_loss_cap", "out_of_fleet_loss_cap", "capsules_need_rule", "over_limit_action"],
+        ),
+        (
+            "Monthly limits",
+            "Approved SRP per EVE month of the loss. The most restrictive limit wins. Corporations can have their "
+            "own limit.",
+            [
+                "personal_monthly_cap",
+                "personal_cap_includes_in_fleet",
+                "corporation_monthly_cap",
+                "corporation_cap_includes_in_fleet",
+            ],
+        ),
+        (
+            "Members and review",
+            "",
+            ["notify_members", "allow_self_review", "member_instructions"],
+        ),
+    ]
+    ISK_FIELDS = ("in_fleet_loss_cap", "out_of_fleet_loss_cap", "personal_monthly_cap", "corporation_monthly_cap")
+
+    class Meta:
+        model = SrpSettings
+        fields = [
+            "enabled",
+            "out_of_fleet_enabled",
+            "zkillboard_enabled",
+            "value_source",
+            "percentage",
+            "in_fleet_loss_cap",
+            "out_of_fleet_loss_cap",
+            "personal_monthly_cap",
+            "personal_cap_includes_in_fleet",
+            "corporation_monthly_cap",
+            "corporation_cap_includes_in_fleet",
+            "over_limit_action",
+            "capsules_need_rule",
+            "claim_deadline_days",
+            "allow_self_review",
+            "notify_members",
+            "member_instructions",
+        ]
+        widgets = {
+            "percentage": forms.NumberInput(attrs={"step": "0.01", "min": "0", "max": "100"}),
+            "claim_deadline_days": forms.NumberInput(attrs={"min": "0", "max": "3650"}),
+            "member_instructions": forms.Textarea(attrs={"rows": 4, "maxlength": "2000"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name in self.ISK_FIELDS:
+            model_field = SrpSettings._meta.get_field(name)
+            self.fields[name] = _isk_field(
+                required=False, label=model_field.verbose_name, help_text=model_field.help_text
+            )
+
+    def field_groups(self):
+        """``(title, description, bound fields)`` for each group of the page."""
+        return [(title, text, [self[name] for name in names]) for title, text, names in self.GROUPS]
+
+
+@dataclass(frozen=True)
+class ShipLookup:
+    """A ship type found for a payout rule; ``warning`` is set when its name could not be looked up."""
+
+    type_id: int
+    name: str
+    warning: str = ""
+
+
+NO_SHIP_FOUND = "No ship called “{name}” was found. Use its exact English name or its type ID."
+SHIP_LOOKUP_FAILED = "ESI could not look up the ship right now. Enter the ship type ID instead."
+SHIP_NAME_MISSING = "The ship name could not be looked up, so the rule was saved with the ship type ID only."
+NOT_A_TYPE = "This ID is not an item type."
+INVENTORY_TYPE = "inventory_type"
+
+
+def _esi_type_name(type_id: int) -> str:
+    """The English name of a type from ESI; "" when ESI does not know the ID. Raises FleetESIError."""
+    category, name = esi_provider.resolve_names([type_id]).get(type_id, ("", ""))
+    if category and category != INVENTORY_TYPE and name:
+        raise ValidationError(NOT_A_TYPE, code="invalid")
+    return name if category == INVENTORY_TYPE else ""
+
+
+def _esi_type_by_name(name: str):
+    """``(type_id, name)`` of the type with this exact name from ESI, or None."""
+    try:
+        found = esi_provider.universe_type_ids([name])
+    except FleetESIError as exc:
+        logger.warning("Looking up a ship name failed: %s", exc.code)
+        raise ValidationError(SHIP_LOOKUP_FAILED, code="esi") from None
+    return found.get(" ".join(name.split()).casefold())
+
+
+def lookup_ship(text) -> ShipLookup:
+    """The ship type a payout rule form names: a type ID or an exact English ship name.
+
+    The Eve SDE app answers when it is installed (only ships by name); otherwise ESI does. An ID is accepted
+    with a warning when ESI cannot be asked. Raises ``ValidationError`` for something that is no ship.
+    """
+    text = " ".join(str(text or "").split())
+    if not text:
+        return ShipLookup(0, "")
+    if text.isascii() and text.isdigit():
+        type_id = int(text)
+        if not 0 < type_id <= MAX_DATABASE_ID:
+            raise ValidationError("Enter a valid ship type ID.", code="invalid")
+        name = sde_service.item_type_names([type_id]).get(type_id) or ""
+        if not name:
+            try:
+                name = _esi_type_name(type_id)
+            except FleetESIError:
+                return ShipLookup(type_id, "", SHIP_NAME_MISSING)
+            if not name:
+                raise ValidationError(NOT_A_TYPE, code="invalid")
+        return ShipLookup(type_id, name)
+    if sde_service.sde_installed():
+        found = sde_service.find_item_type(text)
+    else:
+        found = _esi_type_by_name(text)
+    if not found:
+        raise ValidationError(NO_SHIP_FOUND.format(name=text), code="not_found")
+    return ShipLookup(int(found[0]), found[1])
+
+
+CUSTOM_DOCTRINE = "custom"
+DOCTRINE_NEEDS_FLEET = (
+    "A doctrine rule only applies to losses in a fleet; choose “In fleet and out of fleet” "
+    "or “In-fleet losses only”."
+)
+
+
+class SrpPayoutRuleForm(forms.ModelForm):
+    """A row of the payout table: a fixed amount for a ship type, a doctrine, or a ship of a doctrine."""
+
+    ship = forms.CharField(
+        label="Ship",
+        required=False,
+        max_length=100,
+        help_text="Ship type ID or exact English name. Leave empty for a rule on a doctrine only.",
+    )
+    doctrine_choice = forms.ChoiceField(
+        label="Doctrine",
+        required=False,
+        help_text="Doctrine rules only apply to losses in a fleet that flew this doctrine.",
+    )
+    doctrine_custom = forms.CharField(
+        label="Custom doctrine name",
+        required=False,
+        max_length=255,
+        help_text="For fleets with a typed doctrine name; matched ignoring case. Used with “Custom name”.",
+    )
+
+    class Meta:
+        model = SrpPayoutRule
+        fields = ["label", "scope", "amount", "is_active", "notes"]
+        labels = {"amount": "Amount (ISK)"}
+        help_texts = {
+            "label": "Optional name shown in the list.",
+            "amount": "Paid as it is, before the per-loss cap and the monthly limits.",
+            "notes": "Optional remark for the other SRP managers.",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.warnings = []
+        self.fields["amount"] = _isk_field(required=True, label="Amount (ISK)", help_text=self.fields["amount"].help_text)
+        choices = [("", "Any doctrine"), (CUSTOM_DOCTRINE, "Custom name")]
+        known = set()
+        for doctrine in get_doctrines():
+            value = f"{doctrine.source}|{doctrine.external_id}|{doctrine.name}"
+            choices.append((value, doctrine.name))
+            known.add(value)
+        initial = self._initial_doctrine()
+        if initial and initial not in known and initial != CUSTOM_DOCTRINE:
+            choices.append((initial, f"{initial.split('|', 2)[2]} (no longer listed)"))
+        self.fields["doctrine_choice"].choices = choices
+        if self.instance.pk is not None:
+            self.initial["doctrine_choice"] = initial
+            self.initial["doctrine_custom"] = self.instance.doctrine_name if initial == CUSTOM_DOCTRINE else ""
+            self.initial["ship"] = self.instance.ship_type_name or (
+                str(self.instance.ship_type_id) if self.instance.ship_type_id else ""
+            )
+        self.order_fields(["label", "ship", "doctrine_choice", "doctrine_custom", "scope", "amount", "is_active", "notes"])
+
+    def _initial_doctrine(self) -> str:
+        rule = self.instance
+        if rule.pk is None:
+            return ""
+        if rule.doctrine_source and rule.doctrine_external_id:
+            return f"{rule.doctrine_source}|{rule.doctrine_external_id}|{rule.doctrine_name}"
+        return CUSTOM_DOCTRINE if rule.doctrine_name else ""
+
+    def clean_ship(self):
+        lookup = lookup_ship(self.cleaned_data.get("ship"))
+        if lookup.warning:
+            self.warnings.append(lookup.warning)
+        return lookup
+
+    def clean(self):
+        cleaned = super().clean()
+        lookup = cleaned.get("ship")
+        choice = cleaned.get("doctrine_choice") or ""
+        source = external_id = name = ""
+        if choice == CUSTOM_DOCTRINE:
+            name = " ".join((cleaned.get("doctrine_custom") or "").split())
+            if not name:
+                self.add_error("doctrine_custom", "Enter the doctrine name.")
+        elif choice:
+            source, external_id, name = (choice.split("|", 2) + ["", ""])[:3]
+        if lookup is not None:
+            if choice and cleaned.get("scope") == SrpPayoutRule.Scope.OUT_OF_FLEET:
+                self.add_error("scope", DOCTRINE_NEEDS_FLEET)
+            # The rule is stored with what was resolved; doctrine_key follows from the doctrine fields. A rule
+            # with neither a ship nor a doctrine is refused by the model's own check.
+            self.instance.ship_type_id, self.instance.ship_type_name = lookup.type_id, lookup.name
+            self.instance.doctrine_source = source
+            self.instance.doctrine_external_id = external_id
+            self.instance.doctrine_name = name
+        return cleaned
+
+
+class SrpCorporationLimitForm(forms.ModelForm):
+    """The monthly cap of one corporation; it replaces the default corporation cap of the SRP settings."""
+
+    class Meta:
+        model = SrpCorporationLimit
+        fields = ["corporation_id", "corporation_name", "monthly_cap", "note"]
+        labels = {"corporation_id": "Corporation ID", "corporation_name": "Corporation name"}
+        help_texts = {
+            "corporation_id": "The corporation ID, for example from its zKillboard page.",
+            "corporation_name": "Left empty, it is looked up.",
+        }
+        error_messages = {"corporation_id": {"unique": "This corporation already has a limit."}}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.warnings = []
+        self.fields["corporation_name"].required = False
+        self.fields["monthly_cap"] = _isk_field(
+            required=False,
+            label="Monthly cap (ISK)",
+            help_text="Maximum approved SRP of this corporation per EVE month. Empty means no limit for this "
+            "corporation, whatever the default is.",
+        )
+
+    def clean_corporation_id(self):
+        value = self.cleaned_data["corporation_id"]
+        if not 0 < value <= MAX_DATABASE_ID:
+            raise ValidationError("Enter a valid corporation ID.", code="invalid")
+        return value
+
+    def clean(self):
+        cleaned = super().clean()
+        corporation_id = cleaned.get("corporation_id")
+        if corporation_id and not (cleaned.get("corporation_name") or "").strip():
+            name = corporation_name_of(corporation_id)
+            if name:
+                cleaned["corporation_name"] = name
+            else:
+                self.warnings.append("The corporation name could not be looked up; the limit was saved with the ID only.")
+        return cleaned
+
+
+def corporation_name_of(corporation_id: int) -> str:
+    """The name of a corporation: Alliance Auth's copy first, then the name cache and ESI; "" when unknown."""
+    name = EveCorporationInfo.objects.filter(corporation_id=corporation_id).values_list(
+        "corporation_name", flat=True
+    ).first()
+    return name or entity_names([corporation_id]).get(corporation_id, "")
+
+
 for _form_class in (
     FleetTypeForm,
     StatisticsTargetForm,
@@ -374,6 +693,9 @@ for _form_class in (
     PingRoleForm,
     PingTargetForm,
     MessageTemplateForm,
+    SrpSettingsForm,
+    SrpPayoutRuleForm,
+    SrpCorporationLimitForm,
 ):
     _original_init = _form_class.__init__
 

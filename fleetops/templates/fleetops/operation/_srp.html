@@ -1,0 +1,59 @@
+{% load fleetops_srp fleetops_messages %}{# The fleet page card for the FleetOps SRP link of the fleet. #}
+{% if srp_card %}
+<div class="card mb-3" id="srp-card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>FleetOps SRP</strong>
+    {% if srp_card.link %}{% if srp_card.is_open %}<span class="badge bg-success">Link open</span>{% else %}<span class="badge bg-secondary">Link closed</span>{% endif %}{% endif %}
+  </div>
+  <div class="card-body">
+  {% if srp_card.link %}
+    {% if not srp_card.enabled %}<div class="alert alert-info py-2">FleetOps SRP is not enabled, so members cannot submit claims through this link.</div>{% endif %}
+    {% if srp_card.can_copy %}
+    <div class="input-group input-group-sm mb-2">
+      <span class="input-group-text">SRP link</span>
+      <code class="form-control text-break" id="srp-link-url">{{ srp_card.link_url }}</code>
+      <button type="button" class="btn btn-outline-secondary copy" data-id="srp-link-url">Copy</button>
+    </div>
+    {% endif %}
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+      {% if srp_card.can_request %}<a class="btn btn-sm btn-success" href="{{ srp_card.link_path }}">Request SRP for this fleet</a>{% endif %}
+      {% if srp_card.can_toggle %}
+        {% if srp_card.is_open %}
+        <form method="post" action="{% url 'fleetops:srp_link_close' srp_card.link.code %}" onsubmit="return confirm('Close the SRP link? Members can no longer submit losses of this fleet through it. Claims already made stay.');">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary">Close SRP link</button></form>
+        {% else %}
+        <form method="post" action="{% url 'fleetops:srp_link_open' srp_card.link.code %}">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary">Open SRP link</button></form>
+        {% endif %}
+      {% endif %}
+    </div>
+    {% if not srp_card.is_open and srp_card.link.closed_at %}<div class="small text-muted mt-2">Closed {{ srp_card.link.closed_at|eve_time }} EVE.</div>{% endif %}
+    {% if srp_card.show_claims %}
+    <hr>
+    <div class="d-flex flex-wrap gap-4 mb-2" id="srp-card-totals">
+      <div><div class="text-muted small">Claims</div><strong>{{ srp_card.totals.claims }}</strong></div>
+      <div><div class="text-muted small">Pending</div><strong>{{ srp_card.totals.pending }}</strong></div>
+      <div><div class="text-muted small">Requested</div><strong>{{ srp_card.totals.requested|isk }}</strong></div>
+      <div><div class="text-muted small">Approved</div><strong>{{ srp_card.totals.approved|isk }}</strong></div>
+      <div><div class="text-muted small">Paid</div><strong>{{ srp_card.totals.paid|isk }}</strong></div>
+    </div>
+    {% if srp_card.claims %}
+    <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+      <thead><tr><th>Claim</th><th>Pilot</th><th>Ship</th><th class="text-end">Suggested</th><th class="text-end">Approved</th><th>Status</th></tr></thead>
+      <tbody>{% for claim in srp_card.claims %}<tr class="{{ claim|srp_row_class }}">
+        <td><a href="{% url 'fleetops:srp_claim' claim.uuid %}">{{ claim.reference }}</a></td>
+        <td>{{ claim.main_character_name|default:claim.character_name }}</td>
+        <td>{{ claim.ship_type_name|default:claim.ship_type_id }}</td>
+        <td class="text-end">{{ claim.suggested_amount|isk }}</td>
+        <td class="text-end">{% if claim.approved_amount is not None %}{{ claim.approved_amount|isk }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+        <td>{{ claim|srp_status_badge }}</td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+    {% if srp_card.claims_hidden %}<div class="small text-muted mt-1">and {{ srp_card.claims_hidden }} more claim{{ srp_card.claims_hidden|pluralize }}; the SRP summary lists them all.</div>{% endif %}
+    {% else %}<div class="text-muted small">No claims for this fleet yet.</div>{% endif %}
+    {% endif %}
+  {% elif srp_card.can_create %}
+    <div class="text-muted mb-2">This fleet has no SRP link yet, so members cannot claim their losses of it.</div>
+    <form method="post" action="{% url 'fleetops:retry_srp' operation.uuid %}">{% csrf_token %}<button class="btn btn-sm btn-success">Create SRP link</button></form>
+  {% endif %}
+  </div>
+</div>
+{% endif %}

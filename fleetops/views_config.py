@@ -20,6 +20,9 @@ from fleetops.forms_config import (
     FleetTypeForm,
     MessageTemplateForm,
     PingRoleForm,
+    SrpCorporationLimitForm,
+    SrpPayoutRuleForm,
+    SrpSettingsForm,
     StatisticsTargetForm,
 )
 from fleetops.forms_fleet import FleetStructureTemplateForm, ShipFunctionForm, ShipFunctionRuleForm
@@ -39,15 +42,21 @@ from fleetops.models import (
     ShipFunction,
     ShipFunctionRule,
     SpecialRole,
+    SrpCorporationLimit,
+    SrpPayoutRule,
+    SrpSettings,
     StatisticsTarget,
 )
 from fleetops.services import discord_roles, links
 from fleetops.services.audit import audit, cascaded_config_rows, config_snapshot
 from fleetops.services.mentions import role_delete_refusal
+from fleetops.srp import display as srp_display
 from fleetops.validators import VOICE_URL_SCHEMES, voice_url_scheme
 from fleetops.views import _render
 
 UNSUPPORTED_VOICE_LINK = "Not a supported voice link"
+# The SRP settings page has the address of a list ("configuration/srp/"); it is not a list of rows.
+SRP_SETTINGS_SECTION = "srp"
 
 CONFIG_SECTIONS = {
     "fleet-types": {
@@ -211,6 +220,33 @@ CONFIG_SECTIONS = {
             ("Sort", "sort_order"),
         ],
     },
+    "srp-rules": {
+        "title": "SRP Payout Table",
+        "description": "Fixed SRP amounts per ship type and/or fleet doctrine. The most specific active rule wins; "
+        "ships without a rule get value × percentage.",
+        "model": SrpPayoutRule,
+        "form": SrpPayoutRuleForm,
+        "columns": [
+            ("Ship", "ship"),
+            ("Doctrine", "doctrine"),
+            ("Scope", "scope"),
+            ("Amount", "amount"),
+            ("Active", "is_active"),
+        ],
+        "default_noun": "payout rule",
+    },
+    "srp-corporation-limits": {
+        "title": "SRP Corporation Limits",
+        "description": "A monthly SRP cap for one corporation, replacing the default corporation cap of the SRP "
+        "settings. An empty cap means no limit for that corporation.",
+        "model": SrpCorporationLimit,
+        "form": SrpCorporationLimitForm,
+        "columns": [
+            ("Corporation", "corporation"),
+            ("Monthly cap", "monthly_cap"),
+            ("Note", "note"),
+        ],
+    },
 }
 
 
@@ -253,11 +289,24 @@ def _cell_value(obj, field_name):
         if obj.missing_from_discord:
             return "Not on Discord"
         return "Synced" if obj.source == PingRole.Source.DISCORD else "Added manually"
+    if isinstance(obj, SrpPayoutRule):
+        # The ship and the doctrine are shown by name; an ID or a key is only the fallback.
+        if field_name == "ship":
+            return obj.ship_type_name or (f"Ship {obj.ship_type_id}" if obj.ship_type_id else "Any ship")
+        if field_name == "doctrine":
+            return obj.doctrine_name or obj.doctrine_key or "Any doctrine"
+        if field_name == "amount":
+            return srp_display.format_isk(obj.amount)
+    if isinstance(obj, SrpCorporationLimit):
+        if field_name == "corporation":
+            return obj.corporation_name or str(obj.corporation_id)
+        if field_name == "monthly_cap":
+            return srp_display.format_isk(obj.monthly_cap) if obj.monthly_cap is not None else "No limit"
     value = getattr(obj, field_name)
     if field_name == "allowed_roles":
         return ", ".join(str(role) for role in value.all()) or "Every active role"
     display = getattr(obj, f"get_{field_name}_display", None)
-    if field_name in ("channel_type", "template_type", "kind") and display is not None:
+    if field_name in ("channel_type", "template_type", "kind", "scope") and display is not None:
         return display()
     return value
 
@@ -294,7 +343,7 @@ def configuration_index(request):
     return _render(
         request,
         "fleetops/configuration/index.html",
-        {"settings_obj": settings_obj, "cards": cards, **_link_settings()},
+        {"settings_obj": settings_obj, "srp_settings": SrpSettings.get_solo(), "cards": cards, **_link_settings()},
     )
 
 
@@ -326,7 +375,44 @@ def configuration_settings(request):
 
 
 @permission_required("fleetops.manage_configuration", raise_exception=True)
+def configuration_srp(request):
+    """The FleetOps SRP settings (``configuration/srp/``); every change is audited with the old and new values."""
+    obj = SrpSettings.get_solo()
+    old = config_snapshot(obj)
+    if request.method == "POST":
+        form = SrpSettingsForm(request.POST, instance=obj)
+        if form.is_valid():
+            obj = form.save()
+            audit(
+                request.user,
+                "configuration.update",
+                obj,
+                old,
+                config_snapshot(obj),
+                reason="Updated from FleetOps front-end administration",
+            )
+            messages.success(request, "SRP settings updated.")
+            return redirect("fleetops:configuration_index")
+    else:
+        form = SrpSettingsForm(instance=obj)
+    fleetops_settings = FleetOpsSettings.get_solo()
+    return _render(
+        request,
+        "fleetops/configuration/srp_settings.html",
+        {
+            "form": form,
+            "settings_obj": obj,
+            "fleetops_settings": fleetops_settings,
+            # Fleets get their SRP link from another SRP app, so FleetOps SRP is not offered at their start.
+            "provider_elsewhere": fleetops_settings.srp_provider.strip() not in ("auto", "fleetops", ""),
+        },
+    )
+
+
+@permission_required("fleetops.manage_configuration", raise_exception=True)
 def configuration_list(request, section):
+    if section == SRP_SETTINGS_SECTION:
+        return configuration_srp(request)
     config = _configuration_section(section)
     queryset = config["model"].objects.all()
     if config["model"] is DiscordWebhook:

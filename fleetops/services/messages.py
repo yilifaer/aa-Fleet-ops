@@ -1,6 +1,7 @@
 import re
 import secrets
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 from django.template import Context, Template
 from django.utils import timezone
@@ -68,6 +69,20 @@ def _ping_channel_name(operation) -> str:
     return channel.name if channel is not None else ""
 
 
+def _srp_url(operation) -> str:
+    """The fleet's SRP link as a full address, whatever SRP app made it; "" while the fleet has none.
+
+    A link of the site (a path) gets the site address in front; an address with a scheme is used as stored,
+    other values (also a path of another host) are not links to use.
+    """
+    url = (getattr(operation, "srp_url", "") or "").strip()
+    if url.startswith("/") and not url.startswith("//"):
+        return links.absolute_url(url)
+    if urlsplit(url).scheme in ("http", "https"):
+        return url
+    return ""
+
+
 def _context(operation, selection, mention: str, *, actor, pre_ping, now) -> dict:
     comms = operation.comms
     logi = operation.logi_channel
@@ -94,6 +109,7 @@ def _context(operation, selection, mention: str, *, actor, pre_ping, now) -> dic
         "logi_channel_link": links.channel_link_html(logi),
         "boost_channel": boost.channel_value if boost else "",
         "boost_channel_link": links.channel_link_html(boost),
+        "srp_url": _srp_url(operation),
         **_fleet_times(operation.scheduled_at),
         "is_pre_ping": bool(pre_ping),
         "ping_mention": mention,
@@ -170,6 +186,12 @@ def _relative_links(values: dict, *texts: str) -> bool:
     return False
 
 
+def _relative_srp_link(values: dict, *texts: str) -> bool:
+    # Without SITE_URL a FleetOps SRP link is a site path, which opens nowhere outside the site.
+    srp_url = values["srp_url"]
+    return srp_url.startswith("/") and any(srp_url in text for text in texts)
+
+
 def render_messages(operation, *, actor=None, pre_ping=False, now=None) -> RenderedMessages:
     """Render ping and MOTD, falling back to the built-in templates if a stored one fails.
 
@@ -210,6 +232,8 @@ def render_messages(operation, *, actor=None, pre_ping=False, now=None) -> Rende
         warnings.append(f"The MOTD is {len(motd)} characters; the game may cut a MOTD longer than {MOTD_SOFT_LIMIT}.")
     if _relative_links(values, ping, motd):
         warnings.append("SITE_URL is not set, so the comms and doctrine links in the messages are incomplete.")
+    if _relative_srp_link(values, ping, motd):
+        warnings.append("SITE_URL is not set, so the SRP link in the messages is incomplete.")
     return RenderedMessages(
         ping,
         motd,

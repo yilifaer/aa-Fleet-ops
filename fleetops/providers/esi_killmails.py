@@ -1,7 +1,8 @@
 """Public ESI reads used by SRP: killmails and market prices.
 
-Both calls go through the shared client in ``fleetops.providers.esi``; its ``operations``
-list must contain ``KILLMAIL_OPERATIONS``. Neither call needs a token.
+Both calls go through the shared client in ``fleetops.providers.esi``, whose ``operations``
+list contains ``KILLMAIL_OPERATIONS`` (defined there because this module imports that one).
+Neither call needs a token.
 """
 
 import logging
@@ -16,7 +17,7 @@ from fleetops.providers.esi import FleetESIError, _read, _status_code
 
 logger = logging.getLogger(__name__)
 
-KILLMAIL_OPERATIONS = ("GetKillmailsKillmailIdKillmailHash", "GetMarketsPrices")
+KILLMAIL_OPERATIONS = esi_provider.KILLMAIL_OPERATIONS
 NOT_FOUND_STATUSES = (404, 422)
 KILLMAIL_NOT_FOUND = "Killmail not found. Check the link or the hash."
 

@@ -4,12 +4,13 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
+from django.core.validators import MaxLengthValidator, MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models, transaction
 from django.template import Template, TemplateSyntaxError
 from django.utils import timezone
 from django.utils.text import slugify
 
+from fleetops.constants import MAX_ISK
 from fleetops.services.fleet_rules import (
     DEFAULT_BRIDGE_EXCLUDED_GROUP_IDS,
     FleetRuleError,
@@ -181,7 +182,7 @@ class FleetOpsSettings(models.Model):
     srp_provider = models.CharField(
         max_length=50,
         default="auto",
-        help_text="SRP provider key. 'auto' uses aasrp, then Alliance Auth SRP, then any other registered provider.",
+        help_text="SRP provider. 'auto' uses FleetOps SRP when it is enabled, then aa-srp, then Alliance Auth SRP.",
     )
     bridge_excluded_group_ids = models.CharField(
         "Ship groups without bridge",
@@ -217,6 +218,8 @@ class FleetOpsSettings(models.Model):
             ("manage_incentives", "Can manage FC incentives"),
             ("manage_configuration", "Can manage FleetOps configuration"),
             ("view_audit_log", "Can view FleetOps audit log"),
+            ("request_srp", "Can request SRP"),
+            ("manage_srp", "Can review and pay SRP claims"),
         ]
 
     def __str__(self):
@@ -1232,3 +1235,495 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"{self.created_at}: {self.action} {self.object_type}:{self.object_id}"
+
+
+# --- FleetOps SRP ---------------------------------------------------------------------------------
+# ISK amounts are whole ISK; values read from killboards keep their cents. Codes (warnings, fleet checks,
+# calculation notes) are stored with their parameters and turned into text when they are shown.
+
+
+def isk_validators():
+    """Validators of a configurable ISK amount (payout, cap)."""
+    return [MinValueValidator(1), MaxValueValidator(MAX_ISK)]
+
+
+def srp_doctrine_key(source, external_id, name):
+    """The key that lets a payout rule and a fleet name the same doctrine.
+
+    ``source:external_id`` for a doctrine of a doctrine app, else ``name:`` and the casefolded name with its
+    white space (tabs and no-break spaces included) collapsed to single spaces, so a rule and a fleet agree
+    however each was typed; empty when no doctrine is given.
+    """
+    source = (source or "").strip()
+    external_id = (external_id or "").strip()
+    if source and external_id:
+        return f"{source}:{external_id}"
+    name = " ".join(str(name or "").split()).casefold()
+    return f"name:{name}" if name else ""
+
+
+class SrpSettings(models.Model):
+    """FleetOps SRP configuration; one row (pk=1)."""
+
+    class ValueSource(models.TextChoices):
+        ZKILL_FITTED = "zkill_fitted", "zKillboard fitted value (ship, modules, drones, implants)"
+        ZKILL_TOTAL = "zkill_total", "zKillboard total value (includes cargo)"
+        ESI_ESTIMATE = "esi_estimate", "ESI market estimate"
+
+    class OverLimitAction(models.TextChoices):
+        REVIEW = "review", "Send to review with a warning"
+        REJECT = "reject", "Reject automatically"
+
+    enabled = models.BooleanField(
+        default=False,
+        help_text="Members can submit FleetOps SRP claims and fleets get FleetOps SRP links.",
+    )
+    out_of_fleet_enabled = models.BooleanField(
+        "Out-of-fleet losses",
+        default=True,
+        help_text="Allow claims for losses outside FleetOps fleets.",
+    )
+    zkillboard_enabled = models.BooleanField(
+        "Use zKillboard",
+        default=True,
+        help_text="Use zKillboard for killmail hashes and values. Without it only in-game killmail links work.",
+    )
+    value_source = models.CharField(
+        max_length=20,
+        choices=ValueSource.choices,
+        default=ValueSource.ZKILL_FITTED,
+        help_text="Where the loss value comes from. The ESI market estimate is also the fallback when zKillboard "
+        "has no value.",
+    )
+    percentage = models.DecimalField(
+        "Payout percentage",
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("0"),
+        validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("100"))],
+        help_text="Share of the loss value paid for ships not in the payout table. 0 = no automatic amount.",
+    )
+    in_fleet_loss_cap = models.PositiveBigIntegerField(
+        "In-fleet loss cap",
+        null=True,
+        blank=True,
+        validators=isk_validators(),
+        help_text="Maximum per in-fleet loss. Empty = no cap.",
+    )
+    out_of_fleet_loss_cap = models.PositiveBigIntegerField(
+        "Out-of-fleet loss cap",
+        null=True,
+        blank=True,
+        validators=isk_validators(),
+        help_text="Maximum per out-of-fleet loss. Empty = no cap.",
+    )
+    personal_monthly_cap = models.PositiveBigIntegerField(
+        "Personal monthly cap",
+        null=True,
+        blank=True,
+        validators=isk_validators(),
+        help_text="Maximum approved SRP per player (all characters) per EVE month. Empty = no cap.",
+    )
+    personal_cap_includes_in_fleet = models.BooleanField(
+        "In-fleet losses count toward the personal cap",
+        default=True,
+    )
+    corporation_monthly_cap = models.PositiveBigIntegerField(
+        "Corporation monthly cap",
+        null=True,
+        blank=True,
+        validators=isk_validators(),
+        help_text="Maximum approved SRP per corporation and EVE month; the default for every corporation. "
+        "Corporation limits override it. Empty = no cap.",
+    )
+    corporation_cap_includes_in_fleet = models.BooleanField(
+        "In-fleet losses count toward the corporation cap",
+        default=True,
+    )
+    over_limit_action = models.CharField(
+        max_length=10,
+        choices=OverLimitAction.choices,
+        default=OverLimitAction.REVIEW,
+        help_text="What happens to a claim that does not fit into the remaining monthly limit. When it only partly "
+        "fits it is cut to the remaining amount and sent to review; it is rejected automatically only when "
+        "nothing is left.",
+    )
+    capsules_need_rule = models.BooleanField(
+        "Capsules need a payout rule",
+        default=True,
+        help_text="Capsule losses are only covered when the payout table lists the capsule (fixed amount).",
+    )
+    claim_deadline_days = models.PositiveIntegerField(
+        "Claim deadline (days)",
+        default=0,
+        validators=[MaxValueValidator(3650)],
+        help_text="Losses older than this cannot be submitted. 0 = no deadline.",
+    )
+    allow_self_review = models.BooleanField(
+        "SRP managers may decide on their own claims",
+        default=False,
+        help_text="By default another SRP manager decides on a manager's own claims. Allow this for small alliances.",
+    )
+    notify_members = models.BooleanField(
+        "Notify members",
+        default=True,
+        help_text="Send an Alliance Auth notification when a claim is decided or paid.",
+    )
+    member_instructions = models.TextField(
+        blank=True,
+        validators=[MaxLengthValidator(2000)],
+        help_text="Shown to members on the SRP pages.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "SRP setting"
+        verbose_name_plural = "SRP settings"
+
+    def __str__(self):
+        return "FleetOps SRP Settings"
+
+    def clean(self):
+        super().clean()
+        if not self.zkillboard_enabled and self.value_source != self.ValueSource.ESI_ESTIMATE:
+            raise ValidationError(
+                {"value_source": "Choose the ESI market estimate when zKillboard is turned off."}
+            )
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
+class SrpPayoutRule(models.Model):
+    """A fixed SRP amount for a ship type and/or a fleet doctrine; the most specific active rule wins."""
+
+    class Scope(models.TextChoices):
+        ANY = "any", "In fleet and out of fleet"
+        IN_FLEET = "in_fleet", "In-fleet losses only"
+        OUT_OF_FLEET = "out_of_fleet", "Out-of-fleet losses only"
+
+    # Fields of the unique constraint; validated even though doctrine_key is not a form field.
+    CONSTRAINT_FIELDS = frozenset({"ship_type_id", "doctrine_key", "scope"})
+
+    label = models.CharField(max_length=100, blank=True)
+    ship_type_id = models.PositiveBigIntegerField(
+        "Ship type ID", default=0, help_text="0 = any ship (doctrine rules only)."
+    )
+    ship_type_name = models.CharField(max_length=255, blank=True)
+    doctrine_source = models.CharField(max_length=100, blank=True)
+    doctrine_external_id = models.CharField(max_length=255, blank=True)
+    doctrine_name = models.CharField(max_length=255, blank=True)
+    doctrine_key = models.CharField(max_length=400, blank=True, db_index=True, editable=False)
+    scope = models.CharField(max_length=12, choices=Scope.choices, default=Scope.ANY)
+    amount = models.PositiveBigIntegerField(validators=isk_validators(), help_text="Whole ISK.")
+    is_active = models.BooleanField(default=True)
+    notes = models.CharField(max_length=255, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "SRP payout rule"
+        ordering = ["ship_type_name", "doctrine_name", "scope"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["ship_type_id", "doctrine_key", "scope"],
+                name="fleetops_unique_srp_rule",
+                violation_error_message="A rule for this ship, doctrine and scope already exists.",
+            )
+        ]
+
+    def __str__(self):
+        parts = [self.ship_type_name or (f"Ship {self.ship_type_id}" if self.ship_type_id else "")]
+        if self.doctrine_key:
+            parts.append(self.doctrine_name or self.doctrine_key)
+        return " / ".join(part for part in parts if part) or "SRP rule"
+
+    def compute_doctrine_key(self):
+        return srp_doctrine_key(self.doctrine_source, self.doctrine_external_id, self.doctrine_name)
+
+    def clean(self):
+        super().clean()
+        self.doctrine_key = self.compute_doctrine_key()
+        if not self.ship_type_id and not self.doctrine_key:
+            raise ValidationError("Choose a ship type, a doctrine, or both.")
+
+    def validate_constraints(self, exclude=None):
+        # The key is derived, never a form field, but a duplicate rule must still be refused.
+        self.doctrine_key = self.compute_doctrine_key()
+        super().validate_constraints(set(exclude or ()) - self.CONSTRAINT_FIELDS)
+
+    def save(self, *args, **kwargs):
+        self.doctrine_key = self.compute_doctrine_key()
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None and "doctrine_key" not in update_fields:
+            kwargs["update_fields"] = [*update_fields, "doctrine_key"]
+        super().save(*args, **kwargs)
+
+
+class SrpCorporationLimit(models.Model):
+    """Monthly cap of one corporation; replaces the default corporation cap of the SRP settings."""
+
+    corporation_id = models.BigIntegerField(unique=True)
+    corporation_name = models.CharField(max_length=255, blank=True)
+    monthly_cap = models.PositiveBigIntegerField(
+        null=True,
+        blank=True,
+        validators=isk_validators(),
+        help_text="Maximum approved SRP of this corporation per EVE month. Empty = no limit for this corporation.",
+    )
+    note = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = "SRP corporation limit"
+        ordering = ["corporation_name", "corporation_id"]
+
+    def __str__(self):
+        return self.corporation_name or str(self.corporation_id)
+
+
+class SrpFleetLink(models.Model):
+    """The SRP link of a fleet; members of that fleet submit their losses through its code."""
+
+    operation = models.OneToOneField(FleetOperation, on_delete=models.CASCADE, related_name="srp_link")
+    code = models.CharField(max_length=32, unique=True)
+    # The fleet's FC and the FC's main character when the link was created.
+    fc_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="fleetops_srp_links"
+    )
+    fc_main_character_id = models.BigIntegerField(null=True, blank=True)
+    fc_main_character_name = models.CharField(max_length=255, blank=True)
+    is_open = models.BooleanField(default=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    closed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        verbose_name = "SRP fleet link"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"SRP link of fleet {self.operation_id}"
+
+
+class SrpKillmail(models.Model):
+    """A killmail read from ESI for a claim, with the value zKillboard (or an ESI estimate) gave it.
+
+    The killmail ID is the primary key and a claim points to it one to one, so a killmail can only be
+    claimed once, whatever link was used.
+    """
+
+    class ZkillStatus(models.TextChoices):
+        PENDING = "pending", "Waiting"
+        OK = "ok", "Value available"
+        MISSING = "missing", "Not on zKillboard yet"
+        UNAVAILABLE = "unavailable", "zKillboard value unavailable"
+        DISABLED = "disabled", "zKillboard disabled"
+
+    killmail_id = models.BigIntegerField(primary_key=True)
+    killmail_hash = models.CharField(max_length=40)
+    killmail_time = models.DateTimeField(db_index=True)
+    solar_system_id = models.BigIntegerField()
+    solar_system_name = models.CharField(max_length=100, blank=True)
+    victim_character_id = models.BigIntegerField(null=True, blank=True, db_index=True)
+    victim_corporation_id = models.BigIntegerField(null=True, blank=True)
+    victim_alliance_id = models.BigIntegerField(null=True, blank=True)
+    ship_type_id = models.BigIntegerField()
+    ship_type_name = models.CharField(max_length=255, blank=True)
+    attacker_count = models.PositiveIntegerField(default=0)
+    war_id = models.BigIntegerField(null=True, blank=True)
+    # The victim's items as ESI returns them: flag, type, quantities, singleton and nested items.
+    items = models.JSONField(default=list, blank=True)
+    fetched_at = models.DateTimeField(default=timezone.now)
+
+    zkill_status = models.CharField(
+        max_length=12, choices=ZkillStatus.choices, default=ZkillStatus.PENDING, db_index=True
+    )
+    zkill_attempts = models.PositiveSmallIntegerField(default=0)
+    zkill_next_attempt_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    zkill_checked_at = models.DateTimeField(null=True, blank=True)
+    zkill_fitted_value = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    zkill_total_value = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    zkill_destroyed_value = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    zkill_dropped_value = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    zkill_npc = models.BooleanField(null=True, blank=True)
+    zkill_solo = models.BooleanField(null=True, blank=True)
+    zkill_awox = models.BooleanField(null=True, blank=True)
+    zkill_labels = models.JSONField(default=list, blank=True)
+    esi_estimate = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    esi_estimate_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "SRP killmail"
+        ordering = ["-killmail_time"]
+
+    def __str__(self):
+        return f"Killmail {self.killmail_id}"
+
+
+class SrpClaim(models.Model):
+    """A member's request to replace a lost ship; one per killmail."""
+
+    class Scope(models.TextChoices):
+        IN_FLEET = "in_fleet", "In fleet"
+        OUT_OF_FLEET = "out_of_fleet", "Out of fleet"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        APPROVED = "approved", "Approved"
+        PAID = "paid", "Paid"
+        REJECTED = "rejected", "Rejected"
+        WITHDRAWN = "withdrawn", "Withdrawn"
+
+    class PayoutBasis(models.TextChoices):
+        RULE = "rule", "Payout table"
+        PERCENTAGE = "percentage", "Percentage of the value"
+        NONE = "none", "No automatic amount"
+
+    # Approved and paid claims use up the monthly limits; withdrawn claims count in no summary.
+    USAGE_STATUSES = (Status.APPROVED, Status.PAID)
+
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    killmail = models.OneToOneField(SrpKillmail, on_delete=models.PROTECT, related_name="claim")
+    scope = models.CharField(max_length=12, choices=Scope.choices, db_index=True)
+    link = models.ForeignKey(SrpFleetLink, null=True, blank=True, on_delete=models.SET_NULL, related_name="claims")
+    operation = models.ForeignKey(
+        FleetOperation, null=True, blank=True, on_delete=models.SET_NULL, related_name="srp_claims"
+    )
+    # "<type> — <FC> — YYYY-MM-DD HH:MM EVE", kept when the fleet is deleted.
+    fleet_label = models.CharField(max_length=255, blank=True)
+    fc_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fleetops_srp_fc_claims",
+    )
+    fc_main_character_name = models.CharField(max_length=255, blank=True)
+
+    # The claimant owns the victim character. Snapshot of the identity at submission; the corporation is
+    # the main character's, not the victim's.
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="fleetops_srp_claims"
+    )
+    character_id = models.BigIntegerField(db_index=True)
+    character_name = models.CharField(max_length=255)
+    main_character_id = models.BigIntegerField(null=True, blank=True)
+    main_character_name = models.CharField(max_length=255, blank=True)
+    corporation_id = models.BigIntegerField(null=True, blank=True, db_index=True)
+    corporation_name = models.CharField(max_length=255, blank=True)
+    corporation_ticker = models.CharField(max_length=20, blank=True)
+    alliance_id = models.BigIntegerField(null=True, blank=True)
+    alliance_name = models.CharField(max_length=255, blank=True)
+
+    killmail_time = models.DateTimeField(db_index=True)
+    ship_type_id = models.BigIntegerField(db_index=True)
+    ship_type_name = models.CharField(max_length=255, blank=True)
+    solar_system_name = models.CharField(max_length=100, blank=True)
+
+    loss_value = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    value_source = models.CharField(max_length=20, blank=True)
+    payout_basis = models.CharField(max_length=12, choices=PayoutBasis.choices, default=PayoutBasis.NONE)
+    payout_rule = models.ForeignKey(
+        SrpPayoutRule, null=True, blank=True, on_delete=models.SET_NULL, related_name="claims"
+    )
+    # PolicySnapshot and Calculation as JSON (fleetops.srp.types).
+    policy = models.JSONField(default=dict, blank=True)
+    calculation = models.JSONField(default=dict, blank=True)
+    base_amount = models.PositiveBigIntegerField(default=0)
+    suggested_amount = models.PositiveBigIntegerField(default=0)
+    limited_amount = models.PositiveBigIntegerField(default=0)
+    over_limit = models.BooleanField(default=False, db_index=True)
+    counts_personal = models.BooleanField(default=True)
+    counts_corporation = models.BooleanField(default=True)
+
+    # PresenceResult code and its parameters.
+    fleet_check = models.CharField(max_length=20, blank=True, db_index=True)
+    fleet_check_params = models.JSONField(default=dict, blank=True)
+    fleet_checked_at = models.DateTimeField(null=True, blank=True)
+    # [{"code": "over_limit", "level": "danger", "params": {...}}]
+    warnings = models.JSONField(default=list, blank=True)
+    member_comment = models.TextField(blank=True)
+
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING, db_index=True)
+    auto_rejected = models.BooleanField(default=False)
+    approved_amount = models.PositiveBigIntegerField(null=True, blank=True)
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decision_reason = models.TextField(blank=True)
+    paid_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    paid_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    payment_note = models.CharField(max_length=255, blank=True)
+
+    submitted_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "SRP claim"
+        ordering = ["-submitted_at"]
+        indexes = [
+            models.Index(fields=["status", "killmail_time"], name="fleetops_srp_status_time_idx"),
+            models.Index(fields=["user", "killmail_time"], name="fleetops_srp_user_time_idx"),
+            models.Index(fields=["corporation_id", "killmail_time"], name="fleetops_srp_corp_time_idx"),
+            models.Index(fields=["fc_user", "killmail_time"], name="fleetops_srp_fc_time_idx"),
+        ]
+
+    def __str__(self):
+        return self.reference
+
+    @property
+    def reference(self):
+        return f"SRP-{self.pk}" if self.pk else "SRP"
+
+
+class SrpClaimEvent(models.Model):
+    """One step in the history of a claim; the claimant sees all but the internal notes."""
+
+    class Action(models.TextChoices):
+        SUBMIT = "submit", "Submitted"
+        AUTO_REJECT = "auto_reject", "Rejected automatically"
+        WITHDRAW = "withdraw", "Withdrawn"
+        RESUBMIT = "resubmit", "Submitted again"
+        APPROVE = "approve", "Approved"
+        AMOUNT_CHANGE = "amount_change", "Amount changed"
+        REJECT = "reject", "Rejected"
+        REVOKE = "revoke", "Approval revoked"
+        PAID = "paid", "Marked paid"
+        UNPAID = "unpaid", "Payment undone"
+        REOPEN = "reopen", "Reopened"
+        RECLASSIFY = "reclassify", "Moved between in fleet and out of fleet"
+        RECALCULATE = "recalculate", "Recalculated"
+        RECHECK = "recheck", "Fleet presence checked again"
+        VALUE_UPDATE = "value_update", "Loss value updated"
+        NOTE = "note", "Internal note"
+
+    claim = models.ForeignKey(SrpClaim, on_delete=models.CASCADE, related_name="events")
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    action = models.CharField(max_length=30, choices=Action.choices)
+    from_status = models.CharField(max_length=12, blank=True)
+    to_status = models.CharField(max_length=12, blank=True)
+    amount = models.PositiveBigIntegerField(null=True, blank=True)
+    reason = models.TextField(blank=True)
+    # Manager-only note; hidden from the claimant.
+    internal = models.BooleanField(default=False)
+    # Old and new amounts, the previous calculation and similar details.
+    data = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        verbose_name = "SRP claim event"
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return f"{self.claim_id}: {self.action}"

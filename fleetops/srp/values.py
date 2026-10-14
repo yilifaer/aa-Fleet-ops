@@ -6,6 +6,8 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from django.utils import timezone
 
+from fleetops.models import SrpKillmail
+from fleetops.providers import zkillboard
 from fleetops.providers.esi import FleetESIError
 from fleetops.providers.esi_killmails import get_market_prices
 from fleetops.providers.zkillboard import MIN_KILL_AGE
@@ -36,6 +38,18 @@ CENT = Decimal("0.01")
 # Delays after the 1st to 4th lookup without a value; the 5th is the last one.
 ZKILL_RETRY_DELAYS = (timedelta(minutes=65), timedelta(hours=3), timedelta(hours=12), timedelta(hours=24))
 ZKILL_MAX_ATTEMPTS = len(ZKILL_RETRY_DELAYS) + 1
+
+# A lookup that has started keeps the killmail away from a second one (web request and sweep) this long.
+ZKILL_LEASE = timedelta(minutes=2)
+# An estimate that could not be made because ESI had no market prices is tried again for a while.
+ESTIMATE_RETRY_DELAY = timedelta(hours=1)
+ESTIMATE_RETRY_WINDOW = timedelta(days=2)
+
+ZkillStatus = SrpKillmail.ZkillStatus
+# Statuses that still wait for a zKillboard answer.
+WAITING_STATUSES = (ZkillStatus.PENDING, ZkillStatus.MISSING)
+# Statuses after which the value is settled: found, or never coming from zKillboard.
+SETTLED_STATUSES = (ZkillStatus.OK, ZkillStatus.UNAVAILABLE, ZkillStatus.DISABLED)
 
 
 def loss_value(km, source: str) -> tuple[Decimal | None, str]:
@@ -156,3 +170,130 @@ def market_estimate(ship_type_id: int, items, *, prices=None) -> Decimal | None:
         except FleetESIError:
             return None
     return estimate_value(ship_type_id, items, prices)
+
+
+def _signature(km) -> tuple:
+    """What a claim's value depends on: the values and whether they are settled."""
+    settled = km.zkill_status if km.zkill_status in SETTLED_STATUSES else None
+    return km.zkill_fitted_value, km.zkill_total_value, km.esi_estimate, settled
+
+
+def _compute_estimate(km) -> tuple[Decimal | None, bool]:
+    """The ESI market estimate of the killmail and whether a failed estimate is worth trying again.
+
+    A ship ESI has no price for is not retried; missing market prices (an ESI error) are.
+    """
+    try:
+        prices = get_market_prices()
+    except FleetESIError:
+        return None, True
+    return estimate_value(km.ship_type_id, km.items, prices), False
+
+
+def _settle(km, now: datetime) -> set[str]:
+    """Make the estimate for a killmail that gets no zKillboard value; returns the fields changed.
+
+    ``zkill_next_attempt_at`` is the retry time for an estimate that failed because of ESI, else empty.
+    """
+    fields = {"zkill_next_attempt_at"}
+    km.zkill_next_attempt_at = None
+    if km.esi_estimate is not None:
+        return fields
+    estimate, retry = _compute_estimate(km)
+    if estimate is not None:
+        km.esi_estimate, km.esi_estimate_at = estimate, now
+        fields |= {"esi_estimate", "esi_estimate_at"}
+    elif retry and now - km.fetched_at < ESTIMATE_RETRY_WINDOW:
+        km.zkill_next_attempt_at = now + ESTIMATE_RETRY_DELAY
+    return fields
+
+
+def apply_zkill_result(km, result: ZkillResult, *, now: datetime | None = None) -> bool:
+    """Store a zKillboard answer on the killmail and schedule the next lookup.
+
+    After the last attempt without a value the status becomes ``unavailable`` and the ESI estimate is made.
+    Returns True when the value claims depend on changed.
+    """
+    now = now or timezone.now()
+    before = _signature(km)
+    schedule = after_zkill_lookup(
+        result,
+        attempts=km.zkill_attempts,
+        status=km.zkill_status,
+        killmail_time=km.killmail_time,
+        now=now,
+    )
+    fields = {"zkill_status", "zkill_attempts", "zkill_next_attempt_at"}
+    if result.requested:
+        km.zkill_checked_at = now
+        fields.add("zkill_checked_at")
+    if result.ok:
+        # A value zKillboard once gave is never replaced by a later answer without it.
+        for field, value in (
+            ("zkill_fitted_value", result.fitted_value),
+            ("zkill_total_value", result.total_value),
+            ("zkill_destroyed_value", result.destroyed_value),
+            ("zkill_dropped_value", result.dropped_value),
+            ("zkill_npc", result.npc),
+            ("zkill_solo", result.solo),
+            ("zkill_awox", result.awox),
+        ):
+            if value is not None:
+                setattr(km, field, value)
+                fields.add(field)
+        km.zkill_labels = result.labels
+        fields.add("zkill_labels")
+    km.zkill_status = schedule.status
+    km.zkill_attempts = schedule.attempts
+    km.zkill_next_attempt_at = schedule.next_attempt_at
+    if schedule.status == ZkillStatus.UNAVAILABLE:
+        fields |= _settle(km, now)
+    km.save(update_fields=sorted(fields))
+    return _signature(km) != before
+
+
+def refresh_zkill(km, *, now: datetime | None = None) -> bool:
+    """Ask zKillboard once for the killmail and apply the result and the retry schedule; True when the
+    stored values changed.
+
+    Does nothing for a killmail that is not waiting for zKillboard or that another lookup has just taken.
+    """
+    if km.zkill_status not in WAITING_STATUSES:
+        return False
+    now = now or timezone.now()
+    # Take the killmail with one conditional update, so the web request and the sweep never both ask.
+    taken = SrpKillmail.objects.filter(
+        pk=km.pk, zkill_status=km.zkill_status, zkill_next_attempt_at=km.zkill_next_attempt_at
+    ).update(zkill_next_attempt_at=now + ZKILL_LEASE)
+    if not taken:
+        return False
+    km.zkill_next_attempt_at = now + ZKILL_LEASE
+    result = zkillboard.fetch_kill(km.killmail_id, killmail_time=km.killmail_time, now=now)
+    return apply_zkill_result(km, result, now=now)
+
+
+def settle_without_zkill(km, status: str, *, now: datetime | None = None) -> bool:
+    """Give up on zKillboard for the killmail (``disabled`` or ``unavailable``) and make the ESI estimate.
+
+    Also the retry of an estimate that failed before. Returns True when the value claims depend on changed.
+    """
+    now = now or timezone.now()
+    before = _signature(km)
+    km.zkill_status = status
+    fields = {"zkill_status"} | _settle(km, now)
+    km.save(update_fields=sorted(fields))
+    return _signature(km) != before
+
+
+def esi_estimate(km) -> Decimal | None:
+    """Estimate the loss at ESI market prices, store it on the killmail and return it.
+
+    Returns None, and keeps what is stored, when ESI has no prices or no price for the ship.
+    """
+    estimate, _retry = _compute_estimate(km)
+    if estimate is None:
+        return None
+    km.esi_estimate = estimate
+    km.esi_estimate_at = timezone.now()
+    km.save(update_fields=["esi_estimate", "esi_estimate_at"])
+    return estimate

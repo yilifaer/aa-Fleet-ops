@@ -22,6 +22,19 @@
       </div>
     </div>
   </div>
+  <div class="col-md-6 col-xl-4">
+    <div class="card h-100">
+      <div class="card-body d-flex flex-column">
+        <div class="d-flex justify-content-between gap-2"><h5 class="card-title">FleetOps SRP</h5>{% if srp_settings.enabled %}<span class="badge bg-success align-self-start">Enabled</span>{% else %}<span class="badge bg-secondary align-self-start">Disabled</span>{% endif %}</div>
+        <p class="text-muted flex-grow-1">Turn SRP on, choose the value source, the payout percentage, the per-loss caps and the monthly limits. The payout table and the corporation limits are managed separately.</p>
+        <div class="d-flex flex-wrap gap-2">
+          <a class="btn btn-primary" href="{% url 'fleetops:configuration_list' 'srp' %}">SRP Settings</a>
+          <a class="btn btn-outline-primary" href="{% url 'fleetops:configuration_list' 'srp-rules' %}">Payout Table</a>
+          <a class="btn btn-outline-primary" href="{% url 'fleetops:configuration_list' 'srp-corporation-limits' %}">Corporation Limits</a>
+        </div>
+      </div>
+    </div>
+  </div>
   {% for card in cards %}
   <div class="col-md-6 col-xl-4">
     <div class="card h-100">

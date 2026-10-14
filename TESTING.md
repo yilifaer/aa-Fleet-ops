@@ -105,6 +105,7 @@ Then verify `/fleetops/` loads for a user with `fleetops.basic_access`.
 19. Assign Back Seat FC / Logi Anchor / Snowflake on active and closed fleets; FC credit follows the role's **Gives FC credit** switch for any pilot in Alliance Auth, with no `fleetops.start_fleet` needed (Back Seat FC gives credit by default; a role with the switch off gives none).
 20. Kicks: place pod/capsule members in an active EVE fleet; **Kick Capsules** lists the capsule pilots by name and kicks only the ticked ones. Also kick a single member and use **Kick outside system…** (the FC's system preselected, untick members to spare them). More than 10 kicks run on the Celery worker; the FC and the Fleet Boss are never targeted.
 21. Dashboard renders metric cards, top ships, recent participation and active-fleet data with both light/dark AA themes.
+22. FleetOps SRP: follow the SRP test checklist in the README (enable SRP, link in the MOTD and the ping, an in-game link and a zKillboard link, an out-of-fleet loss, both over-limit modes, a changed amount, mark paid, revoke, the summaries and the Excel file). The automated tests (`tests.test_flow_3` and the `test_srp_*` modules) use fakes for ESI killmails and zKillboard; only a real fleet shows that the game, zKillboard and the site agree. The quota tests in `tests.test_srp_quota` include approvals at the same moment and run on MariaDB only.
 
 ## Bug report data
 

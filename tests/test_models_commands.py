@@ -50,6 +50,12 @@ from fleetops.models import (
     OperationRoleAssignment,
     PingRole,
     PingTarget,
+    SrpClaim,
+    SrpClaimEvent,
+    SrpCorporationLimit,
+    SrpFleetLink,
+    SrpKillmail,
+    SrpSettings,
 )
 
 from fleetops.services.mentions import ROLES, MentionSelection, RoleRef, validate_for_channel
@@ -58,7 +64,15 @@ from . import factories as f
 
 WEBHOOK_SECRET = "https://discord.com/api/webhooks/123456789/sUp3r-s3cret-t0ken"
 # Shown in Django admin without add or change pages.
-READ_ONLY_ADMIN_MODELS = (PingTarget, EveEntityName, CharacterAffiliation)
+READ_ONLY_ADMIN_MODELS = (
+    PingTarget,
+    EveEntityName,
+    CharacterAffiliation,
+    SrpFleetLink,
+    SrpKillmail,
+    SrpClaim,
+    SrpClaimEvent,
+)
 
 ALL_PERMISSIONS = [
     "basic_access",
@@ -73,6 +87,8 @@ ALL_PERMISSIONS = [
     "manage_incentives",
     "manage_configuration",
     "view_audit_log",
+    "request_srp",
+    "manage_srp",
 ]
 
 
@@ -627,7 +643,10 @@ class MigrationTests(TestCase):
         self.assertEqual(upgrade.OLD_PING, seed.PING)
         self.assertEqual(upgrade.OLD_MOTD, seed.MOTD)
         self.assertEqual(upgrade.NEW_PING, DEFAULT_PING_TEMPLATE)
-        self.assertEqual(upgrade.NEW_MOTD, DEFAULT_MOTD_TEMPLATE)
+        # 0017 adds the SRP line to the untouched default MOTD.
+        srp = importlib.import_module("fleetops.migrations.0017_srp_data")
+        self.assertEqual(upgrade.NEW_MOTD, srp.OLD_MOTD)
+        self.assertEqual(srp.NEW_MOTD, DEFAULT_MOTD_TEMPLATE)
 
     def test_new_installations_get_the_current_default_templates(self):
         self.assertEqual(MessageTemplate.objects.get(name="Default Ping").content, DEFAULT_PING_TEMPLATE)
@@ -991,6 +1010,11 @@ class AdminTests(TestCase):
         period = IncentivePeriod.objects.create(year=2026, month=9)
         MonthlyFCStatistic.objects.create(period=period, fc_user=cls.fc)
         f.statistics_target(2026, 9, "2.50")
+        f.payout_rule(f.RIFTER, 20_000_000)
+        SrpCorporationLimit.objects.create(corporation_id=f.DEFAULT_CORP[0], corporation_name=f.DEFAULT_CORP[1])
+        link = f.fleet_link(cls.operation)
+        claim = f.srp_claim(cls.fc, link=link)
+        f.claim_event(claim, SrpClaimEvent.Action.SUBMIT, actor=cls.fc)
         AuditLog.objects.create(
             actor=cls.fc,
             action="configuration.update",
@@ -1024,7 +1048,7 @@ class AdminTests(TestCase):
 
     def test_add_pages_load(self):
         for model in self._fleetops_models():
-            if model in (FleetOpsSettings,) + READ_ONLY_ADMIN_MODELS:
+            if model in (FleetOpsSettings, SrpSettings) + READ_ONLY_ADMIN_MODELS:
                 continue
             with self.subTest(model=model.__name__):
                 response = self.client.get(self._url(model, "add"))

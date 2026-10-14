@@ -27,3 +27,24 @@
 .fleetops .table>tbody>tr.fleetops-status-row-missed>:first-child{border-left:4px solid var(--bs-danger)}
 .fleetops .table>tbody>tr.fleetops-status-row-progress>:first-child{border-left:4px solid var(--bs-warning)}
 .fleetops-rank{display:inline-block;min-width:2.5ch;text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
+
+/* SRP: a claim over a limit is red, one that needs a look is amber; the words are always shown as well. */
+.fleetops .table>tbody>tr.fleetops-srp-over-limit{--bs-table-bg:rgba(var(--bs-danger-rgb),.12);--bs-table-hover-bg:rgba(var(--bs-danger-rgb),.2)}
+.fleetops .table>tbody>tr.fleetops-srp-over-limit>:first-child{border-left:4px solid var(--bs-danger)}
+.fleetops .table>tbody>tr.fleetops-srp-warning{--bs-table-bg:rgba(var(--bs-warning-rgb),.12);--bs-table-hover-bg:rgba(var(--bs-warning-rgb),.2)}
+.fleetops .table>tbody>tr.fleetops-srp-warning>:first-child{border-left:4px solid var(--bs-warning)}
+.fleetops-srp-legend{display:inline-block;padding:.1rem .6rem;margin-right:.5rem;border-radius:.25rem;border-left:4px solid transparent}
+.fleetops-srp-legend.fleetops-srp-over-limit{border-left-color:var(--bs-danger);background:rgba(var(--bs-danger-rgb),.12)}
+.fleetops-srp-legend.fleetops-srp-warning{border-left-color:var(--bs-warning);background:rgba(var(--bs-warning-rgb),.12)}
+.fleetops-srp-claims{font-size:.875rem}
+.fleetops-srp-claims .fleetops-srp-flags{min-width:11rem;max-width:18rem}
+/* A warning is a sentence: it wraps inside its box instead of running out of it. */
+.fleetops-srp-flags .badge,.fleetops-srp-checks .badge{white-space:normal;text-align:left;font-weight:500;margin:0 .25rem .25rem 0}
+.fleetops-srp-checks .badge{font-size:.85rem}
+.fleetops-srp-check{width:2.25rem}
+.fleetops-srp-ship{width:64px;height:64px;border-radius:.45rem;border:1px solid var(--bs-border-color);background:#111;object-fit:cover}
+.fleetops-srp-paybar{position:sticky;bottom:.75rem;z-index:5;box-shadow:0 .25rem .75rem rgba(0,0,0,.2)}
+.fleetops-srp-timeline .list-group-item{background:transparent}
+.fleetops .errorlist{list-style:none;padding:0;margin:.25rem 0 0;color:var(--bs-danger)}
+.fleetops .stat-card strong{font-variant-numeric:tabular-nums}
+.fleetops-srp-calculation dt{font-weight:500;color:var(--bs-secondary-color)}

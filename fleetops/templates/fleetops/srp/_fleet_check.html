@@ -1,0 +1,8 @@
+{% load fleetops_srp fleetops_messages %}{# The fleet presence check. Context: presence (a PresenceResult), or claim (the check stored on it). #}
+{% if presence %}
+<span class="badge {% if presence.level == 'danger' %}text-bg-danger{% elif presence.level == 'warning' %}text-bg-warning{% else %}text-bg-success{% endif %}">{{ presence.text }}</span>
+{% elif claim.fleet_check %}
+{{ claim|srp_check_badge }}{% if claim.fleet_checked_at %}<div class="small text-muted mt-1">Checked {{ claim.fleet_checked_at|eve_time }} EVE.</div>{% endif %}
+{% else %}
+<span class="text-muted">Not checked.</span>
+{% endif %}

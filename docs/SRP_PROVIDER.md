@@ -2,10 +2,11 @@
 
 FleetOps does not make its core FleetOperation depend on one SRP application.
 
-`fleetops.providers.srp` owns a small provider registry. FleetOps ships two providers:
+`fleetops.providers.srp` owns a small provider registry. FleetOps ships three providers:
 
 | Key | App | Used when |
 |---|---|---|
+| `fleetops` | FleetOps SRP, FleetOps' own SRP (see the README) | **FleetOps SRP** is enabled in the SRP settings |
 | `aasrp` | [aa-srp](https://github.com/ppfeufer/aa-srp) (app label `aasrp`) | aa-srp is installed |
 | `allianceauth_builtin` | Alliance Auth's built-in `allianceauth.srp` app | the app is installed |
 
@@ -13,15 +14,22 @@ Other SRP apps can register their own provider without modifying FleetOps core.
 
 ## Choosing the provider
 
-FleetOps Administration → General Settings → **SRP provider** lists **Automatic (aasrp, then Alliance Auth SRP)** and every registered provider, marked installed or not installed. SRP links are only created at fleet start while **SRP auto create** is ticked; **Retry SRP** on the fleet page creates one later.
+FleetOps Administration → General Settings → **SRP provider** lists **Automatic (FleetOps SRP when enabled, then aa-srp, then Alliance Auth SRP)** and every registered provider, marked installed (FleetOps SRP: enabled) or not installed (not enabled). SRP links are only created at fleet start while **SRP auto create** is ticked; **Retry SRP** on the fleet page creates one later.
 
 `auto` checks the providers in this order:
 
-1. `aasrp`
-2. `allianceauth_builtin`
-3. other registered available providers
+1. `fleetops` (only while FleetOps SRP is enabled)
+2. `aasrp`
+3. `allianceauth_builtin`
+4. other registered available providers
 
-The key `aa_srp` stored by older versions is read as `aasrp`. When an explicitly chosen provider is not installed, the SRP step reports `SRP provider '<key>' is not installed.`; in `auto` mode without any available provider it reports `No supported SRP provider is available.`
+The key `aa_srp` stored by older versions is read as `aasrp`. When an explicitly chosen provider is not installed, the SRP step reports `SRP provider '<key>' is not installed.`; when `fleetops` is chosen while FleetOps SRP is off it reports `FleetOps SRP is not enabled.`; in `auto` mode without any available provider it reports `No supported SRP provider is available.`
+
+A site that does not enable FleetOps SRP sees no change. A site that enables it and still wants aa-srp or Alliance Auth SRP links picks that provider explicitly instead of *Automatic*. A killmail that is also claimed in aa-srp or Alliance Auth SRP shows a warning on the FleetOps claim ("Also claimed in …"); nothing is blocked, and nothing is read back from the old apps except that check.
+
+## FleetOps SRP provider
+
+At fleet start (and on **Retry SRP** / **Create SRP link**) the provider creates the fleet's FleetOps SRP link: one row per fleet, with a random code, the FC's user and main character name at that moment, open until an SRP manager closes it. The link is stored on the fleet as the SRP reference and URL (`/fleetops/srp/link/<code>/`), so `{{ srp_url }}` in ping and MOTD templates, the **Open SRP** button and the SRP card of the fleet page all use it. Creating it is idempotent: a second start step, a retry or a click on **Create SRP link** finds the link that exists and changes nothing. It only writes to the FleetOps database, so it runs before the ping and the MOTD and cannot fail on a missing app. Fleets started from a PAP link get the link when they are created. Creating, opening and closing a link are audited (`srp.link_create`, `srp.link_open`, `srp.link_close`; the audit entry does not contain the link code).
 
 ## aa-srp provider
 
@@ -82,7 +90,9 @@ from fleetops.providers.srp import register_srp_provider
 register_srp_provider(MySRPProvider())
 ```
 
-Then choose it in FleetOps Administration → General Settings → **SRP provider**, or leave **Automatic**, which uses it when neither aa-srp nor the built-in SRP app is available.
+Then choose it in FleetOps Administration → General Settings → **SRP provider**, or leave **Automatic**, which uses it when neither FleetOps SRP, aa-srp nor the built-in SRP app is available.
+
+A provider may also set `state_labels` (a pair such as `("enabled", "not enabled")`, used instead of "installed" / "not installed" in the settings list) and `unavailable_message` (the text of the SRP step when the provider is chosen but not available).
 
 ## Important behavior
 

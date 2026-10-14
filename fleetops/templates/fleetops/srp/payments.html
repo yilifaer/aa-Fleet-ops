@@ -1,0 +1,100 @@
+{% extends "fleetops/base.html" %}
+{% load static fleetops_srp fleetops_messages %}
+{% block fleetops_content %}
+<div class="mb-3">
+  <h2 class="mb-1">SRP Payments</h2>
+  <div class="text-muted">Approved claims to pay in game, then mark them paid</div>
+</div>
+{% include "fleetops/month_selector.html" %}
+<div class="small text-muted mb-3">
+  {% if month_filter_active %}Showing the losses of {{ month_ref.label }}. <a href="?{{ all_months_query }}">Show all months</a>{% else %}Showing the losses of all months. Pick a month above to narrow the lists.{% endif %}
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-sm-6 col-xl-3"><div class="stat-card"><span>To pay</span><strong>{{ to_pay_total|isk }}</strong><small class="text-muted">{{ to_pay_count }} claim{{ to_pay_count|pluralize }} for {{ pay_rows|length }} player{{ pay_rows|length|pluralize }}</small></div></div>
+  <div class="col-sm-6 col-xl-3"><div class="stat-card"><span>Paid in the dates below</span><strong>{{ paid_total|isk }}</strong><small class="text-muted">{{ paid_count }} claim{{ paid_count|pluralize }}</small></div></div>
+</div>
+
+{% if pay_rows %}
+<form method="post" action="{% url 'fleetops:srp_payments' %}" class="fleetops-srp-form" data-srp-once id="fleetops-srp-pay-form">
+  {% csrf_token %}<input type="hidden" name="next" value="{{ next_url }}">
+  {% for row in pay_rows %}
+  <div class="card mb-3" data-srp-group>
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <div class="d-flex align-items-center gap-2">
+        <input type="checkbox" class="form-check-input mt-0" data-srp-select-group aria-label="Select all claims of {{ row.main_character_name }}">
+        <strong>{{ row.main_character_name }}</strong>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.main_character_name }}" hidden>Copy name</button>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <span class="fs-5 fw-semibold">{{ row.total|isk }}</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.total|isk_plain }}" hidden>Copy amount</button>
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead><tr><th scope="col" class="fleetops-srp-check"></th><th scope="col">Claim</th><th scope="col">Loss (EVE)</th><th scope="col">Ship</th><th scope="col">Fleet</th><th scope="col" class="text-end">Amount</th><th scope="col"></th></tr></thead>
+        <tbody>
+          {% for claim in row.claims %}
+          <tr>
+            <td class="fleetops-srp-check">{% if claim.reviewable %}<input type="checkbox" class="form-check-input" name="claim" value="{{ claim.uuid }}" data-srp-select data-srp-amount="{{ claim.approved_amount }}" aria-label="Select {{ claim.reference }}"><input type="hidden" name="shown-{{ claim.uuid }}" value="{{ claim.approved_amount }}">{% else %}<span class="text-muted" title="Your own claim: another SRP manager has to pay it.">own</span>{% endif %}</td>
+            <td><a href="{% url 'fleetops:srp_claim' claim.uuid %}">{{ claim.reference }}</a></td>
+            <td class="text-nowrap">{{ claim.killmail_time|eve_time }}</td>
+            <td>{{ claim.ship_type_name|default:claim.ship_type_id }}</td>
+            <td>{% if claim.scope == "in_fleet" %}<span class="small">{{ claim.fleet_label|default:"In fleet" }}</span>{% else %}<span class="text-muted">Out of fleet</span>{% endif %}</td>
+            <td class="text-end text-nowrap">{{ claim.approved_amount|isk }}</td>
+            <td class="text-end"><button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ claim.approved_amount|isk_plain }}" hidden>Copy</button></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endfor %}
+  <div class="card fleetops-srp-paybar mb-4">
+    <div class="card-body d-flex flex-wrap align-items-end gap-3">
+      <div><div class="small text-muted">Selected</div><div class="fs-5 fw-semibold"><span data-srp-selected-count>0</span> claims &middot; <span data-srp-selected-total>0 ISK</span></div></div>
+      <div class="flex-grow-1"><label class="form-label mb-1" for="id_note">Payment note <span class="text-muted">(optional)</span></label><input type="text" class="form-control" name="note" id="id_note" maxlength="255" autocomplete="off"></div>
+      <button type="submit" class="btn btn-success" data-srp-bulk-button disabled>Mark selected paid</button>
+    </div>
+  </div>
+</form>
+{% else %}
+<div class="alert alert-secondary">Nothing waits for payment{% if month_filter_active %} for the losses of {{ month_ref.label }}{% endif %}.</div>
+{% endif %}
+
+<div class="card mb-3">
+  <div class="card-header"><strong>Paid claims</strong></div>
+  <div class="card-body">
+    <form method="get" class="row g-2 align-items-end">
+      {% if month_filter_active %}<input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="month" value="{{ month }}">{% endif %}
+      <div class="col-sm-auto"><label class="form-label mb-1" for="{{ filter_form.paid_from.id_for_label }}">{{ filter_form.paid_from.label }}</label>{{ filter_form.paid_from }}</div>
+      <div class="col-sm-auto"><label class="form-label mb-1" for="{{ filter_form.paid_to.id_for_label }}">{{ filter_form.paid_to.label }}</label>{{ filter_form.paid_to }}</div>
+      <div class="col-sm-auto"><button type="submit" class="btn btn-primary">Filter</button></div>
+      <div class="col-sm-auto small text-muted">Payment dates in EVE time. Without a date the last 30 days are shown.</div>
+    </form>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th scope="col">Paid (EVE)</th><th scope="col">Pilot</th><th scope="col">Claim</th><th scope="col">Ship</th><th scope="col" class="text-end">Amount</th><th scope="col">Paid by</th><th scope="col">Note</th></tr></thead>
+      <tbody>
+        {% for claim in paid_claims %}
+        <tr>
+          <td class="text-nowrap">{{ claim.paid_at|eve_time }}</td>
+          <td>{{ claim.main_character_name|default:claim.character_name }}</td>
+          <td><a href="{% url 'fleetops:srp_claim' claim.uuid %}">{{ claim.reference }}</a></td>
+          <td>{{ claim.ship_type_name|default:claim.ship_type_id }}</td>
+          <td class="text-end text-nowrap">{{ claim.approved_amount|isk }}</td>
+          <td>{{ claim.paid_by|default:"" }}</td>
+          <td>{{ claim.payment_note }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-muted p-4">No claim was paid in these dates.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if paid_count > paid_shown %}<div class="card-footer small text-muted">The latest {{ paid_shown }} of {{ paid_count }} claims are shown. Narrow the dates to see the others.</div>{% endif %}
+</div>
+<script src="{% static 'fleetops/srp.js' %}?v={{ fleetops_version }}" defer></script>
+{% endblock %}

@@ -32,7 +32,9 @@ Important areas include:
 - `providers/esi.py` — ESI access abstraction
 - `providers/doctrines.py` — optional doctrine discovery
 - `providers/pings.py` — ping delivery abstraction
-- `providers/srp.py` — SRP provider registry / built-in AA adapter
+- `providers/srp.py` — SRP provider registry: FleetOps SRP, aa-srp and the built-in AA adapter
+- `providers/zkillboard.py`, `providers/esi_killmails.py` — zKillboard lookups (throttled, with a pause after a block) and ESI killmails/market prices for FleetOps SRP
+- `srp/` — FleetOps SRP: killmail intake and values (`killmails.py`, `values.py`), rules and amounts (`policy.py`, `quota.py`, `presence.py`), claims and decisions (`claims.py`, `review.py`, `notify.py`), fleet links (`links.py`), summaries (`summaries.py`), access rules (`access.py`)
 - `services/operations.py` — operation start/end lifecycle
 - `services/tracking.py` — fleet-member current-state/event diffing
 - `services/attendance.py` — attendance credit logic

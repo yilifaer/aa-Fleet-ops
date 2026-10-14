@@ -1,0 +1,36 @@
+{% extends "fleetops/base.html" %}
+{% block fleetops_content %}
+<div class="mb-3">
+  <div class="small"><a href="{% url 'fleetops:configuration_index' %}">FleetOps Administration</a></div>
+  <h2>SRP Settings</h2>
+  <div class="text-muted">FleetOps SRP: what members can claim, how much is paid and what the monthly limits are. Changes are audited.</div>
+</div>
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:configuration_list' 'srp-rules' %}">Payout Table</a>
+  <a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:configuration_list' 'srp-corporation-limits' %}">Corporation Limits</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'fleetops:configuration_settings' %}">General settings (SRP provider, automatic SRP link)</a>
+</div>
+{% if provider_elsewhere %}
+<div class="alert alert-warning" id="srp-provider-notice">The SRP provider in the general settings is “{{ fleetops_settings.srp_provider }}”, so fleets get no FleetOps SRP link at their start. Choose Automatic or FleetOps SRP there.</div>
+{% elif not fleetops_settings.srp_auto_create %}
+<div class="alert alert-info" id="srp-auto-create-notice">SRP auto create is off in the general settings: fleets get no SRP link at their start. FCs can still create it from the fleet page.</div>
+{% endif %}
+<form method="post">
+  {% csrf_token %}
+  {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+  {% for title, text, fields in form.field_groups %}
+  <div class="card mb-3" id="srp-{{ title|slugify }}"><div class="card-header"><strong>{{ title }}</strong>{% if text %}<div class="small text-muted">{{ text }}</div>{% endif %}</div><div class="card-body">
+    {% for field in fields %}
+      {% if field.field.widget.input_type == 'checkbox' %}
+        <div class="form-check mb-3">{{ field }} <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}<div class="text-danger small">{{ field.errors }}</div></div>
+      {% else %}
+        <div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}<div class="text-danger small">{{ field.errors }}</div></div>
+      {% endif %}
+    {% endfor %}
+    {% if title == "Payouts and caps" %}<div class="small"><a href="{% url 'fleetops:configuration_list' 'srp-rules' %}">Payout Table</a></div>{% endif %}
+    {% if title == "Monthly limits" %}<div class="small"><a href="{% url 'fleetops:configuration_list' 'srp-corporation-limits' %}">Corporation Limits</a> (a limit for one corporation replaces the default corporation cap)</div>{% endif %}
+  </div></div>
+  {% endfor %}
+  <div class="d-flex gap-2"><button class="btn btn-primary">Save SRP Settings</button><a class="btn btn-outline-secondary" href="{% url 'fleetops:configuration_index' %}">Cancel</a></div>
+</form>
+{% endblock %}

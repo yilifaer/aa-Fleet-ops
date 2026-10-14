@@ -12,6 +12,7 @@
 
 {% include "fleetops/operation/_controls.html" %}
 {% include "fleetops/operation/_links.html" %}
+{% include "fleetops/operation/_srp.html" %}
 
 <ul class="nav nav-tabs" role="tablist" id="operation-tabs">
   {% if show_fleet_tab %}<li class="nav-item"><button class="nav-link{% if fleet_tab_default %} active{% endif %}" data-bs-toggle="tab" data-bs-target="#fleet" id="fleet-tab">{% if operation.status == 'closed' %}Composition{% else %}Fleet{% endif %}</button></li>{% endif %}

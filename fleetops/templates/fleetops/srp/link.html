@@ -1,0 +1,38 @@
+{% extends "fleetops/base.html" %}
+{% load static fleetops_srp fleetops_messages %}
+{% block fleetops_content %}
+<div class="mb-3">
+  <h2 class="mb-1">SRP for {{ operation.fleet_type }}</h2>
+  <div class="text-muted">
+    FC {{ link.fc_main_character_name|default:operation.fc_character_name }}
+    {% if operation.started_at %}&middot; started {{ operation.started_at|eve_time }} EVE{% endif %}
+    {% if operation.ended_at %}&middot; ended {{ operation.ended_at|eve_time }} EVE{% endif %}
+    {% if operation.doctrine_name %}&middot; doctrine {{ operation.doctrine_name }}{% endif %}
+  </div>
+</div>
+{% if not srp_enabled %}
+<div class="alert alert-info">FleetOps SRP is not enabled.</div>
+{% elif not link_open %}
+<div class="alert alert-warning">This fleet's SRP link is closed. No new claims can be made through it.</div>
+{% else %}
+{% if srp_settings.member_instructions %}<div class="alert alert-secondary">{{ srp_settings.member_instructions|linebreaksbr }}</div>{% endif %}
+<div class="card mb-3">
+  <div class="card-header"><strong>Claim a loss of this fleet</strong></div>
+  <div class="card-body">
+    <form method="post" action="{% url 'fleetops:srp_link' link.code %}" class="fleetops-srp-form" data-srp-once>
+      {% csrf_token %}
+      {{ claim_form.as_div }}
+      <button type="submit" class="btn btn-primary mt-2">Check loss</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% if srp_enabled %}
+<div class="card mb-3">
+  <div class="card-header"><strong>Your claims for this fleet</strong></div>
+  <div class="card-body p-0">{% include "fleetops/srp/_claims_table.html" with mine=True claims=my_claims page=None %}</div>
+</div>
+{% endif %}
+<a class="btn btn-outline-secondary" href="{% url 'fleetops:srp_home' %}">Back to My SRP</a>
+{% if srp_enabled %}<script src="{% static 'fleetops/srp.js' %}?v={{ fleetops_version }}" defer></script>{% endif %}
+{% endblock %}

@@ -33,7 +33,11 @@ class DatasetRegistryTests(TestCase):
     def test_datasets(self):
         self.assertEqual(
             set(DATASETS),
-            {"corporations", "members", "member-fleets", "fcs", "attendance", "incentives"},
+            {
+                "corporations", "members", "member-fleets", "fcs", "attendance", "incentives",
+                # FleetOps SRP; tests/test_srp_exports.py covers their access rules.
+                "srp-claims", "srp-members", "srp-corporations", "srp-fcs",
+            },
         )
         for slug, dataset in DATASETS.items():
             self.assertEqual(dataset.slug, slug)

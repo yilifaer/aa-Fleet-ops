@@ -22,7 +22,13 @@ from fleetops.providers.doctrines import doctrine_fits_snapshot
 from fleetops.providers.esi import FleetESIError, character_location, character_online, character_ship
 from fleetops.services.audit import audit
 from fleetops.services.errors import log_failure
-from fleetops.services.operations import fc_values, owned_fleet_character, pap_rule_values, set_action
+from fleetops.services.operations import (
+    create_srp_at_start,
+    fc_values,
+    owned_fleet_character,
+    pap_rule_values,
+    set_action,
+)
 from fleetops.services.pap import refresh_after_change
 from fleetops.services.review import initial_review_fields
 from fleetops.services.sde import item_type_names, solar_system_names
@@ -58,7 +64,6 @@ LINK_ONLY_SKIPPED = (
     ("discord_ping", "Discord ping"),
     ("motd_update", "MOTD update"),
     ("tracking_start", "ESI tracking"),
-    ("srp_link", "automatic SRP link"),
 )
 
 
@@ -360,4 +365,6 @@ def start_link_only_fleet(user, cleaned_data):
         if existing is None:
             raise
         return existing
+    # The SRP link of the fleet, like an ESI fleet's. It is best effort and records its own step.
+    create_srp_at_start(operation)
     return operation

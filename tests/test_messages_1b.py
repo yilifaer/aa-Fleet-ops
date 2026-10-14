@@ -109,11 +109,15 @@ class MessageTestBase(TestCase):
 
 
 class DefaultTemplateTests(TestCase):
-    def test_built_in_templates_are_the_copies_in_migration_0009(self):
+    def test_built_in_templates_are_the_copies_in_the_migrations(self):
         upgrade = importlib.import_module("fleetops.migrations.0009_convert_ping_targets_and_presets")
 
+        srp = importlib.import_module("fleetops.migrations.0017_srp_data")
+
         self.assertEqual(DEFAULT_PING_TEMPLATE.encode(), upgrade.NEW_PING.encode())
-        self.assertEqual(DEFAULT_MOTD_TEMPLATE.encode(), upgrade.NEW_MOTD.encode())
+        # Migration 0017 added the SRP line to the MOTD; its copy is the current one.
+        self.assertEqual(upgrade.NEW_MOTD.encode(), srp.OLD_MOTD.encode())
+        self.assertEqual(DEFAULT_MOTD_TEMPLATE.encode(), srp.NEW_MOTD.encode())
 
     def test_default_ping_has_no_logi_or_boost(self):
         self.assertNotIn("logi", DEFAULT_PING_TEMPLATE.lower())

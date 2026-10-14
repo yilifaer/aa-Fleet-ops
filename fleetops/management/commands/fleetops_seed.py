@@ -13,6 +13,7 @@ from fleetops.models import (
     ShipFunction,
     ShipFunctionRule,
     SpecialRole,
+    SrpSettings,
 )
 
 # (threshold in minutes, multiplier); only created when no tier exists.
@@ -37,6 +38,8 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         FleetOpsSettings.get_solo()
+        # SRP stays disabled until an admin turns it on.
+        SrpSettings.get_solo()
         # Never overwrite configuration that already exists; only fill in what is missing.
         for template_type, name, content in (
             (MessageTemplate.TemplateType.PING, "Default Ping", DEFAULT_PING_TEMPLATE),
@@ -62,8 +65,8 @@ class Command(BaseCommand):
         seed_structure_templates(FleetStructureTemplate)
         self.stdout.write(
             self.style.SUCCESS(
-                "FleetOps settings, default message templates, multiplier tiers, special roles, ship functions "
-                "and fleet structure templates are ready."
+                "FleetOps settings, SRP settings, default message templates, multiplier tiers, special roles, "
+                "ship functions and fleet structure templates are ready."
             )
         )
 
