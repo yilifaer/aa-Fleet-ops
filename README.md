@@ -146,7 +146,7 @@ same task finishes fleets whose End Fleet task was lost, cancels starts that wer
 SRP value sweep, so keep it running. If aa-charlink is installed, `"fleetops"` must be written literally in
 `INSTALLED_APPS`.
 
-For the links in pings and MOTDs, add the following. `APPS_WITH_PUBLIC_VIEWS` is already defined in `local.py`
+For the comms join page, add the following. `APPS_WITH_PUBLIC_VIEWS` is already defined in `local.py`
 (empty on a new site, or listing the other apps with public pages), so put the line below that definition and
 add to the list instead of replacing it (if your `local.py` has no such line, write
 `APPS_WITH_PUBLIC_VIEWS = ["fleetops"]` instead):
@@ -154,11 +154,15 @@ add to the list instead of replacing it (if your `local.py` has no such line, wr
 ```python
 # Lets pilots who are not logged in open the comms join page.
 APPS_WITH_PUBLIC_VIEWS += ["fleetops"]
-
-SITE_URL = "https://auth.example.com"   # the public https address of your Alliance Auth
 ```
 
-Set `ESI_USER_CONTACT_EMAIL` as django-esi requires. Then run:
+The links in pings and MOTDs are built from `SITE_URL`. It is already defined near the top of `local.py`, and
+`ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` and `ESI_SSO_CALLBACK_URL` are derived from it, so do not add the line
+again or change it here: a changed value breaks the EVE SSO callback. Only check that it is the https address of
+your site without a trailing slash, for example `https://auth.example.com`.
+
+`ESI_USER_CONTACT_EMAIL` also exists in `local.py` already (empty in the template). Fill in that line with a
+contact address, as django-esi requires; do not add a second one. Then run:
 
 ```bash
 python manage.py migrate fleetops

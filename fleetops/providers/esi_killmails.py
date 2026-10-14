@@ -8,18 +8,18 @@ list contains ``KILLMAIL_OPERATIONS`` (defined there because this module imports
 Neither call needs a token.
 """
 
-import logging
 from decimal import Decimal
 from importlib import import_module
 
 import requests
+from allianceauth.services.hooks import get_extension_logger
 from esi.exceptions import ESIBucketLimitException, ESIErrorLimitException
 
 from fleetops.providers import esi as esi_provider
 from fleetops import texts
 from fleetops.providers.esi import FleetESIError, _read, _status_code
 
-logger = logging.getLogger(__name__)
+logger = get_extension_logger(__name__)
 
 KILLMAIL_OPERATIONS = esi_provider.KILLMAIL_OPERATIONS
 NOT_FOUND_STATUSES = (404, 422)

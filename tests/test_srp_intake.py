@@ -551,7 +551,7 @@ class ZkillboardAnswerTests(ZkillboardTestCase):
             with self.subTest(status=response.status_code, text=response.text):
                 cache.delete(zkillboard.FAILURES_KEY)
                 self.get.return_value = response
-                with self.assertLogs("fleetops.providers.zkillboard", "WARNING") as logs:
+                with self.assertLogs("extensions.fleetops.providers.zkillboard", "WARNING") as logs:
                     result = self.fetch()
                 self.assertEqual(result.status, "unavailable")
                 self.assertEqual(result.message, zkillboard.MESSAGES["unavailable"])
@@ -561,7 +561,7 @@ class ZkillboardAnswerTests(ZkillboardTestCase):
 
     def test_network_errors_log_the_class_only(self):
         self.get.side_effect = requests.ConnectionError("https://zkillboard.com/api/killID/1/ SECRET-DETAIL")
-        with self.assertLogs("fleetops.providers.zkillboard", "WARNING") as logs:
+        with self.assertLogs("extensions.fleetops.providers.zkillboard", "WARNING") as logs:
             result = self.fetch()
         self.assertEqual(result.status, "unavailable")
         self.assertTrue(result.requested)
@@ -605,7 +605,7 @@ class ZkillboardThrottleTests(ZkillboardTestCase):
 class ZkillboardBreakerTests(ZkillboardTestCase):
     def test_block_redirect_pauses_for_an_hour_and_warns_once(self):
         self.get.return_value = FakeResponse(302, text="", headers={"Location": "/api/blocked.json"})
-        with self.assertLogs("fleetops.providers.zkillboard", "WARNING") as logs:
+        with self.assertLogs("extensions.fleetops.providers.zkillboard", "WARNING") as logs:
             result = self.fetch()
         self.assertEqual(result.status, "blocked")
         self.assertEqual(result.retry_after, 3600)
@@ -665,7 +665,7 @@ class ZkillboardBreakerTests(ZkillboardTestCase):
 
     def test_three_failures_in_a_row_pause_for_fifteen_minutes(self):
         self.get.side_effect = requests.Timeout()
-        with self.assertLogs("fleetops.providers.zkillboard", "WARNING") as logs:
+        with self.assertLogs("extensions.fleetops.providers.zkillboard", "WARNING") as logs:
             for _ in range(3):
                 self.assertEqual(self.fetch().status, "unavailable")
         self.assertEqual(self.get.call_count, 3)
@@ -845,7 +845,7 @@ class EsiKillmailTests(FakeEsiTestCase):
         for error, text in cases:
             with self.subTest(error=type(error).__name__):
                 self.killmail = error
-                with self.assertLogs("fleetops.providers.esi_killmails", "WARNING") as logs:
+                with self.assertLogs("extensions.fleetops.providers.esi_killmails", "WARNING") as logs:
                     with self.assertRaises(FleetESIError) as ctx:
                         esi_killmails.get_killmail(KILL_ID, HASH)
                 self.assertEqual(ctx.exception.code, "ESI_ERROR")
@@ -887,7 +887,7 @@ class EsiKillmailTests(FakeEsiTestCase):
 
     def test_market_price_failure(self):
         self.prices = HTTPServerError(status_code=503, headers={}, data=None)
-        with self.assertLogs("fleetops.providers.esi_killmails", "WARNING"), self.assertRaises(FleetESIError) as ctx:
+        with self.assertLogs("extensions.fleetops.providers.esi_killmails", "WARNING"), self.assertRaises(FleetESIError) as ctx:
             esi_killmails.get_market_prices()
         self.assertEqual(str(ctx.exception), "Could not read market prices: ESI returned HTTP 503.")
 

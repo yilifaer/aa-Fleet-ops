@@ -101,7 +101,11 @@ class FleetOpsSettingsForm(forms.ModelForm):
     GROUPS = [
         (
             _("PAP rules"),
-            _("Apply to fleets that start after a change; running and closed fleets keep their rules."),
+            _(
+                "PAP minimum time and PAP characters per player apply to fleets that start after a change; running "
+                "and closed fleets keep the values they started with. PAP multiplier mode and PAP multiplier tiers "
+                "are read when a fleet ends, so the settings at that moment apply."
+            ),
             ["multiplier_mode", "pap_minimum_minutes", "attendance_limit"],
         ),
         (

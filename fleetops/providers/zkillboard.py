@@ -9,7 +9,6 @@ are therefore limited site-wide to one every two seconds and paused after a bloc
 "slow down" answer or repeated failures. Response bodies are never logged.
 """
 
-import logging
 import math
 import re
 from datetime import datetime, timedelta, timezone as dt_timezone
@@ -17,6 +16,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from email.utils import parsedate_to_datetime
 
 import requests
+from allianceauth.services.hooks import get_extension_logger
 from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
@@ -24,7 +24,7 @@ from django.utils import timezone
 from fleetops import __title__, __url__, __version__, texts
 from fleetops.srp.types import ZkillResult
 
-logger = logging.getLogger(__name__)
+logger = get_extension_logger(__name__)
 
 API_BASE = "https://zkillboard.com/api/"
 KILL_URL = "https://zkillboard.com/kill/{id}/"

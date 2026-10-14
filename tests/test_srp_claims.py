@@ -17,6 +17,7 @@ from django.db import IntegrityError
 from django.test import TestCase
 from django.utils import timezone
 
+from fleetops.providers import zkillboard
 from fleetops.models import (
     AuditLog,
     FleetMemberEvent,
@@ -73,6 +74,11 @@ class ClaimBase(TestCase):
         for user in (self.user, self.other, self.manager, self.fc):
             cache.delete(f"fleetops:srp:check:{user.pk}")
         self.addCleanup(self.clear_throttle)
+        # No request leaves the test run: a preview of a pending loss asks zKillboard, which on a runner
+        # with internet would answer with the value of a real kill of the same ID.
+        patcher = mock.patch.object(zkillboard.requests, "get", side_effect=zkillboard.requests.ConnectionError("offline"))
+        self.get = patcher.start()
+        self.addCleanup(patcher.stop)
 
     def clear_throttle(self):
         for user in (self.user, self.other, self.manager, self.fc):
@@ -317,6 +323,13 @@ class PrepareClaimTests(ClaimBase):
 
 
 class PreviewWarningTests(ClaimBase):
+    def test_the_preview_of_a_pending_loss_never_reaches_the_network(self):
+        km = self.killmail(fitted=None, zkill_status=Zkill.PENDING)
+        cache.delete(zkillboard.SLOT_KEY)
+        self.prepare(km)
+        self.assertIsInstance(zkillboard.requests.get, mock.Mock)
+        self.get.assert_called_once()
+
     def test_pending_value_is_a_warning(self):
         km = self.killmail(fitted=None, zkill_status=Zkill.PENDING)
         preview = self.prepare(km)

@@ -322,7 +322,7 @@ class EndToEndTests(SweepTestCase):
         asked, second, third = (self.due(minutes_ago=minutes) for minutes in (3, 2, 1))
         self.get.return_value = FakeResponse({}, status=403)
 
-        with self.assertLogs("fleetops.providers.zkillboard", "WARNING"):
+        with self.assertLogs("extensions.fleetops.providers.zkillboard", "WARNING"):
             self.assertEqual(self.sweep(), 3)
 
         self.assertEqual(self.get.call_count, 1)

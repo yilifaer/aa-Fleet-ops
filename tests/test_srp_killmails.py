@@ -693,7 +693,7 @@ class RealZkillboardClientTests(KillmailTestCase):
 
     def test_zkillboard_blocking_us_does_not_stop_in_game_links(self):
         self.get.return_value = FakeResponse({}, status=403)
-        with self.assertLogs("fleetops.providers.zkillboard", "WARNING"), self.assertRaises(SrpError) as ctx:
+        with self.assertLogs("extensions.fleetops.providers.zkillboard", "WARNING"), self.assertRaises(SrpError) as ctx:
             self.fetch(self.killboard_ref())
         self.assertEqual(ctx.exception.code, "zkill_unavailable")
         self.assertIn(IN_GAME_HINT, ctx.exception.message)

@@ -28,9 +28,9 @@ warning while the first two are missing.
 
 | Setting | Used for |
 |---|---|
-| `SITE_URL` | The public https address of Alliance Auth, for example `https://auth.example.com`. Links in pings and MOTDs (comms join page, doctrines, SRP links, the PAP link) are built from it. Without it they are site paths that open nowhere outside Alliance Auth. |
+| `SITE_URL` | The public https address of Alliance Auth, for example `https://auth.example.com`. Already defined near the top of `local.py`, and `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` and `ESI_SSO_CALLBACK_URL` are derived from it: do not add the line again or change it (that breaks the EVE SSO callback), only check that it is your site's https address without a trailing slash. Links in pings and MOTDs (comms join page, doctrines, SRP links, the PAP link) are built from it. Without it they are site paths that open nowhere outside Alliance Auth. |
 | `APPS_WITH_PUBLIC_VIEWS` | Add `"fleetops"` so pilots who are not logged in can open the comms join page. |
-| `ESI_USER_CONTACT_EMAIL` | Sent in the User-Agent of ESI requests (django-esi requires it) and of zKillboard requests (`SITE_URL` is the fallback there). |
+| `ESI_USER_CONTACT_EMAIL` | The line already exists in `local.py` (empty in the template): fill it in, do not add a second one. Sent in the User-Agent of ESI requests (django-esi requires it) and of zKillboard requests (`SITE_URL` is the fallback there). |
 | `DISCORD_GUILD_ID` | Needed by the Alliance Auth Discord service for **Sync roles from Discord**. |
 | `LANGUAGE_CODE` | The site language. Pings and MOTDs are written in it. |
 

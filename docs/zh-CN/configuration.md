@@ -27,9 +27,9 @@ FleetOps 会读取 Alliance Auth 项目（`local.py`）里的几个设置。前�
 
 | 设置 | 用途 |
 |---|---|
-| `SITE_URL` | Alliance Auth 的公开 https 地址，例如 `https://auth.example.com`。Ping 和 MOTD 里的链接（语音加入页、教义、SRP 链接、PAP 登记链接）都由它生成。没有它，链接只是站内路径，在 Alliance Auth 之外打不开。 |
+| `SITE_URL` | Alliance Auth 的公开 https 地址，例如 `https://auth.example.com`。`local.py` 开头附近已经定义了它，`ALLOWED_HOSTS`、`CSRF_TRUSTED_ORIGINS` 和 `ESI_SSO_CALLBACK_URL` 都由它派生：不要再加一行，也不要改它（会让 EVE SSO 回调失效），只需确认它是站点的 https 地址且末尾没有斜杠。Ping 和 MOTD 里的链接（语音加入页、教义、SRP 链接、PAP 登记链接）都由它生成。没有它，链接只是站内路径，在 Alliance Auth 之外打不开。 |
 | `APPS_WITH_PUBLIC_VIEWS` | 加入 `"fleetops"`，未登录的飞行员才能打开语音加入页。 |
-| `ESI_USER_CONTACT_EMAIL` | 写入 ESI 请求的 User-Agent（django-esi 要求），也用于 zKillboard 请求（那里以 `SITE_URL` 作为备选）。 |
+| `ESI_USER_CONTACT_EMAIL` | `local.py` 里已经有这一行（模板里是空的）：把它填上，不要再加第二行。写入 ESI 请求的 User-Agent（django-esi 要求），也用于 zKillboard 请求（那里以 `SITE_URL` 作为备选）。 |
 | `DISCORD_GUILD_ID` | Alliance Auth 的 Discord 服务使用它；"从 Discord 同步身份组"需要它。 |
 | `LANGUAGE_CODE` | 站点语言。Ping 和 MOTD 使用这个语言书写。 |
 

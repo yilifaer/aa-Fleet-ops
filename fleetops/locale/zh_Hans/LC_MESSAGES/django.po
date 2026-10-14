@@ -5,7 +5,8 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
-"Report-Msgid-Bugs-To: https://github.com/yilifaer/aa-fleetops/issues\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-10-14 13:23+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -378,8 +379,8 @@ msgid "PAP rules"
 msgstr "PAP 规则"
 
 #: forms_config.py
-msgid "Apply to fleets that start after a change; running and closed fleets keep their rules."
-msgstr "对修改之后开启的舰队生效；进行中和已结束的舰队保留原有规则。"
+msgid "PAP minimum time and PAP characters per player apply to fleets that start after a change; running and closed fleets keep the values they started with. PAP multiplier mode and PAP multiplier tiers are read when a fleet ends, so the settings at that moment apply."
+msgstr "「PAP 最低在队时长」和「每位玩家的 PAP 角色数」只对修改之后开启的舰队生效，进行中和已结束的舰队沿用开舰队时的数值；「PAP 倍率模式」和「PAP 倍率」在舰队结束时按当时的设置计算。"
 
 #: forms_config.py templates/fleetops/base.html
 msgid "Statistics"

@@ -124,17 +124,18 @@ CELERYBEAT_SCHEDULE["fleetops_prune_history"] = {
 每分钟运行的任务只负责判断哪些进行中的舰队到了该读取的时间，读取间隔本身是一个设置。同一个任务还会收尾那些"结束舰队"任务丢失的舰队、取消被中断的开队，并启动 SRP 价值扫描，
 所以请保持它一直运行。如果安装了 aa-charlink，`INSTALLED_APPS` 里必须原样写出 `"fleetops"`。
 
-为了让 Ping 和 MOTD 里的链接可用，再加入下面的内容。`local.py` 里已经定义了 `APPS_WITH_PUBLIC_VIEWS`（新站点里是空列表，也可能已经列着其他有公开页面的应用），
+为了让未登录的飞行员能打开语音加入页，再加入下面的内容。`local.py` 里已经定义了 `APPS_WITH_PUBLIC_VIEWS`（新站点里是空列表，也可能已经列着其他有公开页面的应用），
 请把这一行写在那个定义的下面，是往列表里追加，而不是替换它（如果你的 `local.py` 里没有这个定义，就写成 `APPS_WITH_PUBLIC_VIEWS = ["fleetops"]`）：
 
 ```python
 # Lets pilots who are not logged in open the comms join page.
 APPS_WITH_PUBLIC_VIEWS += ["fleetops"]
-
-SITE_URL = "https://auth.example.com"   # the public https address of your Alliance Auth
 ```
 
-按 django-esi 的要求设置 `ESI_USER_CONTACT_EMAIL`。然后运行：
+Ping 和 MOTD 里的链接由 `SITE_URL` 生成。`local.py` 开头附近已经定义了它，`ALLOWED_HOSTS`、`CSRF_TRUSTED_ORIGINS` 和 `ESI_SSO_CALLBACK_URL` 都是由它派生出来的，
+所以不要在这里再加一行，也不要改它：改动会让 EVE SSO 回调失效。只需确认它是站点的 https 地址且末尾没有斜杠，例如 `https://auth.example.com`。
+
+`local.py` 里也已经有 `ESI_USER_CONTACT_EMAIL` 这一行（模板里是空的）。按 django-esi 的要求把联系邮箱填进这一行，不要再添加第二行。然后运行：
 
 ```bash
 python manage.py migrate fleetops
