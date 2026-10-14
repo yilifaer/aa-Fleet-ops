@@ -1,6 +1,6 @@
-{% load tz fleetops_fleet %}
+{% load i18n tz fleetops_fleet %}
 {% if fleet_can_manage and fleet_changes %}
-<div class="card mb-3"><div class="card-header"><strong>Recent fleet changes</strong></div>
+<div class="card mb-3"><div class="card-header"><strong>{% translate "Recent fleet changes" %}</strong></div>
 <ul class="list-group list-group-flush small" id="fleet-changes-list">{% for entry in fleet_changes %}<li class="list-group-item{% if entry|change_failed %} text-danger{% endif %}"><span class="text-muted">{{ entry.created_at|utc|date:"H:i" }} EVE · {{ entry.actor|actor_name }}</span> · {{ entry|change_text }}</li>{% endfor %}</ul>
 </div>
 {% endif %}

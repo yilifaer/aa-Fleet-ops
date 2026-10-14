@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Wing, squad and member position changes from the Fleet tab.
 
 Every view answers through ``fleet_response``: JSON for the tab's scripts, a message and the
@@ -5,6 +8,7 @@ fleet page for plain form posts.
 """
 
 from allianceauth.authentication.decorators import permissions_required
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 
 from fleetops.services import fleet_manage
@@ -89,9 +93,9 @@ def members_move_view(request, operation_uuid):
     character_ids = posted_ids(request)
     role = request.POST.get("role", "")
     if not character_ids:
-        return fleet_response(request, operation, invalid("Choose the members to move."))
+        return fleet_response(request, operation, invalid(_("Choose the members to move.")))
     if role not in FLEET_ROLES:
-        return fleet_response(request, operation, invalid("Choose a fleet position."))
+        return fleet_response(request, operation, invalid(_("Choose a fleet position.")))
     try:
         wing_id = posted_unit(request, "wing_id", "wing")
         squad_id = posted_unit(request, "squad_id", "squad")

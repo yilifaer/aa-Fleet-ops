@@ -1,4 +1,4 @@
-# AA FleetOps 0.1.0a6: PAP rules (multiplier tiers, time in fleet, minimum time, per-fleet snapshots),
+# AA FleetOps 0.2.0b1: PAP rules (multiplier tiers, time in fleet, minimum time, per-fleet snapshots),
 # FC lead review, statistics inclusion, configurable special roles, PAP links and Fleet Start presets.
 # Schema only; 0012 fills the new fields of existing rows.
 

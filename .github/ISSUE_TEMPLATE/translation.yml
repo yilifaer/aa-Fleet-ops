@@ -1,0 +1,42 @@
+name: Translation
+description: Fix a wording or offer a new language
+title: "[Translation]: "
+labels: ["translation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for a wrong or unclear translation, a text that is not translated, or to offer a new language.
+        How to add or update a language is described in
+        [docs/translations.md](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/translations.md).
+  - type: input
+    id: language
+    attributes:
+      label: Language
+      placeholder: Simplified Chinese
+    validations:
+      required: true
+  - type: input
+    id: page
+    attributes:
+      label: Page or message
+      description: The page, button or message where you saw the text.
+      placeholder: Start Fleet page, Discord ping step
+  - type: textarea
+    id: current
+    attributes:
+      label: Current text
+      description: Copy the text as it appears. Write "none" if the text is not translated.
+    validations:
+      required: true
+  - type: textarea
+    id: suggested
+    attributes:
+      label: Suggested text
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Why the new wording is better, or the term players of your language use.

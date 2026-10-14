@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Default ship functions and fleet structure templates, and the English names of ship groups.
 
 ``fleetops_seed`` creates them on installations whose tables are empty. Migration 0014 keeps its

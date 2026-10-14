@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """zKillboard killmail lookups: the hash for killboard links and the ISK value of a loss.
 
 zKillboard asks API users for a descriptive User-Agent, no query strings, local caching
@@ -18,7 +21,7 @@ from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
 
-from fleetops import __title__, __url__, __version__
+from fleetops import __title__, __url__, __version__, texts
 from fleetops.srp.types import ZkillResult
 
 logger = logging.getLogger(__name__)
@@ -52,11 +55,11 @@ HASH_RE = re.compile(r"[0-9a-f]{40}")
 PRODUCT = re.sub(r"\s+", "-", __title__.strip())
 
 MESSAGES = {
-    "missing": "zKillboard does not have this killmail yet (new killmails appear after about 5 minutes).",
-    "too_recent": "This killmail is too recent for zKillboard; its value is looked up a few minutes later.",
-    "unavailable": "zKillboard is not available at the moment.",
-    "throttled": "zKillboard is busy, try again in a few seconds.",
-    "blocked": "zKillboard is refusing requests at the moment.",
+    "missing": texts.ZKILL_MISSING(),
+    "too_recent": texts.ZKILL_TOO_RECENT(),
+    "unavailable": texts.ZKILL_UNAVAILABLE(),
+    "throttled": texts.ZKILL_BUSY(),
+    "blocked": texts.ZKILL_BLOCKED(),
 }
 
 

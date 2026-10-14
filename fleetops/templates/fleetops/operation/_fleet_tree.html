@@ -1,15 +1,19 @@
+{% load i18n %}
+{% translate "Collapse or expand" as toggle_title %}
+{% translate "Waiting for ESI to confirm the change" as pending_title %}
+{% translate "Waiting for ESI" as pending_label %}
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2" id="fleet-tree-head">
-  <div><strong>Fleet {{ operation.esi_fleet_id }}</strong> · Boss {{ fleet_view.boss_name }} <i class="fa-solid fa-crown fleet-crown" aria-hidden="true"></i> · <span id="fleet-member-count" title="Members in the fleet; EVE allows {{ fleet_view.max_members }}">{{ fleet_view.member_count }} / {{ fleet_view.max_members }}</span></div>
-  <div class="small"><button type="button" class="btn btn-link btn-sm p-0" data-fleet-expand="all">Expand all</button> · <button type="button" class="btn btn-link btn-sm p-0" data-fleet-expand="none">Collapse all</button></div>
+  <div>{% blocktranslate trimmed with fleet_id=operation.esi_fleet_id boss=fleet_view.boss_name %}<strong>Fleet {{ fleet_id }}</strong> · Boss {{ boss }}{% endblocktranslate %} <i class="fa-solid fa-crown fleet-crown" aria-hidden="true"></i> · <span id="fleet-member-count" title="{% blocktranslate trimmed with max=fleet_view.max_members %}Members in the fleet; EVE allows {{ max }}{% endblocktranslate %}">{{ fleet_view.member_count }} / {{ fleet_view.max_members }}</span></div>
+  <div class="small"><button type="button" class="btn btn-link btn-sm p-0" data-fleet-expand="all">{% translate "Expand all" %}</button> · <button type="button" class="btn btn-link btn-sm p-0" data-fleet-expand="none">{% translate "Collapse all" %}</button></div>
 </div>
 {% if fleet_view.invitations %}
-<ul class="list-unstyled small mb-2" id="fleet-invitations">{% for invitation in fleet_view.invitations %}<li class="is-pending" data-character-id="{{ invitation.character_id }}"><i class="fa-solid fa-envelope" aria-hidden="true"></i> Invitation sent — waiting for {{ invitation.name }}{% if invitation.where %} <span class="text-muted">({{ invitation.where }})</span>{% endif %}</li>{% endfor %}</ul>
+<ul class="list-unstyled small mb-2" id="fleet-invitations">{% for invitation in fleet_view.invitations %}<li class="is-pending" data-character-id="{{ invitation.character_id }}"><i class="fa-solid fa-envelope" aria-hidden="true"></i> {% blocktranslate trimmed with name=invitation.name %}Invitation sent — waiting for {{ name }}{% endblocktranslate %}{% if invitation.where %} <span class="text-muted">({{ invitation.where }})</span>{% endif %}</li>{% endfor %}</ul>
 {% endif %}
 <ul class="list-unstyled fleet-tree mb-0">
   <li class="fleet-node" data-node="fleet">
     <div class="fleet-node-head" data-drop-role="fleet_commander">
-      <button type="button" class="fleet-toggle" data-fleet-toggle="fleet" aria-expanded="true" title="Collapse or expand"><i class="fa-solid fa-caret-down" aria-hidden="true"></i><span class="visually-hidden">Collapse or expand the fleet</span></button>
-      <span class="fleet-node-name">Fleet</span> <span class="badge bg-secondary">{{ fleet_view.member_count }}</span>
+      <button type="button" class="fleet-toggle" data-fleet-toggle="fleet" aria-expanded="true" title="{{ toggle_title }}"><i class="fa-solid fa-caret-down" aria-hidden="true"></i><span class="visually-hidden">{% translate "Collapse or expand the fleet" %}</span></button>
+      <span class="fleet-node-name">{% translate "Fleet" %}</span> <span class="badge bg-secondary">{{ fleet_view.member_count }}</span>
       {% include "fleetops/operation/_fleet_wing_actions.html" with wing=None %}
     </div>
     <ul class="list-unstyled fleet-members fleet-command">{% if fleet_view.commander %}{% include "fleetops/operation/_fleet_member.html" with member=fleet_view.commander %}{% endif %}</ul>
@@ -17,8 +21,8 @@
       {% for wing in fleet_view.wings %}
       <li class="fleet-node" data-node="wing" data-wing-id="{{ wing.id }}"{% if wing.pending %} data-pending="1"{% endif %}>
         <div class="fleet-node-head{% if wing.pending %} is-pending{% endif %}" data-drop-role="wing_commander" data-wing-id="{{ wing.id }}">
-          <button type="button" class="fleet-toggle" data-fleet-toggle="wing:{{ wing.id }}" aria-expanded="true" title="Collapse or expand"><i class="fa-solid fa-caret-down" aria-hidden="true"></i><span class="visually-hidden">Collapse or expand {{ wing.name }}</span></button>
-          <span class="fleet-node-name">{{ wing.name }}</span>{% if wing.pending %} <i class="fa-solid fa-spinner fa-spin fleet-pending-icon" title="Waiting for ESI to confirm the change" aria-label="Waiting for ESI"></i>{% endif %} <span class="badge bg-secondary">{{ wing.count }}</span>
+          <button type="button" class="fleet-toggle" data-fleet-toggle="wing:{{ wing.id }}" aria-expanded="true" title="{{ toggle_title }}"><i class="fa-solid fa-caret-down" aria-hidden="true"></i><span class="visually-hidden">{% blocktranslate trimmed with name=wing.name %}Collapse or expand {{ name }}{% endblocktranslate %}</span></button>
+          <span class="fleet-node-name">{{ wing.name }}</span>{% if wing.pending %} <i class="fa-solid fa-spinner fa-spin fleet-pending-icon" title="{{ pending_title }}" aria-label="{{ pending_label }}"></i>{% endif %} <span class="badge bg-secondary">{{ wing.count }}</span>
           {% include "fleetops/operation/_fleet_wing_actions.html" %}
         </div>
         <ul class="list-unstyled fleet-members fleet-command">{% if wing.commander %}{% include "fleetops/operation/_fleet_member.html" with member=wing.commander %}{% endif %}</ul>
@@ -26,14 +30,14 @@
           {% for squad in wing.squads %}
           <li class="fleet-node" data-node="squad" data-wing-id="{{ wing.id }}" data-squad-id="{{ squad.id }}"{% if squad.pending %} data-pending="1"{% endif %}>
             <div class="fleet-node-head{% if squad.pending %} is-pending{% endif %}" data-drop-role="squad_commander" data-wing-id="{{ wing.id }}" data-squad-id="{{ squad.id }}">
-              <button type="button" class="fleet-toggle" data-fleet-toggle="squad:{{ squad.id }}" aria-expanded="true" title="Collapse or expand"><i class="fa-solid fa-caret-down" aria-hidden="true"></i><span class="visually-hidden">Collapse or expand {{ squad.name }}</span></button>
-              <span class="fleet-node-name">{{ squad.name }}</span>{% if squad.pending %} <i class="fa-solid fa-spinner fa-spin fleet-pending-icon" title="Waiting for ESI to confirm the change" aria-label="Waiting for ESI"></i>{% endif %} <span class="badge bg-secondary">{{ squad.count }}</span>
+              <button type="button" class="fleet-toggle" data-fleet-toggle="squad:{{ squad.id }}" aria-expanded="true" title="{{ toggle_title }}"><i class="fa-solid fa-caret-down" aria-hidden="true"></i><span class="visually-hidden">{% blocktranslate trimmed with name=squad.name %}Collapse or expand {{ name }}{% endblocktranslate %}</span></button>
+              <span class="fleet-node-name">{{ squad.name }}</span>{% if squad.pending %} <i class="fa-solid fa-spinner fa-spin fleet-pending-icon" title="{{ pending_title }}" aria-label="{{ pending_label }}"></i>{% endif %} <span class="badge bg-secondary">{{ squad.count }}</span>
               {% include "fleetops/operation/_fleet_squad_actions.html" %}
             </div>
             <ul class="list-unstyled fleet-members" data-drop-role="squad_member" data-wing-id="{{ wing.id }}" data-squad-id="{{ squad.id }}">
               {% if squad.commander %}{% include "fleetops/operation/_fleet_member.html" with member=squad.commander %}{% endif %}
               {% for member in squad.members %}{% include "fleetops/operation/_fleet_member.html" %}{% endfor %}
-              {% if squad.is_empty %}<li class="fleet-empty small text-muted">No members</li>{% endif %}
+              {% if squad.is_empty %}<li class="fleet-empty small text-muted">{% translate "No members" %}</li>{% endif %}
             </ul>
           </li>
           {% endfor %}
@@ -43,10 +47,10 @@
     </ul>
   </li>
 </ul>
-{% if not fleet_view.structure_known %}<div class="small text-muted mt-2" id="fleet-structure-unknown">Wings and squads have not been read from ESI yet.</div>{% endif %}
+{% if not fleet_view.structure_known %}<div class="small text-muted mt-2" id="fleet-structure-unknown">{% translate "Wings and squads have not been read from ESI yet." %}</div>{% endif %}
 {% if fleet_view.unplaced %}
 <div class="mt-2" id="fleet-unplaced">
-  <div class="small text-muted">{% if fleet_view.structure_known %}Not yet placed — waiting for the next wings read{% else %}Members{% endif %}</div>
+  <div class="small text-muted">{% if fleet_view.structure_known %}{% translate "Not yet placed — waiting for the next wings read" %}{% else %}{% translate "Members" %}{% endif %}</div>
   <ul class="list-unstyled fleet-members">{% for member in fleet_view.unplaced %}{% include "fleetops/operation/_fleet_member.html" %}{% endfor %}</ul>
 </div>
 {% endif %}

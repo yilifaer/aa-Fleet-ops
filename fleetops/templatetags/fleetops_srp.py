@@ -1,5 +1,9 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 from django import template
 from django.utils.html import format_html
+from django.utils.translation import pgettext
 
 from fleetops.models import SrpClaim, SrpClaimEvent
 from fleetops.providers.zkillboard import kill_url
@@ -135,10 +139,12 @@ def srp_actor(event, viewer):
     submitting again), ``System`` for automatic steps and ``Reviewer`` for the decisions of other people.
     """
     if event.actor_id is None or event.action in SYSTEM_ACTIONS:
-        return "System"
+        return pgettext("claim history actor", "System")
     if event.actor_id == getattr(viewer, "pk", None):
-        return "You"
-    return "Claimant" if event.action in CLAIMANT_ACTIONS else "Reviewer"
+        return pgettext("claim history actor", "You")
+    if event.action in CLAIMANT_ACTIONS:
+        return pgettext("claim history actor", "Claimant")
+    return pgettext("claim history actor", "Reviewer")
 
 
 @register.filter

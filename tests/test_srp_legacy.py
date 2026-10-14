@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The transition guard: a loss that is also claimed in aa-srp or Alliance Auth SRP.
 
 Neither app is installed in the test project. The fakes below carry the fields FleetOps reads:

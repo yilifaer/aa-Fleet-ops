@@ -1,8 +1,12 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 from django.db import transaction
 
+from fleetops import texts
 from fleetops.models import MAX_MULTIPLIER, AttendanceRecord, FleetOperation, ReviewStatus
 
-# Fleets that accept manual attendance and special-role assignments.
+# Fleets that accept manual PAP and special-role assignments.
 RECORDABLE_STATUSES = (FleetOperation.Status.ACTIVE, FleetOperation.Status.CLOSED)
 
 
@@ -44,9 +48,9 @@ def create_manual_attendance(
     from fleetops.services.review import initial_review_fields
 
     if source not in AttendanceRecord.USER_SOURCES:
-        raise ValueError("Manual attendance is entered by hand or imported from a roster.")
+        raise ValueError(texts.PAP_MANUAL_ENTRY())
     if duplicate_action not in AttendanceRecord.Correction.values:
-        raise ValueError("Choose whether to keep, replace or merge the tracked PAP.")
+        raise ValueError(texts.PAP_CHOOSE_DUPLICATE())
     identity = identity_for_character_id(character_id)
     review = initial_review_fields(actor)
     with transaction.atomic():
@@ -55,7 +59,7 @@ def create_manual_attendance(
         current = FleetOperation.objects.select_for_update().get(pk=operation.pk)
         operation.status, operation.ended_at = current.status, current.ended_at
         if operation.status not in RECORDABLE_STATUSES:
-            raise ValueError("Manual attendance can only be added to Active or Closed fleets.")
+            raise ValueError(texts.PAP_ONLY_ACTIVE_OR_CLOSED())
         manual = _create_manual_row(
             operation,
             actor=actor,
@@ -69,7 +73,7 @@ def create_manual_attendance(
             review=review,
         )
         if refresh:
-            refresh_after_change(operation, actor=actor, reason="manual attendance")
+            refresh_after_change(operation, actor=actor, reason="manual PAP")
             manual.refresh_from_db()
     return manual
 
@@ -142,9 +146,9 @@ def set_operation_attendance_multiplier(operation, multiplier: int, *, actor=Non
     try:
         multiplier = int(multiplier)
     except (TypeError, ValueError):
-        raise ValueError(f"The PAP multiplier must be a whole number from 1 to {MAX_MULTIPLIER}.") from None
+        raise ValueError(texts.PAP_MULTIPLIER_RANGE(max=MAX_MULTIPLIER)) from None
     if not 1 <= multiplier <= MAX_MULTIPLIER:
-        raise ValueError(f"The PAP multiplier must be a whole number from 1 to {MAX_MULTIPLIER}.")
+        raise ValueError(texts.PAP_MULTIPLIER_RANGE(max=MAX_MULTIPLIER))
     if source not in FleetOperation.MultiplierSource.values:
         raise ValueError("Unknown multiplier source.")
     with transaction.atomic():

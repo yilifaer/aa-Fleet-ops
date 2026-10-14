@@ -1,29 +1,31 @@
-{% load fleetops_messages %}
+{% load i18n fleetops_messages %}
 {% if show_pap_links %}
+{% translate "Revoke this PAP link? Pilots can no longer register with it." as revoke_confirm %}
+{% translate "Copied" as copied_label %}
 <div class="card mb-3" id="pap-links">
-  <div class="card-header d-flex justify-content-between align-items-center"><strong>PAP Links</strong>{% if operation.link_only %}<span class="badge bg-info text-dark">PAP-link fleet</span>{% endif %}</div>
+  <div class="card-header d-flex justify-content-between align-items-center"><strong>{% translate "PAP Links" %}</strong>{% if operation.link_only %}<span class="badge bg-info text-dark">{% translate "PAP-link fleet" %}</span>{% endif %}</div>
   <div class="card-body">
-    {% if operation.link_only %}<div class="small text-muted mb-2">This fleet has no ESI fleet: pilots get PAP only by registering through a PAP link.</div>{% endif %}
+    {% if operation.link_only %}<div class="small text-muted mb-2">{% translate "This fleet has no ESI fleet: pilots get PAP only by registering through a PAP link." %}</div>{% endif %}
     {% if pap_links %}
     <div class="table-responsive"><table class="table table-sm align-middle">
-      <thead><tr><th>Link</th><th>Created by</th><th>Status</th><th>Online</th><th>Registered</th><th></th></tr></thead>
+      <thead><tr><th>{% translate "Link" %}</th><th>{% translate "Created by" %}</th><th>{% translate "Status" %}</th><th>{% translate "Online" %}</th><th>{% translate "Registered" %}</th><th></th></tr></thead>
       <tbody>{% for link in pap_links %}<tr>
-        <td style="min-width: 18rem"><div class="input-group input-group-sm"><input class="form-control" readonly value="{{ link.url }}" id="pap-link-url-{{ link.pk }}" aria-label="PAP link"><button type="button" class="btn btn-outline-secondary copy-pap-link" data-target="pap-link-url-{{ link.pk }}">Copy</button></div></td>
+        <td style="min-width: 18rem"><div class="input-group input-group-sm"><input class="form-control" readonly value="{{ link.url }}" id="pap-link-url-{{ link.pk }}" aria-label="{% translate 'PAP link' %}"><button type="button" class="btn btn-outline-secondary copy-pap-link" data-target="pap-link-url-{{ link.pk }}">{% translate "Copy" %}</button></div></td>
         <td>{% if link.created_by %}{{ link.created_by.profile.main_character.character_name|default:link.created_by.username }}{% else %}—{% endif %}<div class="small text-muted">{{ link.created_at|eve_time }} EVE</div></td>
-        <td>{% if link.state == "open" %}<span class="badge bg-success">Open</span> <span class="small">until {{ link.expires_at|eve_time }} EVE</span>{% elif link.state == "revoked" %}<span class="badge bg-secondary">Revoked</span> <span class="small">{{ link.revoked_at|eve_time }} EVE</span>{% elif link.state == "expired" %}<span class="badge bg-secondary">Expired</span> <span class="small">{{ link.expires_at|eve_time }} EVE</span>{% else %}<span class="badge bg-secondary">Closed</span>{% endif %}</td>
-        <td>{% if link.require_online %}Required{% else %}Not required{% endif %}</td>
+        <td>{% if link.state == "open" %}<span class="badge bg-success">{% translate "Open" context "link state" %}</span> <span class="small">{% blocktranslate trimmed with expires=link.expires_at|eve_time %}until {{ expires }} EVE{% endblocktranslate %}</span>{% elif link.state == "revoked" %}<span class="badge bg-secondary">{% translate "Revoked" %}</span> <span class="small">{{ link.revoked_at|eve_time }} EVE</span>{% elif link.state == "expired" %}<span class="badge bg-secondary">{% translate "Expired" %}</span> <span class="small">{{ link.expires_at|eve_time }} EVE</span>{% else %}<span class="badge bg-secondary">{% translate "Closed" context "link state" %}</span>{% endif %}</td>
+        <td>{% if link.require_online %}{% translate "Required" %}{% else %}{% translate "Not required" %}{% endif %}</td>
         <td>{{ link.registration_count }}</td>
-        <td>{% if link.state == "open" %}<form method="post" action="{% url 'fleetops:revoke_pap_link' link.pk %}" onsubmit="return confirm('Revoke this PAP link? Pilots can no longer register with it.');">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">Revoke</button></form>{% endif %}</td>
+        <td>{% if link.state == "open" %}<form method="post" action="{% url 'fleetops:revoke_pap_link' link.pk %}" onsubmit="return confirm('{{ revoke_confirm|escapejs }}');">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">{% translate "Revoke" %}</button></form>{% endif %}</td>
       </tr>{% endfor %}</tbody>
     </table></div>
-    {% else %}<div class="text-muted mb-2">No PAP links yet.</div>{% endif %}
+    {% else %}<div class="text-muted mb-2">{% translate "No PAP links yet." %}</div>{% endif %}
     {% if pap_link_form %}
     <form method="post" action="{% url 'fleetops:create_pap_link' operation.uuid %}" class="row g-2 align-items-end" id="create-pap-link">{% csrf_token %}
       <div class="col-sm-4 col-lg-3">{{ pap_link_form.minutes.label_tag }}{{ pap_link_form.minutes }}</div>
       <div class="col-sm-8 col-lg-6"><div class="form-check">{{ pap_link_form.require_online }} <label class="form-check-label" for="{{ pap_link_form.require_online.id_for_label }}">{{ pap_link_form.require_online.label }}</label></div><div class="form-text" id="{{ pap_link_form.require_online.auto_id }}_helptext">{{ pap_link_form.require_online.help_text }}</div></div>
-      <div class="col-lg-3"><button class="btn btn-primary">Create PAP link</button></div>
+      <div class="col-lg-3"><button class="btn btn-primary">{% translate "Create PAP link" %}</button></div>
     </form>
-    <div class="small text-muted mt-2">Registered characters get PAP when the fleet's PAP is finalized, whatever their time in fleet; the per-player character limit still applies.</div>
+    <div class="small text-muted mt-2">{% translate "Registered characters get PAP when the fleet's PAP is finalized, whatever their time in fleet; the per-player character limit still applies." %}</div>
     {% elif pap_link_unavailable %}
     <div class="small text-muted" id="pap-links-unavailable">{{ pap_link_unavailable }}</div>
     {% endif %}
@@ -33,7 +35,7 @@
 document.querySelectorAll('.copy-pap-link').forEach(button=>button.addEventListener('click',()=>{
   const input=document.getElementById(button.dataset.target);
   if(navigator.clipboard){ navigator.clipboard.writeText(input.value); } else { input.select(); document.execCommand('copy'); }
-  button.textContent='Copied';
+  button.textContent='{{ copied_label|escapejs }}';
 }));
 </script>
 {% endif %}

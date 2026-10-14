@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Tests for the pure fleet structure rules and the in-memory ESI fleet simulator."""
 
 from contextlib import contextmanager

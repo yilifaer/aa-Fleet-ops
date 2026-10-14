@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Tests for who may download which statistics export and for the scope each check returns."""
 
 from django.core.exceptions import PermissionDenied

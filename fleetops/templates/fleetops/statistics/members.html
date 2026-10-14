@@ -1,61 +1,62 @@
 {% extends "fleetops/base.html" %}
+{% load i18n %}
 {% block fleetops_content %}
 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
   <div>
-    <h2 class="mb-1">{{ title|default:"Members" }}</h2>
+    <h2 class="mb-1">{{ title|default:_("Members") }}</h2>
     <div class="text-muted">{% if corporation_name %}{{ corporation_name }} &middot; {% endif %}{{ month_ref.label }}</div>
   </div>
   <div class="d-flex flex-wrap gap-2">
     {% include "fleetops/statistics/_export_buttons.html" with dataset="members" %}
-    {% if scope == "alliance" and perms.fleetops.view_all_stats %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'fleetops:all_corporation_statistics' %}?year={{ year }}&amp;month={{ month }}">All corporations</a>{% endif %}
+    {% if scope == "alliance" and perms.fleetops.view_all_stats %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'fleetops:all_corporation_statistics' %}?year={{ year }}&amp;month={{ month }}">{% translate "All corporations" %}</a>{% endif %}
   </div>
 </div>
 {% if scope != "alliance" %}{% include "fleetops/statistics/_tabs.html" with active_tab=active_tab %}{% endif %}
 {% include "fleetops/month_selector.html" %}
-{% if retention_days %}<div class="small text-muted mb-2">PAP older than {{ retention_days }} days is removed, so this month may be incomplete.</div>{% endif %}
-{% if outside_member_alliances %}<div class="alert alert-info">Your corporation is not in the configured member alliances, so there are no members to list.</div>{% endif %}
+{% if retention_days %}<div class="small text-muted mb-2">{% blocktranslate trimmed with days=retention_days %}PAP older than {{ days }} days is removed, so this month may be incomplete.{% endblocktranslate %}</div>{% endif %}
+{% if outside_member_alliances %}<div class="alert alert-info">{% translate "Your corporation is not in the configured member alliances, so there are no members to list." %}</div>{% endif %}
 
 <form method="get" class="row g-2 align-items-end mb-3 fleetops-member-filter">
   <input type="hidden" name="year" value="{{ year }}">
   <input type="hidden" name="month" value="{{ month }}">
   {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
   <div class="col-sm-auto">
-    <label class="form-label mb-1" for="fleetops-member-status">Show</label>
+    <label class="form-label mb-1" for="fleetops-member-status">{% translate "Show" %}</label>
     <select class="form-select" id="fleetops-member-status" name="status">
-      <option value="all"{% if status == "all" %} selected{% endif %}>All members</option>
-      <option value="inactive"{% if status == "inactive" %} selected{% endif %}>Inactive (below minimum)</option>
-      <option value="active"{% if status == "active" %} selected{% endif %}>Not inactive</option>
+      <option value="all"{% if status == "all" %} selected{% endif %}>{% translate "All members" %}</option>
+      <option value="inactive"{% if status == "inactive" %} selected{% endif %}>{% translate "Inactive (below minimum)" %}</option>
+      <option value="active"{% if status == "active" %} selected{% endif %}>{% translate "Not inactive" %}</option>
     </select>
   </div>
   <div class="col-sm">
-    <label class="form-label mb-1" for="fleetops-member-query">Main character</label>
-    <input class="form-control" type="search" id="fleetops-member-query" name="q" value="{{ query }}" maxlength="100" placeholder="Search by name">
+    <label class="form-label mb-1" for="fleetops-member-query">{% translate "Main character" context "FleetOps" %}</label>
+    <input class="form-control" type="search" id="fleetops-member-query" name="q" value="{{ query }}" maxlength="100" placeholder="{% translate 'Search by name' %}">
   </div>
   {% if scope == "alliance" and corporations %}
   <div class="col-sm-auto">
-    <label class="form-label mb-1" for="fleetops-member-corporation">Corporation</label>
+    <label class="form-label mb-1" for="fleetops-member-corporation">{% translate "Corporation" context "FleetOps" %}</label>
     <select class="form-select" id="fleetops-member-corporation" name="corporation">
-      <option value="">All corporations</option>
+      <option value="">{% translate "All corporations" %}</option>
       {% for id, name in corporations %}<option value="{{ id }}"{% if id == corporation_id %} selected{% endif %}>{{ name }}</option>{% endfor %}
     </select>
   </div>
   {% endif %}
   <div class="col-sm-auto d-flex gap-2">
-    <button class="btn btn-primary" type="submit">Filter</button>
-    <a class="btn btn-outline-secondary" href="{{ request.path }}?year={{ year }}&amp;month={{ month }}">Reset</a>
+    <button class="btn btn-primary" type="submit">{% translate "Filter" context "FleetOps" %}</button>
+    <a class="btn btn-outline-secondary" href="{{ request.path }}?year={{ year }}&amp;month={{ month }}">{% translate "Reset" %}</a>
   </div>
 </form>
 
 <div class="mb-2">
-  <strong>{{ counts.all }}</strong> member{{ counts.all|pluralize }} &middot; <strong>{{ counts.with_pap }}</strong> with PAP{% if target.minimum %} &middot; <strong>{{ counts.inactive }}</strong> below minimum{% endif %}
-  {% if page_obj.paginator.count != counts.all %}<span class="text-muted">&middot; {{ page_obj.paginator.count }} shown</span>{% endif %}
+  {% blocktranslate trimmed count counter=counts.all with with_pap=counts.with_pap %}<strong>{{ counter }}</strong> member &middot; <strong>{{ with_pap }}</strong> with PAP{% plural %}<strong>{{ counter }}</strong> members &middot; <strong>{{ with_pap }}</strong> with PAP{% endblocktranslate %}{% if target.minimum %} {% blocktranslate trimmed with inactive=counts.inactive %}&middot; <strong>{{ inactive }}</strong> below minimum{% endblocktranslate %}{% endif %}
+  {% if page_obj.paginator.count != counts.all %}<span class="text-muted">{% blocktranslate trimmed with shown=page_obj.paginator.count %}&middot; {{ shown }} shown{% endblocktranslate %}</span>{% endif %}
 </div>
 {% if not target.minimum and not month_ref.is_future %}
-<div class="alert alert-info py-2">The member minimum is 0 for this month, so nobody is listed as inactive.</div>
+<div class="alert alert-info py-2">{% translate "The member minimum is 0 for this month, so nobody is listed as inactive." %}</div>
 {% elif not target.rule %}
-<div class="small text-muted mb-2">No monthly target is set, so a member needs at least {{ target.minimum }} PAP.{% if perms.fleetops.manage_configuration %} <a href="{% url 'fleetops:configuration_list' 'statistics-targets' %}">Set the Monthly Targets</a>.{% endif %}</div>
+<div class="small text-muted mb-2">{% blocktranslate trimmed with minimum=target.minimum %}No monthly target is set, so a member needs at least {{ minimum }} PAP.{% endblocktranslate %}{% if perms.fleetops.manage_configuration %} {% url 'fleetops:configuration_list' 'statistics-targets' as targets_url %}{% blocktranslate trimmed with url=targets_url %}<a href="{{ url }}">Set the Monthly Targets</a>.{% endblocktranslate %}{% endif %}</div>
 {% else %}
-<div class="small text-muted mb-2">A member needs at least {{ target.minimum }} PAP in the month (rule from {{ target.rule.effective_from }}).{% if month_ref.is_current %} The month is still running, so members below it are shown as &ldquo;Below minimum so far&rdquo;.{% endif %}</div>
+<div class="small text-muted mb-2">{% if month_ref.is_current %}{% blocktranslate trimmed with minimum=target.minimum effective_from=target.rule.effective_from %}A member needs at least {{ minimum }} PAP in the month (rule from {{ effective_from }}). The month is still running, so members below it are shown as &ldquo;Below minimum so far&rdquo;.{% endblocktranslate %}{% else %}{% blocktranslate trimmed with minimum=target.minimum effective_from=target.rule.effective_from %}A member needs at least {{ minimum }} PAP in the month (rule from {{ effective_from }}).{% endblocktranslate %}{% endif %}</div>
 {% endif %}
 
 <div class="card">
@@ -63,19 +64,19 @@
 </div>
 
 {% if page_obj.paginator.num_pages > 1 %}
-<nav class="mt-3 d-flex flex-wrap align-items-center gap-3" aria-label="Member pages">
+<nav class="mt-3 d-flex flex-wrap align-items-center gap-3" aria-label="{% translate 'Member pages' %}">
   <ul class="pagination pagination-sm mb-0 flex-wrap">
-    {% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="{% querystring page=page_obj.previous_page_number %}">&lsaquo; Previous</a></li>{% endif %}
+    {% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="{% querystring page=page_obj.previous_page_number %}">&lsaquo; {% translate "Previous" %}</a></li>{% endif %}
     {% for number in page_range %}
       {% if number == ellipsis %}<li class="page-item disabled"><span class="page-link">&hellip;</span></li>
       {% elif number == page_obj.number %}<li class="page-item active" aria-current="page"><span class="page-link">{{ number }}</span></li>
       {% else %}<li class="page-item"><a class="page-link" href="{% querystring page=number %}">{{ number }}</a></li>{% endif %}
     {% endfor %}
-    {% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="{% querystring page=page_obj.next_page_number %}">Next &rsaquo;</a></li>{% endif %}
+    {% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="{% querystring page=page_obj.next_page_number %}">{% translate "Next" %} &rsaquo;</a></li>{% endif %}
   </ul>
-  <span class="small text-muted">Members {{ page_obj.start_index }}&ndash;{{ page_obj.end_index }} of {{ page_obj.paginator.count }}</span>
+  <span class="small text-muted">{% blocktranslate trimmed with start=page_obj.start_index end=page_obj.end_index total=page_obj.paginator.count %}Members {{ start }}&ndash;{{ end }} of {{ total }}{% endblocktranslate %}</span>
 </nav>
 {% endif %}
 
-<p class="small text-muted mt-3 mb-0">PAP of alts counts for the main character, whatever corporation or alliance the alt is in. Only fleets that count are included.{% if corporation_id %} Members are listed under their current corporation with all their PAP of the month; the corporation totals count PAP where it was earned.{% endif %}</p>
+<p class="small text-muted mt-3 mb-0">{% translate "PAP of alts counts for the main character, whatever corporation or alliance the alt is in. Only fleets that count are included." %}{% if corporation_id %} {% translate "Members are listed under their current corporation with all their PAP of the month; the corporation totals count PAP where it was earned." %}{% endif %}{% if month_ref.is_finished %} {% translate "Members who registered after this month are not counted in it." %}{% endif %}</p>
 {% endblock %}

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The corporation overview and corporation pages: targets, statuses, attribution rules and query budgets."""
 
 from datetime import datetime, timezone as dt_timezone

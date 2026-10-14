@@ -1,23 +1,24 @@
-{% load tz %}
+{% load i18n tz fleetops_i18n %}
+{% timezone "UTC" %}{% now "H:i:s" as eve_now_text %}{% endtimezone %}
 <div class="d-flex flex-wrap align-items-center gap-3 mb-2 small" id="fleet-status-bar">
-  <span>EVE time <strong id="fleet-eve-clock">{% timezone "UTC" %}{% now "H:i:s" %}{% endtimezone %}</strong></span>
-  <span>Last ESI read <span id="fleet-last-read" data-time="{{ last_esi_update_iso|default_if_none:'' }}">{% if operation.last_esi_update %}{{ operation.last_esi_update|utc|date:"H:i:s" }}{% else %}—{% endif %}</span> <span class="text-muted" id="fleet-last-read-age"></span></span>
-  <span class="text-muted">Page updated <span id="fleet-updated-at">{% timezone "UTC" %}{% now "H:i:s" %}{% endtimezone %}</span></span>
-  <span class="badge bg-warning text-dark{% if not fleet_stale %} d-none{% endif %}" id="fleet-stale" title="Tracking has not read the fleet for a while.">Stale data</span>
+  <span>{% blocktranslate trimmed with clock=eve_now_text %}EVE time <strong id="fleet-eve-clock">{{ clock }}</strong>{% endblocktranslate %}</span>
+  <span>{% translate "Last ESI read" %} <span id="fleet-last-read" data-time="{{ last_esi_update_iso|default_if_none:'' }}">{% if operation.last_esi_update %}{{ operation.last_esi_update|utc|date:"H:i:s" }}{% else %}—{% endif %}</span> <span class="text-muted" id="fleet-last-read-age"></span></span>
+  <span class="text-muted">{% translate "Page updated" %} <span id="fleet-updated-at">{% timezone "UTC" %}{% now "H:i:s" %}{% endtimezone %}</span></span>
+  <span class="badge bg-warning text-dark{% if not fleet_stale %} d-none{% endif %}" id="fleet-stale" title="{% translate 'Tracking has not read the fleet for a while.' %}">{% translate "Stale data" %}</span>
   <span class="text-warning d-none" id="fleet-poll-problem" role="status"></span>
   {% if fleet_can_manage and fleet_live %}
-  <form method="post" action="{% url 'fleetops:fleet_refresh' operation.uuid %}" class="d-inline" data-fleet-action id="fleet-refresh-form">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary" id="fleet-refresh" title="Read the fleet from ESI now"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Refresh</button></form>
-  <div class="form-check form-switch mb-0"{% if live_refresh_seconds %} title="While this page is open, read the fleet from ESI every {{ live_refresh_seconds }} seconds."{% else %} title="The live refresh is turned off in the FleetOps settings."{% endif %}><input class="form-check-input" type="checkbox" role="switch" id="fleet-live-toggle"{% if live_refresh_seconds %} checked{% else %} disabled{% endif %}><label class="form-check-label" for="fleet-live-toggle">Live</label></div>
+  <form method="post" action="{% url 'fleetops:fleet_refresh' operation.uuid %}" class="d-inline" data-fleet-action id="fleet-refresh-form">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary" id="fleet-refresh" title="{% translate 'Read the fleet from ESI now' %}"><i class="fa-solid fa-rotate" aria-hidden="true"></i> {% translate "Refresh" %}</button></form>
+  <div class="form-check form-switch mb-0"{% if live_refresh_seconds %} title="{% blocktranslate trimmed count counter=live_refresh_seconds %}While this page is open, read the fleet from ESI every {{ counter }} second.{% plural %}While this page is open, read the fleet from ESI every {{ counter }} seconds.{% endblocktranslate %}"{% else %} title="{% translate 'The live refresh is turned off in the FleetOps settings.' %}"{% endif %}><input class="form-check-input" type="checkbox" role="switch" id="fleet-live-toggle"{% if live_refresh_seconds %} checked{% else %} disabled{% endif %}><label class="form-check-label" for="fleet-live-toggle">{% translate "Live" %}</label></div>
   {% endif %}
 </div>
 {% if fleet_can_manage and fleet_live and not write_state.allowed and write_state.reason %}
-<div class="alert alert-warning py-2" id="fleet-write-block"><i class="fa-solid fa-lock" aria-hidden="true"></i> {{ write_state.reason }}{% if write_state.show_authorize %} <a href="{% url 'fleetops:authorize_esi' %}">Authorize the FC character</a>{% endif %}</div>
+<div class="alert alert-warning py-2" id="fleet-write-block"><i class="fa-solid fa-lock" aria-hidden="true"></i> {{ write_state.reason|stored_text }}{% if write_state.show_authorize %} <a href="{% url 'fleetops:authorize_esi' %}">{% translate "Authorize the FC character" %}</a>{% endif %}</div>
 {% endif %}
-{% if fleet_problem.read_error %}<div class="alert alert-warning py-2" id="fleet-read-problem">{{ fleet_problem.read_error }}</div>{% endif %}
+{% if fleet_problem.read_error %}<div class="alert alert-warning py-2" id="fleet-read-problem">{{ fleet_problem.read_error|stored_text }}</div>{% endif %}
 {% if fleet_job %}
 <div class="mb-2" id="fleet-job" data-job-state="{{ fleet_job.state }}">
-  <div class="small"><strong>{{ fleet_job.label }}</strong> · {% if fleet_job.state == 'queued' %}waiting for the background worker{% else %}{{ fleet_job.done }} of {{ fleet_job.total }} done{% if fleet_job.failed %}, {{ fleet_job.failed }} failed{% endif %}{% if fleet_job.state == 'done' %} · finished{% elif fleet_job.state == 'failed' %} · stopped{% endif %}{% endif %}</div>
-  <div class="progress" role="progressbar" aria-label="{{ fleet_job.label }}" aria-valuemin="0" aria-valuemax="{{ fleet_job.total }}" aria-valuenow="{{ fleet_job.done }}"><div class="progress-bar{% if fleet_job.state == 'running' or fleet_job.state == 'queued' %} progress-bar-striped progress-bar-animated{% elif fleet_job.state == 'failed' %} bg-warning{% endif %}" style="width: {% widthratio fleet_job.done fleet_job.total 100 %}%"></div></div>
-  {% if fleet_job.messages %}<ul class="small text-muted mb-0 mt-1" id="fleet-job-messages">{% for message in fleet_job.messages %}<li{% if not message.ok %} class="text-danger"{% endif %}>{{ message.text }}</li>{% endfor %}</ul>{% endif %}
+  <div class="small"><strong>{{ fleet_job.label|stored_text }}</strong> ·{% if fleet_job.state == 'queued' %}{% translate "waiting for the background worker" %}{% else %}{% if fleet_job.failed %}{% blocktranslate trimmed with done=fleet_job.done total=fleet_job.total failed=fleet_job.failed %}{{ done }} of {{ total }} done, {{ failed }} failed{% endblocktranslate %}{% else %}{% blocktranslate trimmed with done=fleet_job.done total=fleet_job.total %}{{ done }} of {{ total }} done{% endblocktranslate %}{% endif %}{% if fleet_job.state == 'done' %} · {% translate "finished" %}{% elif fleet_job.state == 'failed' %} · {% translate "stopped" %}{% endif %}{% endif %}</div>
+  <div class="progress" role="progressbar" aria-label="{{ fleet_job.label|stored_text }}" aria-valuemin="0" aria-valuemax="{{ fleet_job.total }}" aria-valuenow="{{ fleet_job.done }}"><div class="progress-bar{% if fleet_job.state == 'running' or fleet_job.state == 'queued' %} progress-bar-striped progress-bar-animated{% elif fleet_job.state == 'failed' %} bg-warning{% endif %}" style="width: {% widthratio fleet_job.done fleet_job.total 100 %}%"></div></div>
+  {% if fleet_job.messages %}<ul class="small text-muted mb-0 mt-1" id="fleet-job-messages">{% for message in fleet_job.messages %}<li{% if not message.ok %} class="text-danger"{% endif %}>{{ message.text|stored_text }}</li>{% endfor %}</ul>{% endif %}
 </div>
 {% endif %}

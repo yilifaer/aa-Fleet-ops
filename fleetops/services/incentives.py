@@ -1,7 +1,11 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 from django.db import transaction
 from django.utils import timezone
 
 from fleetops.calculations import calculate_payouts
+from fleetops import texts
 from fleetops.models import FleetOperation, FleetOpsSettings, FleetType, IncentivePeriod, MonthlyFCStatistic
 from fleetops.services.history import current_member_user_ids
 from fleetops.services.statistics import (
@@ -13,8 +17,9 @@ from fleetops.services.statistics import (
 )
 
 
-INCENTIVES_DISABLED_MESSAGE = "FC incentives are disabled in the FleetOps settings."
-WAIVER_LOCKED_MESSAGE = "Finalized periods must be unlocked before waiver changes."
+# Stored messages (English); the pages show them through ``translate_stored``.
+INCENTIVES_DISABLED_MESSAGE = texts.INCENTIVES_DISABLED()
+WAIVER_LOCKED_MESSAGE = texts.INCENTIVES_WAIVER_LOCKED()
 
 
 class IncentiveError(ValueError):
@@ -44,7 +49,7 @@ def pending_multiplier_operations(period: IncentivePeriod):
 def rebuild_period(period: IncentivePeriod):
     _ensure_enabled()
     if period.status == IncentivePeriod.Status.FINALIZED:
-        raise IncentiveError("Finalized periods must be unlocked before recalculation.")
+        raise IncentiveError(texts.INCENTIVES_REBUILD_LOCKED())
     # Closed, approved fleets that are not excluded from the statistics; manual fleets are created Closed.
     grouped = group_operations_by_fc(credited_operations(period.year, period.month), current_member_user_ids())
 
@@ -98,7 +103,7 @@ def rebuild_period(period: IncentivePeriod):
 def finalize_period(period: IncentivePeriod, user):
     _ensure_enabled()
     if period.status != IncentivePeriod.Status.REVIEW:
-        raise IncentiveError("Period must be in review before finalizing.")
+        raise IncentiveError(texts.INCENTIVES_NOT_IN_REVIEW())
     period.status = IncentivePeriod.Status.FINALIZED
     period.finalized_at = timezone.now()
     period.finalized_by = user
@@ -109,7 +114,7 @@ def finalize_period(period: IncentivePeriod, user):
 def unlock_period(period: IncentivePeriod):
     _ensure_enabled()
     if period.status != IncentivePeriod.Status.FINALIZED:
-        raise IncentiveError("Only finalized periods can be unlocked.")
+        raise IncentiveError(texts.INCENTIVES_NOT_FINALIZED())
     period.status = IncentivePeriod.Status.REVIEW
     period.finalized_at = None
     period.finalized_by = None
@@ -128,7 +133,7 @@ def set_waiver(period: IncentivePeriod, user_id: int, waived: bool):
         raise IncentiveError(WAIVER_LOCKED_MESSAGE)
     row = MonthlyFCStatistic.objects.filter(period=period, fc_user_id=user_id).first()
     if row is None:
-        raise IncentiveError("FC statistic does not exist. Recalculate the period first.")
+        raise IncentiveError(texts.INCENTIVES_NO_STATISTIC())
     row.waived = bool(waived)
     row.save(update_fields=["waived"])
     rebuild_period(period)

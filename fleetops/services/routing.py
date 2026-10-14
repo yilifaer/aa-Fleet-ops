@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 from collections import deque
 
 from fleetops.services.sde import solar_system_names, stargate_edges

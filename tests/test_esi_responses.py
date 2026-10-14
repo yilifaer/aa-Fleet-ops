@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Tests for how FleetOps reads and writes ESI through django-esi operations.
 
 django-esi caches responses and, by default, answers a read of an unchanged resource

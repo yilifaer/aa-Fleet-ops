@@ -1,20 +1,20 @@
 {% extends "fleetops/base.html" %}
-{% load static fleetops_messages %}
+{% load i18n static fleetops_i18n fleetops_messages %}
 {% block fleetops_content %}
 {% include "fleetops/partials/live_pap_status.html" %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
-    <h2 class="mb-0">Fleet Operations</h2>
-    <div class="text-muted">Fleet activity, PAP and recent operations (times in EVE time)</div>
+    <h2 class="mb-0">{% translate "Fleet Operations" context "FleetOps" %}</h2>
+    <div class="text-muted">{% translate "Fleet activity, PAP and recent operations (times in EVE time)" %}</div>
   </div>
-  {% if perms.fleetops.start_fleet %}<a class="btn btn-primary" href="{% url 'fleetops:start_fleet' %}">Start Fleet</a>{% endif %}
+  {% if perms.fleetops.start_fleet %}<a class="btn btn-primary" href="{% url 'fleetops:start_fleet' %}">{% translate "Start Fleet" %}</a>{% endif %}
 </div>
 
 {% if pending_multiplier_operations %}
 <div class="card mb-3 border-warning" id="pending-multipliers">
-  <div class="card-header"><strong>Fleets waiting for your multiplier choice</strong> <span class="small text-muted">They ended without a choice and count at 1x until you choose.</span></div>
-  <div class="table-responsive"><table class="table table-sm table-hover mb-0 align-middle"><thead><tr><th>Ended</th><th>Fleet</th><th>Current</th><th></th></tr></thead><tbody>
-  {% for op in pending_multiplier_operations %}<tr><td class="text-nowrap">{{ op.ended_at|eve_time }}</td><td>{{ op.fleet_type }}{% if op.doctrine_name %} · {{ op.doctrine_name }}{% endif %}</td><td>{{ op.attendance_multiplier }}x</td><td><a href="{% url 'fleetops:operation_detail' op.uuid %}">Choose</a></td></tr>{% endfor %}
+  <div class="card-header"><strong>{% translate "Fleets waiting for your multiplier choice" %}</strong> <span class="small text-muted">{% translate "They ended without a choice and count at 1x until you choose." %}</span></div>
+  <div class="table-responsive"><table class="table table-sm table-hover mb-0 align-middle"><thead><tr><th>{% translate "Ended" %}</th><th>{% translate "Fleet" %}</th><th>{% translate "Current" context "current multiplier" %}</th><th></th></tr></thead><tbody>
+  {% for op in pending_multiplier_operations %}<tr><td class="text-nowrap">{{ op.ended_at|eve_time }}</td><td>{{ op.fleet_type }}{% if op.doctrine_name %} · {{ op.doctrine_name }}{% endif %}</td><td>{{ op.attendance_multiplier }}x</td><td><a href="{% url 'fleetops:operation_detail' op.uuid %}">{% translate "Choose" %}</a></td></tr>{% endfor %}
   </tbody></table></div>
 </div>
 {% endif %}
@@ -25,40 +25,40 @@
     <div class="fleetops-metric fleetops-metric-{{ forloop.counter }}">
       <div class="fleetops-metric-value">{{ card.month }}</div>
       <div>
-        <div class="fleetops-metric-title">{{ card.fleet_type }} PAP this month</div>
-        <div class="small"><strong>{{ card.last30 }}</strong> last 30 days</div>
-        <div class="small"><strong>{{ card.last90 }}</strong> last 90 days</div>
+        <div class="fleetops-metric-title">{% blocktranslate trimmed with fleet_type=card.fleet_type %}{{ fleet_type }} PAP this month{% endblocktranslate %}</div>
+        <div class="small">{% blocktranslate trimmed with value=card.last30 %}<strong>{{ value }}</strong> last 30 days{% endblocktranslate %}</div>
+        <div class="small">{% blocktranslate trimmed with value=card.last90 %}<strong>{{ value }}</strong> last 90 days{% endblocktranslate %}</div>
       </div>
     </div>
   </div>
   {% empty %}
-  <div class="col-12"><div class="alert alert-secondary mb-0">Create Fleet Types to populate the dashboard PAP cards.</div></div>
+  <div class="col-12"><div class="alert alert-secondary mb-0">{% translate "Create Fleet Types to populate the dashboard PAP cards." %}</div></div>
   {% endfor %}
 </div>
 
 <div class="row g-3 mb-3">
   <div class="col-xl-6">
     <div class="card h-100">
-      <div class="card-header d-flex justify-content-between"><strong>Top Ships</strong><span class="text-muted small">Tracked fleets</span></div>
+      <div class="card-header d-flex justify-content-between"><strong>{% translate "Top Ships" %}</strong><span class="text-muted small">{% translate "Tracked fleets" %}</span></div>
       <div class="card-body">
         <div class="fleetops-ship-grid">
           {% for ship in top_ships %}
             <div class="fleetops-ship">
               <img src="{{ ship.image_url }}" alt="{{ ship.ship_type_name|default:ship.ship_type_id }}" loading="lazy">
               <div class="fw-semibold">{{ ship.ship_type_name|default:ship.ship_type_id }}</div>
-              <div class="small text-muted">{{ ship.uses }} fleet{{ ship.uses|pluralize }}</div>
+              <div class="small text-muted">{% blocktranslate trimmed count counter=ship.uses %}{{ counter }} fleet{% plural %}{{ counter }} fleets{% endblocktranslate %}</div>
             </div>
-          {% empty %}<div class="text-muted">No tracked ship history yet.</div>{% endfor %}
+          {% empty %}<div class="text-muted">{% translate "No tracked ship history yet." %}</div>{% endfor %}
         </div>
       </div>
     </div>
   </div>
   <div class="col-xl-6">
     <div class="card h-100">
-      <div class="card-header d-flex justify-content-between"><strong>Last Participations</strong><a class="small" href="{% url 'fleetops:attendance_history_me' %}">PAP history</a></div>
+      <div class="card-header d-flex justify-content-between"><strong>{% translate "Last Participations" %}</strong><a class="small" href="{% url 'fleetops:attendance_history_me' %}">{% translate "PAP history" %}</a></div>
       <div class="table-responsive">
         <table class="table table-sm table-hover mb-0 align-middle">
-          <thead><tr><th>EVE time</th><th>PAP</th><th>Fleet</th><th>Type</th><th></th></tr></thead>
+          <thead><tr><th>{% translate "EVE time" %}</th><th>PAP</th><th>{% translate "Fleet" %}</th><th>{% translate "Type" context "fleet type" %}</th><th></th></tr></thead>
           <tbody>
             {% for row in recent_participations %}
             <tr>
@@ -66,9 +66,9 @@
               <td><strong>{{ row.attendance }}</strong></td>
               <td>{{ row.operation.fc_character_name }}{% if row.operation.doctrine_name %} · {{ row.operation.doctrine_name }}{% endif %}</td>
               <td><span class="badge bg-secondary">{{ row.operation.fleet_type }}</span></td>
-              <td><a href="{% url 'fleetops:operation_detail' row.operation.uuid %}">Open</a></td>
+              <td><a href="{% url 'fleetops:operation_detail' row.operation.uuid %}">{% translate "Open" context "open a record" %}</a></td>
             </tr>
-            {% empty %}<tr><td colspan="5" class="text-muted p-4">No PAP yet.</td></tr>{% endfor %}
+            {% empty %}<tr><td colspan="5" class="text-muted p-4">{% translate "No PAP yet." %}</td></tr>{% endfor %}
           </tbody>
         </table>
       </div>
@@ -78,10 +78,10 @@
 
 {% if scheduled_operations or perms.fleetops.start_fleet %}
 <div class="card mb-3" id="scheduled-fleets">
-  <div class="card-header d-flex justify-content-between"><strong>Scheduled Fleets</strong><span class="text-muted small">EVE time</span></div>
-  <div class="table-responsive"><table class="table table-hover table-sm mb-0 align-middle"><thead><tr><th>Fleet Time</th><th></th><th>Fleet</th><th>FC</th><th>Form Up</th><th>Ping channel</th><th></th></tr></thead><tbody>
-  {% for op in scheduled_operations %}<tr><td class="text-nowrap">{{ op.scheduled_at|eve_time }}</td><td class="text-nowrap small text-muted" data-countdown-utc="{{ op.scheduled_at|eve_time:'%Y-%m-%dT%H:%M:00Z' }}"></td><td>{{ op.fleet_type }}</td><td>{{ op.fc_character_name }}</td><td>{{ op.formup }}</td><td>{{ op.ping_channel_name|default:"Copy only" }}</td><td><a href="{% url 'fleetops:operation_detail' op.uuid %}">Open</a></td></tr>
-  {% empty %}<tr><td colspan="7" class="text-muted p-4">No scheduled fleets.</td></tr>{% endfor %}
+  <div class="card-header d-flex justify-content-between"><strong>{% translate "Scheduled Fleets" %}</strong><span class="text-muted small">{% translate "EVE time" %}</span></div>
+  <div class="table-responsive"><table class="table table-hover table-sm mb-0 align-middle"><thead><tr><th>{% translate "Fleet Time" context "FleetOps" %}</th><th></th><th>{% translate "Fleet" %}</th><th>FC</th><th>{% translate "Form Up" %}</th><th>{% translate "Ping channel" %}</th><th></th></tr></thead><tbody>
+  {% for op in scheduled_operations %}<tr><td class="text-nowrap">{{ op.scheduled_at|eve_time }}</td><td class="text-nowrap small text-muted" data-countdown-utc="{{ op.scheduled_at|eve_time:'%Y-%m-%dT%H:%M:00Z' }}"></td><td>{{ op.fleet_type }}</td><td>{{ op.fc_character_name }}</td><td>{{ op.formup }}</td><td>{{ op.ping_channel_name|default:_("Copy only") }}</td><td><a href="{% url 'fleetops:operation_detail' op.uuid %}">{% translate "Open" context "open a record" %}</a></td></tr>
+  {% empty %}<tr><td colspan="7" class="text-muted p-4">{% translate "No scheduled fleets." %}</td></tr>{% endfor %}
   </tbody></table></div>
 </div>
 {% endif %}
@@ -89,25 +89,25 @@
 <div class="row g-3">
   <div class="col-xl-8">
     <div class="card">
-      <div class="card-header"><strong>Active Fleets</strong></div>
+      <div class="card-header"><strong>{% translate "Active Fleets" %}</strong></div>
       <div class="card-body p-0">
-        <div class="table-responsive"><table class="table table-hover mb-0"><thead><tr><th>Fleet</th><th>FC</th><th>Members</th><th>Last ESI</th><th></th></tr></thead><tbody>
-        {% for op in active_operations %}<tr><td>{{ op.fleet_type }}</td><td>{{ op.fc_character_name }}</td><td>{{ op.active_member_count }}</td><td>{% if op.last_esi_update %}{{ op.last_esi_update|eve_time }} EVE{% else %}—{% endif %}</td><td><a href="{% url 'fleetops:operation_detail' op.uuid %}">Open</a></td></tr>
-        {% empty %}<tr><td colspan="5" class="text-muted p-4">No active fleets.</td></tr>{% endfor %}
+        <div class="table-responsive"><table class="table table-hover mb-0"><thead><tr><th>{% translate "Fleet" %}</th><th>FC</th><th>{% translate "Members" %}</th><th>{% translate "Last ESI" %}</th><th></th></tr></thead><tbody>
+        {% for op in active_operations %}<tr><td>{{ op.fleet_type }}</td><td>{{ op.fc_character_name }}</td><td>{{ op.active_member_count }}</td><td>{% if op.last_esi_update %}{{ op.last_esi_update|eve_time }} EVE{% else %}—{% endif %}</td><td><a href="{% url 'fleetops:operation_detail' op.uuid %}">{% translate "Open" context "open a record" %}</a></td></tr>
+        {% empty %}<tr><td colspan="5" class="text-muted p-4">{% translate "No active fleets." %}</td></tr>{% endfor %}
         </tbody></table></div>
       </div>
     </div>
   </div>
   <div class="col-xl-4">
     <div class="card">
-      <div class="card-header d-flex justify-content-between"><strong>My FC Month</strong><span class="text-muted small">EVE month</span></div>
+      <div class="card-header d-flex justify-content-between"><strong>{% translate "My FC Month" %}</strong><span class="text-muted small">{% translate "EVE month" %}</span></div>
       <div class="card-body">
-        <div class="display-6">{{ fc_stats.fleet_count }}</div><div class="text-muted">FC credited fleets, closed and active</div>
-        <hr><div class="d-flex justify-content-between"><span>FC Points</span><strong>{{ fc_stats.total_points|floatformat:2 }}</strong></div>
-        {% for name,row in fc_stats.breakdown.items %}<div class="d-flex justify-content-between small mt-2"><span>{{ name }}</span><span>{{ row.count }} / {{ row.points|floatformat:2 }} pts</span></div>{% endfor %}
+        <div class="display-6">{{ fc_stats.fleet_count }}</div><div class="text-muted">{% translate "FC credited fleets, closed and active" %}</div>
+        <hr><div class="d-flex justify-content-between"><span>{% translate "FC Points" %}</span><strong>{{ fc_stats.total_points|floatformat:2 }}</strong></div>
+        {% for name,row in fc_stats.breakdown.items %}<div class="d-flex justify-content-between small mt-2"><span>{{ name }}</span><span>{% blocktranslate trimmed with num=row.count points=row.points|floatformat:2 %}{{ num }} / {{ points }} pts{% endblocktranslate %}</span></div>{% endfor %}
       </div>
     </div>
   </div>
 </div>
-<script src="{% static 'fleetops/fleetops.js' %}"></script>
+<script src="{% static 'fleetops/fleetops.js' %}?v={% fleetops_version %}"></script>
 {% endblock %}

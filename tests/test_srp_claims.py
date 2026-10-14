@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Submitting SRP claims: the preview, the claim with its snapshots, the over-limit outcomes, withdrawing,
 submitting again and the value that arrives later."""
 

@@ -1,4 +1,4 @@
-# AA FleetOps 0.1.0a6: fleet management: wing and squad snapshot of each fleet, docked and fleet warp state of
+# AA FleetOps 0.2.0b1: fleet management: wing and squad snapshot of each fleet, docked and fleet warp state of
 # members, ship functions for the fleet composition, fleet structure templates and the bridge and live
 # refresh settings. Schema only; 0014 seeds the default ship functions and structure template.
 

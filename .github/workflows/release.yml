@@ -1,0 +1,127 @@
+name: Release
+
+# Runs when a version tag such as v0.2.0b1 is pushed. The steps for the maintainer are in docs/releasing.md.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and check
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gettext
+          python -m pip install --upgrade pip build twine "Django>=5.2,<6"
+
+      - name: Check that the tag matches the package version
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION=$(python tools/check_dist.py --print-version)
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "::error::The tag $TAG does not match the package version $VERSION."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if echo "$VERSION" | grep -Eq '[0-9](a|b|rc)[0-9]+|\.dev[0-9]+'; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build the wheel and the source distribution
+        run: |
+          python -m build
+          twine check --strict dist/*
+          python tools/check_dist.py dist
+
+      # After the build: this step rewrites the catalogs in the working tree.
+      - name: Check that the translations are complete and compiled
+        run: python tools/check_translations.py
+
+      - name: Collect the release files and their checksums
+        run: |
+          mkdir assets
+          cp dist/* assets/
+          (cd assets && sha256sum * > SHA256SUMS.txt)
+
+      - name: Extract the release notes from the changelog
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: python tools/changelog_section.py "$VERSION" > release-notes.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: |
+            assets/
+            release-notes.md
+          if-no-files-found: error
+
+  github-release:
+    name: GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.build.outputs.version }}
+          PRERELEASE: ${{ needs.build.outputs.prerelease }}
+        run: |
+          args=("$TAG" assets/* --repo "$REPOSITORY" --title "AA FleetOps $VERSION" --notes-file release-notes.md --verify-tag)
+          if [ "$PRERELEASE" = "true" ]; then
+            args+=(--prerelease)
+          fi
+          gh release create "${args[@]}"
+
+  pypi:
+    name: Publish to PyPI
+    needs: [build, github-release]
+    # Publishing needs the repository variable PUBLISH_TO_PYPI=true and the approval of the "pypi" environment.
+    if: vars.PUBLISH_TO_PYPI == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/aa-fleetops
+    permissions:
+      id-token: write
+    steps:
+      # Only the wheel and the source distribution: PyPI rejects other files such as SHA256SUMS.txt.
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1

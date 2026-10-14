@@ -1,58 +1,58 @@
 {% extends "fleetops/base.html" %}
-{% load fleetops_stats %}
+{% load i18n fleetops_stats %}
 {% block fleetops_content %}
 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
   <div>
-    <h2 class="mb-1">All Corporations</h2>
-    <div class="text-muted">PAP by corporation &middot; {{ month_ref.label }} (EVE time)</div>
+    <h2 class="mb-1">{% translate "All Corporations" %}</h2>
+    <div class="text-muted">{% blocktranslate trimmed with label=month_ref.label %}PAP by corporation &middot; {{ label }} (EVE time){% endblocktranslate %}</div>
   </div>
   {% include "fleetops/statistics/_export_buttons.html" with dataset="corporations" %}
 </div>
 {% include "fleetops/month_selector.html" %}
-{% if retention_days %}<div class="small text-muted mb-2">PAP older than {{ retention_days }} days is removed, so this month may be incomplete.</div>{% endif %}
+{% if retention_days %}<div class="small text-muted mb-2">{% blocktranslate trimmed with days=retention_days %}PAP older than {{ days }} days is removed, so this month may be incomplete.{% endblocktranslate %}</div>{% endif %}
 
 {% if not overview.alliance_filter_configured %}
 <div class="alert alert-info">
-  Member alliance IDs are not set, so every Alliance Auth user with a main character counts as a member and every corporation is listed.
-  {% if perms.fleetops.manage_configuration %}<a href="{% url 'fleetops:configuration_settings' %}">Set the Member alliance IDs</a> to count only your alliance.{% else %}Ask an administrator to set the Member alliance IDs to count only your alliance.{% endif %}
+  {% translate "Member alliance IDs are not set, so every Alliance Auth user with a main character counts as a member and every corporation is listed." %}
+  {% if perms.fleetops.manage_configuration %}{% url 'fleetops:configuration_settings' as settings_url %}{% blocktranslate trimmed with url=settings_url %}<a href="{{ url }}">Set the Member alliance IDs</a> to count only your alliance.{% endblocktranslate %}{% else %}{% translate "Ask an administrator to set the Member alliance IDs to count only your alliance." %}{% endif %}
 </div>
 {% endif %}
 {% if overview.target.rule is None %}
 <div class="alert alert-secondary">
-  No monthly target applies to this month, so corporations have no status and members are listed below a minimum of {{ overview.target.minimum }} PAP.
-  {% if perms.fleetops.manage_configuration %}<a href="{% url 'fleetops:configuration_list' 'statistics-targets' %}">Set monthly targets</a>.{% endif %}
+  {% blocktranslate trimmed with minimum=overview.target.minimum %}No monthly target applies to this month, so corporations have no status and members are listed below a minimum of {{ minimum }} PAP.{% endblocktranslate %}
+  {% if perms.fleetops.manage_configuration %}{% url 'fleetops:configuration_list' 'statistics-targets' as targets_url %}{% blocktranslate trimmed with url=targets_url %}<a href="{{ url }}">Set monthly targets</a>.{% endblocktranslate %}{% endif %}
 </div>
 {% endif %}
 
 <div class="row g-3 mb-3">
-  <div class="col-xl-2 col-md-4 col-sm-6"><div class="stat-card"><span>Alliance PAP</span><strong>{{ overview.alliance_pap }}</strong><small class="text-muted">Counted PAP of the month; {{ overview.member_pap }} earned by current members</small></div></div>
-  <div class="col-xl-2 col-md-4 col-sm-6"><div class="stat-card"><span>Main characters</span><strong>{{ overview.mains }}</strong><small class="text-muted">Active accounts; alts are not counted</small></div></div>
-  <div class="col-xl-2 col-md-4 col-sm-6"><div class="stat-card"><span>Average PAP per main</span><strong>{{ overview.average }}</strong><small class="text-muted">{% if overview.target.average is not None %}Target {{ overview.target.average|floatformat:2 }} per main {% include "fleetops/statistics/_status_badge.html" with status=alliance_status %}{% else %}No target set{% endif %}</small></div></div>
-  <div class="col-xl-2 col-md-4 col-sm-6"><div class="stat-card"><span>Mains with PAP</span><strong>{{ overview.mains_with_pap }} / {{ overview.mains }}</strong><small class="text-muted">{% widthratio overview.mains_with_pap overview.mains 100 %}% of the mains</small></div></div>
-  <div class="col-xl-2 col-md-4 col-sm-6"><div class="stat-card"><span>Corporations at target</span><strong>{% if overview.corporations_with_target %}{{ overview.corporations_met }} / {{ overview.corporations_with_target }}{% else %}&mdash;{% endif %}</strong><small class="text-muted">{% if overview.target.average is not None %}Average of {{ overview.target.average|floatformat:2 }} PAP per main{% else %}No target set{% endif %}</small></div></div>
-  <div class="col-xl-2 col-md-4 col-sm-6"><div class="stat-card"><span>Fleets not counted</span><strong>{{ not_counted_total }}</strong><small class="text-muted">{{ overview.not_counted.excluded }} excluded &middot; {{ overview.not_counted.pending }} pending approval &middot; {{ overview.not_counted.rejected }} rejected &middot; {{ overview.not_counted.running }} still running{% if pending_approval_count is not None %} &middot; <a href="{% url 'fleetops:approval_queue' %}">Approvals</a>{% endif %}</small></div></div>
+  <div class="col-xl-2 col-md-4 col-sm-6"><div class="stat-card"><span>{% translate "Alliance PAP" %}</span><strong>{{ overview.alliance_pap }}</strong><small class="text-muted">{% blocktranslate trimmed with member_pap=overview.member_pap %}Counted PAP of the month; {{ member_pap }} earned by current members{% endblocktranslate %}</small></div></div>
+  <div class="col-xl-2 col-md-4 col-sm-6"><div class="stat-card"><span>{% translate "Main characters" %}</span><strong>{{ overview.mains }}</strong><small class="text-muted">{% translate "Active accounts; alts are not counted" %}</small></div></div>
+  <div class="col-xl-2 col-md-4 col-sm-6"><div class="stat-card"><span>{% translate "Average PAP per main" %}</span><strong>{{ overview.average }}</strong><small class="text-muted">{% if overview.target.average is not None %}{% blocktranslate trimmed with value=overview.target.average|floatformat:2 %}Target {{ value }} per main{% endblocktranslate %} {% include "fleetops/statistics/_status_badge.html" with status=alliance_status %}{% else %}{% translate "No target set" %}{% endif %}</small></div></div>
+  <div class="col-xl-2 col-md-4 col-sm-6"><div class="stat-card"><span>{% translate "Mains with PAP" %}</span><strong>{{ overview.mains_with_pap }} / {{ overview.mains }}</strong><small class="text-muted">{% widthratio overview.mains_with_pap overview.mains 100 as mains_share %}{% blocktranslate trimmed with share=mains_share %}{{ share }}% of the mains{% endblocktranslate %}</small></div></div>
+  <div class="col-xl-2 col-md-4 col-sm-6"><div class="stat-card"><span>{% translate "Corporations at target" %}</span><strong>{% if overview.corporations_with_target %}{{ overview.corporations_met }} / {{ overview.corporations_with_target }}{% else %}&mdash;{% endif %}</strong><small class="text-muted">{% if overview.target.average is not None %}{% blocktranslate trimmed with value=overview.target.average|floatformat:2 %}Average of {{ value }} PAP per main{% endblocktranslate %}{% else %}{% translate "No target set" %}{% endif %}</small></div></div>
+  <div class="col-xl-2 col-md-4 col-sm-6"><div class="stat-card"><span>{% translate "Fleets not counted" %}</span><strong>{{ not_counted_total }}</strong><small class="text-muted">{% blocktranslate trimmed with excluded=overview.not_counted.excluded pending=overview.not_counted.pending rejected=overview.not_counted.rejected running=overview.not_counted.running %}{{ excluded }} excluded &middot; {{ pending }} pending approval &middot; {{ rejected }} rejected &middot; {{ running }} still running{% endblocktranslate %}{% if pending_approval_count is not None %} &middot; <a href="{% url 'fleetops:approval_queue' %}">{% translate "Approvals" %}</a>{% endif %}</small></div></div>
 </div>
 
 <div class="card">
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0">
       <thead><tr>
-        <th><a class="text-decoration-none" href="{% querystring sort=sort_links.name %}">Corporation{% if sort == "name" %} &#9650;{% elif sort == "-name" %} &#9660;{% endif %}</a></th>
-        <th class="text-end"><a class="text-decoration-none" href="{% querystring sort=sort_links.mains %}">Mains{% if sort == "mains" %} &#9650;{% elif sort == "-mains" %} &#9660;{% endif %}</a></th>
-        <th class="text-end">Mains with PAP</th>
-        <th class="text-end">Below minimum</th>
-        <th class="text-end"><a class="text-decoration-none" href="{% querystring sort=sort_links.total %}">Total PAP{% if sort == "total" %} &#9650;{% elif sort == "-total" %} &#9660;{% endif %}</a></th>
-        <th class="text-end"><a class="text-decoration-none" href="{% querystring sort=sort_links.average %}">Average{% if sort == "average" %} &#9650;{% elif sort == "-average" %} &#9660;{% endif %}</a></th>
-        <th class="text-end">Target</th>
-        <th><a class="text-decoration-none" href="{% querystring sort=sort_links.status %}">Status{% if sort == "status" %} &#9650;{% elif sort == "-status" %} &#9660;{% endif %}</a></th>
-        <th>Fleet types</th>
+        <th><a class="text-decoration-none" href="{% querystring sort=sort_links.name %}">{% translate "Corporation" context "FleetOps" %}{% if sort == "name" %} &#9650;{% elif sort == "-name" %} &#9660;{% endif %}</a></th>
+        <th class="text-end"><a class="text-decoration-none" href="{% querystring sort=sort_links.mains %}">{% translate "Mains" context "FleetOps" %}{% if sort == "mains" %} &#9650;{% elif sort == "-mains" %} &#9660;{% endif %}</a></th>
+        <th class="text-end">{% translate "Mains with PAP" %}</th>
+        <th class="text-end">{% translate "Below minimum" %}</th>
+        <th class="text-end"><a class="text-decoration-none" href="{% querystring sort=sort_links.total %}">{% translate "Total PAP" %}{% if sort == "total" %} &#9650;{% elif sort == "-total" %} &#9660;{% endif %}</a></th>
+        <th class="text-end"><a class="text-decoration-none" href="{% querystring sort=sort_links.average %}">{% translate "Average" %}{% if sort == "average" %} &#9650;{% elif sort == "-average" %} &#9660;{% endif %}</a></th>
+        <th class="text-end">{% translate "Target" context "monthly target" %}</th>
+        <th><a class="text-decoration-none" href="{% querystring sort=sort_links.status %}">{% translate "Status" %}{% if sort == "status" %} &#9650;{% elif sort == "-status" %} &#9660;{% endif %}</a></th>
+        <th>{% translate "Fleet types" %}</th>
         <th></th>
       </tr></thead>
       <tbody>
       {% for entry in table %}{% with row=entry.row %}
       <tr class="{{ row.status|status_row_class }}">
         {% if row.is_other %}
-        <td><span class="fw-semibold">{{ row.corporation_name }}</span><div class="small text-muted">PAP earned in corporations without members in scope</div></td>
+        <td><span class="fw-semibold">{{ row.corporation_name }}</span><div class="small text-muted">{% translate "PAP earned in corporations without members in scope" %}</div></td>
         {% else %}
         <td><a class="fw-semibold text-decoration-none" href="{% url 'fleetops:corporation_statistics_detail' row.corporation_id %}?year={{ year }}&amp;month={{ month }}">{{ row.corporation_name }}</a>{% if row.corporation_ticker %} <span class="text-muted">[{{ row.corporation_ticker }}]</span>{% endif %}</td>
         {% endif %}
@@ -64,15 +64,15 @@
         <td class="text-end">{% if entry.target_pap is not None %}{{ overview.target.average|floatformat:2 }}<div class="small text-muted">{{ entry.target_pap|floatformat:"-2" }} PAP</div>{% else %}&mdash;{% endif %}</td>
         <td>{% include "fleetops/statistics/_status_badge.html" with status=row.status %}</td>
         <td>{% for fleet_type, pap in entry.types %}{% if pap %}<span class="badge text-bg-secondary me-1">{{ fleet_type }} {{ pap }}</span>{% endif %}{% endfor %}</td>
-        <td class="text-end text-nowrap">{% if not row.is_other %}<a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:corporation_statistics_detail' row.corporation_id %}?year={{ year }}&amp;month={{ month }}">Details</a> <a class="btn btn-sm btn-outline-secondary" href="{% url 'fleetops:corporation_members_detail' row.corporation_id %}?year={{ year }}&amp;month={{ month }}">Members</a>{% endif %}</td>
+        <td class="text-end text-nowrap">{% if not row.is_other %}<a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:corporation_statistics_detail' row.corporation_id %}?year={{ year }}&amp;month={{ month }}">{% translate "Details" context "FleetOps" %}</a> <a class="btn btn-sm btn-outline-secondary" href="{% url 'fleetops:corporation_members_detail' row.corporation_id %}?year={{ year }}&amp;month={{ month }}">{% translate "Members" %}</a>{% endif %}</td>
       </tr>
       {% endwith %}{% empty %}
-      <tr><td colspan="10" class="text-muted p-4">No corporations with main characters found.</td></tr>
+      <tr><td colspan="10" class="text-muted p-4">{% translate "No corporations with main characters found." %}</td></tr>
       {% endfor %}
       </tbody>
       {% if table %}
       <tfoot><tr class="fw-semibold">
-        <td>Alliance</td>
+        <td>{% translate "Alliance" context "FleetOps" %}</td>
         <td class="text-end">{{ overview.mains }}</td>
         <td class="text-end">{{ overview.mains_with_pap }}</td>
         <td class="text-end">{{ below_total }}</td>
@@ -85,7 +85,7 @@
   </div>
 </div>
 <div class="text-muted small mt-3">
-  Total PAP counts the PAP earned while the main was in the corporation; mains and their numbers are the corporation's current mains (alts are not counted), and the average is the total PAP divided by the mains.
-  Green: the target is reached. Amber: not reached yet while the month runs. Red: a finished month below the target.
+  {% translate "Total PAP counts the PAP earned while the main was in the corporation; mains and their numbers are the corporation's current mains (alts are not counted), and the average is the total PAP divided by the mains." %}{% if month_ref.is_finished %} {% translate "Members who registered after this month are not counted in it." %}{% endif %}
+  {% translate "Green: the target is reached. Amber: not reached yet while the month runs. Red: a finished month below the target." %}
 </div>
 {% endblock %}

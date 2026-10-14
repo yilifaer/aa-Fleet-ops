@@ -1,37 +1,38 @@
+{% load i18n %}
 <div class="row g-3">
   <div class="col-lg-7">
     <div class="table-responsive"><table class="table table-sm align-middle">
-      <thead><tr><th>Role</th><th>Character</th><th>Main</th><th>Corporation</th><th>FC Credit</th><th>Notes</th><th></th></tr></thead>
+      <thead><tr><th>{% translate "Role" %}</th><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th>{% translate "Corporation" context "FleetOps" %}</th><th>{% translate "FC Credit" %}</th><th>{% translate "Notes" %}</th><th></th></tr></thead>
       <tbody>
       {% for role in role_rows %}
         <tr>
-          <td><span class="badge bg-info text-dark">{{ role.role_label }}</span>{% if role.special_role and not role.special_role.is_active %} <span class="badge bg-secondary">Disabled role</span>{% endif %}</td>
+          <td><span class="badge bg-info text-dark">{{ role.role_label }}</span>{% if role.special_role and not role.special_role.is_active %} <span class="badge bg-secondary">{% translate "Disabled role" %}</span>{% endif %}</td>
           <td>{{ role.character_name }}</td>
           <td>{{ role.main_character_name|default:"—" }}</td>
           <td>{{ role.corporation_name|default:"—" }}</td>
-          <td>{% if role.grants_fc_credit %}<span class="badge bg-success">Yes</span>{% else %}<span class="badge bg-secondary">No</span>{% endif %}</td>
+          <td>{% if role.grants_fc_credit %}<span class="badge bg-success">{% translate "Yes" context "FleetOps" %}</span>{% else %}<span class="badge bg-secondary">{% translate "No" context "FleetOps" %}</span>{% endif %}</td>
           <td>{{ role.notes|default:"—" }}</td>
-          <td>{% if can_manage %}<form method="post" action="{% url 'fleetops:delete_operation_role' role.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">Remove</button></form>{% endif %}</td>
+          <td>{% if can_manage %}<form method="post" action="{% url 'fleetops:delete_operation_role' role.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">{% translate "Remove" context "FleetOps" %}</button></form>{% endif %}</td>
         </tr>
-      {% empty %}<tr><td colspan="7" class="text-muted">No special roles assigned.</td></tr>{% endfor %}
+      {% empty %}<tr><td colspan="7" class="text-muted">{% translate "No special roles assigned." %}</td></tr>{% endfor %}
       </tbody>
     </table></div>
   </div>
   <div class="col-lg-5">
     {% if can_manage %}
-    <div class="card"><div class="card-header"><strong>Assign Special Role</strong></div><div class="card-body">
-      {% if not accepts_records %}<div class="text-muted">Special roles can only be assigned on Active or Closed fleets.</div>
-      {% elif not has_active_roles %}<div class="text-muted">No special roles are enabled. They are set up under Configuration, Special Roles.</div>
+    <div class="card"><div class="card-header"><strong>{% translate "Assign Special Role" %}</strong></div><div class="card-body">
+      {% if not accepts_records %}<div class="text-muted">{% translate "Special roles can only be assigned on Active or Closed fleets." %}</div>
+      {% elif not has_active_roles %}<div class="text-muted">{% translate "No special roles are enabled. They are set up under Configuration, Special Roles." %}</div>
       {% elif role_assignment_form.character_id.field.choices %}
       <form method="post" action="{% url 'fleetops:add_operation_role' operation.uuid %}">{% csrf_token %}
         <div class="mb-2">{{ role_assignment_form.role.label_tag }}{{ role_assignment_form.role }}</div>
         <div class="mb-2">{{ role_assignment_form.character_id.label_tag }}{{ role_assignment_form.character_id }}</div>
         <div class="mb-2">{{ role_assignment_form.notes.label_tag }}{{ role_assignment_form.notes }}</div>
-        <button class="btn btn-primary btn-sm">Assign Role</button>
+        <button class="btn btn-primary btn-sm">{% translate "Assign Role" %}</button>
       </form>
-      <div class="small text-muted mt-3">Roles can be changed after a fleet is closed. A role marked FC credit counts this fleet toward the assigned pilot's FC fleets and points, for any pilot registered in Alliance Auth. Changing a role's FC credit setting applies to new assignments; remove and assign again to apply it to an existing one.</div>
-      {% else %}<div class="text-muted">No fleet members are available for role assignment yet.</div>{% endif %}
+      <div class="small text-muted mt-3">{% translate "Roles can be changed after a fleet is closed. A role marked FC credit counts this fleet toward the assigned pilot's FC fleets and points, for any pilot registered in Alliance Auth. Changing a role's FC credit setting applies to new assignments; remove and assign again to apply it to an existing one." %}</div>
+      {% else %}<div class="text-muted">{% translate "No fleet members are available for role assignment yet." %}</div>{% endif %}
     </div></div>
-    {% else %}<div class="text-muted">FC or Fleet Manager permission is required to change roles.</div>{% endif %}
+    {% else %}<div class="text-muted">{% translate "FC or Fleet Manager permission is required to change roles." %}</div>{% endif %}
   </div>
 </div>

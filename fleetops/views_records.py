@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Fleet records: the FC lead approval queue, roster imports and the fleet page parts for them."""
 
 from django.contrib import messages
@@ -6,14 +9,17 @@ from django.db.models import Count, Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.translation import gettext as _
+from django.utils.translation import ngettext
 from django.views.decorators.http import require_POST
 
 from fleetops.forms import ManualAttendanceForm, format_duration
-from fleetops.forms_records import ROSTER_IMPORT_NOTE, ReviewForm, RosterPasteForm
+from fleetops.forms_records import ReviewForm, RosterPasteForm
 from fleetops.models import AttendanceRecord, FleetOperation, ReviewStatus, SpecialRole
 from fleetops.services import approvals, roster_import
 from fleetops.services.attendance import RECORDABLE_STATUSES
 from fleetops.services.review import deletable_manual_rows, is_approver, pending_attendance, pending_operations
+from fleetops.texts import translate_stored
 from fleetops.views import MANUAL_ATTENDANCE_ENTRY_KEY, _can_manage_attendance_operation, _render
 
 # Pending PAP rows listed on the approvals page at once.
@@ -65,10 +71,6 @@ def _form_errors(form):
     return " ".join(str(error) for errors in form.errors.values() for error in errors)
 
 
-def _rows(count):
-    return f"{count} PAP row" if count == 1 else f"{count} PAP rows"
-
-
 @permission_required("fleetops.manage_fleets", raise_exception=True)
 def approval_queue(request):
     operations = list(
@@ -118,7 +120,7 @@ def review_operation_view(request, operation_uuid):
     operation = get_object_or_404(FleetOperation, uuid=operation_uuid)
     form = ReviewForm(request.POST)
     if not form.is_valid():
-        messages.error(request, f"The fleet was not reviewed. {_form_errors(form)}")
+        messages.error(request, _("The fleet was not reviewed. %(errors)s") % {"errors": _form_errors(form)})
         return _back(request, "fleetops:approval_queue")
     data = form.cleaned_data
     try:
@@ -126,16 +128,24 @@ def review_operation_view(request, operation_uuid):
             count = approvals.approve_operation(
                 operation, actor=request.user, note=data["note"], include_attendance=data["include_attendance"]
             )
-            text = "Fleet approved"
+            approved = True
         else:
             count = approvals.reject_operation(
                 operation, actor=request.user, note=data["note"], include_attendance=data["include_attendance"]
             )
-            text = "Fleet rejected"
+            approved = False
     except ValueError as exc:
-        messages.error(request, str(exc))
+        messages.error(request, translate_stored(str(exc)))
     else:
-        messages.success(request, f"{text} with {_rows(count)}." if count else f"{text}.")
+        if approved and count:
+            text = ngettext("Fleet approved with %(count)s PAP row.", "Fleet approved with %(count)s PAP rows.", count)
+        elif approved:
+            text = _("Fleet approved.")
+        elif count:
+            text = ngettext("Fleet rejected with %(count)s PAP row.", "Fleet rejected with %(count)s PAP rows.", count)
+        else:
+            text = _("Fleet rejected.")
+        messages.success(request, text % {"count": count})
     return _back(request, "fleetops:approval_queue")
 
 
@@ -145,27 +155,31 @@ def review_attendance_view(request):
     form = ReviewForm(request.POST)
     ids = {int(value) for value in request.POST.getlist("ids") if value.isascii() and value.isdigit()}
     if not ids:
-        messages.error(request, "Select at least one PAP row.")
+        messages.error(request, _("Select at least one PAP row."))
         return _back(request, "fleetops:approval_queue")
     if not form.is_valid():
-        messages.error(request, f"The PAP rows were not reviewed. {_form_errors(form)}")
+        messages.error(request, _("The PAP rows were not reviewed. %(errors)s") % {"errors": _form_errors(form)})
         return _back(request, "fleetops:approval_queue")
     data = form.cleaned_data
     records = AttendanceRecord.objects.filter(pk__in=ids)
     try:
         if data["action"] == ReviewForm.APPROVE:
             count = approvals.approve_attendance(records, actor=request.user, note=data["note"])
-            text = "approved"
+            approved = True
         else:
             count = approvals.reject_attendance(records, actor=request.user, note=data["note"])
-            text = "rejected"
+            approved = False
     except ValueError as exc:
-        messages.error(request, str(exc))
+        messages.error(request, translate_stored(str(exc)))
     else:
-        if count:
-            messages.success(request, f"{_rows(count)} {text}.")
+        if count and approved:
+            text = ngettext("%(count)s PAP row approved.", "%(count)s PAP rows approved.", count)
+            messages.success(request, text % {"count": count})
+        elif count:
+            text = ngettext("%(count)s PAP row rejected.", "%(count)s PAP rows rejected.", count)
+            messages.success(request, text % {"count": count})
         else:
-            messages.warning(request, "No PAP rows were changed; they were already reviewed.")
+            messages.warning(request, _("No PAP rows were changed; they were already reviewed."))
     return _back(request, "fleetops:approval_queue")
 
 
@@ -209,12 +223,12 @@ def _import(request, operation):
     try:
         preview = roster_import.load_preview(operation, request.POST.get("payload"), actor=request.user)
     except ValueError as exc:
-        messages.error(request, str(exc))
+        messages.error(request, translate_stored(str(exc)))
         return redirect("fleetops:roster_import", operation_uuid=operation.uuid)
     selected = {int(value) for value in request.POST.getlist("rows") if value.isascii() and value.isdigit()}
     rows = [row for index, row in enumerate(preview["rows"]) if index in selected]
     if not rows:
-        messages.error(request, "Nothing was imported: no character was selected.")
+        messages.error(request, _("Nothing was imported: no character was selected."))
         return redirect("fleetops:roster_import", operation_uuid=operation.uuid)
     try:
         result = roster_import.import_rows(
@@ -226,16 +240,21 @@ def _import(request, operation):
             notes=preview["notes"],
         )
     except ValueError as exc:
-        messages.error(request, str(exc))
+        messages.error(request, translate_stored(str(exc)))
         return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     created = len(result.created)
-    text = f"Imported PAP for {created} character{'' if created == 1 else 's'}."
+    sentences = [
+        ngettext("Imported PAP for %(count)s character.", "Imported PAP for %(count)s characters.", created)
+        % {"count": created}
+    ]
     if created and not is_approver(request.user):
-        text += " It counts once an FC lead approves it."
-    messages.success(request, text)
+        sentences.append(_("It counts once an FC lead approves it."))
+    messages.success(request, " ".join(sentences))
     if result.skipped:
-        skipped = "; ".join(f"{row['character_name']}: {row['reason']}" for row in result.skipped)
-        messages.warning(request, f"Skipped {len(result.skipped)}: {skipped}.")
+        skipped = "; ".join(f"{row['character_name']}: {translate_stored(row['reason'])}" for row in result.skipped)
+        messages.warning(
+            request, _("Skipped %(count)s: %(details)s.") % {"count": len(result.skipped), "details": skipped}
+        )
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
@@ -245,7 +264,7 @@ def roster_import_view(request, operation_uuid):
     if not _can_manage_attendance_operation(request.user, operation):
         raise Http404
     if operation.status not in RECORDABLE_STATUSES:
-        messages.error(request, "Manual attendance can only be added to Active or Closed fleets.")
+        messages.error(request, _("Manual PAP can only be added to Active or Closed fleets."))
         return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     if request.method == "POST" and request.POST.get("step") == "import":
         return _import(request, operation)
@@ -255,9 +274,9 @@ def roster_import_view(request, operation_uuid):
             lines, warnings = roster_import.parse_roster(form.cleaned_data["text"])
             if lines:
                 return _preview_page(request, operation, form, lines, warnings)
-            form.add_error("text", "No character names were found in the pasted text.")
+            form.add_error("text", _("No character names were found in the pasted text."))
     else:
-        form = RosterPasteForm(initial={"notes": ROSTER_IMPORT_NOTE})
+        form = RosterPasteForm()
     return _render(
         request,
         "fleetops/roster_import.html",

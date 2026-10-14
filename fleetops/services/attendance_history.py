@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The PAP history behind the history pages and the ``attendance`` export.
 
 Both read the rows through :func:`history_queryset`, so a download always holds what its page lists.

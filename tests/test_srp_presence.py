@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The fleet presence check: the victim in the fleet at the loss time, by tracking events or PAP evidence."""
 
 from datetime import datetime, timedelta, timezone as dt_timezone

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """PAP links: pilots open a link and register their characters for PAP in a fleet.
 
 Registering needs an ESI token with the PAP link scopes, the same ones as AFAT's click tracking, so
@@ -14,9 +17,11 @@ from allianceauth.authentication.models import CharacterOwnership
 from allianceauth.services.hooks import get_extension_logger
 from django.db import IntegrityError, transaction
 from django.utils import timezone
+from django.utils.translation import gettext
 from esi.models import Token
 
 from fleetops.constants import CLICK_SCOPES
+from fleetops import texts
 from fleetops.models import FleetOperation, FleetOpsSettings, PapLink, PapRegistration
 from fleetops.providers.doctrines import doctrine_fits_snapshot
 from fleetops.providers.esi import FleetESIError, character_location, character_online, character_ship
@@ -46,18 +51,16 @@ MAX_CHARACTERS_PER_REGISTRATION = 20
 MIN_LINK_MINUTES = 1
 MAX_LINK_MINUTES = 1440
 
-NOT_OWNED = "Not one of your characters."
-NO_TOKEN = "No valid ESI token with the PAP link scopes; use Add a character to log in with it."
-TOKEN_CHECK_FAILED = "The ESI token could not be checked; try again."
-ALREADY_REGISTERED = "Already registered for this fleet."
-LINK_CLOSED = "The PAP link is no longer open."
-LEGACY_FLEET = (
-    "PAP links are not available for fleets closed before PAP followed time in fleet; add manual PAP instead."
-)
-NOT_ONLINE = "Not logged in to the game; this PAP link needs the character online."
-TOO_MANY = (
-    f"At most {MAX_CHARACTERS_PER_REGISTRATION} characters are registered at once; register this one again."
-)
+# Stored messages (English): the reasons go into the audit entry of a registration, and the pages show
+# them through ``translate_stored``.
+NOT_OWNED = texts.PAPLINK_NOT_OWNED()
+NO_TOKEN = texts.PAPLINK_NO_TOKEN()
+TOKEN_CHECK_FAILED = texts.PAPLINK_TOKEN_CHECK_FAILED()
+ALREADY_REGISTERED = texts.PAPLINK_ALREADY_REGISTERED()
+LINK_CLOSED = texts.PAPLINK_CLOSED()
+LEGACY_FLEET = texts.PAPLINK_LEGACY_FLEET()
+NOT_ONLINE = texts.PAPLINK_NOT_ONLINE()
+TOO_MANY = texts.PAPLINK_TOO_MANY(limit=MAX_CHARACTERS_PER_REGISTRATION)
 
 # Steps of an ESI fleet start that a PAP-link fleet has no use for.
 LINK_ONLY_SKIPPED = (
@@ -65,6 +68,11 @@ LINK_ONLY_SKIPPED = (
     ("motd_update", "MOTD update"),
     ("tracking_start", "ESI tracking"),
 )
+
+
+def _unknown_name(character_id) -> str:
+    """What the result lists for a character that is not on the account, in the language of the viewer."""
+    return gettext("Character %(id)s") % {"id": character_id}
 
 
 class PapLinkError(ValueError):
@@ -114,15 +122,15 @@ def link_state(link, now=None):
 def create_link(operation, *, actor, minutes=None, require_online=True):
     """A new PAP link for the fleet, open for ``minutes`` (the configured default when None)."""
     if operation.status not in CREATE_STATUSES:
-        status = operation.get_status_display().lower()
-        raise PapLinkError(f"PAP links are created for active or closed fleets; this fleet is {status}.")
+        word = texts.FLEET_STATUS_WORDS.get(operation.status)
+        raise PapLinkError(texts.PAPLINK_WRONG_STATUS(status=word() if word else operation.status))
     if operation.pap_rules == FleetOperation.PapRules.LEGACY:
         raise PapLinkError(LEGACY_FLEET)
     if minutes is None:
         minutes = FleetOpsSettings.get_solo().pap_link_minutes
     minutes = int(minutes)
     if not MIN_LINK_MINUTES <= minutes <= MAX_LINK_MINUTES:
-        raise PapLinkError(f"A PAP link stays open for {MIN_LINK_MINUTES} to {MAX_LINK_MINUTES} minutes.")
+        raise PapLinkError(texts.PAPLINK_MINUTES(min=MIN_LINK_MINUTES, max=MAX_LINK_MINUTES))
     now = timezone.now()
     link = PapLink.objects.create(
         operation=operation,
@@ -202,13 +210,13 @@ def register_characters(link, user, character_ids):
         )
     )
     for character_id in ids[MAX_CHARACTERS_PER_REGISTRATION:]:
-        result.rejected.append((character_id, owned.get(character_id) or f"Character {character_id}", TOO_MANY))
+        result.rejected.append((character_id, owned.get(character_id) or _unknown_name(character_id), TOO_MANY))
 
     pending = []
     for character_id in ids[:MAX_CHARACTERS_PER_REGISTRATION]:
         name = owned.get(character_id)
         if name is None:
-            result.rejected.append((character_id, f"Character {character_id}", NOT_OWNED))
+            result.rejected.append((character_id, _unknown_name(character_id), NOT_OWNED))
             continue
         if not link_is_valid(link):
             result.rejected.append((character_id, name, LINK_CLOSED))
@@ -336,9 +344,9 @@ def start_link_only_fleet(user, cleaned_data):
                 minutes=cleaned_data.get("link_minutes"),
                 require_online=cleaned_data.get("require_online", True),
             )
-            set_action(operation, "pap_link_fleet", True, "PAP-link fleet started without an ESI fleet.")
+            set_action(operation, "pap_link_fleet", True, texts.LINK_FLEET_STARTED())
             for action, step in LINK_ONLY_SKIPPED:
-                set_action(operation, action, None, f"PAP-link fleet: {step} not used.")
+                set_action(operation, action, None, texts.LINK_STEP_UNUSED(step=step))
             # The one fleet.start entry of this start, like an ESI fleet's.
             audit(
                 user,

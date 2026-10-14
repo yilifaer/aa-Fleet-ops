@@ -1,4 +1,4 @@
-# AA FleetOps 0.1.0a6: fleet end reasons, end requests and per-step attempt history
+# AA FleetOps 0.2.0b1: fleet end reasons, end requests and per-step attempt history
 
 import re
 from http import HTTPStatus

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Pages that work without an Alliance Auth login when the site allows public FleetOps views."""
 
 from django.http import Http404

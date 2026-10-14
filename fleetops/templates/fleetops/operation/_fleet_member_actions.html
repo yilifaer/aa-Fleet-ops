@@ -1,16 +1,17 @@
+{% load i18n %}
 {% if fleet_can_write %}
 <span class="dropdown fleet-member-menu">
-  <button class="btn btn-sm btn-link p-0" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Actions"><i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i><span class="visually-hidden">Actions for {{ member.name }}</span></button>
+  <button class="btn btn-sm btn-link p-0" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="{% translate 'Actions' %}"><i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i><span class="visually-hidden">{% blocktranslate trimmed with name=member.name %}Actions for {{ name }}{% endblocktranslate %}</span></button>
   <ul class="dropdown-menu dropdown-menu-end">
-    <li><button type="button" class="dropdown-item" data-fleet-move-open>Move to…</button></li>
+    <li><button type="button" class="dropdown-item" data-fleet-move-open>{% translate "Move to…" %}</button></li>
     {% if member.squad_id and member.squad_id > 0 and member.wing_id and member.wing_id > 0 %}
-    {% if member.role == 'squad_member' %}<li><button type="button" class="dropdown-item" data-fleet-move data-role="squad_commander" data-wing-id="{{ member.wing_id }}" data-squad-id="{{ member.squad_id }}">Make squad commander</button></li>{% endif %}
-    {% if member.role == 'squad_commander' %}<li><button type="button" class="dropdown-item" data-fleet-move data-role="squad_member" data-wing-id="{{ member.wing_id }}" data-squad-id="{{ member.squad_id }}">Make squad member</button></li>{% endif %}
+    {% if member.role == 'squad_member' %}<li><button type="button" class="dropdown-item" data-fleet-move data-role="squad_commander" data-wing-id="{{ member.wing_id }}" data-squad-id="{{ member.squad_id }}">{% translate "Make squad commander" %}</button></li>{% endif %}
+    {% if member.role == 'squad_commander' %}<li><button type="button" class="dropdown-item" data-fleet-move data-role="squad_member" data-wing-id="{{ member.wing_id }}" data-squad-id="{{ member.squad_id }}">{% translate "Make squad member" %}</button></li>{% endif %}
     {% endif %}
-    {% if member.wing_id and member.wing_id > 0 and member.role != 'wing_commander' and member.role != 'fleet_commander' %}<li><button type="button" class="dropdown-item" data-fleet-move data-role="wing_commander" data-wing-id="{{ member.wing_id }}">Make wing commander</button></li>{% endif %}
-    {% if member.role != 'fleet_commander' %}<li><button type="button" class="dropdown-item" data-fleet-move data-role="fleet_commander">Make fleet commander</button></li>{% endif %}
+    {% if member.wing_id and member.wing_id > 0 and member.role != 'wing_commander' and member.role != 'fleet_commander' %}<li><button type="button" class="dropdown-item" data-fleet-move data-role="wing_commander" data-wing-id="{{ member.wing_id }}">{% translate "Make wing commander" %}</button></li>{% endif %}
+    {% if member.role != 'fleet_commander' %}<li><button type="button" class="dropdown-item" data-fleet-move data-role="fleet_commander">{% translate "Make fleet commander" %}</button></li>{% endif %}
     {% if not member.protected %}<li><hr class="dropdown-divider"></li>
-    <li><form method="post" action="{% url 'fleetops:kick_member' operation.uuid member.character_id %}" data-fleet-action data-confirm="Kick {{ member.name }} from the fleet? This cannot be undone.">{% csrf_token %}<button class="dropdown-item text-danger">Kick…</button></form></li>{% endif %}
+    <li><form method="post" action="{% url 'fleetops:kick_member' operation.uuid member.character_id %}" data-fleet-action data-confirm="{% blocktranslate trimmed with name=member.name %}Kick {{ name }} from the fleet? This cannot be undone.{% endblocktranslate %}">{% csrf_token %}<button class="dropdown-item text-danger">{% translate "Kick…" %}</button></form></li>{% endif %}
   </ul>
 </span>
 {% endif %}

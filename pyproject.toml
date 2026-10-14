@@ -4,15 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aa-fleetops"
-version = "0.1.0a6.dev7"
-description = "Fleet lifecycle management for Alliance Auth"
+dynamic = ["version"]
+description = "Fleet operations for Alliance Auth: start, ping, track, PAP, statistics, FC incentives and SRP"
 readme = "README.md"
 requires-python = ">=3.10,<3.15"
 license = "GPL-3.0-only"
-authors = [{name = "AA FleetOps Contributors"}]
+license-files = ["LICENSE"]
+authors = [{ name = "yilifaer and AA FleetOps contributors" }]
 keywords = ["allianceauth", "eveonline", "fleet", "fleetops", "esi"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Environment :: Web Environment",
   "Framework :: Django",
   "Framework :: Django :: 5.2",
@@ -22,6 +23,10 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Natural Language :: English",
+  "Natural Language :: Chinese (Simplified)",
+  "Operating System :: OS Independent",
+  "Topic :: Games/Entertainment",
 ]
 dependencies = [
   "allianceauth>=5.2,<6",
@@ -34,6 +39,15 @@ fittings = ["fittings>=2.3"]
 sde = ["django-eveonline-sde>=0.0.1"]
 test = ["coverage>=7"]
 
+[project.urls]
+Homepage = "https://github.com/yilifaer/aa-fleetops"
+Source = "https://github.com/yilifaer/aa-fleetops"
+Issues = "https://github.com/yilifaer/aa-fleetops/issues"
+Changelog = "https://github.com/yilifaer/aa-fleetops/blob/dev/CHANGELOG.md"
+Documentation = "https://github.com/yilifaer/aa-fleetops/tree/dev/docs"
+
+[tool.setuptools.dynamic]
+version = { attr = "fleetops.__version__" }
 
 [tool.setuptools.packages.find]
 include = ["fleetops*"]
@@ -41,5 +55,8 @@ include = ["fleetops*"]
 [tool.setuptools.package-data]
 fleetops = [
   "templates/**/*.html",
+  "templates/**/*.txt",
   "static/**/*",
+  "locale/*/LC_MESSAGES/*.po",
+  "locale/*/LC_MESSAGES/*.mo",
 ]

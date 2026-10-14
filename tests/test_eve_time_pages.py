@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Pages show EVE time (UTC), whatever TIME_ZONE the site uses, and file fleets by their EVE month."""
 
 from datetime import datetime, timedelta, timezone as dt_timezone

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Who may see which statistics.
 
 Failures on a single object (a member, a corporation) are answered with ``Http404`` by the views, as

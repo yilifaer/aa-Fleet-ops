@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Inviting Alliance Auth characters into a running fleet from the Fleet tab.
 
 Any character registered in Alliance Auth by an active user can be invited. Invitations go to ESI
@@ -10,6 +13,7 @@ from allianceauth.authentication.models import CharacterOwnership
 from allianceauth.eveonline.models import EveCharacter
 from allianceauth.services.hooks import get_extension_logger
 
+from fleetops import texts
 from fleetops.providers.esi import invite_fleet_member
 from fleetops.services import fleet_jobs, fleet_overlay, fleet_refresh
 from fleetops.services.audit import audit
@@ -27,8 +31,8 @@ from fleetops.services.fleet_rules import (
     FleetRuleError,
     check_fleet_room,
     check_invite,
-    position_labels,
     squad_index,
+    stored_position_labels,
 )
 
 logger = get_extension_logger(__name__)
@@ -38,22 +42,14 @@ MAX_INVITES_PER_JOB = 50
 # Searches need at least this many characters; an empty search lists the actor's own characters.
 MIN_QUERY_LENGTH = 3
 
-NO_CHARACTERS = "Choose the characters to invite."
-TOO_MANY = f"Invite at most {MAX_INVITES_PER_JOB} characters at a time."
-ONE_COMMANDER = "Only one character can be invited into a commander position."
-NOBODY = "Nobody was invited."
-NOT_REGISTERED = "is not registered in Alliance Auth by an active user"
+# Stored messages (English): they go into audit entries and job messages, and the pages show them through
+# ``translate_stored``.
+NO_CHARACTERS = texts.INVITE_NO_CHARACTERS()
+TOO_MANY = texts.INVITE_TOO_MANY(limit=MAX_INVITES_PER_JOB)
+ONE_COMMANDER = texts.INVITE_ONE_COMMANDER()
+NOBODY = texts.INVITE_NOBODY()
 # Rule failures that hold for every invitation of a job, so the job stops at the first one.
 JOB_STOP_RULES = frozenset({"not_found", "limit"})
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def plural(count, noun, nouns=None) -> str:
-    return f"{count} {noun if count == 1 else nouns or noun + 's'}"
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +131,7 @@ def _position(operation, role, wing_id, squad_id, wings, members, known) -> dict
         found = squad_index(wings).get(int(squad_id))
         if found is None:
             fleet_refresh.schedule_refresh(operation)
-            raise FleetManageError(f"That squad no longer exists. {VIEW_REFRESHED}", 404)
+            raise FleetManageError(f"{texts.RULE_SQUAD_GONE()} {VIEW_REFRESHED}", 404)
         wing_id = found[0]["id"]
     try:
         return check_invite(role, wing_id, squad_id, wings=wings if known else None, members=list(members.values()))
@@ -147,19 +143,19 @@ def _position(operation, role, wing_id, squad_id, wings, members, known) -> dict
         raise FleetManageError(message, RULE_STATUS.get(exc.code, 400)) from exc
 
 
-def position_text(body, wings=()) -> str:
-    """Where an invitation puts the character: "any squad with free positions", "Main / Alpha" …"""
+def _invite_sent(name, body, wings=()) -> str:
+    """The answer to an invitation that was sent, with where it puts the character."""
     role = body["role"]
     if role == "squad_member" and "squad_id" not in body:
-        return "any squad with free positions"
-    wing, squad = position_labels(role, body.get("wing_id"), body.get("squad_id"), wings)
+        return texts.INVITE_SENT_ANY_SQUAD(name=name)
+    wing, squad = stored_position_labels(role, body.get("wing_id"), body.get("squad_id"), wings)
     if role == "fleet_commander":
-        return "fleet commander"
+        return texts.INVITE_SENT_FLEET_COMMANDER(name=name)
     if role == "wing_commander":
-        return f"wing commander of {wing}"
+        return texts.INVITE_SENT_WING_COMMANDER(name=name, wing=wing)
     if role == "squad_commander":
-        return f"squad commander of {wing} / {squad}"
-    return f"{wing} / {squad}"
+        return texts.INVITE_SENT_SQUAD_COMMANDER(name=name, wing=wing, squad=squad)
+    return texts.INVITE_SENT_TO_SQUAD(name=name, wing=wing, squad=squad)
 
 
 def _position_record(body, wings) -> dict:
@@ -167,7 +163,7 @@ def _position_record(body, wings) -> dict:
     if body["role"] == "squad_member" and "squad_id" not in body:
         wing, squad = "", ""
     else:
-        wing, squad = position_labels(body["role"], body.get("wing_id"), body.get("squad_id"), wings)
+        wing, squad = stored_position_labels(body["role"], body.get("wing_id"), body.get("squad_id"), wings)
     return {
         "role": body["role"],
         "wing_id": body.get("wing_id"),
@@ -208,7 +204,7 @@ def _send(operation, character_id, name, body) -> None:
 
 
 def _skipped_note(skipped) -> str:
-    return f" Skipped: {'; '.join(skipped)}." if skipped else ""
+    return " " + texts.SKIPPED_LIST(items="; ".join(skipped)) if skipped else ""
 
 
 def _invite_one(operation, actor, character_id, name, body, wings, skipped) -> FleetActionResult:
@@ -224,16 +220,16 @@ def _invite_one(operation, actor, character_id, name, body, wings, skipped) -> F
         audit(actor, "fleet.invite", operation, None, details)
         return FleetActionResult(False, message, level="error", status=status)
     fleet_overlay.expect(operation.pk, _expected(character_id, name, body))
-    message = f"Invitation sent to {name} ({position_text(body, wings)})."
+    message = _invite_sent(name, body, wings)
     audit(actor, "fleet.invite", operation, None, {**record, "result": "ok", "summary": message})
     return FleetActionResult(True, message + _skipped_note(skipped), data={"character_ids": [int(character_id)]})
 
 
 def invite_job_label(count, body, wings=()) -> str:
-    label = f"Invite {plural(count, 'character')}"
     if body["role"] == "squad_member" and "squad_id" in body:
-        label += f" into {position_text(body, wings)}"
-    return label
+        wing, squad = stored_position_labels(body["role"], body.get("wing_id"), body.get("squad_id"), wings)
+        return texts.INVITE_JOB_INTO(count=count, wing=wing, squad=squad)
+    return texts.INVITE_JOB(count=count)
 
 
 def invite_characters(
@@ -264,9 +260,9 @@ def invite_characters(
     targets, skipped, refused = [], [], []
     for character_id in ids:
         if character_id not in names:
-            refused.append(f"{_unknown_name(character_id, known_names)} {NOT_REGISTERED}")
+            refused.append(texts.INVITE_NOT_REGISTERED_ITEM(name=_unknown_name(character_id, known_names)))
         elif character_id in members:
-            skipped.append(f"{names[character_id]} is already in the fleet")
+            skipped.append(texts.INVITE_IN_FLEET_ITEM(name=names[character_id]))
         else:
             targets.append(character_id)
     skipped = refused + skipped
@@ -297,7 +293,7 @@ def invite_characters(
     )
     return FleetActionResult(
         True,
-        f"Inviting {plural(len(targets), 'character')} in the background.{_skipped_note(skipped)}",
+        texts.INVITING_IN_BACKGROUND(count=len(targets)) + _skipped_note(skipped),
         level="info",
         data={"job_id": job["id"], "character_ids": targets},
     )
@@ -322,7 +318,7 @@ def run_bulk_invite(job, operation, payload, actor) -> None:
             wings, members, known = structure(operation)
             if int(character_id) in members:
                 entry["result"] = "skipped"
-                fleet_jobs.step(job, ok=True, message=f"{name} is already in the fleet.")
+                fleet_jobs.step(job, ok=True, message=texts.INVITE_IN_FLEET(name=name))
                 continue
             try:
                 check_fleet_room(len(members))
@@ -332,7 +328,7 @@ def run_bulk_invite(job, operation, payload, actor) -> None:
             except FleetRuleError as exc:
                 entry.update(result="failed", error=str(exc))
                 failures.append({"character": name, "character_id": int(character_id), "error": str(exc)})
-                fleet_jobs.step(job, ok=False, message=f"{name}: {exc}")
+                fleet_jobs.step(job, ok=False, message=texts.NAMED_ERROR(name=name, error=str(exc)))
                 if exc.code in JOB_STOP_RULES:
                     raise fleet_jobs.JobStopped(str(exc)) from exc
                 continue
@@ -349,7 +345,7 @@ def run_bulk_invite(job, operation, payload, actor) -> None:
                 continue
             fleet_overlay.expect(operation.pk, _expected(character_id, name, body))
             entry["result"] = "ok"
-            fleet_jobs.step(job, ok=True, message=f"Invitation sent to {name}.")
+            fleet_jobs.step(job, ok=True, message=texts.INVITE_SENT(name=name))
     finally:
         job["audit"] = {
             "position": position,

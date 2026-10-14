@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Fleet page parts and actions of the PAP rules: recalculation, statistics inclusion, live status."""
 
 from allianceauth.authentication.decorators import permissions_required
@@ -6,8 +9,10 @@ from django.contrib.auth.decorators import permission_required
 from django.core.exceptions import PermissionDenied
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 
+from fleetops import texts
 from fleetops.forms import EndFleetForm, FleetAttendanceMultiplierForm, format_duration
 from fleetops.models import FleetOperation, FleetOpsSettings
 from fleetops.services.audit import audit
@@ -21,6 +26,7 @@ from fleetops.services.multipliers import (
     tiers,
 )
 from fleetops.services.pap import compute_pap, finalize_pap, live_pap_status
+from fleetops.texts import translate_stored
 from fleetops.views import (
     _can_manage_attendance_operation,
     _can_manage_operation,
@@ -115,14 +121,17 @@ def recalculate_pap_view(request, operation_uuid):
     if not _can_manage_attendance_operation(request.user, operation):
         raise Http404
     if operation.status != FleetOperation.Status.CLOSED:
-        messages.error(request, "PAP is calculated when the fleet closes.")
+        messages.error(request, _("PAP is calculated when the fleet closes."))
         return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
-    summary = finalize_pap(operation, actor=request.user, reason="manual recalculation")
-    audit(request.user, "pap.recalculate", operation, None, summary, reason="manual recalculation")
+    summary = finalize_pap(operation, actor=request.user, reason=texts.AUDIT_RECALCULATED())
+    audit(request.user, "pap.recalculate", operation, None, summary, reason=texts.AUDIT_RECALCULATED())
     messages.success(
         request,
-        f"PAP recalculated: {summary['granted']} granted, {summary['capped']} over the character limit, "
-        f"{summary['below_minimum']} below the minimum time, {summary['unregistered']} not in Alliance Auth.",
+        _(
+            "PAP recalculated: %(granted)s granted, %(capped)s over the character limit, "
+            "%(below_minimum)s below the minimum time, %(unregistered)s not in Alliance Auth."
+        )
+        % summary,
     )
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
@@ -138,13 +147,16 @@ def set_stats_mode_view(request, operation_uuid):
     try:
         set_stats_mode(operation, mode, actor=request.user, note=request.POST.get("note", ""))
     except ValueError as exc:
-        messages.error(request, str(exc))
+        messages.error(request, translate_stored(str(exc)))
     else:
         if operation.counts_for_stats:
-            messages.success(request, "This fleet counts in statistics and incentives.")
+            messages.success(request, _("This fleet counts in statistics and incentives."))
         else:
             reason = operation_count_reason(operation)
-            messages.warning(request, f"This fleet does not count in statistics and incentives ({reason}).")
+            messages.warning(
+                request,
+                _("This fleet does not count in statistics and incentives (%(reason)s).") % {"reason": reason},
+            )
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 

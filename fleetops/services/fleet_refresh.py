@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Reading a fleet again right after a change, and what went wrong when it could not be read.
 
 ESI answers the fleet routes from its own 5 second cache, so a change is read twice: at once and
@@ -13,6 +16,7 @@ from allianceauth.services.hooks import get_extension_logger
 from django.core.cache import cache
 from kombu.exceptions import OperationalError as QueueError
 
+from fleetops import texts
 from fleetops.models import FleetOperation
 from fleetops.providers.esi import FleetESIError, detect_character_fleet
 from fleetops.services.errors import log_failure, report_failure
@@ -29,9 +33,10 @@ BOSS_CHECK_SECONDS = 60
 READ_ERROR_SECONDS = 120
 REFRESH_TASK_LOCK_SECONDS = 30
 
-REFRESHED_RECENTLY = "Refreshed a moment ago."
-REFRESHED = "Fleet refreshed from ESI."
-NOT_OPEN = "The fleet is no longer open."
+# Stored messages (English); the pages show them through ``translate_stored``.
+REFRESHED_RECENTLY = texts.REFRESHED_RECENTLY()
+REFRESHED = texts.REFRESHED()
+NOT_OPEN = texts.NOT_OPEN()
 
 
 def _key(operation_id, name):

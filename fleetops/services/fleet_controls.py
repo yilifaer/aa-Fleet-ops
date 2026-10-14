@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Kicking members from an EVE fleet with the FC's ESI token.
 
 One member, everyone outside a chosen system, or the capsule pilots. The FC character and the fleet
@@ -15,6 +18,7 @@ from allianceauth.services.hooks import get_extension_logger
 from django.contrib.auth import get_user_model
 from esi.models import Token
 
+from fleetops import texts
 from fleetops.constants import FLEET_SCOPES
 from fleetops.models import FleetMemberState, FleetOperation
 from fleetops.providers.esi import FleetESIError, kick_fleet_member
@@ -48,11 +52,13 @@ BATCH_LOCK_TIMEOUT = 5 * 60
 ALREADY_LEFT = "already left the fleet"
 # The provider's code for a kick ESI answered with 404.
 MEMBER_NOT_FOUND = "MEMBER_NOT_FOUND"
-NOT_ACTIVE = "Members can only be kicked from an active fleet."
-NO_ESI_FLEET = "This fleet has no ESI fleet to kick members from."
-PROTECTED = "The FC character and the fleet boss are never kicked."
-NOT_IN_FLEET = "This character is not in the fleet."
-NO_WRITE_TOKEN = "The FC character has no ESI token with esi-fleets.write_fleet.v1"
+# Stored messages (English): they go into operation steps, audit entries and job messages, and the pages
+# show them through ``translate_stored``.
+NOT_ACTIVE = texts.KICK_NOT_ACTIVE()
+NO_ESI_FLEET = texts.KICK_NO_ESI_FLEET()
+PROTECTED = texts.KICK_PROTECTED()
+NOT_IN_FLEET = texts.KICK_NOT_IN_FLEET()
+NO_WRITE_TOKEN = texts.KICK_NO_WRITE_TOKEN()
 
 
 class KickRefused(ValueError):
@@ -195,7 +201,12 @@ def kick_member(operation, character_id, *, actor, sync=True) -> KickResult:
             error, problem = _kick_error(operation, character_id)
     except FleetManageError as exc:
         raise KickRefused(exc.message) from exc
-    message = f"Kicked {label}." if not error else f"Could not kick {label}: {error.rstrip('.')}."
+    if not error:
+        message = texts.KICKED_MEMBER(member=label)
+    elif error == ALREADY_LEFT:
+        message = texts.KICK_ALREADY_LEFT(member=label)
+    else:
+        message = texts.KICK_FAILED(member=label, error=error.rstrip(".") + ".")
     set_action(operation, "kick_member", not error, message)
     audit(
         actor,
@@ -236,15 +247,17 @@ def eligible_members(operation, purpose, context=None):
 
 def _batch_message(purpose, context, kicked, failures, skipped):
     if purpose == CAPSULES:
-        message = f"Kicked {len(kicked)} capsule member(s)."
+        message = texts.KICKED_CAPSULES(count=len(kicked))
     else:
         system = context.get("system_name") or context.get("system_id")
-        message = f"Kicked {len(kicked)} member(s) outside {system}."
+        message = texts.KICKED_OUTSIDE(count=len(kicked), system=system)
     if failures:
-        details = "; ".join(f"{member.character_name}: {error}" for member, error in failures[:FAILURES_SHOWN])
-        message += f" {len(failures)} failed. {details}"
+        details = "; ".join(
+            texts.NAMED_ERROR(name=member.character_name, error=error) for member, error in failures[:FAILURES_SHOWN]
+        )
+        message += " " + texts.KICK_FAILURES(count=len(failures), details=details)
     if skipped:
-        message += f" {len(skipped)} skipped: no longer in the fleet or no longer a target."
+        message += " " + texts.KICK_SKIPPED(count=len(skipped))
     return message
 
 
@@ -279,7 +292,7 @@ def _kick_batch(operation, members, *, actor, purpose, context, skipped, job=Non
         try:
             _send_kick(operation, member.character_id)
             kicked.append(member)
-            progress = f"Kicked {member_label(member)}."
+            progress = texts.KICKED_MEMBER(member=member_label(member))
         except Exception as exc:
             error = report_failure(logger, step, exc, operation)
             if getattr(exc, "code", "") == MEMBER_NOT_FOUND:
@@ -297,7 +310,7 @@ def _kick_batch(operation, members, *, actor, purpose, context, skipped, job=Non
                 # A forbidden write or ESI's error limit ends the batch, as it ends other fleet jobs.
                 stopped = fleet_jobs.stop_reason(exc)
             failures.append((member, error))
-            progress = f"{member.character_name}: {error}"
+            progress = texts.NAMED_ERROR(name=member.character_name, error=error)
         if job is not None:
             # Progress of a background batch on the fleet page.
             fleet_jobs.step(job, ok=kicked[-1:] == [member], message=progress)
@@ -306,7 +319,7 @@ def _kick_batch(operation, members, *, actor, purpose, context, skipped, job=Non
             break
     message = _batch_message(purpose, context, kicked, failures, skipped)
     if stopped:
-        message += f" Stopped: {stopped}"
+        message += " " + texts.STOPPED(error=stopped)
     set_action(operation, action, not failures and not stopped, message)
     audit(
         actor,
@@ -392,9 +405,9 @@ def kick_members(operation, character_ids, *, actor, purpose, context=None):
 def kick_job_label(purpose, context, count):
     """The name of a background kick batch on the fleet page."""
     if purpose == CAPSULES:
-        return f"Kick {count} capsule pilot{'' if count == 1 else 's'}"
+        return texts.KICK_JOB_CAPSULES(count=count)
     system = context.get("system_name") or context.get("system_id")
-    return f"Kick {count} member{'' if count == 1 else 's'} outside {system}"
+    return texts.KICK_JOB_OUTSIDE(count=count, system=system)
 
 
 def kick_job_payload(character_ids, purpose, context):
@@ -433,7 +446,7 @@ def _run_batch(operation, character_ids, actor, purpose, context, *, job=None):
             _check_writable(operation)
     except KickRefused as exc:
         action, audit_action, _step = PURPOSES[purpose]
-        message = f"Nobody was kicked. {exc}"
+        message = texts.KICK_NOBODY(reason=str(exc))
         set_action(operation, action, False, message)
         audit(
             actor,
@@ -459,7 +472,7 @@ def _run_batch(operation, character_ids, actor, purpose, context, *, job=None):
     if job is not None:
         # The job counted every member it was queued for; those that left or are no longer a target
         # since are not kicked.
-        note = f"{len(left)} skipped: no longer in the fleet or no longer a target." if left else ""
+        note = texts.KICK_SKIPPED(count=len(left)) if left else ""
         fleet_jobs.set_remaining(job, len(targets), message=note)
     return _kick_batch(operation, targets, actor=actor, purpose=purpose, context=context, skipped=skipped, job=job)
 

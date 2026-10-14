@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Members, inactive list, leaderboard and member detail of the statistics.
 
 Everything is computed for one EVE month on the main character: a member is a user of the statistics
@@ -12,6 +15,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from django.db.models import Count, Max, Sum
+from django.utils.translation import gettext, pgettext
 
 from fleetops.models import AttendanceRecord, FleetOpsSettings, FleetType
 from fleetops.services import population
@@ -62,8 +66,9 @@ class CharacterUse:
 class MemberDetail:
     """One member's month: totals, ranks, the characters used, the fleet types and the fleets.
 
-    Ranks are competition ranks among the members with PAP; ``None`` without PAP. ``fleets_truncated`` is
-    set when the member has more fleets than ``fleets`` lists.
+    Ranks are competition ranks among the members with PAP; ``None`` without PAP, and for a month that ended
+    before the member registered. ``fleets_truncated`` is set when the member has more fleets than ``fleets``
+    lists.
     """
 
     row: MemberRow
@@ -131,11 +136,13 @@ def _build_rows(people, totals, types, target: MonthTarget | None, ref: MonthRef
 
 
 def _scope_base(year, month, corporation_id, settings_obj):
-    """The counted PAP of the month; for a corporation only the PAP of its current members."""
+    """The counted PAP of the month; for a corporation only the PAP of its members in that month."""
     base = attendance_queryset(year, month)
     if corporation_id is not None:
         base = base.filter(
-            auth_user_id__in=population.member_user_ids_subquery(corporation_id=corporation_id, settings_obj=settings_obj)
+            auth_user_id__in=population.member_user_ids_subquery(
+                corporation_id=corporation_id, registered_before=month_ref(year, month).end, settings_obj=settings_obj
+            )
         )
     return base
 
@@ -153,7 +160,7 @@ def member_rows(
     """
     settings_obj = settings_obj or FleetOpsSettings.get_solo()
     ref = month_ref(year, month)
-    people = population.members(corporation_id=corporation_id, settings_obj=settings_obj)
+    people = population.members(corporation_id=corporation_id, registered_before=ref.end, settings_obj=settings_obj)
     base = _scope_base(year, month, corporation_id, settings_obj)
     totals = user_totals(base)
     types = user_fleet_type_totals(base)
@@ -237,7 +244,10 @@ def scope_corporations(settings_obj=None) -> list[tuple[int, str]]:
     for corporation_id, name in rows:
         if corporation_id is not None and (name or corporation_id not in names):
             names[corporation_id] = name or ""
-    corporations = [(corporation_id, name or f"Corporation {corporation_id}") for corporation_id, name in names.items()]
+    corporations = [
+        (corporation_id, name or gettext("Corporation %(id)s") % {"id": corporation_id})
+        for corporation_id, name in names.items()
+    ]
     corporations.sort(key=lambda item: (item[1].casefold(), item[0]))
     return corporations
 
@@ -253,7 +263,7 @@ def leaderboard(year, month, *, corporation_id=None, size=None, viewer=None, set
     settings_obj = settings_obj or FleetOpsSettings.get_solo()
     size = max(1, int(size or settings_obj.leaderboard_size))
     ref = month_ref(year, month)
-    people = population.members(corporation_id=corporation_id, settings_obj=settings_obj)
+    people = population.members(corporation_id=corporation_id, registered_before=ref.end, settings_obj=settings_obj)
     totals = user_totals(_scope_base(year, month, corporation_id, settings_obj))
     ranked = _sorted([row for row in _build_rows(people, totals, {}, None, ref) if row.pap > 0], "-pap")
     shown = [row for row in ranked if row.rank <= size]
@@ -262,9 +272,11 @@ def leaderboard(year, month, *, corporation_id=None, size=None, viewer=None, set
     if viewer_id is not None:
         viewer_row = next((row for row in ranked[len(shown) :] if row.user_id == viewer_id), None)
     if corporation_id is None:
-        scope_label = "Alliance"
+        scope_label = pgettext("FleetOps", "Alliance")
     else:
-        scope_label = people[0].corporation_name if people and people[0].corporation_name else "Corporation"
+        scope_label = (
+            people[0].corporation_name if people and people[0].corporation_name else pgettext("FleetOps", "Corporation")
+        )
     return Leaderboard(
         rows=shown,
         size=size,
@@ -284,7 +296,7 @@ def member_fleets(user, year, month, *, limit=FLEET_ROW_LIMIT) -> list[MemberFle
     """
     if limit <= 0:
         return []
-    source_labels = dict(AttendanceRecord.Source.choices)
+    source_labels = {key: str(label) for key, label in AttendanceRecord.Source.choices}
     rows = (
         attendance_queryset(year, month)
         .filter(auth_user_id=getattr(user, "pk", user))
@@ -360,18 +372,26 @@ def member_detail(user, year, month, *, fleet_limit=None, settings_obj=None) -> 
     """Everything the member page shows; None when the user is not in the statistics population.
 
     The ranks are taken among all members (alliance) and among the members of the member's current
-    corporation. The queries do not depend on the number of members or fleets.
+    corporation. A member who registered after the month has no rank and no status in it. The queries do not
+    depend on the number of members or fleets.
     """
     settings_obj = settings_obj or FleetOpsSettings.get_solo()
     user_id = getattr(user, "pk", user)
     ref = month_ref(year, month)
-    people = population.members(settings_obj=settings_obj)
+    everyone = population.members(settings_obj=settings_obj)
+    people = [person for person in everyone if population.registered_by(person, ref.end)]
     target = month_target(year, month)
     base = attendance_queryset(year, month)
-    rows = _build_rows(people, user_totals(base), {}, target, ref)
+    totals = user_totals(base)
+    rows = _build_rows(people, totals, {}, target, ref)
     row = next((candidate for candidate in rows if candidate.user_id == user_id), None)
     if row is None:
-        return None
+        # A member who registered after the month: the page opens, without rank and status.
+        identity = next((person for person in everyone if person.user_id == user_id), None)
+        if identity is None:
+            return None
+        row = _build_rows([identity], totals, {}, None, ref)[0]
+        row.rank = None
     corporation_rows = [candidate for candidate in rows if candidate.corporation_id == row.corporation_id]
     corporation_ranks = competition_ranks((candidate.user_id, candidate.pap) for candidate in corporation_rows)
 

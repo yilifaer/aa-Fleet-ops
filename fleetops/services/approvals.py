@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """FC lead approval of manual fleets and manual PAP.
 
 A fleet and each manual or imported PAP row carry their own review status. A PAP row only counts
@@ -7,13 +10,15 @@ when both are approved, so rejecting a fleet is enough to keep its PAP out of th
 from django.db import transaction
 from django.utils import timezone
 
+from fleetops import texts
 from fleetops.models import AttendanceRecord, FleetOperation, ReviewStatus
 from fleetops.services import pap
 from fleetops.services.audit import audit
 
-REJECTION_NOTE_REQUIRED = "Give a reason for the rejection."
-ALREADY_APPROVED = "This fleet is already approved."
-NOT_PENDING = "Only fleets waiting for approval can be rejected."
+# Stored messages (English); the pages show them through ``translate_stored``.
+REJECTION_NOTE_REQUIRED = texts.APPROVAL_REASON_REQUIRED()
+ALREADY_APPROVED = texts.APPROVAL_ALREADY_APPROVED()
+NOT_PENDING = texts.APPROVAL_NOT_PENDING()
 
 
 def _note(note):

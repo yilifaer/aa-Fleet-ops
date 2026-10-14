@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """SRP summaries by EVE month of the loss: personal, corporation, FC and alliance.
 
 A claim counts in the EVE (UTC) month of its killmail time, whenever it was submitted or decided. Withdrawn

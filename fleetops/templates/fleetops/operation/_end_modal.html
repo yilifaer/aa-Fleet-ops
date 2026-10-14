@@ -1,21 +1,22 @@
+{% load i18n %}
 {% if can_manage and attendance_prompt_eligible %}
 <div class="modal fade" id="endFleetModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog"><div class="modal-content">
-    <div class="modal-header"><h5 class="modal-title">End Fleet & Finalize Attendance</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-header"><h5 class="modal-title">{% translate "End Fleet & Finalize PAP" %}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% translate 'Close' %}"></button></div>
     <form method="post" action="{% url 'fleetops:end_fleet' operation.uuid %}" class="end-fleet-form">{% csrf_token %}
       <div class="modal-body">
         {% if end_prompt.mode == 'auto' %}
-          <p id="end-auto-multiplier">PAP will be finalized at <strong>{{ end_prompt.multiplier }}x</strong> (fleet ran {{ end_prompt.duration }}{% if end_prompt.threshold %}, more than {{ end_prompt.threshold }} minutes{% endif %}).</p>
+          <p id="end-auto-multiplier">{% if end_prompt.threshold %}{% blocktranslate trimmed with multiplier=end_prompt.multiplier duration=end_prompt.duration threshold=end_prompt.threshold %}PAP will be finalized at <strong>{{ multiplier }}x</strong> (fleet ran {{ duration }}, more than {{ threshold }} minutes).{% endblocktranslate %}{% else %}{% blocktranslate trimmed with multiplier=end_prompt.multiplier duration=end_prompt.duration %}PAP will be finalized at <strong>{{ multiplier }}x</strong> (fleet ran {{ duration }}).{% endblocktranslate %}{% endif %}</p>
         {% else %}
-          <p>This fleet has run <strong>{{ end_prompt.duration }}</strong>. Multipliers above 1x need: {{ end_prompt.requirements }}.</p>
+          <p>{% blocktranslate trimmed with duration=end_prompt.duration requirements=end_prompt.requirements %}This fleet has run <strong>{{ duration }}</strong>. Multipliers above 1x need: {{ requirements }}.{% endblocktranslate %}</p>
           <fieldset id="end-multiplier-choice">
-            <legend class="form-label fs-6">Choose the PAP multiplier</legend>
+            <legend class="form-label fs-6">{% translate "Choose the PAP multiplier" %}</legend>
             {% for radio in end_form.attendance_multiplier %}<div class="form-check form-check-inline">{{ radio.tag }}<label class="form-check-label" for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label></div>{% endfor %}
           </fieldset>
         {% endif %}
-        <div class="form-text">The multiplier can be changed later from the Attendance tab within the duration rule.</div>
+        <div class="form-text">{% translate "The multiplier can be changed later from the PAP tab within the duration rule." %}</div>
       </div>
-      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button class="btn btn-danger">End Fleet</button></div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% translate "Cancel" %}</button><button class="btn btn-danger">{% translate "End Fleet" %}</button></div>
     </form>
   </div></div>
 </div>

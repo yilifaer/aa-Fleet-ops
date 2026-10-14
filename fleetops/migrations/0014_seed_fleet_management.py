@@ -1,4 +1,4 @@
-# AA FleetOps 0.1.0a6: seed the default ship functions of the fleet composition and the "Standard" fleet
+# AA FleetOps 0.2.0b1: seed the default ship functions of the fleet composition and the "Standard" fleet
 # structure template. Tables that already hold rows are left alone, so functions or templates an admin
 # deleted are not created again; "manage.py fleetops_seed" adds them to empty tables.
 

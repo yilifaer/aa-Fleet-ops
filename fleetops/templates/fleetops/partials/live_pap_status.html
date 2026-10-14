@@ -1,20 +1,30 @@
-{% load fleetops_pap tz %}
+{% load i18n fleetops_pap tz %}
 <div id="live-pap-status" data-url="{% url 'fleetops:live_pap' %}"{% if live_pap_rows %} data-rows="1"{% endif %}>
 {% if live_pap_rows %}
 <div class="card mb-3 border-info">
-  <div class="card-header"><strong>PAP in running fleets</strong> <span class="small text-muted">Updates every minute while you are in a fleet.</span></div>
+  <div class="card-header"><strong>{% translate "PAP in running fleets" %}</strong> <span class="small text-muted">{% translate "Updates every minute while you are in a fleet." %}</span></div>
   <ul class="list-group list-group-flush">
   {% for row in live_pap_rows %}
     <li class="list-group-item live-pap-row" data-character-id="{{ row.character_id }}">
-      Your character <strong>{{ row.character_name }}</strong> {% if row.in_fleet %}is in{% else %}was in{% endif %} <strong>{{ row.fc_name }}</strong>'s fleet ({{ row.fleet_type }}){% if not row.in_fleet and row.tracked_seconds %} and left{% endif %}{% if row.via_link and not row.in_fleet %}, registered by PAP link{% endif %}{% if row.ending %}. <span class="live-pap-ending">The fleet is ending; PAP is being finalized.</span>{% else %}: {{ row.tracked_seconds|minutes }} in fleet.
-        {% if row.via_link %}<span class="live-pap-link">Registered by PAP link: no minimum time needed.</span>
-        {% elif not row.minimum_seconds %}<span class="live-pap-minimum">Any time in fleet counts for PAP.</span>
-        {% elif row.reached %}<span class="live-pap-minimum">PAP minimum {{ row.minimum_seconds|minutes }} — reached.</span>
-        {% else %}<span class="live-pap-minimum">PAP minimum {{ row.minimum_seconds|minutes }} — not reached yet: {{ row.seconds_to_go|minutes }} to go.</span>{% endif %}
-        {% if row.outcome == 'capped' %}<span class="live-pap-capped">Over the limit of {{ row.operation.pap_character_limit }} character{{ row.operation.pap_character_limit|pluralize }} per player: your character {{ row.capped_by }} gets the PAP.</span>{% endif %}
+      {% with name=row.character_name fc=row.fc_name fleet_type=row.fleet_type time=row.tracked_seconds|minutes %}
+      {% if row.ending %}
+        {% if row.in_fleet %}{% blocktranslate trimmed %}Your character <strong>{{ name }}</strong> is in <strong>{{ fc }}</strong>'s fleet ({{ fleet_type }}).{% endblocktranslate %}
+        {% elif row.tracked_seconds %}{% if row.via_link %}{% blocktranslate trimmed %}Your character <strong>{{ name }}</strong> was in <strong>{{ fc }}</strong>'s fleet ({{ fleet_type }}) and left, registered by PAP link.{% endblocktranslate %}{% else %}{% blocktranslate trimmed %}Your character <strong>{{ name }}</strong> was in <strong>{{ fc }}</strong>'s fleet ({{ fleet_type }}) and left.{% endblocktranslate %}{% endif %}
+        {% else %}{% if row.via_link %}{% blocktranslate trimmed %}Your character <strong>{{ name }}</strong> was in <strong>{{ fc }}</strong>'s fleet ({{ fleet_type }}), registered by PAP link.{% endblocktranslate %}{% else %}{% blocktranslate trimmed %}Your character <strong>{{ name }}</strong> was in <strong>{{ fc }}</strong>'s fleet ({{ fleet_type }}).{% endblocktranslate %}{% endif %}{% endif %}
+        <span class="live-pap-ending">{% translate "The fleet is ending; PAP is being finalized." %}</span>
+      {% else %}
+        {% if row.in_fleet %}{% blocktranslate trimmed %}Your character <strong>{{ name }}</strong> is in <strong>{{ fc }}</strong>'s fleet ({{ fleet_type }}): {{ time }} in fleet.{% endblocktranslate %}
+        {% elif row.tracked_seconds %}{% if row.via_link %}{% blocktranslate trimmed %}Your character <strong>{{ name }}</strong> was in <strong>{{ fc }}</strong>'s fleet ({{ fleet_type }}) and left, registered by PAP link: {{ time }} in fleet.{% endblocktranslate %}{% else %}{% blocktranslate trimmed %}Your character <strong>{{ name }}</strong> was in <strong>{{ fc }}</strong>'s fleet ({{ fleet_type }}) and left: {{ time }} in fleet.{% endblocktranslate %}{% endif %}
+        {% else %}{% if row.via_link %}{% blocktranslate trimmed %}Your character <strong>{{ name }}</strong> was in <strong>{{ fc }}</strong>'s fleet ({{ fleet_type }}), registered by PAP link: {{ time }} in fleet.{% endblocktranslate %}{% else %}{% blocktranslate trimmed %}Your character <strong>{{ name }}</strong> was in <strong>{{ fc }}</strong>'s fleet ({{ fleet_type }}): {{ time }} in fleet.{% endblocktranslate %}{% endif %}{% endif %}
+        {% if row.via_link %}<span class="live-pap-link">{% translate "Registered by PAP link: no minimum time needed." %}</span>
+        {% elif not row.minimum_seconds %}<span class="live-pap-minimum">{% translate "Any time in fleet counts for PAP." %}</span>
+        {% elif row.reached %}<span class="live-pap-minimum">{% blocktranslate trimmed with minimum=row.minimum_seconds|minutes %}PAP minimum {{ minimum }} — reached.{% endblocktranslate %}</span>
+        {% else %}<span class="live-pap-minimum">{% blocktranslate trimmed with minimum=row.minimum_seconds|minutes to_go=row.seconds_to_go|minutes %}PAP minimum {{ minimum }} — not reached yet: {{ to_go }} to go.{% endblocktranslate %}</span>{% endif %}
+        {% if row.outcome == 'capped' %}<span class="live-pap-capped">{% blocktranslate trimmed count counter=row.operation.pap_character_limit with capped_by=row.capped_by %}Over the limit of {{ counter }} character per player: your character {{ capped_by }} gets the PAP.{% plural %}Over the limit of {{ counter }} characters per player: your character {{ capped_by }} gets the PAP.{% endblocktranslate %}</span>{% endif %}
       {% endif %}
-      {% if row.as_of %}<span class="small text-muted">As of {{ row.as_of|utc|date:"H:i" }} EVE.</span>{% endif %}
-      {% if row.can_open %}<a class="small ms-1" href="{% url 'fleetops:operation_detail' row.operation.uuid %}">Open fleet</a>{% endif %}
+      {% endwith %}
+      {% if row.as_of %}<span class="small text-muted">{% blocktranslate trimmed with time=row.as_of|utc|date:"H:i" %}As of {{ time }} EVE.{% endblocktranslate %}</span>{% endif %}
+      {% if row.can_open %}<a class="small ms-1" href="{% url 'fleetops:operation_detail' row.operation.uuid %}">{% translate "Open fleet" %}</a>{% endif %}
     </li>
   {% endfor %}
   </ul>

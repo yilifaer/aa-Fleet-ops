@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Migrations 0016-0017: the SRP tables, the SRP settings row, request_srp for everyone with basic_access and
 the SRP line in the untouched default MOTD."""
 
@@ -245,13 +248,13 @@ class DefaultMotdTests(TestCase):
         self.assertEqual(self.content("Default MOTD"), custom)
 
     def test_other_templates_are_left_alone(self):
-        self.set_content("IGC MOTD", upgrade.OLD_MOTD)
+        self.set_content("Custom MOTD", upgrade.OLD_MOTD)
         self.set_content("Default MOTD", "<b>{{ fleet_type }}</b>")
         self.set_content("Default Ping", upgrade.OLD_MOTD, template_type="ping")
 
         upgrade.add_srp_line_to_default_motd(apps, None)
 
-        self.assertEqual(self.content("IGC MOTD"), upgrade.OLD_MOTD)
+        self.assertEqual(self.content("Custom MOTD"), upgrade.OLD_MOTD)
         self.assertEqual(self.content("Default MOTD"), "<b>{{ fleet_type }}</b>")
         self.assertEqual(self.content("Default Ping", "ping"), upgrade.OLD_MOTD)
 
@@ -328,7 +331,7 @@ class UpgradeFrom0015Tests(TransactionTestCase):
         )
         Template.objects.update_or_create(
             template_type="motd",
-            name="IGC MOTD",
+            name="Custom MOTD",
             defaults={"content": upgrade.OLD_MOTD.replace("Form Up:", "Staging:")},
         )
 
@@ -366,7 +369,7 @@ class UpgradeFrom0015Tests(TransactionTestCase):
 
         self.assertEqual(Template.objects.get(template_type="motd", name="Default MOTD").content, upgrade.NEW_MOTD)
         self.assertEqual(
-            Template.objects.get(template_type="motd", name="IGC MOTD").content,
+            Template.objects.get(template_type="motd", name="Custom MOTD").content,
             upgrade.OLD_MOTD.replace("Form Up:", "Staging:"),
         )
 

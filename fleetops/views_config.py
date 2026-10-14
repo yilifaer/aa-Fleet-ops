@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Front-end configuration center."""
 
 from dataclasses import dataclass
@@ -10,8 +13,11 @@ from django.db.models.deletion import ProtectedError
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
+from django.utils.translation import gettext as _
+from django.utils.translation import gettext_lazy, pgettext_lazy
 from django.views.decorators.http import require_POST
 
+from fleetops import texts
 from fleetops.forms_config import (
     ChannelPresetForm,
     CommsPresetForm,
@@ -54,197 +60,219 @@ from fleetops.srp import display as srp_display
 from fleetops.validators import VOICE_URL_SCHEMES, voice_url_scheme
 from fleetops.views import _render
 
-UNSUPPORTED_VOICE_LINK = "Not a supported voice link"
+UNSUPPORTED_VOICE_LINK = gettext_lazy("Not a supported voice link")
 # The SRP settings page has the address of a list ("configuration/srp/"); it is not a list of rows.
 SRP_SETTINGS_SECTION = "srp"
 
 CONFIG_SECTIONS = {
     "fleet-types": {
-        "title": "Fleet Types",
-        "description": "Fleet categories and the FC point weight attached to each type.",
+        "title": gettext_lazy("Fleet Types"),
+        "description": gettext_lazy("Fleet categories and the FC point weight attached to each type."),
         "model": FleetType,
         "form": FleetTypeForm,
         "columns": [
-            ("Name", "name"),
-            ("Short name", "short_name"),
-            ("Point weight", "point_weight"),
-            ("Active", "is_active"),
-            ("Sort", "sort_order"),
+            (pgettext_lazy("FleetOps", "Name"), "name"),
+            (gettext_lazy("Short name"), "short_name"),
+            (gettext_lazy("Point weight"), "point_weight"),
+            (pgettext_lazy("enabled", "Active"), "is_active"),
+            (gettext_lazy("Sort"), "sort_order"),
         ],
     },
     "multiplier-tiers": {
-        "title": "PAP Multipliers",
-        "description": "Fleets running longer than a threshold can get a higher PAP multiplier. Shorter fleets get 1x.",
+        "title": gettext_lazy("PAP Multipliers"),
+        "description": gettext_lazy(
+            "Fleets running longer than a threshold can get a higher PAP multiplier. Shorter fleets get 1x."
+        ),
         "model": MultiplierTier,
         "form": MultiplierTierForm,
         "columns": [
-            ("Longer than (minutes)", "threshold_minutes"),
-            ("PAP multiplier", "multiplier"),
+            (gettext_lazy("Longer than (minutes)"), "threshold_minutes"),
+            (gettext_lazy("PAP multiplier"), "multiplier"),
         ],
     },
     "statistics-targets": {
-        "title": "Monthly Targets",
-        "description": "Corporation average PAP target and member minimum. Each entry applies from its month "
-        "(EVE time) until the next entry.",
+        "title": gettext_lazy("Monthly Targets"),
+        "description": gettext_lazy(
+            "Corporation average PAP target and member minimum. Each entry applies from its month "
+            "(EVE time) until the next entry."
+        ),
         "model": StatisticsTarget,
         "form": StatisticsTargetForm,
         "columns": [
-            ("From", "effective_from"),
-            ("Corporation average target", "corporation_average_target"),
-            ("Member minimum PAP", "member_minimum_pap"),
-            ("Note", "note"),
+            (pgettext_lazy("effective from", "From"), "effective_from"),
+            (gettext_lazy("Corporation average target"), "corporation_average_target"),
+            (gettext_lazy("Member minimum PAP"), "member_minimum_pap"),
+            (gettext_lazy("Note"), "note"),
         ],
     },
     "special-roles": {
-        "title": "Special Roles",
-        "description": "Roles FCs assign to pilots in a fleet, such as Back Seat FC, and whether a role gives FC credit.",
+        "title": gettext_lazy("Special Roles"),
+        "description": gettext_lazy(
+            "Roles FCs assign to pilots in a fleet, such as Back Seat FC, and whether a role gives FC credit."
+        ),
         "model": SpecialRole,
         "form": SpecialRoleForm,
         "columns": [
-            ("Name", "name"),
-            ("Gives FC credit", "grants_fc_credit"),
-            ("Active", "is_active"),
-            ("Sort", "sort_order"),
+            (pgettext_lazy("FleetOps", "Name"), "name"),
+            (gettext_lazy("Gives FC credit"), "grants_fc_credit"),
+            (pgettext_lazy("enabled", "Active"), "is_active"),
+            (gettext_lazy("Sort"), "sort_order"),
         ],
     },
     "comms": {
-        "title": "Comms Presets",
-        "description": "Reusable voice/comms choices shown to FCs when starting a fleet.",
+        "title": gettext_lazy("Comms Presets"),
+        "description": gettext_lazy("Reusable voice/comms choices shown to FCs when starting a fleet."),
         "model": CommsPreset,
         "form": CommsPresetForm,
         "columns": [
-            ("Name", "name"),
-            ("Channel", "channel_name"),
-            ("Voice link", "voice_url"),
-            ("Join link", "join_link"),
-            ("Active", "is_active"),
+            (pgettext_lazy("FleetOps", "Name"), "name"),
+            (gettext_lazy("Channel"), "channel_name"),
+            (gettext_lazy("Voice link"), "voice_url"),
+            (gettext_lazy("Join link"), "join_link"),
+            (pgettext_lazy("enabled", "Active"), "is_active"),
         ],
         "link_hints": True,
     },
     "channels": {
-        "title": "Logi / Boost Channels",
-        "description": "Reusable Logi and Boost channel choices shown on Fleet Start.",
+        "title": gettext_lazy("Logi / Boost Channels"),
+        "description": gettext_lazy("Reusable Logi and Boost channel choices shown on Fleet Start."),
         "model": ChannelPreset,
         "form": ChannelPresetForm,
         "columns": [
-            ("Name", "name"),
-            ("Type", "channel_type"),
-            ("Channel name", "channel_value"),
-            ("In-game channel ID", "ingame_channel_id"),
-            ("Active", "is_active"),
+            (pgettext_lazy("FleetOps", "Name"), "name"),
+            (pgettext_lazy("record type", "Type"), "channel_type"),
+            (gettext_lazy("Channel name"), "channel_value"),
+            (gettext_lazy("In-game channel ID"), "ingame_channel_id"),
+            (pgettext_lazy("enabled", "Active"), "is_active"),
         ],
     },
     "ping-channels": {
-        "title": "Ping Channels",
-        "description": "Discord channels FCs can send pings to, and the mentions each channel allows. Webhook URLs can be replaced but are never shown again.",
+        "title": gettext_lazy("Ping Channels"),
+        "description": gettext_lazy(
+            "Discord channels FCs can send pings to, and the mentions each channel allows. Webhook URLs can be "
+            "replaced but are never shown again."
+        ),
         "model": DiscordWebhook,
         "form": DiscordWebhookForm,
         "columns": [
-            ("Name", "name"),
-            ("@everyone", "allow_everyone"),
-            ("@here", "allow_here"),
-            ("Allowed roles", "allowed_roles"),
-            ("Active", "is_active"),
-            ("Sort", "sort_order"),
+            (pgettext_lazy("FleetOps", "Name"), "name"),
+            (gettext_lazy("@everyone"), "allow_everyone"),
+            (gettext_lazy("@here"), "allow_here"),
+            (gettext_lazy("Allowed roles"), "allowed_roles"),
+            (pgettext_lazy("enabled", "Active"), "is_active"),
+            (gettext_lazy("Sort"), "sort_order"),
         ],
     },
     "ping-roles": {
-        "title": "Ping Roles",
-        "description": "Discord roles FCs can mention in a ping. Only active roles are offered on Fleet Start.",
+        "title": gettext_lazy("Ping Roles"),
+        "description": gettext_lazy(
+            "Discord roles FCs can mention in a ping. Only active roles are offered on Fleet Start."
+        ),
         "model": PingRole,
         "form": PingRoleForm,
         "columns": [
-            ("Name", "name"),
-            ("Role ID", "role_id"),
-            ("Discord", "discord_state"),
-            ("Active", "is_active"),
-            ("Sort", "sort_order"),
+            (pgettext_lazy("FleetOps", "Name"), "name"),
+            (gettext_lazy("Role ID"), "role_id"),
+            (gettext_lazy("Discord"), "discord_state"),
+            (pgettext_lazy("enabled", "Active"), "is_active"),
+            (gettext_lazy("Sort"), "sort_order"),
         ],
         "actions": [
             {
                 "url_name": "fleetops:sync_discord_roles",
-                "label": "Sync roles from Discord",
+                "label": gettext_lazy("Sync roles from Discord"),
                 "status": lambda: discord_roles.discord_service_status(),
             }
         ],
     },
     "templates": {
-        "title": "Message Templates",
-        "description": "Ping and Fleet MOTD templates. Template variables are rendered when the fleet is prepared.",
+        "title": gettext_lazy("Message Templates"),
+        "description": gettext_lazy(
+            "Ping and Fleet MOTD templates. Template variables are rendered when the fleet is prepared."
+        ),
         "model": MessageTemplate,
         "form": MessageTemplateForm,
         "columns": [
-            ("Name", "name"),
-            ("Type", "template_type"),
-            ("Default", "is_default"),
-            ("Active", "is_active"),
+            (pgettext_lazy("FleetOps", "Name"), "name"),
+            (pgettext_lazy("record type", "Type"), "template_type"),
+            (gettext_lazy("Default"), "is_default"),
+            (pgettext_lazy("enabled", "Active"), "is_active"),
         ],
     },
     "ship-functions": {
-        "title": "Ship Functions",
-        "description": "Groups of the fleet composition, such as DPS or Logistics, and the fleet positions that count in them.",
+        "title": gettext_lazy("Ship Functions"),
+        "description": gettext_lazy(
+            "Groups of the fleet composition, such as DPS or Logistics, and the fleet positions that count in "
+            "them."
+        ),
         "model": ShipFunction,
         "form": ShipFunctionForm,
         "columns": [
-            ("Name", "name"),
-            ("Colour", "color"),
-            ("Fleet positions", "fleet_roles"),
-            ("Default", "is_default"),
-            ("Active", "is_active"),
-            ("Sort", "sort_order"),
+            (pgettext_lazy("FleetOps", "Name"), "name"),
+            (gettext_lazy("Colour"), "color"),
+            (gettext_lazy("Fleet positions"), "fleet_roles"),
+            (gettext_lazy("Default"), "is_default"),
+            (pgettext_lazy("enabled", "Active"), "is_active"),
+            (gettext_lazy("Sort"), "sort_order"),
         ],
-        "default_noun": "ship function",
+        "default_reason": texts.AUDIT_DEFAULT_FUNCTION_REPLACED,
     },
     "ship-function-rules": {
-        "title": "Ship Function Rules",
-        "description": "Which ship types and ship groups count under which ship function in the fleet composition.",
+        "title": gettext_lazy("Ship Function Rules"),
+        "description": gettext_lazy(
+            "Which ship types and ship groups count under which ship function in the fleet composition."
+        ),
         "model": ShipFunctionRule,
         "form": ShipFunctionRuleForm,
         "columns": [
-            ("Function", "function"),
-            ("Kind", "kind"),
-            ("ID", "target_id"),
-            ("Name", "label"),
+            (gettext_lazy("Function"), "function"),
+            (gettext_lazy("Kind"), "kind"),
+            (gettext_lazy("ID"), "target_id"),
+            (pgettext_lazy("FleetOps", "Name"), "label"),
         ],
     },
     "structure-templates": {
-        "title": "Fleet Structure Templates",
-        "description": "Wing and squad names FCs can apply to a running fleet from its Fleet tab.",
+        "title": gettext_lazy("Fleet Structure Templates"),
+        "description": gettext_lazy("Wing and squad names FCs can apply to a running fleet from its Fleet tab."),
         "model": FleetStructureTemplate,
         "form": FleetStructureTemplateForm,
         "columns": [
-            ("Name", "name"),
-            ("Layout", "layout"),
-            ("Description", "description"),
-            ("Active", "is_active"),
-            ("Sort", "sort_order"),
+            (pgettext_lazy("FleetOps", "Name"), "name"),
+            (gettext_lazy("Layout"), "layout"),
+            (pgettext_lazy("FleetOps", "Description"), "description"),
+            (pgettext_lazy("enabled", "Active"), "is_active"),
+            (gettext_lazy("Sort"), "sort_order"),
         ],
     },
     "srp-rules": {
-        "title": "SRP Payout Table",
-        "description": "Fixed SRP amounts per ship type and/or fleet doctrine. The most specific active rule wins; "
-        "ships without a rule get value × percentage.",
+        "title": gettext_lazy("SRP Payout Table"),
+        "description": gettext_lazy(
+            "Fixed SRP amounts per ship type and/or fleet doctrine. The most specific active rule wins; "
+            "ships without a rule get value × percentage."
+        ),
         "model": SrpPayoutRule,
         "form": SrpPayoutRuleForm,
         "columns": [
-            ("Ship", "ship"),
-            ("Doctrine", "doctrine"),
-            ("Scope", "scope"),
-            ("Amount", "amount"),
-            ("Active", "is_active"),
+            (gettext_lazy("Ship"), "ship"),
+            (pgettext_lazy("FleetOps", "Doctrine"), "doctrine"),
+            (gettext_lazy("Scope"), "scope"),
+            (gettext_lazy("Amount"), "amount"),
+            (pgettext_lazy("enabled", "Active"), "is_active"),
         ],
-        "default_noun": "payout rule",
+        "default_reason": texts.AUDIT_DEFAULT_PAYOUT_RULE_REPLACED,
     },
     "srp-corporation-limits": {
-        "title": "SRP Corporation Limits",
-        "description": "A monthly SRP cap for one corporation, replacing the default corporation cap of the SRP "
-        "settings. An empty cap means no limit for that corporation.",
+        "title": gettext_lazy("SRP Corporation Limits"),
+        "description": gettext_lazy(
+            "A monthly SRP cap for one corporation, replacing the default corporation cap of the SRP "
+            "settings. An empty cap means no limit for that corporation."
+        ),
         "model": SrpCorporationLimit,
         "form": SrpCorporationLimitForm,
         "columns": [
-            ("Corporation", "corporation"),
-            ("Monthly cap", "monthly_cap"),
-            ("Note", "note"),
+            (pgettext_lazy("FleetOps", "Corporation"), "corporation"),
+            (gettext_lazy("Monthly cap"), "monthly_cap"),
+            (gettext_lazy("Note"), "note"),
         ],
     },
 }
@@ -287,24 +315,25 @@ def _cell_value(obj, field_name):
         return ""
     if field_name == "discord_state":
         if obj.missing_from_discord:
-            return "Not on Discord"
-        return "Synced" if obj.source == PingRole.Source.DISCORD else "Added manually"
+            return _("Not on Discord")
+        return _("Synced") if obj.source == PingRole.Source.DISCORD else _("Added manually")
     if isinstance(obj, SrpPayoutRule):
         # The ship and the doctrine are shown by name; an ID or a key is only the fallback.
         if field_name == "ship":
-            return obj.ship_type_name or (f"Ship {obj.ship_type_id}" if obj.ship_type_id else "Any ship")
+            ship = _("Ship %(id)s") % {"id": obj.ship_type_id} if obj.ship_type_id else _("Any ship")
+            return obj.ship_type_name or ship
         if field_name == "doctrine":
-            return obj.doctrine_name or obj.doctrine_key or "Any doctrine"
+            return obj.doctrine_name or obj.doctrine_key or _("Any doctrine")
         if field_name == "amount":
             return srp_display.format_isk(obj.amount)
     if isinstance(obj, SrpCorporationLimit):
         if field_name == "corporation":
             return obj.corporation_name or str(obj.corporation_id)
         if field_name == "monthly_cap":
-            return srp_display.format_isk(obj.monthly_cap) if obj.monthly_cap is not None else "No limit"
+            return srp_display.format_isk(obj.monthly_cap) if obj.monthly_cap is not None else _("No limit")
     value = getattr(obj, field_name)
     if field_name == "allowed_roles":
-        return ", ".join(str(role) for role in value.all()) or "Every active role"
+        return ", ".join(str(role) for role in value.all()) or _("Every active role")
     display = getattr(obj, f"get_{field_name}_display", None)
     if field_name in ("channel_type", "template_type", "kind", "scope") and display is not None:
         return display()
@@ -361,9 +390,9 @@ def configuration_settings(request):
                 obj,
                 old,
                 config_snapshot(obj),
-                reason="Updated from FleetOps front-end administration",
+                reason=texts.AUDIT_CONFIG_UPDATED(),
             )
-            messages.success(request, "FleetOps settings updated.")
+            messages.success(request, _("FleetOps settings updated."))
             return redirect("fleetops:configuration_index")
     else:
         form = FleetOpsSettingsForm(instance=obj)
@@ -389,9 +418,9 @@ def configuration_srp(request):
                 obj,
                 old,
                 config_snapshot(obj),
-                reason="Updated from FleetOps front-end administration",
+                reason=texts.AUDIT_CONFIG_UPDATED(),
             )
-            messages.success(request, "SRP settings updated.")
+            messages.success(request, _("SRP settings updated."))
             return redirect("fleetops:configuration_index")
     else:
         form = SrpSettingsForm(instance=obj)
@@ -443,7 +472,7 @@ def configuration_edit(request, section, pk=None):
                 saved,
                 old,
                 {**config_snapshot(saved), **getattr(form, "audit_extra", {})},
-                reason="Changed from FleetOps front-end administration",
+                reason=texts.AUDIT_CONFIG_CHANGED(),
             )
             # A new default template takes the flag from the previous one.
             for demoted in getattr(saved, "demoted_defaults", ()):
@@ -454,9 +483,9 @@ def configuration_edit(request, section, pk=None):
                     demoted,
                     {**new, "is_default": True},
                     new,
-                    reason=f"Default {config.get('default_noun', 'template')} replaced from FleetOps front-end administration",
+                    reason=config.get("default_reason", texts.AUDIT_DEFAULT_TEMPLATE_REPLACED)(),
                 )
-            messages.success(request, f"{config['title']} saved.")
+            messages.success(request, _("%(title)s saved.") % {"title": config["title"]})
             for warning in getattr(form, "warnings", ()):
                 messages.warning(request, warning)
             return redirect("fleetops:configuration_list", section=section)
@@ -493,15 +522,15 @@ def configuration_delete(request, section, pk):
                     object_id=object_id,
                     old_value=old,
                     new_value=None,
-                    reason="Deleted from FleetOps front-end administration",
+                    reason=texts.AUDIT_CONFIG_DELETED(),
                 )
     except ProtectedError:
         messages.error(
             request,
-            "This item is referenced by existing fleet data and cannot be deleted. Disable it instead.",
+            _("This item is referenced by existing fleet data and cannot be deleted. Disable it instead."),
         )
     else:
-        messages.warning(request, f"{config['title']} item deleted.")
+        messages.warning(request, _("%(title)s item deleted.") % {"title": config["title"]})
     return redirect("fleetops:configuration_list", section=section)
 
 
@@ -510,7 +539,7 @@ def configuration_delete(request, section, pk):
 def sync_discord_roles(request):
     result = discord_roles.sync_discord_roles(actor=request.user)
     if result.ok:
-        messages.success(request, result.message)
+        messages.success(request, texts.translate_stored(result.message))
     else:
-        messages.error(request, result.message)
+        messages.error(request, texts.translate_stored(result.message))
     return redirect("fleetops:configuration_list", section="ping-roles")

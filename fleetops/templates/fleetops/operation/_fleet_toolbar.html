@@ -1,10 +1,11 @@
+{% load i18n %}
 {% if fleet_can_manage and fleet_live %}
 <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-  <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#fleet-invite-modal" id="fleet-invite-open" data-needs-write{% if not fleet_can_write %} disabled{% endif %} title="Invite characters registered in Alliance Auth"><i class="fa-solid fa-user-plus" aria-hidden="true"></i> Invite…</button>
+  <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#fleet-invite-modal" id="fleet-invite-open" data-needs-write{% if not fleet_can_write %} disabled{% endif %} title="{% translate 'Invite characters registered in Alliance Auth' %}"><i class="fa-solid fa-user-plus" aria-hidden="true"></i> {% translate "Invite…" %}</button>
   {% if structure_templates %}
-  <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#fleet-template-modal" id="fleet-template-open" data-needs-write{% if not fleet_can_write %} disabled{% endif %} title="Rename and add wings and squads from a structure template"><i class="fa-solid fa-sitemap" aria-hidden="true"></i> Apply template…</button>
+  <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#fleet-template-modal" id="fleet-template-open" data-needs-write{% if not fleet_can_write %} disabled{% endif %} title="{% translate 'Rename and add wings and squads from a structure template' %}"><i class="fa-solid fa-sitemap" aria-hidden="true"></i> {% translate "Apply template…" %}</button>
   {% else %}
-  <button type="button" class="btn btn-sm btn-outline-primary" id="fleet-template-open" disabled title="No structure template is configured."><i class="fa-solid fa-sitemap" aria-hidden="true"></i> Apply template…</button>
+  <button type="button" class="btn btn-sm btn-outline-primary" id="fleet-template-open" disabled title="{% translate 'No structure template is configured.' %}"><i class="fa-solid fa-sitemap" aria-hidden="true"></i> {% translate "Apply template…" %}</button>
   {% endif %}
 </div>
 {% endif %}

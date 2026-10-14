@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Shared helpers for building FleetOps test data.
 
 Test modules should build their fixtures through these helpers so that users,
@@ -8,7 +11,7 @@ from __future__ import annotations
 
 import itertools
 import secrets
-from datetime import timedelta, timezone as dt_timezone
+from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 
 from allianceauth.authentication.models import CharacterOwnership
@@ -85,6 +88,10 @@ DEFAULT_ALLIANCE = (3_000_001, "Test Alliance")
 FOREIGN_ALLIANCE = (3_000_999, "Foreign Alliance")
 
 
+# Test users registered long before any month the tests look at, so every month counts them.
+DEFAULT_JOINED = datetime(2020, 1, 1, tzinfo=dt_timezone.utc)
+
+
 def next_id() -> int:
     return next(_ids)
 
@@ -128,6 +135,8 @@ def create_user(
     """Create an Auth user with an owned main character and the given permissions."""
     username = username or f"user{next_id()}"
     user = AuthUtils.create_user(username)
+    user.date_joined = DEFAULT_JOINED
+    user.save(update_fields=["date_joined"])
     if with_main:
         main = create_character(main_name or f"{username} Main", corporation=corporation, alliance=alliance)
         user.profile.main_character = main

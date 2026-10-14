@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The Fleet tab on the fleet page, its routes and their answers (JSON for scripts, redirects for forms)."""
 
 from unittest import mock

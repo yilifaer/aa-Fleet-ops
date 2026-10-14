@@ -1,0 +1,121 @@
+name: Bug report
+description: Something in AA FleetOps does not work as expected
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for problems you can describe and reproduce. Questions about installing or configuring
+        FleetOps belong in [Discussions](https://github.com/yilifaer/aa-fleetops/discussions).
+
+        Remove ESI tokens, Discord webhook URLs and database passwords from everything you post here.
+  - type: input
+    id: fleetops_version
+    attributes:
+      label: AA FleetOps version
+      placeholder: "0.2.0b1"
+    validations:
+      required: true
+  - type: input
+    id: allianceauth_version
+    attributes:
+      label: Alliance Auth version
+      placeholder: "5.4.0"
+    validations:
+      required: true
+  - type: input
+    id: esi_version
+    attributes:
+      label: django-esi version
+      placeholder: "9.10.1"
+    validations:
+      required: true
+  - type: input
+    id: python_version
+    attributes:
+      label: Python version
+      placeholder: "3.12"
+    validations:
+      required: true
+  - type: dropdown
+    id: database
+    attributes:
+      label: Database
+      options:
+        - MariaDB
+        - MySQL
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: How Alliance Auth is installed
+      options:
+        - Virtual environment (bare metal)
+        - Docker
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: optional_apps
+    attributes:
+      label: Optional apps installed
+      description: Tick every app that is installed on the site.
+      options:
+        - label: fittings
+        - label: django-eveonline-sde (eve_sde)
+        - label: django-eveuniverse
+        - label: aa-srp (aasrp)
+        - label: Alliance Auth built-in SRP
+        - label: Alliance Auth Discord service
+        - label: aadiscordbot
+        - label: AFAT
+        - label: aa-charlink
+  - type: dropdown
+    id: language
+    attributes:
+      label: Language of the FleetOps pages
+      options:
+        - English
+        - Simplified Chinese
+        - Other
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened?
+      description: Describe what you saw. Add the page, or the name of the failed step (for example "Discord ping"), if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or traceback
+      description: |
+        The relevant lines of extensions.log, the Celery worker log or the browser console.
+        Check them for ESI tokens, webhook URLs and passwords before you paste.
+      render: shell
+  - type: checkboxes
+    id: secrets
+    attributes:
+      label: Secrets
+      options:
+        - label: I removed ESI tokens, Discord webhook URLs and passwords from this report.
+          required: true

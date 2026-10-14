@@ -1,11 +1,16 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 from django.db.models import Q
 
+from fleetops import texts
 from fleetops.models import AttendanceRecord, OperationRoleAssignment, ReviewStatus, SpecialRole
 from fleetops.services.attendance import RECORDABLE_STATUSES
 from fleetops.services.audit import audit
 from fleetops.services.identity import identity_for_character_id
 
-NOT_IN_FLEET = "Special roles are given to characters recorded in the fleet."
+# Stored message (English); the page shows it through ``translate_stored``.
+NOT_IN_FLEET = texts.SPECIAL_ROLE_NOT_IN_FLEET()
 
 
 def _special_role(role) -> SpecialRole:
@@ -14,7 +19,7 @@ def _special_role(role) -> SpecialRole:
         return role
     found = SpecialRole.objects.filter(key=str(role or "")).first()
     if found is None:
-        raise ValueError("Unknown special role.")
+        raise ValueError(texts.SPECIAL_ROLE_UNKNOWN())
     return found
 
 
@@ -49,10 +54,10 @@ def add_role_assignment(operation, *, actor, role, character_id: int, notes: str
     assignment, so later changes of the role only apply to new assignments.
     """
     if operation.status not in RECORDABLE_STATUSES:
-        raise ValueError("Special roles can only be assigned on Active or Closed fleets.")
+        raise ValueError(texts.SPECIAL_ROLE_ONLY_ACTIVE_OR_CLOSED())
     role = _special_role(role)
     if not role.is_active:
-        raise ValueError(f"The special role {role.name} is disabled.")
+        raise ValueError(texts.SPECIAL_ROLE_DISABLED(name=role.name))
     if not is_fleet_member(operation, character_id):
         # Pending or rejected manual PAP is no proof of taking part, so it gives no FC credit.
         raise ValueError(NOT_IN_FLEET)

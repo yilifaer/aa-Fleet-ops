@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Reading killmails for SRP: the stored copy, ESI as the source, zKillboard for hashes and values.
 
 Neither ESI nor zKillboard is reached: ``get_killmail`` and ``zkillboard.fetch_kill`` are patched, or

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """FleetOps SRP: summaries per alliance, corporation and FC, and opening or closing a fleet's SRP link."""
 
 from allianceauth.authentication.decorators import permissions_required
@@ -7,6 +10,7 @@ from django.contrib.auth.decorators import permission_required
 from django.core.exceptions import PermissionDenied
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_POST
 
 from fleetops.models import SrpClaim, SrpCorporationLimit, SrpFleetLink
@@ -162,11 +166,15 @@ def link_toggle(request, code, is_open):
     was_open = link.is_open
     set_link_open(link, actor=request.user, is_open=is_open)
     if was_open == is_open:
-        messages.info(request, f"The SRP link was already {'open' if is_open else 'closed'}.")
+        if is_open:
+            messages.info(request, _("The SRP link was already open."))
+        else:
+            messages.info(request, _("The SRP link was already closed."))
     elif is_open:
-        messages.success(request, "SRP link opened. Members can submit losses through it again.")
+        messages.success(request, _("SRP link opened. Members can submit losses through it again."))
     else:
         messages.success(
-            request, "SRP link closed. Members can no longer submit losses through it; claims already made stay."
+            request,
+            _("SRP link closed. Members can no longer submit losses through it; claims already made stay."),
         )
     return redirect("fleetops:operation_detail", operation_uuid=link.operation.uuid)

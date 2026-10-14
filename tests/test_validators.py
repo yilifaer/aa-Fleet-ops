@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 from django.core.exceptions import ValidationError
 from django.test import SimpleTestCase, TestCase
 

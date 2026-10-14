@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Capsule kick count, one record per ESI fleet, the start preview and manual fleet times."""
 
 import threading
@@ -10,10 +13,11 @@ from django.db import connection
 from django.test import TestCase, TransactionTestCase, override_settings, skipUnlessDBFeature
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
-from django.utils import timezone
+from django.utils import timezone, translation
 
+from fleetops import texts
 from fleetops.forms import ManualFleetForm
-from fleetops.models import AuditLog, FleetMemberState, FleetOperation
+from fleetops.models import AuditLog, FleetMemberState, FleetOperation, MessageTemplate
 from fleetops.services import operations as operations_module
 from fleetops.services.fleet_controls import CAPSULES, kick_members, kickable_pod_members
 from fleetops.services.operations import (
@@ -25,6 +29,7 @@ from fleetops.services.operations import (
 from fleetops.tasks import schedule_active_fleet_tracking
 
 from . import factories as f
+from .static_files import static_source
 from .test_operations_tracking import FLEET_ID, FakeESIMixin
 
 UTC = dt_timezone.utc
@@ -674,14 +679,39 @@ class StartPreviewTests(TestCase):
         self.assertTrue(payload["ok"])
         self.assertIn("Jita", payload["motd"])
 
+    def test_a_template_that_falls_back_is_reported_in_the_language_of_the_viewer(self):
+        broken = MessageTemplate.objects.create(
+            name="Broken ping", template_type=MessageTemplate.TemplateType.PING, content="{% nope %}"
+        )
+        data = dict(
+            fc_character_id=str(self.fc_char.character_id),
+            fleet_type=str(self.fleet_type.pk),
+            formup="Jita",
+            ping_template=str(broken.pk),
+        )
+        warning = texts.TEMPLATE_FALLBACK(label="Ping", name="Broken ping", error_type="TemplateSyntaxError")
+
+        english = self.preview(**data).json()["warnings"]
+        self.client.cookies["django_language"] = "zh-hans"
+        chinese = self.preview(**data).json()["warnings"]
+
+        self.assertEqual(english, [warning])
+        with translation.override("zh-hans"):
+            expected = texts.translate_stored(warning)
+        self.assertNotEqual(expected, warning)
+        self.assertEqual(chinese, [expected])
+
     def test_start_page_shows_missing_fields_and_debounces_the_preview(self):
         page = self.client.get(reverse("fleetops:start_fleet"))
 
         self.assertContains(page, 'id="preview-missing"')
-        self.assertContains(page, "Missing: ${missing.join(', ')}")
-        self.assertContains(page, "classList.add('is-invalid')")
-        self.assertContains(page, "const PREVIEW_DELAY = 400;")
-        self.assertContains(page, "setTimeout(preview,PREVIEW_DELAY)")
+        self.assertContains(page, "fleetops/start_fleet.js")
+        source = static_source("start_fleet.js")
+        self.assertIn("gettext('Missing: %(fields)s')", source)
+        self.assertIn("missing.join(', ')", source)
+        self.assertIn("classList.add('is-invalid')", source)
+        self.assertIn("const PREVIEW_DELAY = 400;", source)
+        self.assertIn("setTimeout(preview,PREVIEW_DELAY)", source)
 
 
 class ManualFleetTimeTests(TestCase):
@@ -763,7 +793,8 @@ class ManualFleetTimeTests(TestCase):
 
         self.assertContains(page, '<strong id="eve-time-now">2026-10-12 08:41</strong>')
         self.assertContains(page, 'id="manual-fleet-duration"')
-        self.assertContains(page, "Duration: ${text}")
+        # The duration text is a translated message that the script fills in.
+        self.assertContains(page, "Duration: %(duration)s")
         self.assertEqual(page.context["form"]["ended_at"].value(), None)
 
     def test_long_fleet_is_saved_after_confirming(self):

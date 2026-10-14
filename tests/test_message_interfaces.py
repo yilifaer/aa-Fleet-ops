@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Tests for the Discord payload, the doctrine links/snapshot, the message filters and the render result."""
 
 from datetime import date, datetime, timezone as dt_timezone

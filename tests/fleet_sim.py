@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """An in-memory EVE fleet behind fake django-esi operations, for fleet management tests.
 
 ``FleetSim`` stands in for ``esi.client.Fleets``. Its operations follow django-esi's

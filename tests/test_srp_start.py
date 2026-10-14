@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The SRP link at the start of a fleet and the {{ srp_url }} message variable."""
 
 from unittest import mock
@@ -101,7 +104,7 @@ class StartWithFleetOpsSrpTests(PatchedStartFleetMixin, TestCase):
         step = action_of(operation, "srp_link")
         self.assertEqual(
             (step.status, step.error_message),
-            (ActionStatus.SKIPPED, "Attendance-only mode: SRP creation intentionally skipped."),
+            (ActionStatus.SKIPPED, "PAP-only mode: SRP creation intentionally skipped."),
         )
         self.assertNotIn("SRP:", operation.motd_text)
 

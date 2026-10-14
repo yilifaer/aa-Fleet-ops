@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Fleet control from the fleet page: kicking single members, everyone outside a system, capsules."""
 
 from allianceauth.authentication.decorators import permissions_required
@@ -6,6 +9,8 @@ from django.core.cache import cache
 from django.http import JsonResponse
 from django.shortcuts import redirect
 from django.urls import reverse
+from django.utils.translation import gettext as _
+from django.utils.translation import ngettext
 from django.views.decorators.http import require_GET, require_POST
 
 from fleetops.models import FleetOperation
@@ -26,6 +31,7 @@ from fleetops.services.fleet_controls import (
 )
 from fleetops.services.fleet_manage import FleetActionResult
 from fleetops.services.sde import solar_system_names
+from fleetops.texts import translate_stored
 from fleetops.views import _can_manage_operation, _database_id, _operation_for_user
 from fleetops.views_fleet_common import fleet_response, wants_json
 
@@ -55,7 +61,7 @@ def controls_context(request, operation):
         # Whether kicks are possible now; the name dates from when only the token decided it.
         "kick_token_ok": not problem,
         "kick_token_missing": token_missing,
-        "kick_disabled_reason": NO_WRITE_TOKEN if token_missing or not problem else problem,
+        "kick_disabled_reason": translate_stored(NO_WRITE_TOKEN if token_missing or not problem else problem),
         "kick_protected_ids": protected_character_ids(operation),
         "kick_pods": pods,
         "pod_count": len(pods),
@@ -74,32 +80,68 @@ def posted_character_ids(request):
     return [value for value in ids if value is not None]
 
 
-def _plural(count, noun):
-    return f"{count} {noun}{'' if count == 1 else 's'}"
-
-
-def report_kicks(request, result, noun, where=""):
-    """Messages for a batch of kicks, e.g. ``noun`` "capsule member" or "member" with ``where`` " outside Jita"."""
+def report_kicks(request, result, system_name=None):
+    """Messages for a batch of kicks: capsule members, or the members outside the system ``system_name``."""
+    capsules = system_name is None
+    kicked = len(result["kicked"])
+    failed = len(result["failures"])
+    names = {"system": system_name}
     if result["queued"]:
-        messages.info(
-            request,
-            f"Kicking {_plural(result['target_count'], noun)}{where} in the background; "
-            "results appear under Operation Actions.",
-        )
+        count = result["target_count"]
+        if capsules:
+            text = ngettext(
+                "Kicking %(count)s capsule member in the background; results appear under Operation Actions.",
+                "Kicking %(count)s capsule members in the background; results appear under Operation Actions.",
+                count,
+            )
+        else:
+            text = ngettext(
+                "Kicking %(count)s member outside %(system)s in the background; "
+                "results appear under Operation Actions.",
+                "Kicking %(count)s members outside %(system)s in the background; "
+                "results appear under Operation Actions.",
+                count,
+            )
+        messages.info(request, text % {**names, "count": count})
     elif not result["target_count"]:
-        messages.warning(request, f"Nobody was kicked: none of the selected {noun}s{where} can be kicked now.")
+        if capsules:
+            text = _("Nobody was kicked: none of the selected capsule members can be kicked now.")
+        else:
+            text = _("Nobody was kicked: none of the selected members outside %(system)s can be kicked now.")
+        messages.warning(request, text % names)
         return
-    elif result["failures"]:
-        messages.warning(
-            request, f"Kicked {_plural(len(result['kicked']), noun)}{where}; {len(result['failures'])} failed."
-        )
+    elif failed:
+        if capsules:
+            text = ngettext(
+                "Kicked %(count)s capsule member; %(failed)s failed.",
+                "Kicked %(count)s capsule members; %(failed)s failed.",
+                kicked,
+            )
+        else:
+            text = ngettext(
+                "Kicked %(count)s member outside %(system)s; %(failed)s failed.",
+                "Kicked %(count)s members outside %(system)s; %(failed)s failed.",
+                kicked,
+            )
+        messages.warning(request, text % {**names, "count": kicked, "failed": failed})
     else:
-        messages.success(request, f"Kicked {_plural(len(result['kicked']), noun)}{where}.")
+        if capsules:
+            text = ngettext("Kicked %(count)s capsule member.", "Kicked %(count)s capsule members.", kicked)
+        else:
+            text = ngettext(
+                "Kicked %(count)s member outside %(system)s.", "Kicked %(count)s members outside %(system)s.", kicked
+            )
+        messages.success(request, text % {**names, "count": kicked})
     if result.get("stopped"):
-        messages.error(request, f"Kicks stopped: {result['stopped']}")
+        messages.error(request, _("Kicks stopped: %(reason)s") % {"reason": translate_stored(result["stopped"])})
     if result["skipped"]:
-        skipped = _plural(len(result["skipped"]), "selected member")
-        messages.info(request, f"{skipped} skipped: no longer in the fleet or no longer a target.")
+        skipped = len(result["skipped"])
+        text = ngettext(
+            "%(count)s selected member skipped: no longer in the fleet or no longer a target.",
+            "%(count)s selected members skipped: no longer in the fleet or no longer a target.",
+            skipped,
+        )
+        messages.info(request, text % {"count": skipped})
 
 
 def _kick_answer(operation, character_id, actor):
@@ -134,12 +176,12 @@ def kick_member_view(request, operation_uuid, character_id):
     try:
         result = kick_member(operation, character_id, actor=request.user)
     except KickRefused as exc:
-        messages.error(request, str(exc))
+        messages.error(request, translate_stored(str(exc)))
     else:
         if result.ok:
-            messages.success(request, result.message)
+            messages.success(request, translate_stored(result.message))
         else:
-            messages.error(request, result.message)
+            messages.error(request, translate_stored(result.message))
     return _back(operation, "members")
 
 
@@ -173,11 +215,11 @@ def kick_outside_system_view(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid, manage=True)
     system_id = _database_id(request.POST.get("system_id", ""))
     if system_id is None:
-        messages.error(request, "Choose the system whose members stay in the fleet.")
+        messages.error(request, _("Choose the system whose members stay in the fleet."))
         return _back(operation)
     ids = posted_character_ids(request)
     if not ids:
-        messages.warning(request, "Nobody was kicked: no members were selected.")
+        messages.warning(request, _("Nobody was kicked: no members were selected."))
         return _back(operation)
     system_name = _system_name(operation, system_id)
     try:
@@ -189,7 +231,7 @@ def kick_outside_system_view(request, operation_uuid):
             context={"system_id": system_id, "system_name": system_name},
         )
     except KickRefused as exc:
-        messages.error(request, str(exc))
+        messages.error(request, translate_stored(str(exc)))
         return _back(operation)
-    report_kicks(request, result, "member", f" outside {system_name}")
+    report_kicks(request, result, system_name)
     return _back(operation)

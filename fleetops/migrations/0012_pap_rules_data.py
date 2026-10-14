@@ -1,4 +1,4 @@
-# AA FleetOps 0.1.0a6: seed the multiplier tiers and the special roles, keep the PAP selection of finished
+# AA FleetOps 0.2.0b1: seed the multiplier tiers and the special roles, keep the PAP selection of finished
 # fleets, approximate the time in fleet of tracked pilots and turn merged and replaced attendance into the
 # new correction fields
 

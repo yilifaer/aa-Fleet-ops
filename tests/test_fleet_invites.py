@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Inviting Alliance Auth characters into a running fleet: candidates, single invites and invite jobs."""
 
 import time

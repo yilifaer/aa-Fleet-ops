@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Monthly limit accounting: months in EVE time, usage from approved and paid claims, the quota lock."""
 
 import threading

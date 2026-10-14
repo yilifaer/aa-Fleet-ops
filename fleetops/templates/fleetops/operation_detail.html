@@ -1,5 +1,5 @@
 {% extends "fleetops/base.html" %}
-{% load fleetops_operation %}
+{% load i18n fleetops_operation %}
 {% block fleetops_content %}
 {% composition_visible operation as show_composition %}
 {% visible_rows attendance show_composition as attendance_rows %}
@@ -15,13 +15,13 @@
 {% include "fleetops/operation/_srp.html" %}
 
 <ul class="nav nav-tabs" role="tablist" id="operation-tabs">
-  {% if show_fleet_tab %}<li class="nav-item"><button class="nav-link{% if fleet_tab_default %} active{% endif %}" data-bs-toggle="tab" data-bs-target="#fleet" id="fleet-tab">{% if operation.status == 'closed' %}Composition{% else %}Fleet{% endif %}</button></li>{% endif %}
-  <li class="nav-item"><button class="nav-link{% if not fleet_tab_default %} active{% endif %}" data-bs-toggle="tab" data-bs-target="#members">Members</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#map">3-Jump Map</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#events">Events</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#attendance">Attendance</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#roles">Special Roles <span class="badge bg-secondary">{{ role_rows|length }}</span></button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#messages">Ping / MOTD</button></li>
+  {% if show_fleet_tab %}<li class="nav-item"><button class="nav-link{% if fleet_tab_default %} active{% endif %}" data-bs-toggle="tab" data-bs-target="#fleet" id="fleet-tab">{% if operation.status == 'closed' %}{% translate "Composition" %}{% else %}{% translate "Fleet" %}{% endif %}</button></li>{% endif %}
+  <li class="nav-item"><button class="nav-link{% if not fleet_tab_default %} active{% endif %}" data-bs-toggle="tab" data-bs-target="#members">{% translate "Members" %}</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#map">{% translate "3-Jump Map" %}</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#events">{% translate "Events" %}</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#attendance">PAP</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#roles">{% translate "Special Roles" %} <span class="badge bg-secondary">{{ role_rows|length }}</span></button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#messages">{% translate "Ping / MOTD" %}</button></li>
 </ul>
 <div class="tab-content border border-top-0 rounded-bottom p-3">
   {% if show_fleet_tab %}
@@ -58,6 +58,7 @@
 </div>
 {% include "fleetops/operation/_end_modal.html" %}
 
+{% translate "Ending…" as ending_label %}
 <script>
 document.querySelectorAll('.copy').forEach(b=>b.addEventListener('click',()=>navigator.clipboard.writeText(document.getElementById(b.dataset.id).textContent)));
 document.querySelectorAll('.end-fleet-form').forEach(form=>form.addEventListener('submit',event=>{
@@ -65,7 +66,7 @@ document.querySelectorAll('.end-fleet-form').forEach(form=>form.addEventListener
   if(form.dataset.submitted){ event.preventDefault(); return; }
   form.dataset.submitted='1';
   const button=form.querySelector('button:not([data-bs-dismiss])');
-  if(button){ button.disabled=true; button.textContent='Ending…'; }
+  if(button){ button.disabled=true; button.textContent='{{ ending_label|escapejs }}'; }
 }));
 // A tab named in the address (#fleet, #members, …) opens on load; the open tab is kept in the address.
 (function(){

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The ship function mapping: names of ship types and groups, and changes made from the fleet composition.
 
 Rules point at SDE ids (``ShipFunctionRule.target_id``) and keep the English name they had when they
@@ -6,7 +9,9 @@ built-in English list, so the configuration pages and the bridge setting can nam
 """
 
 from django.db import IntegrityError, transaction
+from django.utils.translation import gettext_lazy
 
+from fleetops import texts
 from fleetops.fleet_defaults import KNOWN_SHIP_GROUPS
 from fleetops.models import MAX_DATABASE_ID, FleetMemberState, ShipFunction, ShipFunctionRule
 from fleetops.services import sde
@@ -15,10 +20,12 @@ from fleetops.services.fleet_manage import FleetActionResult
 from fleetops.services.fleet_rules import SHIP_CATEGORY_ID, FleetRuleError, parse_id_list
 
 TYPE, GROUP = ShipFunctionRule.Kind.TYPE, ShipFunctionRule.Kind.GROUP
-KIND_LABELS = {TYPE: "Ship type", GROUP: "Ship group"}
+KIND_LABELS = {TYPE: gettext_lazy("Ship type"), GROUP: gettext_lazy("Ship group")}
 
-FUNCTION_GONE = "That ship function no longer exists or is disabled."
-CLASSIFY_REASON = "Classified from a fleet's composition"
+# Stored messages (English): the audit reason is written to the log, the answers are shown through
+# ``translate_stored``.
+FUNCTION_GONE = texts.FUNCTION_GONE()
+CLASSIFY_REASON = texts.CLASSIFY_REASON()
 
 
 class SDEUnavailable(Exception):
@@ -26,6 +33,7 @@ class SDEUnavailable(Exception):
 
 
 def default_label(kind, target_id) -> str:
+    """The name a rule gets when nothing knows the ship type or group; it is stored with the rule, so English."""
     return f"{'Type' if kind == TYPE else 'Group'} {target_id}"
 
 
@@ -123,7 +131,7 @@ def classify_type(type_id, function_id, *, actor) -> FleetActionResult:
     """Count a ship type under a ship function (creates or updates its "type" rule; audited)."""
     type_id, function_id = int(type_id), int(function_id)
     if not 0 < type_id <= MAX_DATABASE_ID:
-        return FleetActionResult(False, "That ship type does not exist.", level="error", status=400)
+        return FleetActionResult(False, texts.SHIP_TYPE_GONE(), level="error", status=400)
     function = ShipFunction.objects.filter(pk=function_id, is_active=True).first()
     if function is None:
         return FleetActionResult(False, FUNCTION_GONE, level="error", status=404)
@@ -136,6 +144,8 @@ def classify_type(type_id, function_id, *, actor) -> FleetActionResult:
         # Someone else mapped the type at the same moment: change their rule instead.
         action, rule, old = _save_type_rule(type_id, function, label)
     if not action:
-        return FleetActionResult(True, f"{ship} already counts as {function.name}.", level="info", data=data)
+        return FleetActionResult(
+            True, texts.SHIP_ALREADY_COUNTS(ship=ship, function=function.name), level="info", data=data
+        )
     audit(actor, action, rule, old, config_snapshot(rule), reason=CLASSIFY_REASON)
-    return FleetActionResult(True, f"{ship} now counts as {function.name}.", data=data)
+    return FleetActionResult(True, texts.SHIP_NOW_COUNTS(ship=ship, function=function.name), data=data)

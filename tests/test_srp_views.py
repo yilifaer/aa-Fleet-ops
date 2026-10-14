@@ -1,9 +1,13 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The member pages of FleetOps SRP: My SRP, the fleet SRP link, the preview, submitting, and the claim page.
 
 The services behind the pages (reading killmails, the quota and the handling of claims) have their own tests, so
 the pages are tested with those services replaced by fakes that return what the real ones return.
 """
 
+import time
 from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 from unittest import mock
@@ -928,6 +932,39 @@ class WithdrawAndResubmitTests(SrpPagesTestCase):
 
     def test_a_get_is_refused(self):
         self.assertEqual(self.client.get(route("srp_claim_withdraw", self.claim.uuid)).status_code, 405)
+
+
+class TypedReasonTests(SrpPagesTestCase):
+    """A reason that a pilot typed is shown as written, however much it looks like a stored message."""
+
+    REASONS = (": " * 499 + "x", "x / y: " * 140, "a: b of c done, " * 62, ": , of done, " * 76)
+
+    def test_a_withdraw_reason_cannot_break_or_slow_down_the_claim_page_and_the_audit_log(self):
+        auditor = f.create_user("srpauditor", perms=[*f.MEMBER_PERMS, "fleetops.view_audit_log"])
+        for number, reason in enumerate(self.REASONS):
+            claim = f.srp_claim(self.member, link=self.link, time=self.loss_time + timedelta(minutes=number))
+            self.assertLessEqual(len(reason), 1000)
+            with self.subTest(reason=reason[:20], length=len(reason)):
+                response = self.client.post(route("srp_claim_withdraw", claim.uuid), {"reason": reason})
+                self.assertEqual(response.status_code, 302)
+                claim.refresh_from_db()
+                self.assertEqual(claim.status, SrpClaim.Status.WITHDRAWN)
+                for user in (self.member, self.manager):
+                    for language in ("en", "zh-hans"):
+                        client = self.client_for(user)
+                        client.cookies["django_language"] = language
+                        started = time.perf_counter()
+                        page = client.get(route("srp_claim", claim.uuid))
+                        self.assertLess(time.perf_counter() - started, 2)
+                        self.assertEqual(page.status_code, 200)
+                        self.assertContains(page, reason.strip().replace("&", "&amp;"))
+                client = self.client_for(auditor)
+                client.cookies["django_language"] = "zh-hans"
+                started = time.perf_counter()
+                page = client.get(route("audit_log"))
+                self.assertLess(time.perf_counter() - started, 2)
+                self.assertEqual(page.status_code, 200)
+                self.assertContains(page, reason.strip())
 
 
 class QueryBudgetTests(SrpPagesTestCase):

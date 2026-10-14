@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The SRP value sweep and its queueing.
 
 zKillboard and ESI are never reached; ``requests.get`` and the market prices are patched.

@@ -1,4 +1,4 @@
-# AA FleetOps 0.1.0a6: monthly statistics targets (corporation average PAP and member minimum), the
+# AA FleetOps 0.2.0b1: monthly statistics targets (corporation average PAP and member minimum), the
 # leaderboard settings and the "Member alliance IDs" label of the alliance filter. Schema only; existing PAP
 # rows already carry the corporation at PAP time, so no data is converted.
 

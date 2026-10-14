@@ -1,4 +1,7 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 __title__ = "AA FleetOps"
-__version__ = "0.1.0a6.dev7"
-__url__ = ""
-__author__ = "AA FleetOps Contributors"
+__version__ = "0.2.0b1"
+__url__ = "https://github.com/yilifaer/aa-fleetops"
+__author__ = "yilifaer and AA FleetOps contributors"

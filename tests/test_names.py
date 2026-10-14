@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Names, corporations and alliances of fleet members without an Alliance Auth account.
 
 ESI's POST /universe/names/ and /characters/affiliation/ are replaced by an in-memory fake that

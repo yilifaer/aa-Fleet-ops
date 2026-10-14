@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Wing, squad and member position changes of a running fleet.
 
 Every change is made with the FC (fleet boss) character's ESI token, never with the token of
@@ -15,6 +18,7 @@ from dataclasses import dataclass, field
 
 from allianceauth.services.hooks import get_extension_logger
 
+from fleetops import texts
 from fleetops.providers.esi import (
     FleetESIError,
     create_fleet_squad,
@@ -40,9 +44,9 @@ from fleetops.services.fleet_rules import (
     check_rename_squad,
     check_rename_wing,
     clean_unit_name,
-    position_labels,
-    squad_label,
-    wing_label,
+    stored_position_labels,
+    stored_squad_label,
+    stored_wing_label,
 )
 
 logger = get_extension_logger(__name__)
@@ -50,12 +54,12 @@ logger = get_extension_logger(__name__)
 # Moves of more members than this are refused; two or more run as a background job.
 MAX_BULK_MOVES = 50
 
-NOT_IMPLEMENTED = "Not implemented yet."
-
-NO_MEMBERS = "Choose the members to move."
-TOO_MANY_MOVES = f"Move at most {MAX_BULK_MOVES} members at a time."
-ONE_COMMANDER = "Only one member can take a commander position. Choose a single member."
-VIEW_REFRESHED = "The fleet view has been refreshed."
+# Stored messages (English): they go into audit entries and job messages, and the pages show them through
+# ``translate_stored``.
+NO_MEMBERS = texts.MOVE_NO_MEMBERS()
+TOO_MANY_MOVES = texts.MOVE_TOO_MANY(limit=MAX_BULK_MOVES)
+ONE_COMMANDER = texts.MOVE_ONE_COMMANDER()
+VIEW_REFRESHED = texts.VIEW_REFRESHED()
 # FleetRuleError codes (see fleet_rules) and the HTTP status of the refusal.
 RULE_STATUS = {"invalid": 400, "not_found": 404, "limit": 409, "not_empty": 409, "occupied": 409}
 # ESI failures that mean the change cannot be made now, not that ESI failed.
@@ -223,7 +227,7 @@ def add_wing(operation, *, actor, name="") -> FleetActionResult:
     if error is not None:
         # The wing exists; only its name is EVE's.
         rename_error, _status = failure_answer(operation, error, "Renaming the wing")
-        message = f"Wing created, but renaming failed: {rename_error}"
+        message = texts.WING_CREATED_RENAME_FAILED(error=rename_error)
         _record(
             actor,
             "fleet.wing_rename",
@@ -248,7 +252,7 @@ def add_wing(operation, *, actor, name="") -> FleetActionResult:
         operation,
         actor,
         "fleet.wing_create",
-        f"Wing “{name}” created." if name else "Wing created.",
+        texts.WING_CREATED_NAMED(name=name) if name else texts.WING_CREATED(),
         new={"wing_id": wing_id, "name": name},
         expected=[{"kind": "wing_created", "wing_id": wing_id, "name": name}],
         data=data,
@@ -265,11 +269,9 @@ def rename_wing(operation, wing_id, name, *, actor) -> FleetActionResult:
             name = clean_unit_name(name)
     except FleetRuleError as exc:
         raise _refused(operation, exc) from exc
-    old_name = wing_label(wing_id, wings)
+    old_name = stored_wing_label(wing_id, wings)
     if known and old_name == name:
-        return FleetActionResult(
-            True, f"The wing is already called “{name}”.", level="info", data={"wing_id": wing_id}
-        )
+        return FleetActionResult(True, texts.WING_ALREADY_NAMED(name=name), level="info", data={"wing_id": wing_id})
     old = {"wing_id": wing_id, "name": old_name}
     new = {"wing_id": wing_id, "name": name}
     fc_user, fc_character_id, fleet_id = _fc(operation)
@@ -280,7 +282,7 @@ def rename_wing(operation, wing_id, name, *, actor) -> FleetActionResult:
         operation,
         actor,
         "fleet.wing_rename",
-        f"Wing “{old_name}” renamed to “{name}”.",
+        texts.WING_RENAMED(old=old_name, name=name),
         old=old,
         new=new,
         expected=[{"kind": "wing_renamed", "wing_id": wing_id, "name": name}],
@@ -298,7 +300,7 @@ def delete_wing(operation, wing_id, *, actor) -> FleetActionResult:
         check_delete_wing(checked, wing_id, members.values())
     except FleetRuleError as exc:
         raise _refused(operation, exc) from exc
-    name = wing_label(wing_id, wings)
+    name = stored_wing_label(wing_id, wings)
     old = {"wing_id": wing_id, "name": name}
     fc_user, fc_character_id, fleet_id = _fc(operation)
     _results, error = _send(operation, lambda: delete_fleet_wing(fc_user, fc_character_id, fleet_id, wing_id))
@@ -308,7 +310,7 @@ def delete_wing(operation, wing_id, *, actor) -> FleetActionResult:
         operation,
         actor,
         "fleet.wing_delete",
-        f"Wing “{name}” deleted.",
+        texts.WING_DELETED(name=name),
         old=old,
         expected=[{"kind": "wing_deleted", "wing_id": wing_id}],
         data={"wing_id": wing_id},
@@ -330,7 +332,7 @@ def add_squad(operation, wing_id, *, actor, name="") -> FleetActionResult:
             check_add_squad(wings, wing_id)
     except FleetRuleError as exc:
         raise _refused(operation, exc) from exc
-    wing_name = wing_label(wing_id, wings)
+    wing_name = stored_wing_label(wing_id, wings)
     fc_user, fc_character_id, fleet_id = _fc(operation)
     calls = [lambda: create_fleet_squad(fc_user, fc_character_id, fleet_id, wing_id)]
     if name:
@@ -363,13 +365,15 @@ def add_squad(operation, wing_id, *, actor, name="") -> FleetActionResult:
             operation,
             actor,
             "fleet.squad_create",
-            f"Squad created, but renaming failed: {rename_error}",
+            texts.SQUAD_CREATED_RENAME_FAILED(error=rename_error),
             new={"wing_id": wing_id, "squad_id": squad_id, "wing": wing_name, "name": ""},
             expected=[{"kind": "squad_created", "wing_id": wing_id, "squad_id": squad_id, "name": ""}],
             data=data,
             level="warning",
         )
-    message = f"Squad “{name}” created in “{wing_name}”." if name else f"Squad created in “{wing_name}”."
+    message = (
+        texts.SQUAD_CREATED_NAMED(name=name, wing=wing_name) if name else texts.SQUAD_CREATED(wing=wing_name)
+    )
     return _done(
         operation,
         actor,
@@ -391,10 +395,10 @@ def rename_squad(operation, squad_id, name, *, actor) -> FleetActionResult:
             name = clean_unit_name(name)
     except FleetRuleError as exc:
         raise _refused(operation, exc) from exc
-    old_name = squad_label(squad_id, wings)
+    old_name = stored_squad_label(squad_id, wings)
     if known and old_name == name:
         return FleetActionResult(
-            True, f"The squad is already called “{name}”.", level="info", data={"squad_id": squad_id}
+            True, texts.SQUAD_ALREADY_NAMED(name=name), level="info", data={"squad_id": squad_id}
         )
     old = {"squad_id": squad_id, "name": old_name}
     new = {"squad_id": squad_id, "name": name}
@@ -406,7 +410,7 @@ def rename_squad(operation, squad_id, name, *, actor) -> FleetActionResult:
         operation,
         actor,
         "fleet.squad_rename",
-        f"Squad “{old_name}” renamed to “{name}”.",
+        texts.SQUAD_RENAMED(old=old_name, name=name),
         old=old,
         new=new,
         expected=[{"kind": "squad_renamed", "squad_id": squad_id, "name": name}],
@@ -425,7 +429,7 @@ def delete_squad(operation, squad_id, *, actor) -> FleetActionResult:
     except FleetRuleError as exc:
         raise _refused(operation, exc) from exc
     wing_id = wing["id"] if known else None
-    name = squad_label(squad_id, wings)
+    name = stored_squad_label(squad_id, wings)
     old = {"wing_id": wing_id, "squad_id": squad_id, "name": name}
     fc_user, fc_character_id, fleet_id = _fc(operation)
     _results, error = _send(operation, lambda: delete_fleet_squad(fc_user, fc_character_id, fleet_id, squad_id))
@@ -435,7 +439,7 @@ def delete_squad(operation, squad_id, *, actor) -> FleetActionResult:
         operation,
         actor,
         "fleet.squad_delete",
-        f"Squad “{name}” deleted.",
+        texts.SQUAD_DELETED(name=name),
         old=old,
         expected=[{"kind": "squad_deleted", "squad_id": squad_id}],
         data={"squad_id": squad_id},
@@ -447,28 +451,20 @@ def delete_squad(operation, squad_id, *, actor) -> FleetActionResult:
 # ---------------------------------------------------------------------------
 
 
-def position_text(role, wing_id=None, squad_id=None, wings=()) -> str:
-    """A fleet position as people read it: "fleet commander", "squad commander of Main / Alpha" …"""
-    wing, squad = position_labels(role, wing_id, squad_id, wings)
-    if role == "fleet_commander":
-        return "fleet commander"
-    if role == "wing_commander":
-        return f"wing commander of {wing}"
-    if role == "squad_commander":
-        return f"squad commander of {wing} / {squad}"
-    return f"{wing} / {squad}"
-
-
 def _moved_message(name, role, wing_id, squad_id, wings) -> str:
-    target = position_text(role, wing_id, squad_id, wings)
-    if role in COMMANDER_ROLES:
-        return f"{name} is now {target}."
-    return f"Moved {name} to {target}."
+    wing, squad = stored_position_labels(role, wing_id, squad_id, wings)
+    if role == "fleet_commander":
+        return texts.MOVED_FLEET_COMMANDER(name=name)
+    if role == "wing_commander":
+        return texts.MOVED_WING_COMMANDER(name=name, wing=wing)
+    if role == "squad_commander":
+        return texts.MOVED_SQUAD_COMMANDER(name=name, wing=wing, squad=squad)
+    return texts.MOVED_TO_SQUAD(name=name, wing=wing, squad=squad)
 
 
 def _position(role, wing_id, squad_id, wings) -> dict:
     """A position for audit entries: raw ids plus the names at the time of the change."""
-    wing, squad = position_labels(role, wing_id, squad_id, wings)
+    wing, squad = stored_position_labels(role, wing_id, squad_id, wings)
     return {"role": role, "wing_id": wing_id, "squad_id": squad_id, "wing": wing, "squad": squad}
 
 
@@ -517,7 +513,7 @@ def _check_one_move(operation, move, wings, members, known):
     """
     member = members.get(int(move.character_id))
     if member is None:
-        raise FleetRuleError(f"{_left_name(operation, move.character_id)} is no longer in the fleet.", "gone")
+        raise FleetRuleError(texts.LEFT_FLEET(name=_left_name(operation, move.character_id)), "gone")
     body = check_move(
         member,
         move.role,
@@ -574,7 +570,10 @@ def _move_one(operation, move, *, actor) -> FleetActionResult:
     name = member["name"]
     if body is None:
         return FleetActionResult(
-            True, f"{name} is already there.", level="info", data={"character_ids": [int(member["character_id"])]}
+            True,
+            texts.ALREADY_THERE(name=name),
+            level="info",
+            data={"character_ids": [int(member["character_id"])]},
         )
     old = _member_old(member, wings)
     new = _position(body["role"], body.get("wing_id"), body.get("squad_id"), wings)
@@ -593,25 +592,21 @@ def _move_one(operation, move, *, actor) -> FleetActionResult:
     )
 
 
-def _plural(count, noun) -> str:
-    return f"{count} {noun}{'' if count == 1 else 's'}"
-
-
 def move_job_label(moves, wings=()) -> str:
     """The name of a bulk move on the fleet page, e.g. "Move 3 members to Main / Alpha"."""
-    label = f"Move {_plural(len(moves), 'member')}"
     targets = {(move.role, move.wing_id, move.squad_id) for move in moves}
     if len(targets) == 1:
-        role, wing_id, squad_id = targets.pop()
+        role, wing_id, squad_id = next(iter(targets))
         if role == "squad_member":
-            label += f" to {position_text(role, wing_id, squad_id, wings)}"
-    return label
+            wing, squad = stored_position_labels(role, wing_id, squad_id, wings)
+            return texts.MOVE_JOB_TO(count=len(moves), wing=wing, squad=squad)
+    return texts.MOVE_JOB(count=len(moves))
 
 
 def _skipped_note(skipped) -> str:
     if not skipped:
         return ""
-    return f" Skipped: {'; '.join(skipped)}."
+    return " " + texts.SKIPPED_LIST(items="; ".join(skipped))
 
 
 def _start_bulk_move(operation, moves, *, actor) -> FleetActionResult:
@@ -623,19 +618,19 @@ def _start_bulk_move(operation, moves, *, actor) -> FleetActionResult:
         except FleetRuleError as exc:
             if exc.code == "gone":
                 gone = True
-                skipped.append(str(exc).rstrip("."))
+                skipped.append(texts.LEFT_FLEET_ITEM(**texts.LEFT_FLEET.match(str(exc))))
                 continue
             # The target itself is wrong (a unit that is gone, a taken commander position).
             raise _refused(operation, exc) from exc
         if body is None:
-            skipped.append(f"{member['name']} is already there")
+            skipped.append(texts.ALREADY_THERE_ITEM(name=member["name"]))
             continue
         targets.append(move)
     if not targets:
         if gone:
             # The page listed members who left: read the fleet again.
             fleet_refresh.schedule_refresh(operation)
-        return FleetActionResult(True, f"Nobody was moved.{_skipped_note(skipped)}", level="info")
+        return FleetActionResult(True, texts.NOBODY_MOVED() + _skipped_note(skipped), level="info")
     if len(targets) == 1:
         result = _move_one(operation, targets[0], actor=actor)
         result.message += _skipped_note(skipped)
@@ -653,7 +648,7 @@ def _start_bulk_move(operation, moves, *, actor) -> FleetActionResult:
     )
     return FleetActionResult(
         True,
-        f"Moving {_plural(len(targets), 'member')} in the background.{_skipped_note(skipped)}",
+        texts.MOVING_IN_BACKGROUND(count=len(targets)) + _skipped_note(skipped),
         level="info",
         data={"job_id": job["id"], "character_ids": [int(move.character_id) for move in targets]},
     )
@@ -702,7 +697,7 @@ def run_bulk_move(job, operation, payload, actor) -> None:
                 continue
             if body is None:
                 entry["result"] = "unchanged"
-                fleet_jobs.step(job, ok=True, message=f"{member['name']} is already there.")
+                fleet_jobs.step(job, ok=True, message=texts.ALREADY_THERE(name=member["name"]))
                 continue
             try:
                 _send_move(operation, member, body)

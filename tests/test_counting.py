@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Which fleets and PAP count in statistics and incentives (#37), and FC points."""
 
 from datetime import datetime, timedelta, timezone as dt_timezone

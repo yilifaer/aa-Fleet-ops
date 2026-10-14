@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Who may see and decide what in FleetOps SRP.
 
 Members see their own claims. ``view_all_stats`` sees every SRP summary and claim read-only,

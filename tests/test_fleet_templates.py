@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Structure templates: applying wing and squad names to a running fleet as a background job."""
 
 from datetime import timedelta

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """EVE fleet structure rules: wings, squads, positions and ship functions.
 
 Pure helpers without database or ESI access, shared by model validators, forms, the
@@ -19,22 +22,22 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
 
+from django.utils.translation import gettext, gettext_lazy
+
+from fleetops import texts
+
 FLEET_ROLES = ("fleet_commander", "wing_commander", "squad_commander", "squad_member")
 COMMANDER_ROLES = FLEET_ROLES[:3]
-ROLE_LABELS = {
-    "fleet_commander": "Fleet Commander",
-    "wing_commander": "Wing Commander",
-    "squad_commander": "Squad Commander",
-    "squad_member": "Squad Member",
-}
+# Labels of the positions, translated for whoever looks at them.
+ROLE_LABELS = dict(texts.FLEET_ROLE_LABELS)
 
 MAX_WINGS, MAX_SQUADS_PER_WING, FLEET_MAX_MEMBERS = 5, 5, 256
 UNIT_NAME_MAX = 10  # ESI maxLength for wing and squad names
 NO_UNIT = -1  # ESI's wing_id/squad_id for positions above a wing or squad
 MAX_ID = 2**63 - 1
 
-FLEET_COMMAND = "Fleet Command"
-WING_COMMAND = "Wing Command"
+FLEET_COMMAND = gettext_lazy("Fleet Command")
+WING_COMMAND = gettext_lazy("Wing Command")
 
 SHIP_CATEGORY_ID = 6
 RULE_KINDS = ("type", "group")
@@ -42,12 +45,14 @@ RULE_KINDS = ("type", "group")
 # Industrial Command Ship, Force Auxiliary, Lancer Dreadnought, Command Carrier.
 DEFAULT_BRIDGE_EXCLUDED_GROUP_IDS = "30,485,513,547,659,883,902,941,1538,4594,5120"
 
-NAME_LENGTH_MESSAGE = f"Names can be 1 to {UNIT_NAME_MAX} characters long."
+NAME_LENGTH_MESSAGE = texts.RULE_NAME_LENGTH(max=UNIT_NAME_MAX)
 
 _LIST_SEPARATORS = re.compile(r"[\s,;]+")
 
 
 class FleetRuleError(ValueError):
+    """A rule violation; the message is a stored text (English) that ``translate_stored`` shows in any language."""
+
     def __init__(self, message: str, code: str = "invalid"):
         super().__init__(message)
         self.code = code
@@ -91,12 +96,9 @@ def _unit_id(value, kind: str) -> int | None:
     if number == NO_UNIT:
         return None
     if number is None or not 0 < number <= MAX_ID:
-        raise FleetRuleError(f'"{value}" is not a valid {kind} ID.')
+        invalid = texts.RULE_INVALID_WING_ID if kind == "wing" else texts.RULE_INVALID_SQUAD_ID
+        raise FleetRuleError(invalid(value=value))
     return number
-
-
-def _plural(count: int, singular: str, plural: str | None = None) -> str:
-    return f"{count} {singular if count == 1 else plural or singular + 's'}"
 
 
 # ---------------------------------------------------------------------------
@@ -133,7 +135,7 @@ def parse_id_list(value) -> list[int]:
             continue
         number = int(token) if token.isascii() and token.isdigit() else None
         if number is None or not 0 < number <= MAX_ID:
-            raise FleetRuleError(f'"{token}" is not a valid ID. Separate IDs with commas.')
+            raise FleetRuleError(texts.RULE_INVALID_ID(token=token))
         if number not in ids:
             ids.append(number)
     return ids
@@ -146,9 +148,10 @@ def format_id_list(ids) -> str:
 def _layout_name(text: str, line: int, kind: str) -> str:
     name = _clean_name(text)
     if not name:
-        raise FleetRuleError(f"Line {line}: a {kind} name is empty.")
+        raise FleetRuleError((texts.RULE_WING_NAME_EMPTY if kind == "wing" else texts.RULE_SQUAD_NAME_EMPTY)(line=line))
     if len(name) > UNIT_NAME_MAX:
-        raise FleetRuleError(f'Line {line}: {kind} name "{name}" is longer than {UNIT_NAME_MAX} characters.')
+        too_long = texts.RULE_WING_NAME_LONG if kind == "wing" else texts.RULE_SQUAD_NAME_LONG
+        raise FleetRuleError(too_long(line=line, name=name, max=UNIT_NAME_MAX))
     return name
 
 
@@ -164,24 +167,21 @@ def parse_structure_layout(text) -> list[dict]:
         if not line or line.startswith("#"):
             continue
         if len(wings) == MAX_WINGS:
-            raise FleetRuleError(f"Line {number}: EVE allows at most {MAX_WINGS} wings.")
+            raise FleetRuleError(texts.RULE_LINE_TOO_MANY_WINGS(line=number, max=MAX_WINGS))
         wing_text, colon, squads_text = line.partition(":")
         name = _layout_name(wing_text, number, "wing")
         if not colon or not squads_text.strip():
-            raise FleetRuleError(
-                f'Line {number}: wing "{name}" needs at least one squad, for example "{name}: Squad 1".'
-            )
+            raise FleetRuleError(texts.RULE_LINE_NEEDS_SQUAD(line=number, name=name))
         if ":" in squads_text:
-            raise FleetRuleError(f'Line {number}: use one ":" per line, between the wing name and its squads.')
+            raise FleetRuleError(texts.RULE_LINE_COLON(line=number))
         squads = [_layout_name(part, number, "squad") for part in squads_text.split(",")]
         if len(squads) > MAX_SQUADS_PER_WING:
             raise FleetRuleError(
-                f'Line {number}: wing "{name}" has {len(squads)} squads; '
-                f"EVE allows at most {MAX_SQUADS_PER_WING} per wing."
+                texts.RULE_LINE_TOO_MANY_SQUADS(line=number, name=name, count=len(squads), max=MAX_SQUADS_PER_WING)
             )
         wings.append({"name": name, "squads": squads})
     if not wings:
-        raise FleetRuleError('Add at least one wing, for example "Main: Alpha, Bravo".')
+        raise FleetRuleError(texts.RULE_NO_WINGS())
     return wings
 
 
@@ -224,46 +224,67 @@ def squad_index(wings) -> dict[int, tuple[dict, dict]]:
 
 
 def wing_label(wing_id, wings=()) -> str:
+    """The name of a wing; a wing without a name is called by its ID (in the active language)."""
     wing = wing_index(wings).get(_unit(wing_id))
-    return (wing and wing["name"]) or f"Wing {wing_id}"
+    return (wing and wing["name"]) or gettext("Wing %(id)s") % {"id": wing_id}
 
 
 def squad_label(squad_id, wings=()) -> str:
+    """The name of a squad; a squad without a name is called by its ID (in the active language)."""
     found = squad_index(wings).get(_unit(squad_id))
-    return (found and found[1]["name"]) or f"Squad {squad_id}"
+    return (found and found[1]["name"]) or gettext("Squad %(id)s") % {"id": squad_id}
+
+
+def stored_wing_label(wing_id, wings=()) -> str:
+    """``wing_label`` in English, for text that is stored."""
+    with texts.stored_language():
+        return wing_label(wing_id, wings)
+
+
+def stored_squad_label(squad_id, wings=()) -> str:
+    """``squad_label`` in English, for text that is stored."""
+    with texts.stored_language():
+        return squad_label(squad_id, wings)
 
 
 def position_labels(role, wing_id, squad_id, wings=()) -> tuple[str, str]:
     """Wing and squad names of a fleet position.
 
     ``("Fleet Command", "")`` for the fleet commander, ``("Logi", "Wing Command")`` for a
-    wing commander and ``("Main", "Alpha")`` in a squad; unknown ids read "Wing <id>".
+    wing commander and ``("Main", "Alpha")`` in a squad; unknown ids read "Wing <id>". The fixed words
+    follow the active language; a stored text asks for English (``texts.stored_language``).
     """
     wing_id, squad_id = _unit(wing_id), _unit(squad_id)
     if role == "fleet_commander" or (wing_id is None and squad_id is None):
-        return FLEET_COMMAND, ""
+        return str(FLEET_COMMAND), ""
     if wing_id is None:
         # Only the squad is known: take its wing from the structure.
         found = squad_index(wings).get(squad_id)
-        wing = (found[0]["name"] or f"Wing {found[0]['id']}") if found else "Unknown wing"
+        wing = (found[0]["name"] or wing_label(found[0]["id"])) if found else gettext("Unknown wing")
         return wing, squad_label(squad_id, wings)
     wing = wing_label(wing_id, wings)
     if role == "wing_commander" or squad_id is None:
-        return wing, WING_COMMAND
+        return wing, str(WING_COMMAND)
     return wing, squad_label(squad_id, wings)
+
+
+def stored_position_labels(role, wing_id, squad_id, wings=()) -> tuple[str, str]:
+    """``position_labels`` in English, for text that is stored."""
+    with texts.stored_language():
+        return position_labels(role, wing_id, squad_id, wings)
 
 
 def _require_wing(wings, wing_id) -> dict:
     wing = wing_index(wings).get(_unit(wing_id))
     if wing is None:
-        raise FleetRuleError("That wing no longer exists.", "not_found")
+        raise FleetRuleError(texts.RULE_WING_GONE(), "not_found")
     return wing
 
 
 def _require_squad(wings, squad_id) -> tuple[dict, dict]:
     found = squad_index(wings).get(_unit(squad_id))
     if found is None:
-        raise FleetRuleError("That squad no longer exists.", "not_found")
+        raise FleetRuleError(texts.RULE_SQUAD_GONE(), "not_found")
     return found
 
 
@@ -278,7 +299,7 @@ def member_role(member) -> str:
 
 def member_name(member) -> str:
     name = _field(member, "name", "character_name")
-    return str(name) if name else f"Character {_field(member, 'character_id')}"
+    return str(name) if name else gettext("Character %(id)s") % {"id": _field(member, "character_id")}
 
 
 def member_position(member) -> dict:
@@ -302,24 +323,26 @@ def position_body(role, wing_id=None, squad_id=None, *, invite=False) -> dict:
     joins any squad with free positions. -1 counts as "no id", as in ESI's member rows.
     """
     if role not in FLEET_ROLES:
-        raise FleetRuleError(f'"{role}" is not a fleet position.')
+        raise FleetRuleError(texts.RULE_NOT_A_POSITION(role=role))
     wing_id, squad_id = _unit_id(wing_id, "wing"), _unit_id(squad_id, "squad")
     if role == "fleet_commander":
         if wing_id is not None or squad_id is not None:
-            raise FleetRuleError("The fleet commander has no wing or squad.")
+            raise FleetRuleError(texts.RULE_FLEET_COMMANDER_PLACE())
         return {"role": role}
     if role == "wing_commander":
         if wing_id is None:
-            raise FleetRuleError("A wing commander needs a wing.")
+            raise FleetRuleError(texts.RULE_WING_COMMANDER_NEEDS_WING())
         if squad_id is not None:
-            raise FleetRuleError("A wing commander has no squad.")
+            raise FleetRuleError(texts.RULE_WING_COMMANDER_NO_SQUAD())
         return {"role": role, "wing_id": wing_id}
     if wing_id is None and squad_id is None and invite and role == "squad_member":
         return {"role": role}
     if wing_id is None or squad_id is None:
         if invite and role == "squad_member":
-            raise FleetRuleError("Choose both a wing and a squad, or neither to join any squad with free positions.")
-        raise FleetRuleError(f"A {ROLE_LABELS[role].lower()} needs a wing and a squad.")
+            raise FleetRuleError(texts.RULE_ANY_SQUAD_HINT())
+        if role == "squad_commander":
+            raise FleetRuleError(texts.RULE_SQUAD_COMMANDER_NEEDS_PLACE())
+        raise FleetRuleError(texts.RULE_SQUAD_MEMBER_NEEDS_PLACE())
     return {"role": role, "wing_id": wing_id, "squad_id": squad_id}
 
 
@@ -364,7 +387,7 @@ def _check_units(body: dict, wings) -> None:
     if "squad_id" in body:
         wing, _squad = _require_squad(wings, body["squad_id"])
         if wing["id"] != body["wing_id"]:
-            raise FleetRuleError("That squad is not part of the chosen wing.", "not_found")
+            raise FleetRuleError(texts.RULE_SQUAD_NOT_IN_WING(), "not_found")
     elif "wing_id" in body:
         _require_wing(wings, body["wing_id"])
 
@@ -376,15 +399,16 @@ def _check_slot(body: dict, members, wings, character_id=None) -> None:
     holder = commander(members, role, body.get("wing_id"), body.get("squad_id"))
     if holder is None or _as_int(_field(holder, "character_id")) == _as_int(character_id):
         return
-    if role == "fleet_commander":
-        unit = "The fleet"
-    elif role == "wing_commander":
-        unit = wing_label(body["wing_id"], wings)
-    else:
-        unit = squad_label(body["squad_id"], wings)
-    raise FleetRuleError(
-        f"{unit} already has a {ROLE_LABELS[role].lower()} ({member_name(holder)}). Move them first.", "occupied"
-    )
+    # The message is stored with the job or the audit entry, so its names are written in English.
+    with texts.stored_language():
+        holder_name = member_name(holder)
+        if role == "fleet_commander":
+            message = texts.RULE_FLEET_COMMANDER_TAKEN(holder=holder_name)
+        elif role == "wing_commander":
+            message = texts.RULE_WING_COMMANDER_TAKEN(unit=wing_label(body["wing_id"], wings), holder=holder_name)
+        else:
+            message = texts.RULE_SQUAD_COMMANDER_TAKEN(unit=squad_label(body["squad_id"], wings), holder=holder_name)
+    raise FleetRuleError(message, "occupied")
 
 
 def check_move(member, role, wing_id=None, squad_id=None, *, wings=None, members=()) -> dict | None:
@@ -416,23 +440,19 @@ def check_fleet_room(member_count: int, adding: int = 1) -> None:
     if adding <= free:
         return
     if free <= 0:
-        raise FleetRuleError(f"The fleet is full: EVE allows {FLEET_MAX_MEMBERS} members.", "limit")
-    raise FleetRuleError(
-        f"Only {_plural(free, 'more character')} {'fits' if free == 1 else 'fit'} into the fleet "
-        f"(EVE allows {FLEET_MAX_MEMBERS} members).",
-        "limit",
-    )
+        raise FleetRuleError(texts.RULE_FLEET_FULL(max=FLEET_MAX_MEMBERS), "limit")
+    raise FleetRuleError(texts.RULE_FLEET_ROOM(count=free, max=FLEET_MAX_MEMBERS), "limit")
 
 
 def check_add_wing(wings) -> None:
     if len(wings or ()) >= MAX_WINGS:
-        raise FleetRuleError(f"EVE allows at most {MAX_WINGS} wings.", "limit")
+        raise FleetRuleError(texts.RULE_TOO_MANY_WINGS(max=MAX_WINGS), "limit")
 
 
 def check_add_squad(wings, wing_id) -> dict:
     wing = _require_wing(wings, wing_id)
     if len(wing["squads"]) >= MAX_SQUADS_PER_WING:
-        raise FleetRuleError(f"EVE allows at most {MAX_SQUADS_PER_WING} squads per wing.", "limit")
+        raise FleetRuleError(texts.RULE_TOO_MANY_SQUADS(max=MAX_SQUADS_PER_WING), "limit")
     return wing
 
 
@@ -449,9 +469,7 @@ def check_delete_wing(wings, wing_id, members) -> dict:
     """Only empty wings can be deleted; their squads may stay as long as they are empty."""
     wing = _require_wing(wings, wing_id)
     if wing_members(members, wing["id"], wings):
-        raise FleetRuleError(
-            "Only empty wings can be deleted: move the wing commander and all squad members first.", "not_empty"
-        )
+        raise FleetRuleError(texts.RULE_WING_NOT_EMPTY(), "not_empty")
     return wing
 
 
@@ -459,8 +477,7 @@ def check_delete_squad(wings, squad_id, members) -> tuple[dict, dict]:
     wing, squad = _require_squad(wings, squad_id)
     count = len(squad_members(members, squad["id"]))
     if count:
-        them = "its member" if count == 1 else f"its {count} members"
-        raise FleetRuleError(f"Only empty squads can be deleted. Move {them} first.", "not_empty")
+        raise FleetRuleError(texts.RULE_SQUAD_NOT_EMPTY(count=count), "not_empty")
     return wing, squad
 
 
@@ -480,9 +497,7 @@ def parse_fleet_roles(value) -> tuple[str, ...]:
         if not role:
             continue
         if role.lower() not in COMMANDER_ROLES:
-            raise FleetRuleError(
-                f'"{role}" is not a commander position. Use fleet_commander, wing_commander or squad_commander.'
-            )
+            raise FleetRuleError(texts.RULE_NOT_A_COMMANDER_POSITION(role=role))
         found.add(role.lower())
     return tuple(role for role in COMMANDER_ROLES if role in found)
 

@@ -1,4 +1,4 @@
-# AA FleetOps 0.1.0a6: ping channels and roles, scheduled fleets, comms join links and name caches
+# AA FleetOps 0.2.0b1: ping channels and roles, scheduled fleets, comms join links and name caches
 
 import django.core.validators
 import django.db.models.deletion

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The aa-srp provider: SRP links created in aa-srp (app label ``aasrp``) at fleet start.
 
 aa-srp is not installed in the test project. The fakes below carry the field definitions of

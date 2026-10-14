@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Safe reporting of unexpected errors.
 
 Exception text from requests, urllib3, django-esi or an SRP provider can echo webhook
@@ -8,14 +11,18 @@ are kept as they are.
 
 import traceback
 
+from fleetops import texts
 from fleetops.providers.esi import FleetESIError
 
 
 def failure_message(step, exc):
-    """Text that is safe to store and show for a failed step."""
+    """Text that is safe to store and show for a failed step, as a stored message.
+
+    ``step`` is the English name of the step (see ``texts.STEP_NAMES``) or the label of a fleet job.
+    """
     if isinstance(exc, FleetESIError):
         return str(exc)
-    return f"{step} failed unexpectedly ({type(exc).__name__})."
+    return texts.STEP_FAILED(step=step, error_type=type(exc).__name__)
 
 
 def log_failure(logger, step, exc, operation=None):

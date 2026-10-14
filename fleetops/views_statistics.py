@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Statistics pages: personal, corporation, alliance and FC figures."""
 
 from django.contrib.auth import get_user_model
@@ -56,6 +59,9 @@ def my_statistics_view(request):
     year, month = _year_month(request)
     stats = member_statistics(request.user, year, month)
     target = month_target(year, month)
+    ref = month_ref(year, month)
+    # A month that ended before the user registered has no status for them.
+    registered_later = not population.registered_by(request.user, ref.end)
     return _render(
         request,
         "fleetops/my_statistics.html",
@@ -66,7 +72,7 @@ def my_statistics_view(request):
             live_pap_rows=live_pap_rows(request.user),
             minimum=target.minimum,
             minimum_missing=max(target.minimum - stats["total"], 0),
-            minimum_status=member_status(stats["total"], target, month_ref(year, month)),
+            minimum_status="none" if registered_later else member_status(stats["total"], target, ref),
             rank_card=_rank_card(request.user, year, month, stats["total"]),
         ),
     )

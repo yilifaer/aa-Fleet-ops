@@ -1,4 +1,9 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 from django.urls import path
+from django.views.decorators.cache import cache_control
+from django.views.i18n import JavaScriptCatalog
 
 from fleetops import (
     public_views,
@@ -152,6 +157,16 @@ urlpatterns += [
     ),
     path("srp/summary/fc/", views_srp_summary.fc_summary, name="srp_summary_own_fc"),
     path("srp/summary/fc/<int:user_id>/", views_srp_summary.fc_summary, name="srp_summary_fc"),
+]
+
+# Translations for the JavaScript of the FleetOps pages. The page asks for it with the language and the
+# version in the query string, so the browser keeps one copy per language for a day.
+urlpatterns += [
+    path(
+        "jsi18n/",
+        cache_control(private=True, max_age=86400)(JavaScriptCatalog.as_view(packages=["fleetops"])),
+        name="jsi18n",
+    ),
 ]
 
 # Public page; it must stay the last pattern. Alliance Auth stops adding its login check at the first

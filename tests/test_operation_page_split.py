@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The fleet page is built from partial templates; the page shows what it showed as one template.
 
 The markers below were taken from the page as rendered before it was split into
@@ -77,7 +80,7 @@ class OperationPageSplitTests(FleetOpsViewTestCase):
                 f"https://evewho.com/character/{self.member_main.character_id}",
                 f"https://zkillboard.com/character/{self.member_main.character_id}/",
                 "<th>Last Seen</th>",
-                "Save Manual Attendance",
+                "Save Manual PAP",
                 # The multiplier of a running fleet is chosen when it ends.
                 "The PAP multiplier is chosen when the fleet ends.",
                 'id="pap-preview"',
@@ -104,7 +107,7 @@ class OperationPageSplitTests(FleetOpsViewTestCase):
                 'id="composition-hidden"',
                 "The map is shown once the fleet has closed.",
                 "Member events are shown once the fleet has closed.",
-                "While the fleet is open you see the attendance of your own characters.",
+                "While the fleet is open you see the PAP of your own characters.",
                 "<td>member Main</td>",
                 'Special Roles <span class="badge bg-secondary">1</span>',
             ],
@@ -112,7 +115,7 @@ class OperationPageSplitTests(FleetOpsViewTestCase):
         self.assertNoneContained(
             response,
             ["Neutral Pod", "fc Main</td>", "Edit Operation", "End Fleet", "Fleet Control", "Assign Role",
-             "Save Manual Attendance", "Retry MOTD"],
+             "Save Manual PAP", "Retry MOTD"],
         )
 
     def test_active_fleet_for_a_fleet_manager(self):
@@ -139,7 +142,7 @@ class OperationPageSplitTests(FleetOpsViewTestCase):
             [
                 'data-bs-target="#endFleetModal"',
                 'id="endFleetModal"',
-                "End Fleet & Finalize Attendance",
+                "End Fleet & Finalize PAP",
                 "Retry Ping",
                 "Retry SRP",
                 'id="ping-copy"',
@@ -161,8 +164,8 @@ class OperationPageSplitTests(FleetOpsViewTestCase):
                 "Edit Operation",
                 "<td>outsider Main</td>",
                 f"https://evewho.com/character/{self.outsider_main.character_id}",
-                "Apply to Automatic Attendance",
-                "Save Manual Attendance",
+                "Apply to Automatic PAP",
+                "Save Manual PAP",
                 "Delete</button>",
                 "Assign Role",
             ],
@@ -196,5 +199,5 @@ class OperationPageSplitTests(FleetOpsViewTestCase):
         )
         self.assertAllContained(self.page(self.fc, manual), ["Manual Record", "Retry SRP"])
         attendance_only = self.page(self.fc, only)
-        self.assertAllContained(attendance_only, ["Attendance Only", "ESI said no", "Kick 0 Capsules"])
+        self.assertAllContained(attendance_only, ["PAP Only", "ESI said no", "Kick 0 Capsules"])
         self.assertNoneContained(attendance_only, ["Retry MOTD", "Retry Ping"])

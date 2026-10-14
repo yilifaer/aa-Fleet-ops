@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Fleet boss detection with ``fleet_boss_id`` and a boss handover during a tracked fleet.
 
 ESI (compatibility date 2025-11-06) names the fleet boss in ``fleet_boss_id`` of
@@ -11,6 +14,7 @@ from unittest import mock
 
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import translation
 
 from fleetops.models import AuditLog, FleetOperation, OperationAction
 from fleetops.providers import esi as esi_provider
@@ -18,8 +22,10 @@ from fleetops.providers.esi import FleetESIError
 from fleetops.services.operations import start_fleet
 from fleetops.services.tracking import observe_unreadable_fleet, unreadable_fleet_warning
 from fleetops.tasks import track_operation
+from fleetops.texts import translate_stored
 
 from . import factories as f
+from .static_files import static_source
 from .test_operations_tracking import FLEET_ID, UNKNOWN_BOSS_ID, FakeESIMixin, http_error
 
 Status = FleetOperation.Status
@@ -129,8 +135,12 @@ class DetectEndpointBossTests(BossStartTestBase):
         self.client.force_login(self.fc)
         page = self.client.get(reverse("fleetops:start_fleet"))
 
-        self.assertContains(page, "d.is_fleet_boss")
-        self.assertContains(page, "d.message")
+        # The start page reads the answer with the shared detection helper of fleetops.js.
+        self.assertContains(page, "fleetops/fleetops.js")
+        self.assertContains(page, "fleetops/start_fleet.js")
+        source = static_source("fleetops.js")
+        self.assertIn("data.is_fleet_boss", source)
+        self.assertIn("data.message", source)
 
 
 class HandoverTestBase(FakeESIMixin, TestCase):
@@ -192,6 +202,32 @@ class BossHandoverTests(HandoverTestBase):
         self.poll()
 
         self.assertEqual(self.operation.missing_detail, f"character {UNKNOWN_BOSS_ID}")
+
+    def test_a_boss_without_a_name_reads_as_a_character_in_the_language_of_the_viewer(self):
+        settings = f.settings(auto_end_enabled=False)
+        self.hand_boss_over(boss=UNKNOWN_BOSS_ID)
+        self.poll()
+
+        english = unreadable_fleet_warning(self.operation, settings)
+        with translation.override("zh-hans"):
+            chinese = unreadable_fleet_warning(self.operation, settings)
+
+        self.assertIn(f"character {UNKNOWN_BOSS_ID}", english)
+        self.assertIn(f"角色 {UNKNOWN_BOSS_ID}", chinese)
+        self.assertNotIn("character", chinese)
+
+    def test_the_end_of_a_fleet_handed_to_an_unnamed_boss_reads_the_same_way(self):
+        self.hand_boss_over(boss=UNKNOWN_BOSS_ID)
+        for _ in range(3):
+            self.poll()
+
+        self.assertEqual(self.operation.end_detail, f"character {UNKNOWN_BOSS_ID}")
+        self.assertTrue(self.operation.end_reason_text.endswith(f"to character {UNKNOWN_BOSS_ID}"))
+        with translation.override("zh-hans"):
+            self.assertIn(f"角色 {UNKNOWN_BOSS_ID}", self.operation.end_reason_text)
+            self.assertNotIn("character", self.operation.end_reason_text)
+            # The stored messages of the same event read that way too.
+            self.assertIn(f"角色 {UNKNOWN_BOSS_ID}", translate_stored(self.operation.last_error))
 
     def test_handing_the_boss_back_resets_the_count(self):
         self.hand_boss_over()

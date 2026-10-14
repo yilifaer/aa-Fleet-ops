@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """aa-charlink integration: pilots add the FleetOps ESI scopes when they link characters with CharLink.
 
 CharLink imports this module through the ``charlink`` hook in ``auth_hooks.py``, so it is only loaded
@@ -9,6 +12,7 @@ pilot registers through a PAP link.
 from charlink.app_imports.utils import AppImport, LoginImport
 from django.contrib.auth.models import Permission, User
 from django.db.models import Exists, OuterRef, Q
+from django.utils.translation import gettext_lazy as _
 from esi.models import Token
 
 from fleetops.constants import CLICK_SCOPES, FLEET_SCOPES
@@ -60,7 +64,7 @@ app_import = AppImport(
         LoginImport(
             app_label="fleetops",
             unique_id="fcfleet",
-            field_label="FleetOps FC fleet control",
+            field_label=_("FleetOps FC fleet control"),
             add_character=_add_character,
             scopes=list(FLEET_SCOPES),
             check_permissions=lambda user: user.has_perm("fleetops.start_fleet"),
@@ -72,7 +76,7 @@ app_import = AppImport(
         LoginImport(
             app_label="fleetops",
             unique_id="clickpap",
-            field_label="FleetOps PAP links",
+            field_label=_("FleetOps PAP links"),
             add_character=_add_character,
             scopes=list(CLICK_SCOPES),
             check_permissions=lambda user: user.has_perm("fleetops.basic_access"),

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+// SPDX-License-Identifier: GPL-3.0-only
+
 // Fleet tab: invites, structure templates and quick ship classification.
 //
 // The invite, template and classify forms are form[data-fleet-action]: the shared action handler
@@ -54,8 +57,6 @@
     }
     return node;
   }
-
-  const plural = (count, noun, nouns) => `${count} ${count === 1 ? noun : nouns || `${noun}s`}`;
 
   // ---------------------------------------------------------------- modals
 
@@ -182,7 +183,7 @@
 
     function updateButton() {
       button.disabled = selected.size === 0;
-      button.textContent = selected.size ? `Invite ${selected.size}` : 'Invite';
+      button.textContent = selected.size ? interpolate(gettext('Invite %(count)s'), { count: selected.size }, true) : gettext('Invite');
     }
 
     function renderChosen() {
@@ -194,7 +195,7 @@
         remove.type = 'button';
         remove.style.fontSize = '0.6em';
         remove.dataset.remove = id;
-        remove.setAttribute('aria-label', `Remove ${name}`);
+        remove.setAttribute('aria-label', interpolate(gettext('Remove %(name)s'), { name }, true));
         chip.append(remove);
         const input = element('input');
         input.type = 'hidden';
@@ -203,7 +204,7 @@
         return [chip, input];
       }).flat();
       if (items.length) {
-        chosen.replaceChildren(element('div', 'small text-muted mb-1', `Selected (${selected.size})`), ...items);
+        chosen.replaceChildren(element('div', 'small text-muted mb-1', interpolate(gettext('Selected (%(count)s)'), { count: selected.size }, true)), ...items);
       } else {
         chosen.replaceChildren();
       }
@@ -223,16 +224,16 @@
       const title = element('div');
       title.append(element('strong', '', candidate.name));
       if (candidate.in_fleet) {
-        title.append(' ', element('span', 'badge text-bg-secondary', 'In fleet'));
+        title.append(' ', element('span', 'badge text-bg-secondary', gettext('In fleet')));
       } else if (candidate.invited) {
-        title.append(' ', element('span', 'badge text-bg-info', 'Invitation pending'));
+        title.append(' ', element('span', 'badge text-bg-info', gettext('Invitation pending')));
       }
       if (candidate.is_mine) {
-        title.append(' ', element('span', 'badge text-bg-light border', 'Yours'));
+        title.append(' ', element('span', 'badge text-bg-light border', gettext('Yours')));
       }
       const details = [candidate.corporation, candidate.alliance].filter(Boolean);
       if (candidate.main_name && candidate.main_name !== candidate.name) {
-        details.push(`main: ${candidate.main_name}`);
+        details.push(interpolate(gettext('main: %(name)s'), { name: candidate.main_name }, true));
       }
       text.append(title, element('div', 'small text-muted', details.join(' · ')));
       row.append(box, text);
@@ -242,13 +243,15 @@
     function render(candidates, query) {
       const rows = candidates.filter((candidate) => isId(candidate.character_id)).map(candidateRow);
       const note = (text) => element('div', 'list-group-item small text-muted', text);
-      let heading = rows.length ? 'My characters' : 'You have no characters in Alliance Auth.';
+      let heading = rows.length ? gettext('My characters') : gettext('You have no characters in Alliance Auth.');
       if (query) {
-        heading = rows.length ? `Characters matching “${query}”` : `No character matches “${query}”.`;
+        heading = rows.length
+          ? interpolate(gettext('Characters matching “%(query)s”'), { query }, true)
+          : interpolate(gettext('No character matches “%(query)s”.'), { query }, true);
       }
       results.replaceChildren(note(heading), ...rows);
       if (query && rows.length >= SEARCH_LIMIT) {
-        results.append(note(`Showing the first ${SEARCH_LIMIT}. Type more of the name to narrow the search.`));
+        results.append(note(interpolate(gettext('Showing the first %(count)s. Type more of the name to narrow the search.'), { count: SEARCH_LIMIT }, true)));
       }
     }
 
@@ -259,7 +262,7 @@
           controller.abort();
         }
         shownQuery = null;
-        status(`Type at least ${MIN_QUERY_LENGTH} letters, or clear the search to list your own characters.`);
+        status(interpolate(gettext('Type at least %(count)s letters, or clear the search to list your own characters.'), { count: MIN_QUERY_LENGTH }, true));
         return;
       }
       if (query === shownQuery) {
@@ -273,7 +276,7 @@
       if (query) {
         url.searchParams.set('q', query);
       }
-      status('Searching…');
+      status(gettext('Searching…'));
       fetch(url.toString(), {
         headers: { Accept: 'application/json' },
         credentials: 'same-origin',
@@ -295,7 +298,7 @@
             return;
           }
           shownQuery = null;
-          status('The search failed. Reload the page if this keeps happening.', true);
+          status(gettext('The search failed. Reload the page if this keeps happening.'), true);
         });
     }
 
@@ -309,7 +312,7 @@
     // The squads of the tree as it is shown now; the chosen one stays chosen while it exists.
     function fillSquads() {
       const current = squads.value;
-      const any = element('option', '', 'Any squad with free positions');
+      const any = element('option', '', gettext('Any squad with free positions'));
       any.value = '';
       const groups = [];
       shownWings().forEach((wing) => {
@@ -318,9 +321,9 @@
           return;
         }
         const group = element('optgroup');
-        group.label = wing.name || 'Wing';
+        group.label = wing.name || gettext('Wing');
         usable.forEach((squad) => {
-          const option = element('option', '', `${squad.name || 'Squad'} (${squad.members})`);
+          const option = element('option', '', interpolate(gettext('%(name)s (%(count)s)'), { name: squad.name || gettext('Squad'), count: squad.members }, true));
           option.value = squad.id;
           option.dataset.wingId = wing.id;
           group.append(option);
@@ -377,12 +380,12 @@
       }
       if (box.checked && !selected.has(box.value) && selected.size >= MAX_INVITES) {
         box.checked = false;
-        setHint(`Invite at most ${MAX_INVITES} characters at a time.`, true);
+        setHint(interpolate(gettext('Invite at most %(count)s characters at a time.'), { count: MAX_INVITES }, true), true);
         return;
       }
       setHint('');
       if (box.checked) {
-        selected.set(box.value, box.dataset.name || `Character ${box.value}`);
+        selected.set(box.value, box.dataset.name || interpolate(gettext('Character %(id)s'), { id: box.value }, true));
       } else {
         selected.delete(box.value);
       }
@@ -409,7 +412,7 @@
       if (!selected.size) {
         event.preventDefault();
         event.stopImmediatePropagation();
-        setHint('Choose the characters to invite.', true);
+        setHint(gettext('Choose the characters to invite.'), true);
         return;
       }
       syncWing();
@@ -487,40 +490,56 @@
     return plan;
   }
 
-  function both(count, first, second) {
+  // "2 wings and 3 squads"; either part is left out when its count is 0.
+  function joined(parts) {
+    return parts.length === 2 ? interpolate(gettext('%(first)s and %(second)s'), { first: parts[0], second: parts[1] }, true) : parts.join('');
+  }
+
+  function wingsAndSquads(wings, squads) {
     const parts = [];
-    if (count[0]) {
-      parts.push(plural(count[0], first));
+    if (wings) {
+      parts.push(interpolate(ngettext('%(count)s wing', '%(count)s wings', wings), { count: wings }, true));
     }
-    if (count[1]) {
-      parts.push(plural(count[1], second));
+    if (squads) {
+      parts.push(interpolate(ngettext('%(count)s squad', '%(count)s squads', squads), { count: squads }, true));
     }
-    return parts.join(' and ');
+    return joined(parts);
+  }
+
+  function emptyWingsAndSquads(wings, squads) {
+    const parts = [];
+    if (wings) {
+      parts.push(interpolate(ngettext('%(count)s empty wing', '%(count)s empty wings', wings), { count: wings }, true));
+    }
+    if (squads) {
+      parts.push(interpolate(ngettext('%(count)s empty squad', '%(count)s empty squads', squads), { count: squads }, true));
+    }
+    return joined(parts);
   }
 
   function summaryLines(plan, deleteExtra) {
     const lines = [];
-    const renames = both([plan.renameWings, plan.renameSquads], 'wing', 'squad');
-    const creates = both([plan.createWings, plan.createSquads], 'wing', 'squad');
+    const renames = wingsAndSquads(plan.renameWings, plan.renameSquads);
+    const creates = wingsAndSquads(plan.createWings, plan.createSquads);
     if (renames) {
-      lines.push(`Renames ${renames}.`);
+      lines.push(interpolate(gettext('Renames %(items)s.'), { items: renames }, true));
     }
     if (creates) {
-      lines.push(`Creates ${creates}.`);
+      lines.push(interpolate(gettext('Creates %(items)s.'), { items: creates }, true));
     }
     if (deleteExtra) {
-      const deletes = both([plan.deleteWings, plan.deleteSquads], 'empty wing', 'empty squad');
-      const keeps = both([plan.keepWings, plan.keepSquads], 'wing', 'squad');
+      const deletes = emptyWingsAndSquads(plan.deleteWings, plan.deleteSquads);
+      const keeps = wingsAndSquads(plan.keepWings, plan.keepSquads);
       if (deletes) {
-        lines.push(`Deletes ${deletes}.`);
+        lines.push(interpolate(gettext('Deletes %(items)s.'), { items: deletes }, true));
       }
       if (keeps) {
-        lines.push(`Keeps ${keeps} with members.`);
+        lines.push(interpolate(gettext('Keeps %(items)s with members.'), { items: keeps }, true));
       }
     } else {
-      const extras = both([plan.extraWings, plan.extraSquads], 'wing', 'squad');
+      const extras = wingsAndSquads(plan.extraWings, plan.extraSquads);
       if (extras) {
-        lines.push(`Leaves ${extras} beyond the template as they are.`);
+        lines.push(interpolate(gettext('Leaves %(items)s beyond the template as they are.'), { items: extras }, true));
       }
     }
     return lines;
@@ -554,20 +573,20 @@
         button.disabled = !layout.length;
       }
       if (!layout.length) {
-        summary.replaceChildren(element('div', 'text-muted', 'Choose a template.'));
+        summary.replaceChildren(element('div', 'text-muted', gettext('Choose a template.')));
         return;
       }
       const wings = shownWings();
       const lines = summaryLines(planTemplate(wings, layout, Boolean(deleteExtra && deleteExtra.checked)),
         Boolean(deleteExtra && deleteExtra.checked));
-      const items = (lines.length ? lines : ['The fleet already has these names: nothing to change.'])
+      const items = (lines.length ? lines : [gettext('The fleet already has these names: nothing to change.')])
         .map((line) => element('li', '', line));
       const list = element('ul', 'mb-1');
       list.append(...items);
       const note = element('div', 'text-muted',
-        wings.length ? 'Counted from the fleet as shown; the change reads the fleet from ESI first.'
-          : 'The fleet structure is not known yet; the change reads it from ESI first.');
-      summary.replaceChildren(element('strong', '', 'What changes'), list, note);
+        wings.length ? gettext('Counted from the fleet as shown; the change reads the fleet from ESI first.')
+          : gettext('The fleet structure is not known yet; the change reads it from ESI first.'));
+      summary.replaceChildren(element('strong', '', gettext('What changes')), list, note);
     }
 
     modal.addEventListener('show.bs.modal', update);

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Migrations 0013-0014: fleet management fields, ship functions and structure templates."""
 
 import importlib

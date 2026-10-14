@@ -1,5 +1,6 @@
+{% load i18n %}
 {% if can_manage_attendance and accepts_records %}
-<div class="card mb-3" id="manual-attendance"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2"><strong>Add / Correct Attendance</strong><a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:roster_import' operation.uuid %}">Paste roster</a></div><div class="card-body">
+<div class="card mb-3" id="manual-attendance"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2"><strong>{% translate "Add / Correct PAP" %}</strong><a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:roster_import' operation.uuid %}">{% translate "Paste roster" %}</a></div><div class="card-body">
   {% if manual_attendance_errors %}<div class="alert alert-danger" id="manual-attendance-errors">{% for error in manual_attendance_errors %}<div>{{ error }}</div>{% endfor %}</div>{% endif %}
   <form method="post" action="{% url 'fleetops:add_manual_attendance' operation.uuid %}">{% csrf_token %}
     <div class="row g-2">
@@ -9,13 +10,13 @@
       <div class="col-md-2">{{ manual_attendance_form.duplicate_action.label_tag }}{{ manual_attendance_form.duplicate_action }}</div>
       <div class="col-md-3">{{ manual_attendance_form.notes.label_tag }}{{ manual_attendance_form.notes }}</div>
     </div>
-    <div class="form-text">Enter the character name, or its character ID when the name cannot be looked up.{% if needs_approval %} Manual PAP counts once an FC lead approves it.{% endif %}</div>
-    <button class="btn btn-sm btn-primary mt-2">Save Manual Attendance</button>
+    <div class="form-text">{% translate "Enter the character name, or its character ID when the name cannot be looked up." %}{% if needs_approval %} {% translate "Manual PAP counts once an FC lead approves it." %}{% endif %}</div>
+    <button class="btn btn-sm btn-primary mt-2">{% translate "Save Manual PAP" %}</button>
   </form>
 </div></div>
 {% if manual_attendance_errors %}
 <script>
-// Show the entry that was not saved: open the Attendance tab once Bootstrap is loaded.
+// Show the entry that was not saved: open the PAP tab once Bootstrap is loaded.
 document.addEventListener('DOMContentLoaded', () => {
   const tab = document.querySelector('[data-bs-target="#attendance"]');
   if (tab && window.bootstrap && bootstrap.Tab) { bootstrap.Tab.getOrCreateInstance(tab).show(); }

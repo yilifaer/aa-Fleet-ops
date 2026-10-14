@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Reading killmail references pasted by members and the killmails ESI returns for them."""
 
 import re
@@ -9,6 +12,7 @@ from django.db.models import ProtectedError
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
+from fleetops import texts
 from fleetops.models import MAX_DATABASE_ID, SrpKillmail, SrpSettings
 from fleetops.providers import zkillboard
 from fleetops.providers.esi import FleetESIError
@@ -48,7 +52,8 @@ def _kill_url_re(host: str) -> re.Pattern:
 ZKILLBOARD_RE = _kill_url_re(r"(?:www\.)?zkillboard\.com")
 KILLBOARD_RES = (_kill_url_re(r"(?:www\.)?eve-kill\.com"), _kill_url_re(r"kb\.evetools\.org"))
 
-UNRECOGNISED = "Paste an in-game killmail link, a zKillboard link, or the killmail ID and hash."
+# Stored messages (English): the pages show them through ``translate_stored``.
+UNRECOGNISED = texts.SRP_UNRECOGNISED()
 
 MAX_ITEMS = 5000
 MAX_ITEM_DEPTH = 3
@@ -58,18 +63,15 @@ HASH_RE = re.compile(r"[0-9a-f]{40}")
 SHIP_NAME_LENGTH = 255
 SYSTEM_NAME_LENGTH = 100
 
-NO_HASH = (
-    "zKillboard does not have this killmail yet (new killmails appear after about 5 minutes). "
-    "Paste the in-game killmail link instead."
-)
-USE_INGAME_LINK = "Paste the in-game killmail link instead."
-ZKILLBOARD_OFF = f"Killboard links are not accepted at the moment. {USE_INGAME_LINK}"
+USE_INGAME_LINK = texts.SRP_USE_INGAME_LINK()
+NO_HASH = f"{texts.ZKILL_MISSING()} {USE_INGAME_LINK}"
+ZKILLBOARD_OFF = f"{texts.SRP_KILLBOARD_OFF()} {USE_INGAME_LINK}"
 
 
 def _ref(killmail_id: str, killmail_hash: str | None, source: str) -> KillmailRef:
     number = int(killmail_id)
     if not 0 < number <= MAX_DATABASE_ID:
-        raise SrpError("invalid_id", "This killmail ID is not valid.")
+        raise SrpError("invalid_id", texts.SRP_BAD_KILLMAIL_ID())
     return KillmailRef(number, killmail_hash.lower() if killmail_hash else None, source)
 
 
@@ -80,7 +82,7 @@ def parse_killmail_reference(text: str) -> KillmailRef:
     """
     text = text.strip() if isinstance(text, str) else ""
     if len(text) > MAX_INPUT_LENGTH:
-        raise SrpError("too_long", "That text is too long. Paste only the killmail link.")
+        raise SrpError("too_long", texts.SRP_TEXT_TOO_LONG())
     if not text:
         raise SrpError("unrecognised", UNRECOGNISED)
 
@@ -178,7 +180,7 @@ def killmail_fields(payload: dict) -> dict:
             "items": _clean_items(victim.get("items"), 1, [MAX_ITEMS]),
         }
     except (KeyError, TypeError, ValueError) as exc:
-        raise SrpError("invalid_killmail", "ESI returned an incomplete killmail. Try again later.") from exc
+        raise SrpError("invalid_killmail", texts.SRP_INCOMPLETE_KILLMAIL()) from exc
 
 
 def _hash_from_zkillboard(killmail_id: int) -> ZkillResult:
@@ -200,7 +202,7 @@ def _read_and_store(killmail_id: int, killmail_hash: str) -> SrpKillmail:
         code = "not_found" if exc.code == "KILLMAIL_NOT_FOUND" else "esi_unavailable"
         raise SrpError(code, str(exc)) from exc
     if killmail_fields(payload)["killmail_id"] != killmail_id:
-        raise SrpError("invalid_killmail", "ESI returned an incomplete killmail. Try again later.")
+        raise SrpError("invalid_killmail", texts.SRP_INCOMPLETE_KILLMAIL())
     return store_killmail(payload, killmail_hash)
 
 

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The SRP rules engine: rule matching, the pure calculation, the settings snapshot and eligibility."""
 
 from datetime import timedelta

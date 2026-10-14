@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and help
+    url: https://github.com/yilifaer/aa-fleetops/discussions
+    about: Ask how to install, configure or use AA FleetOps.
+  - name: Report a security problem
+    url: https://github.com/yilifaer/aa-fleetops/security/advisories/new
+    about: Report vulnerabilities privately. Do not open a public issue.

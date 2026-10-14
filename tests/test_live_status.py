@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Live PAP status: what pilots see about their characters in running fleets."""
 
 from datetime import timedelta
@@ -195,6 +198,20 @@ class MemberVisibilityTests(LiveStatusTestBase):
         )
         self.assertContains(fc_page, "Outside Pilot")
         self.assertContains(fc_page, 'id="pap-preview"')
+
+    def test_a_pilot_who_left_the_fleet_is_marked_as_gone_in_both_languages(self):
+        self.track(self.main, 37, active=False)
+        self.client.force_login(self.fc)
+        url = reverse("fleetops:operation_detail", args=[self.operation.uuid])
+
+        english = self.client.get(url)
+        self.client.cookies["django_language"] = "zh-hans"
+        chinese = self.client.get(url)
+
+        self.assertContains(english, 'Line Pilot <span class="small text-muted">left</span>', html=False)
+        self.assertContains(chinese, 'Line Pilot <span class="small text-muted">已离队</span>', html=False)
+        # "Left" on the SRP limits means what remains; the word for the fleet must not be that one.
+        self.assertNotContains(chinese, '<span class="small text-muted">剩余</span>', html=False)
 
     def test_fleet_viewers_see_the_whole_preview(self):
         viewer = f.create_user("viewer", perms=f.MEMBER_PERMS + ["fleetops.view_all_fleets"])

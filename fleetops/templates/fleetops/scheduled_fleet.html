@@ -1,94 +1,94 @@
 {% extends "fleetops/base.html" %}
-{% load static fleetops_messages %}
+{% load i18n static fleetops_i18n fleetops_messages %}
 {% block fleetops_content %}
 <div class="d-flex justify-content-between align-items-start mb-3 gap-3 flex-wrap">
   <div>
     <h2 class="mb-1">{{ operation.fleet_type }}
-      {% if is_scheduled %}<span class="badge bg-info text-dark">Scheduled</span>{% else %}<span class="badge bg-secondary">{{ operation.get_status_display }}</span>{% endif %}
-      {% if overdue %}<span class="badge bg-warning text-dark" id="scheduled-overdue">Overdue</span>{% endif %}
+      {% if is_scheduled %}<span class="badge bg-info text-dark">{% translate "Scheduled" %}</span>{% else %}<span class="badge bg-secondary">{{ operation.get_status_display }}</span>{% endif %}
+      {% if overdue %}<span class="badge bg-warning text-dark" id="scheduled-overdue">{% translate "Overdue" %}</span>{% endif %}
     </h2>
-    <div class="text-muted">FC {{ operation.fc_character_name }} · {{ operation.uuid }}</div>
+    <div class="text-muted">{% blocktranslate trimmed with fc=operation.fc_character_name uuid=operation.uuid %}FC {{ fc }} · {{ uuid }}{% endblocktranslate %}</div>
   </div>
   <div class="d-flex gap-2 flex-wrap">
-    {% if can_manage %}<a class="btn btn-outline-primary" href="{% url 'fleetops:edit_scheduled_fleet' operation.uuid %}">Edit Scheduled Fleet</a>{% endif %}
-    <a class="btn btn-outline-secondary" href="{% url 'fleetops:fleet_operations' %}">Fleet Archive</a>
+    {% if can_manage %}<a class="btn btn-outline-primary" href="{% url 'fleetops:edit_scheduled_fleet' operation.uuid %}">{% translate "Edit Scheduled Fleet" %}</a>{% endif %}
+    <a class="btn btn-outline-secondary" href="{% url 'fleetops:fleet_operations' %}">{% translate "Fleet Archive" %}</a>
   </div>
 </div>
 
 <div class="row g-3 mb-3">
-  <div class="col-md-4"><div class="stat-card"><span>Fleet Time</span><strong>{{ operation.scheduled_at|eve_time }} EVE</strong>{% if is_scheduled %}<div class="small text-muted" data-countdown-utc="{{ operation.scheduled_at|eve_time:'%Y-%m-%dT%H:%M:00Z' }}"></div>{% endif %}</div></div>
-  <div class="col-md-4"><div class="stat-card"><span>Form Up</span><strong class="small">{{ operation.formup }}</strong></div></div>
-  <div class="col-md-4"><div class="stat-card"><span>Ping</span><strong class="small">{{ operation.ping_channel_name|default:"Copy only" }}</strong><div class="small text-muted">{{ mention_label }}</div></div></div>
+  <div class="col-md-4"><div class="stat-card"><span>{% translate "Fleet Time" context "FleetOps" %}</span><strong>{{ operation.scheduled_at|eve_time }} EVE</strong>{% if is_scheduled %}<div class="small text-muted" data-countdown-utc="{{ operation.scheduled_at|eve_time:'%Y-%m-%dT%H:%M:00Z' }}"></div>{% endif %}</div></div>
+  <div class="col-md-4"><div class="stat-card"><span>{% translate "Form Up" %}</span><strong class="small">{{ operation.formup }}</strong></div></div>
+  <div class="col-md-4"><div class="stat-card"><span>{% translate "Ping" %}</span><strong class="small">{{ operation.ping_channel_name|default:_("Copy only") }}</strong><div class="small text-muted">{{ mention_label }}</div></div></div>
 </div>
 
-{% if not is_scheduled %}<div class="alert alert-secondary">This scheduled fleet was cancelled; it never started.</div>{% endif %}
+{% if not is_scheduled %}<div class="alert alert-secondary">{% translate "This scheduled fleet was cancelled; it never started." %}</div>{% endif %}
 
 <div class="row g-3 mb-3">
   {% if can_start %}
-  <div class="col-lg-6"><div class="card h-100 border-primary"><div class="card-header"><strong>Start Fleet</strong></div><div class="card-body">
+  <div class="col-lg-6"><div class="card h-100 border-primary"><div class="card-header"><strong>{% translate "Start Fleet" %}</strong></div><div class="card-body">
     <form method="post" action="{% url 'fleetops:start_scheduled_fleet' operation.uuid %}" id="scheduled-start-form" data-detect-url="{% url 'fleetops:detect_fleet' 999999 %}">{% csrf_token %}
       {% if start_form.non_field_errors %}<div class="alert alert-danger">{{ start_form.non_field_errors }}</div>{% endif %}
-      <div class="mb-3">{{ start_form.fc_character_id.label_tag }}{{ start_form.fc_character_id }}{{ start_form.fc_character_id.errors }}<div id="fleet-detection" class="form-text">Select a character to detect its current ESI fleet.</div></div>
-      <div class="form-check mb-3">{{ start_form.send_ping }} <label class="form-check-label" for="{{ start_form.send_ping.id_for_label }}">{{ start_form.send_ping.label }}{% if operation.ping_channel_name %} in {{ operation.ping_channel_name }}{% endif %}</label></div>
-      <div class="form-text mb-3">Starting tracks the fleet from now on with the settings below; the MOTD is set and the SRP link created as for any fleet.</div>
-      <button class="btn btn-primary" type="submit">Start Fleet</button>
+      <div class="mb-3">{{ start_form.fc_character_id.label_tag }}{{ start_form.fc_character_id }}{{ start_form.fc_character_id.errors }}<div id="fleet-detection" class="form-text">{% translate "Select a character to detect its current ESI fleet." %}</div></div>
+      <div class="form-check mb-3">{{ start_form.send_ping }} <label class="form-check-label" for="{{ start_form.send_ping.id_for_label }}">{% if operation.ping_channel_name %}{% blocktranslate trimmed with label=start_form.send_ping.label channel=operation.ping_channel_name %}{{ label }} in {{ channel }}{% endblocktranslate %}{% else %}{{ start_form.send_ping.label }}{% endif %}</label></div>
+      <div class="form-text mb-3">{% translate "Starting tracks the fleet from now on with the settings below; the MOTD is set and the SRP link created as for any fleet." %}</div>
+      <button class="btn btn-primary" type="submit">{% translate "Start Fleet" %}</button>
     </form>
   </div></div></div>
   {% elif is_scheduled %}
-  <div class="col-lg-6"><div class="alert alert-info h-100 mb-0">Only {{ operation.fc_character_name }}, who scheduled this fleet, can start it.</div></div>
+  <div class="col-lg-6"><div class="alert alert-info h-100 mb-0">{% blocktranslate trimmed with fc=operation.fc_character_name %}Only {{ fc }}, who scheduled this fleet, can start it.{% endblocktranslate %}</div></div>
   {% endif %}
   {% if cancel_form %}
-  <div class="col-lg-6"><div class="card h-100 border-danger"><div class="card-header"><strong>Cancel Fleet</strong></div><div class="card-body">
-    <form method="post" action="{% url 'fleetops:cancel_scheduled_fleet' operation.uuid %}" class="cancel-scheduled-form">{% csrf_token %}
-      {% if operation.ping_channel_name %}<div class="form-check mb-3">{{ cancel_form.notify }} <label class="form-check-label" for="{{ cancel_form.notify.id_for_label }}">Post a cancellation notice in {{ operation.ping_channel_name }}</label><div class="form-text">The notice mentions nobody.</div></div>{% endif %}
-      <button class="btn btn-outline-danger" type="submit">Cancel Fleet</button>
+  <div class="col-lg-6"><div class="card h-100 border-danger"><div class="card-header"><strong>{% translate "Cancel Fleet" %}</strong></div><div class="card-body">
+    <form method="post" action="{% url 'fleetops:cancel_scheduled_fleet' operation.uuid %}" class="cancel-scheduled-form" data-confirm="{% translate 'Cancel this scheduled fleet?' %}">{% csrf_token %}
+      {% if operation.ping_channel_name %}<div class="form-check mb-3">{{ cancel_form.notify }} <label class="form-check-label" for="{{ cancel_form.notify.id_for_label }}">{% blocktranslate trimmed with channel=operation.ping_channel_name %}Post a cancellation notice in {{ channel }}{% endblocktranslate %}</label><div class="form-text">{% translate "The notice mentions nobody." %}</div></div>{% endif %}
+      <button class="btn btn-outline-danger" type="submit">{% translate "Cancel Fleet" %}</button>
     </form>
   </div></div></div>
   {% endif %}
 </div>
 
 <div class="row g-3 mb-3">
-  <div class="col-lg-5"><div class="card h-100"><div class="card-header"><strong>Settings</strong></div><div class="card-body p-0">
+  <div class="col-lg-5"><div class="card h-100"><div class="card-header"><strong>{% translate "Settings" %}</strong></div><div class="card-body p-0">
     <table class="table table-sm mb-0"><tbody>
-      <tr><th>FC</th><td>{{ operation.fc_character_name }}{% if operation.fc_main_character_name and operation.fc_main_character_name != operation.fc_character_name %} <span class="small text-muted">Main: {{ operation.fc_main_character_name }}</span>{% endif %}</td></tr>
-      <tr><th>Doctrine</th><td>{{ operation.doctrine_name|default:"—" }}{% if operation.doctrine_fits %}<div class="small text-muted">{% for fit in operation.doctrine_fits %}{{ fit.ship }}{% if not forloop.last %} &gt; {% endif %}{% endfor %}</div>{% endif %}</td></tr>
-      <tr><th>Comms</th><td>{{ operation.comms|default:"—" }}</td></tr>
-      <tr><th>Logi</th><td>{{ operation.logi_channel.channel_value|default:"—" }}</td></tr>
-      <tr><th>Boost</th><td>{{ operation.boost_channel.channel_value|default:"—" }}</td></tr>
-      <tr><th>Ping channel</th><td>{{ operation.ping_channel_name|default:"No Discord message (copy only)" }}</td></tr>
-      <tr><th>Ping target</th><td>{{ mention_label }}</td></tr>
-      <tr><th>Templates</th><td>{{ operation.ping_template.name|default:"Default ping" }} · {{ operation.motd_template.name|default:"Default MOTD" }}</td></tr>
-      {% if operation.additional_message %}<tr><th>Additional information</th><td class="text-break">{{ operation.additional_message|linebreaksbr }}</td></tr>{% endif %}
+      <tr><th>FC</th><td>{{ operation.fc_character_name }}{% if operation.fc_main_character_name and operation.fc_main_character_name != operation.fc_character_name %} <span class="small text-muted">{% blocktranslate trimmed with main=operation.fc_main_character_name %}Main: {{ main }}{% endblocktranslate %}</span>{% endif %}</td></tr>
+      <tr><th>{% translate "Doctrine" context "FleetOps" %}</th><td>{{ operation.doctrine_name|default:"—" }}{% if operation.doctrine_fits %}<div class="small text-muted">{% for fit in operation.doctrine_fits %}{{ fit.ship }}{% if not forloop.last %} &gt; {% endif %}{% endfor %}</div>{% endif %}</td></tr>
+      <tr><th>{% translate "Comms" %}</th><td>{{ operation.comms|default:"—" }}</td></tr>
+      <tr><th>{% translate "Logi" %}</th><td>{{ operation.logi_channel.channel_value|default:"—" }}</td></tr>
+      <tr><th>{% translate "Boost" %}</th><td>{{ operation.boost_channel.channel_value|default:"—" }}</td></tr>
+      <tr><th>{% translate "Ping channel" %}</th><td>{{ operation.ping_channel_name|default:_("No Discord message (copy only)") }}</td></tr>
+      <tr><th>{% translate "Ping target" %}</th><td>{{ mention_label }}</td></tr>
+      <tr><th>{% translate "Templates" %}</th><td>{{ operation.ping_template.name|default:_("Default ping") }} · {{ operation.motd_template.name|default:_("Default MOTD") }}</td></tr>
+      {% if operation.additional_message %}<tr><th>{% translate "Additional information" %}</th><td class="text-break">{{ operation.additional_message|linebreaksbr }}</td></tr>{% endif %}
     </tbody></table>
   </div></div></div>
-  <div class="col-lg-7"><div class="card h-100"><div class="card-header"><strong>Steps</strong></div><div class="card-body">
+  <div class="col-lg-7"><div class="card h-100"><div class="card-header"><strong>{% translate "Steps" %}</strong></div><div class="card-body">
     <div class="row g-2">
       {% for a in actions %}
-        <div class="col-md-6"><div class="border rounded p-2 h-100">
-          <strong>{{ a.action }}</strong><br>
+        <div class="col-md-6"><div class="border rounded p-2 h-100" data-step="{{ a.action }}">
+          <strong>{{ a.action|step_label }}</strong><br>
           <span class="badge bg-{% if a.status == 'success' %}success{% elif a.status == 'failed' %}danger{% elif a.status == 'skipped' %}secondary{% else %}warning text-dark{% endif %}">{{ a.get_status_display }}</span>
-          <span class="small text-muted">attempt {{ a.attempts }}</span>
-          {% if a.error_message %}<div class="small text-muted mt-1 text-break">{{ a.error_message }}</div>{% endif %}
+          <span class="small text-muted">{% blocktranslate trimmed with num=a.attempts %}attempt {{ num }}{% endblocktranslate %}</span>
+          {% if a.error_message %}<div class="small text-muted mt-1 text-break">{{ a.error_message|stored_text }}</div>{% endif %}
           {% if a.previous_attempts %}
-            <div class="small mt-2 border-top pt-1 step-history"><span class="text-muted">Previous attempts</span>
-              {% for attempt in a.previous_attempts %}<div class="text-break"><span class="badge bg-{% if attempt.status == 'success' %}success{% elif attempt.status == 'failed' %}danger{% else %}secondary{% endif %}">{{ attempt.get_status_display }}</span> <span class="text-muted">{{ attempt.created_at|eve_time:"%Y-%m-%d %H:%M:%S" }}</span>{% if attempt.message %} — {{ attempt.message }}{% endif %}</div>{% endfor %}
-              {% if a.older_attempt_count %}<div class="text-muted">and {{ a.older_attempt_count }} older attempt{{ a.older_attempt_count|pluralize }}</div>{% endif %}
+            <div class="small mt-2 border-top pt-1 step-history"><span class="text-muted">{% translate "Previous attempts" %}</span>
+              {% for attempt in a.previous_attempts %}<div class="text-break"><span class="badge bg-{% if attempt.status == 'success' %}success{% elif attempt.status == 'failed' %}danger{% else %}secondary{% endif %}">{{ attempt.get_status_display }}</span> <span class="text-muted">{{ attempt.created_at|eve_time:"%Y-%m-%d %H:%M:%S" }}</span>{% if attempt.message %} — {{ attempt.message|stored_text }}{% endif %}</div>{% endfor %}
+              {% if a.older_attempt_count %}<div class="text-muted">{% blocktranslate trimmed count counter=a.older_attempt_count %}and {{ counter }} older attempt{% plural %}and {{ counter }} older attempts{% endblocktranslate %}</div>{% endif %}
             </div>
           {% endif %}
         </div></div>
-      {% empty %}<div class="text-muted">No step records.</div>{% endfor %}
+      {% empty %}<div class="text-muted">{% translate "No step records." %}</div>{% endfor %}
     </div>
     {% if can_manage and operation.ping_channel_id %}
-      <form method="post" action="{% url 'fleetops:retry_ping' operation.uuid %}" class="mt-3">{% csrf_token %}<button class="btn btn-sm btn-outline-primary">Retry Pre Ping</button></form>
+      <form method="post" action="{% url 'fleetops:retry_ping' operation.uuid %}" class="mt-3">{% csrf_token %}<button class="btn btn-sm btn-outline-primary">{% translate "Retry Pre Ping" %}</button></form>
     {% endif %}
   </div></div></div>
 </div>
 
 <div class="row g-3">
-  <div class="col-lg-6"><div class="card h-100"><div class="card-header d-flex justify-content-between"><strong>Pre Ping</strong><button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy="#scheduled-ping">Copy Ping</button></div><div class="card-body"><pre id="scheduled-ping" class="preview-box" data-copy-text="{{ operation.ping_text }}">{{ operation.ping_text|ping_display:operation|default:"No ping text." }}</pre></div></div></div>
-  <div class="col-lg-6"><div class="card h-100"><div class="card-header d-flex justify-content-between"><strong>MOTD</strong><button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy="#scheduled-motd">Copy MOTD</button></div><div class="card-body"><pre id="scheduled-motd" class="preview-box">{{ operation.motd_text|default:"No MOTD text." }}</pre><div class="form-text">The MOTD is set in game when the fleet starts.</div></div></div></div>
+  <div class="col-lg-6"><div class="card h-100"><div class="card-header d-flex justify-content-between"><strong>{% translate "Pre Ping" %}</strong><button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy="#scheduled-ping">{% translate "Copy Ping" %}</button></div><div class="card-body"><pre id="scheduled-ping" class="preview-box" data-copy-text="{{ operation.ping_text }}">{{ operation.ping_text|ping_display:operation|default:_("No ping text.") }}</pre></div></div></div>
+  <div class="col-lg-6"><div class="card h-100"><div class="card-header d-flex justify-content-between"><strong>MOTD</strong><button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy="#scheduled-motd">{% translate "Copy MOTD" %}</button></div><div class="card-body"><pre id="scheduled-motd" class="preview-box">{{ operation.motd_text|default:_("No MOTD text.") }}</pre><div class="form-text">{% translate "The MOTD is set in game when the fleet starts." %}</div></div></div></div>
 </div>
-<script src="{% static 'fleetops/fleetops.js' %}"></script>
+<script src="{% static 'fleetops/fleetops.js' %}?v={% fleetops_version %}"></script>
 <script>
 (() => {
  const start = document.getElementById('scheduled-start-form');
@@ -96,17 +96,17 @@
    const char = document.getElementById('id_fc_character_id');
    const detect = document.getElementById('fleet-detection');
    async function detectFleet(){
-     if(!char.value){ detect.textContent='Select a character to detect its current ESI fleet.'; detect.className='form-text'; return; }
-     detect.textContent='Checking fleet…';
-     try { const r=await fetch(start.dataset.detectUrl.replace('999999', char.value)); const d=await r.json(); detect.textContent=d.ok ? (d.is_fleet_boss ? `✓ Fleet ${d.fleet_id} — role: ${d.role} — Fleet Boss` : `⚠ Fleet ${d.fleet_id} — ${d.message}`) : `⚠ ${d.message}`; detect.className=d.ok&&d.is_fleet_boss?'form-text text-success':'form-text text-warning'; }
-     catch(e){ detect.textContent='⚠ Fleet detection request failed.'; }
+     if(!char.value){ detect.textContent=FleetOps.detection.select(); detect.className='form-text'; return; }
+     detect.textContent=FleetOps.detection.checking();
+     try { const r=await fetch(start.dataset.detectUrl.replace('999999', char.value)); const d=await r.json(); detect.textContent=FleetOps.detection.result(d); detect.className=d.ok&&d.is_fleet_boss?'form-text text-success':'form-text text-warning'; }
+     catch(e){ detect.textContent=FleetOps.detection.failed(); }
    }
    char.addEventListener('change', detectFleet);
    start.addEventListener('submit', () => start.querySelector('button[type="submit"]').disabled = true);
    detectFleet();
  }
  document.querySelectorAll('.cancel-scheduled-form').forEach(form => form.addEventListener('submit', event => {
-   if(!window.confirm('Cancel this scheduled fleet?')){ event.preventDefault(); }
+   if(!window.confirm(form.dataset.confirm)){ event.preventDefault(); }
  }));
  document.querySelectorAll('.copy-btn').forEach(btn=>btn.addEventListener('click',()=>{ const source=document.querySelector(btn.dataset.copy); navigator.clipboard.writeText(source.dataset.copyText ?? source.textContent); }));
 })();

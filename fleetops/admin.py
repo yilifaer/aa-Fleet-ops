@@ -1,7 +1,11 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 from django.contrib import admin, messages
 from django.contrib.admin.utils import unquote
 from django.db import transaction
 from django.shortcuts import redirect
+from django.utils.translation import gettext_lazy as _
 
 from fleetops.forms_config import DiscordWebhookForm
 from fleetops.models import (
@@ -249,7 +253,7 @@ class PingRoleAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
         for role in objs:
             refusal = role_delete_refusal(role)
             if refusal:
-                self.message_user(request, f"{role.name}: {refusal}", messages.ERROR)
+                self.message_user(request, _("%(name)s: %(refusal)s") % {"name": role.name, "refusal": refusal}, messages.ERROR)
         return super().get_deleted_objects(objs, request)
 
 
@@ -268,14 +272,14 @@ class DiscordWebhookAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
         # webhook token, so only whether one is stored is shown.
         return [name if name != "webhook_url" else "webhook_url_stored" for name in fields]
 
-    @admin.display(description="Webhook URL")
+    @admin.display(description=_("Webhook URL"))
     def webhook_url_stored(self, obj):
-        return "Stored (hidden)" if obj is not None and obj.webhook_url else "Not set"
+        return _("Stored (hidden)") if obj is not None and obj.webhook_url else _("Not set")
 
 
 @admin.register(PingTarget)
 class PingTargetAdmin(FleetOpsConfigAuditMixin, ReadOnlyAdmin):
-    """Legacy ping targets; 0.1.0a6 converted them into ping channels and mentions."""
+    """Legacy ping targets; 0.2.0b1 converted them into ping channels and mentions."""
 
     list_display = ("name", "target_value", "webhook", "is_active")
 

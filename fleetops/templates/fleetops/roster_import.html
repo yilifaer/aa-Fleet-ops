@@ -1,51 +1,52 @@
 {% extends "fleetops/base.html" %}
-{% load fleetops_messages %}
+{% load i18n fleetops_messages %}
 {% block fleetops_content %}
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-  <div><h2 class="mb-1">Paste Roster</h2><div class="text-muted">{{ operation.fleet_type }} · FC {{ operation.fc_character_name }} · {{ operation.started_at|eve_time }} EVE · {{ operation.get_status_display }}</div></div>
-  <a class="btn btn-outline-secondary" href="{% url 'fleetops:operation_detail' operation.uuid %}">Back to the fleet</a>
+  <div><h2 class="mb-1">{% translate "Paste Roster" %}</h2><div class="text-muted">{{ operation.fleet_type }} · FC {{ operation.fc_character_name }} · {{ operation.started_at|eve_time }} EVE · {{ operation.get_status_display }}</div></div>
+  <a class="btn btn-outline-secondary" href="{% url 'fleetops:operation_detail' operation.uuid %}">{% translate "Back to the fleet" %}</a>
 </div>
-{% if needs_approval %}<div class="alert alert-info">Imported PAP counts once an FC lead approves it.</div>{% endif %}
+{% if needs_approval %}<div class="alert alert-info">{% translate "Imported PAP counts once an FC lead approves it." %}</div>{% endif %}
 
 {% if preview_rows %}
 {% if warnings %}<div class="alert alert-warning" id="roster-warnings">{% for warning in warnings %}<div>{{ warning }}</div>{% endfor %}</div>{% endif %}
-<div class="card mb-3" id="roster-preview"><div class="card-header d-flex flex-wrap gap-2 align-items-center"><strong>Preview</strong>
-  <span class="badge bg-success">To add: {{ counts.add|default:0 }}</span>
-  {% if counts.capped %}<span class="badge bg-warning text-dark">Over the limit: {{ counts.capped }}</span>{% endif %}
-  {% if counts.has_pap %}<span class="badge bg-secondary">Already has PAP: {{ counts.has_pap }}</span>{% endif %}
-  {% if counts.not_in_auth %}<span class="badge bg-danger">Not in Alliance Auth: {{ counts.not_in_auth }}</span>{% endif %}
-  {% if counts.not_found %}<span class="badge bg-danger">Not found: {{ counts.not_found }}</span>{% endif %}
-  {% if counts.error %}<span class="badge bg-danger">Not checked: {{ counts.error }}</span>{% endif %}
-  {% if counts.invalid %}<span class="badge bg-danger">Invalid: {{ counts.invalid }}</span>{% endif %}
+<div class="card mb-3" id="roster-preview"><div class="card-header d-flex flex-wrap gap-2 align-items-center"><strong>{% translate "Preview" %}</strong>
+  <span class="badge bg-success">{% blocktranslate trimmed with num=counts.add|default:0 %}To add: {{ num }}{% endblocktranslate %}</span>
+  {% if counts.capped %}<span class="badge bg-warning text-dark">{% blocktranslate trimmed with num=counts.capped %}Over the limit: {{ num }}{% endblocktranslate %}</span>{% endif %}
+  {% if counts.has_pap %}<span class="badge bg-secondary">{% blocktranslate trimmed with num=counts.has_pap %}Already has PAP: {{ num }}{% endblocktranslate %}</span>{% endif %}
+  {% if counts.not_in_auth %}<span class="badge bg-danger">{% blocktranslate trimmed with num=counts.not_in_auth %}Not in Alliance Auth: {{ num }}{% endblocktranslate %}</span>{% endif %}
+  {% if counts.not_found %}<span class="badge bg-danger">{% blocktranslate trimmed with num=counts.not_found %}Not found: {{ num }}{% endblocktranslate %}</span>{% endif %}
+  {% if counts.error %}<span class="badge bg-danger">{% blocktranslate trimmed with num=counts.error %}Not checked: {{ num }}{% endblocktranslate %}</span>{% endif %}
+  {% if counts.invalid %}<span class="badge bg-danger">{% blocktranslate trimmed with num=counts.invalid %}Invalid: {{ num }}{% endblocktranslate %}</span>{% endif %}
 </div>
 <form method="post" id="roster-import-form">{% csrf_token %}
   <input type="hidden" name="step" value="import">
   <input type="hidden" name="payload" value="{{ payload }}">
-  <div class="card-body small text-muted">Value {{ form.cleaned_data.attendance_value }} · {{ duplicate_action_label }}{% if form.cleaned_data.notes %} · Notes: {{ form.cleaned_data.notes }}{% endif %}</div>
+  <div class="card-body small text-muted">{% blocktranslate trimmed with value=form.cleaned_data.attendance_value %}Value {{ value }}{% endblocktranslate %} · {{ duplicate_action_label }}{% if form.cleaned_data.notes %} · {% blocktranslate trimmed with notes=form.cleaned_data.notes %}Notes: {{ notes }}{% endblocktranslate %}{% endif %}</div>
   <div class="table-responsive"><table class="table table-sm align-middle mb-0">
-    <thead><tr><th></th><th>Line</th><th>Pasted name</th><th>Character</th><th>Main</th><th>Ship</th><th>Location</th><th>Fleet role</th><th>Status</th></tr></thead>
+    <thead><tr><th></th><th>{% translate "Line" %}</th><th>{% translate "Pasted name" %}</th><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th>{% translate "Ship" %}</th><th>{% translate "Location" %}</th><th>{% translate "Fleet role" %}</th><th>{% translate "Status" %}</th></tr></thead>
     <tbody>{% for item in preview_rows %}{% with row=item.row %}<tr{% if not row.importable %} class="text-muted"{% endif %}>
-      <td>{% if row.importable %}<input class="form-check-input" type="checkbox" name="rows" value="{{ item.index }}"{% if row.checked %} checked{% endif %} aria-label="Import {{ row.character_name }}">{% else %}<input class="form-check-input" type="checkbox" disabled aria-label="Cannot import {{ row.line.name }}">{% endif %}</td>
+      <td>{% if row.importable %}<input class="form-check-input" type="checkbox" name="rows" value="{{ item.index }}"{% if row.checked %} checked{% endif %} aria-label="{% blocktranslate trimmed with name=row.character_name %}Import {{ name }}{% endblocktranslate %}">{% else %}<input class="form-check-input" type="checkbox" disabled aria-label="{% blocktranslate trimmed with name=row.line.name %}Cannot import {{ name }}{% endblocktranslate %}">{% endif %}</td>
       <td>{{ row.line.line_no|default:"—" }}</td>
       <td>{{ row.line.name }}</td>
       <td>{{ row.character_name|default:"—" }}</td>
       <td>{{ row.main_character_name|default:"—" }}</td>
       <td>{{ row.line.ship_type|default:"—" }}{% if row.line.ship_group %}<div class="small text-muted">{{ row.line.ship_group }}</div>{% endif %}</td>
-      <td>{{ row.line.location|default:"—" }}{% if row.line.docked %} <span class="badge bg-light text-dark">Docked</span>{% endif %}</td>
+      <td>{{ row.line.location|default:"—" }}{% if row.line.docked %} <span class="badge bg-light text-dark">{% translate "Docked" %}</span>{% endif %}</td>
       <td>{{ row.line.role|default:"—" }}{% if row.line.position %}<div class="small text-muted">{{ row.line.position }}</div>{% endif %}</td>
-      <td>{% if row.status == 'add' %}<span class="badge bg-success">Add</span>{% elif row.status == 'capped' %}<span class="badge bg-warning text-dark">Over the limit</span>{% elif row.status == 'has_pap' %}<span class="badge bg-secondary">Has PAP</span>{% elif row.status == 'not_in_auth' %}<span class="badge bg-danger">Not in Alliance Auth</span>{% elif row.status == 'not_found' %}<span class="badge bg-danger">Not found</span>{% elif row.status == 'error' %}<span class="badge bg-danger">Not checked</span>{% else %}<span class="badge bg-danger">Invalid</span>{% endif %}{% if row.reason %}<div class="small text-muted">{{ row.reason }}</div>{% endif %}</td>
+      <td>{% if row.status == 'add' %}<span class="badge bg-success">{% translate "Add" context "FleetOps" %}</span>{% elif row.status == 'capped' %}<span class="badge bg-warning text-dark">{% translate "Over the limit" %}</span>{% elif row.status == 'has_pap' %}<span class="badge bg-secondary">{% translate "Has PAP" %}</span>{% elif row.status == 'not_in_auth' %}<span class="badge bg-danger">{% translate "Not in Alliance Auth" %}</span>{% elif row.status == 'not_found' %}<span class="badge bg-danger">{% translate "Not found" %}</span>{% elif row.status == 'error' %}<span class="badge bg-danger">{% translate "Not checked" %}</span>{% else %}<span class="badge bg-danger">{% translate "Invalid" %}</span>{% endif %}{% if row.reason %}<div class="small text-muted">{{ row.reason }}</div>{% endif %}</td>
     </tr>{% endwith %}{% endfor %}</tbody>
   </table></div>
-  <div class="card-body"><button class="btn btn-primary" id="roster-import-submit">Import selected</button> <span class="small text-muted ms-2">The preview is valid for 30 minutes.</span></div>
+  <div class="card-body"><button class="btn btn-primary" id="roster-import-submit">{% translate "Import selected" %}</button> <span class="small text-muted ms-2">{% translate "The preview is valid for 30 minutes." %}</span></div>
 </form></div>
+{% translate "Importing…" as importing_label %}
 <script>
 document.getElementById('roster-import-form').addEventListener('submit',()=>{
   // A second submit would only find the rows of the first one.
   const button=document.getElementById('roster-import-submit');
-  button.disabled=true; button.textContent='Importing…';
+  button.disabled=true; button.textContent='{{ importing_label|escapejs }}';
 });
 </script>
-<details class="mb-3"><summary>Change the paste or the settings</summary>
+<details class="mb-3"><summary>{% translate "Change the paste or the settings" %}</summary>
 {% endif %}
 
 <div class="card mb-3" id="roster-paste-form"><div class="card-body">
@@ -58,7 +59,7 @@ document.getElementById('roster-import-form').addEventListener('submit',()=>{
     <div class="col-md-4">{{ form.duplicate_action.label_tag }}{{ form.duplicate_action }}{% if form.duplicate_action.errors %}<div class="text-danger small">{{ form.duplicate_action.errors|join:" " }}</div>{% endif %}</div>
     <div class="col-md-6">{{ form.notes.label_tag }}{{ form.notes }}{% if form.notes.errors %}<div class="text-danger small">{{ form.notes.errors|join:" " }}</div>{% endif %}</div>
   </div>
-  <button class="btn {% if preview_rows %}btn-outline-primary{% else %}btn-primary{% endif %} mt-3">Preview</button>
+  <button class="btn {% if preview_rows %}btn-outline-primary{% else %}btn-primary{% endif %} mt-3">{% translate "Preview" %}</button>
 </form>
 </div></div>
 {% if preview_rows %}</details>{% endif %}

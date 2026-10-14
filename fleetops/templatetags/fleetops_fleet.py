@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Fleet positions, member events, fleet changes and composition numbers as the fleet page shows them.
 
 Stored values keep ESI's raw wing and squad ids and role codes; the names come from the fleet's
@@ -7,28 +10,29 @@ latest wings snapshot when the page is rendered.
 import re
 
 from django import template
+from django.utils.translation import gettext as _
+from django.utils.translation import gettext_lazy
 
 from fleetops.models import FleetMemberEvent
 from fleetops.services.fleet_rules import (
     FLEET_COMMAND,
-    ROLE_LABELS,
     normalize_wings,
     position_labels,
     squad_index,
     wing_index,
 )
+from fleetops.texts import FLEET_ROLE_LABELS, translate_stored
 
 register = template.Library()
 
 Event = FleetMemberEvent.EventType
-NO_SQUAD = "No squad"
 HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
 ROLE_MARKERS = {"fleet_commander": "FC", "wing_commander": "WC", "squad_commander": "SC"}
 # Fleet changes whose audit entry has no summary of its own.
 CHANGE_LABELS = {
-    "fleet.kick_member": "Kicked a member",
-    "fleet.kick_outside_system": "Kicked members outside a system",
-    "fleet.kick_capsules": "Kicked capsule pilots",
+    "fleet.kick_member": gettext_lazy("Kicked a member"),
+    "fleet.kick_outside_system": gettext_lazy("Kicked members outside a system"),
+    "fleet.kick_capsules": gettext_lazy("Kicked capsule pilots"),
 }
 
 
@@ -74,7 +78,7 @@ def fleet_event_change(event, operation):
     """
     values = (event.old_value, event.new_value)
     if event.event_type == Event.ROLE_CHANGE:
-        return tuple(ROLE_LABELS.get(value, value) for value in values)
+        return tuple(str(FLEET_ROLE_LABELS.get(value, value)) for value in values)
     if event.event_type not in (Event.WING_CHANGE, Event.SQUAD_CHANGE):
         return values
     wings = _wings(operation)
@@ -85,17 +89,21 @@ def fleet_event_change(event, operation):
             labels.append(value or "—")
         elif event.event_type == Event.WING_CHANGE:
             wing = wing_index(wings).get(number)
-            labels.append(FLEET_COMMAND if number == -1 else (wing and wing["name"]) or f"Wing {number}")
+            labels.append(
+                FLEET_COMMAND if number == -1 else (wing and wing["name"]) or _("Wing %(id)s") % {"id": number}
+            )
         else:
             found = squad_index(wings).get(number)
-            labels.append(NO_SQUAD if number == -1 else (found and found[1]["name"]) or f"Squad {number}")
+            labels.append(
+                _("No squad") if number == -1 else (found and found[1]["name"]) or _("Squad %(id)s") % {"id": number}
+            )
     return tuple(labels)
 
 
 @register.filter
 def role_label(role):
     """``squad_commander`` -> "Squad Commander"."""
-    return ROLE_LABELS.get(role, role or "")
+    return str(FLEET_ROLE_LABELS.get(role, role or ""))
 
 
 @register.filter
@@ -110,7 +118,7 @@ def change_text(entry):
     value = entry.new_value if isinstance(entry.new_value, dict) else {}
     summary = value.get("summary")
     if summary:
-        return str(summary)
+        return translate_stored(str(summary))
     return CHANGE_LABELS.get(entry.action) or entry.action.removeprefix("fleet.").replace("_", " ").capitalize()
 
 

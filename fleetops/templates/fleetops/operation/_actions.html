@@ -1,40 +1,42 @@
-{% load fleetops_operation fleetops_messages %}
+{% load i18n fleetops_i18n fleetops_operation fleetops_messages %}
+{% translate "Render the MOTD again from the current templates and settings and push it to the fleet?" as regenerate_confirm %}
+{% translate "The fleet boss was handed over; only the boss can change the MOTD." as handover_text %}
 <div class="row g-3 mb-3">
   <div class="col-lg-8">
     <div class="card h-100">
-      <div class="card-header"><strong>Operation Actions</strong></div>
+      <div class="card-header"><strong>{% translate "Operation Actions" %}</strong></div>
       <div class="card-body">
         <div class="row g-2">
           {% for a in actions %}
-            <div class="col-md-4"><div class="border rounded p-2 h-100">
-              <strong>{{ a.action }}</strong><br>
+            <div class="col-md-4"><div class="border rounded p-2 h-100" data-step="{{ a.action }}">
+              <strong>{{ a.action|step_label }}</strong><br>
               <span class="badge bg-{% if a.status == 'success' %}success{% elif a.status == 'failed' %}danger{% elif a.status == 'skipped' %}secondary{% else %}warning text-dark{% endif %}">{{ a.get_status_display }}</span>
-              <span class="small text-muted">attempt {{ a.attempts }}</span>
+              <span class="small text-muted">{% blocktranslate trimmed with num=a.attempts %}attempt {{ num }}{% endblocktranslate %}</span>
               {% if a|hides_details:show_composition %}
-                <div class="small text-muted mt-1 member-step-hidden">Details are shown once the fleet has closed.</div>
+                <div class="small text-muted mt-1 member-step-hidden">{% translate "Details are shown once the fleet has closed." %}</div>
               {% else %}
-              {% if a.error_message %}<div class="small text-muted mt-1 text-break">{{ a.error_message }}</div>{% endif %}
+              {% if a.error_message %}<div class="small text-muted mt-1 text-break">{{ a.error_message|stored_text }}</div>{% endif %}
               {% if a.previous_attempts %}
-                <div class="small mt-2 border-top pt-1 step-history"><span class="text-muted">Previous attempts</span>
-                  {% for attempt in a.previous_attempts %}<div class="text-break"><span class="badge bg-{% if attempt.status == 'success' %}success{% elif attempt.status == 'failed' %}danger{% else %}secondary{% endif %}">{{ attempt.get_status_display }}</span> <span class="text-muted">{{ attempt.created_at|eve_time:"%Y-%m-%d %H:%M:%S" }}</span>{% if attempt.message %} — {{ attempt.message }}{% endif %}</div>{% endfor %}
-                  {% if a.older_attempt_count %}<div class="text-muted">and {{ a.older_attempt_count }} older attempt{{ a.older_attempt_count|pluralize }}</div>{% endif %}
+                <div class="small mt-2 border-top pt-1 step-history"><span class="text-muted">{% translate "Previous attempts" %}</span>
+                  {% for attempt in a.previous_attempts %}<div class="text-break"><span class="badge bg-{% if attempt.status == 'success' %}success{% elif attempt.status == 'failed' %}danger{% else %}secondary{% endif %}">{{ attempt.get_status_display }}</span> <span class="text-muted">{{ attempt.created_at|eve_time:"%Y-%m-%d %H:%M:%S" }}</span>{% if attempt.message %} — {{ attempt.message|stored_text }}{% endif %}</div>{% endfor %}
+                  {% if a.older_attempt_count %}<div class="text-muted">{% blocktranslate trimmed count counter=a.older_attempt_count %}and {{ counter }} older attempt{% plural %}and {{ counter }} older attempts{% endblocktranslate %}</div>{% endif %}
                 </div>
               {% endif %}
               {% endif %}
             </div></div>
-          {% empty %}<div class="text-muted">No action records.</div>{% endfor %}
+          {% empty %}<div class="text-muted">{% translate "No action records." %}</div>{% endfor %}
         </div>
         {% if can_manage %}
           <div class="mt-3 d-flex gap-2 flex-wrap">
             {% if operation.send_ping and not operation.is_manual %}
-            {% if operation.ping_channel_id %}<form method="post" action="{% url 'fleetops:retry_ping' operation.uuid %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary">Retry Ping</button></form>{% endif %}
-            <form method="post" action="{% url 'fleetops:retry_motd' operation.uuid %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary">Retry MOTD</button></form>
+            {% if operation.ping_channel_id %}<form method="post" action="{% url 'fleetops:retry_ping' operation.uuid %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary">{% translate "Retry Ping" %}</button></form>{% endif %}
+            <form method="post" action="{% url 'fleetops:retry_motd' operation.uuid %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary">{% translate "Retry MOTD" %}</button></form>
             {% if operation.status == 'active' %}
-            <form method="post" action="{% url 'fleetops:regenerate_motd' operation.uuid %}" id="regenerate-motd" onsubmit="return confirm('Render the MOTD again from the current templates and settings and push it to the fleet?');">{% csrf_token %}<button class="btn btn-sm btn-outline-primary"{% if operation.missing_reason == 'boss_handover' %} disabled title="The fleet boss was handed over; only the boss can change the MOTD."{% endif %}>Regenerate &amp; Push MOTD</button></form>
-            {% if operation.missing_reason == 'boss_handover' %}<div class="small text-muted align-self-center">The fleet boss was handed over; only the boss can change the MOTD.</div>{% endif %}
+            <form method="post" action="{% url 'fleetops:regenerate_motd' operation.uuid %}" id="regenerate-motd" onsubmit="return confirm('{{ regenerate_confirm|escapejs }}');">{% csrf_token %}<button class="btn btn-sm btn-outline-primary"{% if operation.missing_reason == 'boss_handover' %} disabled title="{{ handover_text }}"{% endif %}>{% translate "Regenerate &amp; Push MOTD" %}</button></form>
+            {% if operation.missing_reason == 'boss_handover' %}<div class="small text-muted align-self-center">{{ handover_text }}</div>{% endif %}
             {% endif %}
             {% endif %}
-            {% if operation.send_ping or operation.is_manual %}{% if not operation.srp_reference and not operation.srp_url %}<form method="post" action="{% url 'fleetops:retry_srp' operation.uuid %}">{% csrf_token %}<button class="btn btn-sm btn-outline-success">Retry SRP</button></form>{% endif %}{% endif %}
+            {% if operation.send_ping or operation.is_manual %}{% if not operation.srp_reference and not operation.srp_url %}<form method="post" action="{% url 'fleetops:retry_srp' operation.uuid %}">{% csrf_token %}<button class="btn btn-sm btn-outline-success">{% translate "Retry SRP" %}</button></form>{% endif %}{% endif %}
           </div>
         {% endif %}
       </div>
@@ -45,14 +47,14 @@
       <div class="card-header"><strong>SRP</strong></div>
       <div class="card-body">
         {% if operation.srp_url %}
-          <div class="mb-2"><span class="badge bg-success">Linked</span> <span class="text-muted">{{ operation.srp_provider }}</span></div>
-          {% if operation.srp_reference %}<div class="small text-muted mb-2">Reference: {{ operation.srp_reference }}</div>{% endif %}
-          <a class="btn btn-sm btn-success" href="{{ operation.srp_url }}" target="_blank" rel="noopener">Open SRP Fleet</a>
+          <div class="mb-2"><span class="badge bg-success">{% translate "Linked" %}</span> <span class="text-muted">{{ operation.srp_provider }}</span></div>
+          {% if operation.srp_reference %}<div class="small text-muted mb-2">{% blocktranslate trimmed with reference=operation.srp_reference %}Reference: {{ reference }}{% endblocktranslate %}</div>{% endif %}
+          <a class="btn btn-sm btn-success" href="{{ operation.srp_url }}" target="_blank" rel="noopener">{% translate "Open SRP Fleet" %}</a>
         {% elif operation.srp_error %}
-          <span class="badge bg-warning text-dark">Unavailable</span>
-          <div class="small text-muted mt-2">{{ operation.srp_error }}</div>
+          <span class="badge bg-warning text-dark">{% translate "Unavailable" %}</span>
+          <div class="small text-muted mt-2">{{ operation.srp_error|stored_text }}</div>
         {% else %}
-          <span class="text-muted">No SRP link was created for this operation.</span>
+          <span class="text-muted">{% translate "No SRP link was created for this operation." %}</span>
         {% endif %}
       </div>
     </div>

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """FC lead review: who approves, the status of new entries and the count of waiting entries."""
 
 from django.contrib.auth.models import AnonymousUser

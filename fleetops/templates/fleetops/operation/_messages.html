@@ -1,8 +1,9 @@
-{% load fleetops_messages fleetops_operation %}
-<div class="small text-muted mb-2" id="ping-snapshot">Ping channel: {{ operation.ping_channel_name|default:"None (copy only)" }} · Mention: {{ operation|ping_mention_label }}</div>
+{% load i18n fleetops_messages fleetops_operation %}
+{% translate "None (copy only)" as no_channel_text %}
+<div class="small text-muted mb-2" id="ping-snapshot">{% blocktranslate trimmed with channel=operation.ping_channel_name|default:no_channel_text mention=operation|ping_mention_label %}Ping channel: {{ channel }} · Mention: {{ mention }}{% endblocktranslate %}</div>
 <div class="row g-3">
   {% with ping_shown=operation.ping_text|ping_display:operation %}
-  <div class="col-lg-6"><div class="d-flex justify-content-between"><strong>Ping</strong><button type="button" class="btn btn-sm btn-outline-secondary copy" data-id="{% if ping_shown != operation.ping_text %}ping-copy{% else %}ping-text{% endif %}">Copy Ping</button></div><pre id="ping-text" class="preview-box">{{ ping_shown }}</pre>{% if ping_shown != operation.ping_text %}<pre id="ping-copy" class="d-none">{{ operation.ping_text }}</pre>{% endif %}</div>
+  <div class="col-lg-6"><div class="d-flex justify-content-between"><strong>{% translate "Ping" %}</strong><button type="button" class="btn btn-sm btn-outline-secondary copy" data-id="{% if ping_shown != operation.ping_text %}ping-copy{% else %}ping-text{% endif %}">{% translate "Copy Ping" %}</button></div><pre id="ping-text" class="preview-box">{{ ping_shown }}</pre>{% if ping_shown != operation.ping_text %}<pre id="ping-copy" class="d-none">{{ operation.ping_text }}</pre>{% endif %}</div>
   {% endwith %}
-  <div class="col-lg-6"><div class="d-flex justify-content-between"><strong>MOTD</strong><button type="button" class="btn btn-sm btn-outline-secondary copy" data-id="motd-text">Copy MOTD</button></div><pre id="motd-text" class="preview-box">{{ operation.motd_text }}</pre></div>
+  <div class="col-lg-6"><div class="d-flex justify-content-between"><strong>MOTD</strong><button type="button" class="btn btn-sm btn-outline-secondary copy" data-id="motd-text">{% translate "Copy MOTD" %}</button></div><pre id="motd-text" class="preview-box">{{ operation.motd_text }}</pre></div>
 </div>

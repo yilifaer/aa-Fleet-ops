@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The PAP history pages: month filter, paging that keeps the filter, EVE time and the export links."""
 
 import csv

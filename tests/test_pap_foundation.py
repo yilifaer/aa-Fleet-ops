@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Models, defaults and ESI lookups the PAP rules build on."""
 
 from decimal import Decimal

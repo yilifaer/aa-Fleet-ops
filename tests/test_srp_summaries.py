@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """SRP summaries: personal, corporation, FC and alliance by EVE month of the loss."""
 
 from datetime import datetime, timezone as dt_timezone

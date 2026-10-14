@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Members, inactive members, leaderboard and member details of the statistics."""
 
 from django.contrib.auth import get_user_model
@@ -7,6 +10,7 @@ from django.core.paginator import Paginator
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
+from django.utils.translation import gettext as _
 
 from fleetops.models import FleetOpsSettings
 from fleetops.services import members as member_stats
@@ -93,7 +97,7 @@ def _members_page(request, *, scope, corporation_id, corporation_name):
             preserve=MEMBER_FILTERS if scope == "alliance" else ("status", "q", "sort"),
             scope=scope,
             status=status,
-            title="Inactive members" if status == "inactive" else "Members",
+            title=_("Inactive members") if status == "inactive" else _("Members"),
             active_tab="inactive" if status == "inactive" else "members",
             own_corporation=scope == "own_corporation",
             tab_corporation_id=None if scope == "own_corporation" else corporation_id,
@@ -151,7 +155,7 @@ def corporation_members_view(request, corporation_id=None):
         request,
         scope="corporation",
         corporation_id=corporation_id,
-        corporation_name=name or f"Corporation {corporation_id}",
+        corporation_name=name or _("Corporation %(id)s") % {"id": corporation_id},
     )
 
 
@@ -228,12 +232,19 @@ def leaderboard_view(request):
     boards = []
     if access["alliance"]:
         board = member_stats.leaderboard(year, month, viewer=request.user, settings_obj=settings_obj)
-        boards.append(_board(request, board, f"Alliance: top {board.size}", can_open))
+        boards.append(_board(request, board, _("Alliance: top %(size)s") % {"size": board.size}, can_open))
     if corporation_id is not None:
         board = member_stats.leaderboard(
             year, month, corporation_id=corporation_id, viewer=request.user, settings_obj=settings_obj
         )
-        boards.append(_board(request, board, f"{board.scope_label}: top {board.size}", can_open))
+        boards.append(
+            _board(
+                request,
+                board,
+                _("%(scope)s: top %(size)s") % {"scope": board.scope_label, "size": board.size},
+                can_open,
+            )
+        )
     # The corporation tabs belong to the statistics managers; their by-id pages need view_all_stats.
     managers = request.user.has_perm(VIEW_ALL_STATS) or request.user.has_perm(VIEW_CORP_STATS)
     tab_corporation_id = corporation_id if request.user.has_perm(VIEW_ALL_STATS) else None

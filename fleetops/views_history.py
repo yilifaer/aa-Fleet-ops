@@ -1,9 +1,14 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """PAP history pages: personal, corporation and alliance."""
 
 from django.contrib.auth.decorators import permission_required
 from django.core.paginator import Paginator
 from django.db.models import Sum
 from django.http import Http404
+from django.utils.translation import gettext as _
+from django.utils.translation import pgettext
 
 from fleetops.services.attendance_history import history_month, history_queryset, retention_days
 from fleetops.services.history import retention_cutoff
@@ -71,7 +76,8 @@ def _history_page(request, scope, title, scope_label, **filters):
 
 @permission_required("fleetops.basic_access", raise_exception=True)
 def attendance_history_me(request):
-    return _history_page(request, "me", "My PAP History", "Personal", user=request.user)
+    personal = pgettext("PAP history scope", "Personal")
+    return _history_page(request, "me", _("My PAP History"), personal, user=request.user)
 
 
 @permission_required("fleetops.view_corp_stats", raise_exception=True)
@@ -83,12 +89,12 @@ def attendance_history_corporation(request):
     return _history_page(
         request,
         "corporation",
-        f"{corporation_name or 'Corporation'} PAP History",
-        "Corporation",
+        _("%(name)s PAP History") % {"name": corporation_name or pgettext("FleetOps", "Corporation")},
+        pgettext("FleetOps", "Corporation"),
         corporation_id=corporation_id,
     )
 
 
 @permission_required("fleetops.view_all_stats", raise_exception=True)
 def attendance_history_alliance(request):
-    return _history_page(request, "alliance", "Alliance PAP History", "Alliance")
+    return _history_page(request, "alliance", _("Alliance PAP History"), pgettext("FleetOps", "Alliance"))

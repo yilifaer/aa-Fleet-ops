@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Who a Discord ping notifies, and the Discord payload rules that keep it exact.
 
 A ping only notifies the targets the FC selected: ``allowed_mentions`` lists exactly those, and
@@ -8,7 +11,9 @@ import re
 from dataclasses import dataclass
 
 from django.core.exceptions import ValidationError
+from django.utils.translation import gettext, gettext_lazy, pgettext
 
+from fleetops import texts
 from fleetops.models import MAX_DATABASE_ID, PingRole
 
 NONE, EVERYONE, HERE, ROLES = "none", "everyone", "here", "roles"
@@ -22,7 +27,7 @@ SUPPRESS_EMBEDS = 4
 
 # Form values: "none", "everyone", "here" and "role:<PingRole pk>".
 ROLE_CHOICE_PREFIX = "role:"
-EXCLUSIVE_CHOICE_ERROR = "@everyone, @here and No ping cannot be combined with other targets."
+EXCLUSIVE_CHOICE_ERROR = gettext_lazy("@everyone, @here and No ping cannot be combined with other targets.")
 
 ROLE_MENTION_RE = re.compile(r"<@&(\d{1,20})>")
 _MASS_MENTION_RE = re.compile(r"@(everyone|here)")
@@ -101,7 +106,7 @@ def selection_from_choices(values) -> MentionSelection:
     for value in choices:
         pk = value[len(ROLE_CHOICE_PREFIX) :] if value.startswith(ROLE_CHOICE_PREFIX) else ""
         if not (pk.isascii() and pk.isdigit() and int(pk) <= MAX_DATABASE_ID):
-            raise ValidationError("Unknown ping target %(value)s.", code="invalid", params={"value": value})
+            raise ValidationError(gettext("Unknown ping target %(value)s."), code="invalid", params={"value": value})
         pks.append(int(pk))
     # Configured order (sort order, then name), not the order the boxes were ticked in.
     roles = list(PingRole.objects.filter(pk__in=pks))
@@ -110,10 +115,12 @@ def selection_from_choices(values) -> MentionSelection:
     for pk in pks:
         role = by_pk.get(pk)
         if role is None:
-            errors.append(ValidationError("A selected role is no longer available.", code="unavailable"))
+            errors.append(ValidationError(gettext("A selected role is no longer available."), code="unavailable"))
         elif not role.is_active:
             errors.append(
-                ValidationError("Role %(name)s is no longer available.", code="unavailable", params={"name": role.name})
+                ValidationError(
+                    gettext("Role %(name)s is no longer available."), code="unavailable", params={"name": role.name}
+                )
             )
     if errors:
         raise ValidationError(errors)
@@ -158,21 +165,22 @@ def _allowed_role_ids(channel) -> set[str]:
 def validate_for_channel(selection, channel) -> list[str]:
     """Problems that stop this selection from being sent to ``channel``; [] when it may be sent.
 
-    Without a channel the ping is only copied, so any selection is fine.
+    Without a channel the ping is only copied, so any selection is fine. The problems are stored messages
+    (English); the form and the fleet page show them through ``translate_stored``.
     """
     if channel is None:
         return []
     name = _channel_name(channel)
     if selection.mode == EVERYONE:
-        return [] if getattr(channel, "allow_everyone", False) else [f"@everyone is not allowed in {name}."]
+        return [] if getattr(channel, "allow_everyone", False) else [texts.CHANNEL_NO_EVERYONE(name=name)]
     if selection.mode == HERE:
-        return [] if getattr(channel, "allow_here", False) else [f"@here is not allowed in {name}."]
+        return [] if getattr(channel, "allow_here", False) else [texts.CHANNEL_NO_HERE(name=name)]
     if selection.mode != ROLES or not selection.roles:
         return []
 
     errors = []
     if len(selection.roles) > MAX_ROLE_MENTIONS:
-        errors.append(f"Select at most {MAX_ROLE_MENTIONS} roles; Discord cannot mention more in one message.")
+        errors.append(texts.TOO_MANY_ROLES(limit=MAX_ROLE_MENTIONS))
     active = PingRole.objects.filter(role_id__in=_database_ids(selection.roles), is_active=True)
     active_ids = {str(role_id) for role_id in active.values_list("role_id", flat=True)}
     # No allowed roles configured means every active role may be mentioned.
@@ -180,9 +188,9 @@ def validate_for_channel(selection, channel) -> list[str]:
     for role in selection.roles:
         label = role.name or role.id
         if role.id not in active_ids:
-            errors.append(f"Role {label} is no longer available.")
+            errors.append(texts.ROLE_UNAVAILABLE(name=label))
         elif allowed_ids and role.id not in allowed_ids:
-            errors.append(f"Role {label} is not allowed in {name}.")
+            errors.append(texts.ROLE_NOT_ALLOWED(name=label, channel=name))
     return errors
 
 
@@ -192,10 +200,15 @@ def role_delete_refusal(role) -> str:
     if not channels:
         return ""
     # Removing the last allowed role would let the channel ping every active role.
-    return (
-        f"This role is allowed in the ping channels {', '.join(channels)}. Remove it from those channels "
+    return gettext(
+        "This role is allowed in the ping channels %(channels)s. Remove it from those channels "
         "first, or disable it instead."
-    )
+    ) % {"channels": ", ".join(channels)}
+
+
+def _unnamed_role(role) -> str:
+    # A role without a name is called by its ID; the word is part of the ping, so it is the site language.
+    return pgettext("discord broadcast", "role %(id)s") % {"id": role.id}
 
 
 def mention_text(selection, *, display=False) -> str:
@@ -206,20 +219,22 @@ def mention_text(selection, *, display=False) -> str:
         return "@here"
     if selection.mode == ROLES:
         if display:
-            return " ".join(f"@{role.name or 'role ' + role.id}" for role in selection.roles)
+            with texts.outgoing_language():
+                return " ".join("@" + (role.name or _unnamed_role(role)) for role in selection.roles)
         return " ".join(f"<@&{role.id}>" for role in selection.roles)
     return ""
 
 
 def target_label(selection) -> str:
-    """Who the ping went to, in words, for the message footer."""
-    if selection.mode == EVERYONE:
-        return "all"
-    if selection.mode == HERE:
-        return "online members"
-    if selection.mode == ROLES and selection.roles:
-        return ", ".join(role.name or f"role {role.id}" for role in selection.roles)
-    return "this channel"
+    """Who the ping went to, in words, for the message footer (in the site language)."""
+    with texts.outgoing_language():
+        if selection.mode == EVERYONE:
+            return pgettext("discord broadcast", "all")
+        if selection.mode == HERE:
+            return pgettext("discord broadcast", "online members")
+        if selection.mode == ROLES and selection.roles:
+            return ", ".join(role.name or _unnamed_role(role) for role in selection.roles)
+        return pgettext("discord broadcast", "this channel")
 
 
 def allowed_mentions(selection) -> dict:

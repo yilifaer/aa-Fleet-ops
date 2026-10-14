@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Background jobs that change a fleet step by step, and the lock that keeps fleet changes apart.
 
 Structure templates, bulk moves, bulk invites and big kick batches run as jobs in Celery, so web
@@ -22,6 +25,7 @@ from django.utils.module_loading import import_string
 from esi.exceptions import ESIBucketLimitException, ESIErrorLimitException
 from kombu.exceptions import OperationalError as QueueError
 
+from fleetops import texts
 from fleetops.models import FleetOperation
 from fleetops.providers.esi import FleetESIError, describe_esi_failure
 from fleetops.services.audit import audit
@@ -55,11 +59,12 @@ SELF_RECORDING_KINDS = frozenset({"kick"})
 QUEUED, RUNNING, DONE, FAILED = "queued", "running", "done", "failed"
 ACTIVE_STATES = (QUEUED, RUNNING)
 
-STOPPED_UNEXPECTEDLY = "The job stopped unexpectedly."
-NOT_STARTED = "The background worker did not start the job."
-WORKER_DOWN = "The background worker is not available. Try again later."
-FLEET_MISSING = "The fleet no longer exists."
-NOT_ALLOWED = "You can no longer change this fleet."
+# Stored messages (English); the pages show them through ``translate_stored``.
+STOPPED_UNEXPECTEDLY = texts.JOB_STOPPED_UNEXPECTEDLY()
+NOT_STARTED = texts.JOB_NOT_STARTED()
+WORKER_DOWN = texts.JOB_WORKER_DOWN()
+FLEET_MISSING = texts.JOB_FLEET_MISSING()
+NOT_ALLOWED = texts.JOB_NOT_ALLOWED()
 # Failed ESI calls after which a job stops instead of going on with its next step.
 STOP_CODES = frozenset(
     {"FLEET_WRITE_FORBIDDEN", "FLEET_WRITE_LIMITED", "MISSING_WRITE_SCOPE", "MISSING_READ_SCOPE"}
@@ -139,7 +144,7 @@ def running_job(operation_id) -> dict | None:
     holder = cache.get(_lock_key(operation_id))
     if holder and (job is None or job["id"] != holder):
         # The cache lost the job's progress; its lock still holds the fleet until it expires.
-        return {"id": holder, "label": "the running job", "state": RUNNING}
+        return {"id": holder, "label": texts.THE_RUNNING_JOB(), "state": RUNNING}
     return None
 
 
@@ -254,12 +259,13 @@ def ensure_writable(job, operation, actor) -> None:
 
 
 def job_summary(job, error="") -> str:
-    summary = f"{job['label']}: {job['done']} of {job['total']} done"
+    values = {"label": job["label"], "done": job["done"], "total": job["total"]}
     if job["failed"]:
-        summary += f", {job['failed']} failed"
-    summary += "."
+        summary = texts.JOB_SUMMARY_FAILED(failed=job["failed"], **values)
+    else:
+        summary = texts.JOB_SUMMARY(**values)
     if error:
-        summary += f" Stopped: {error}"
+        summary += " " + texts.STOPPED(error=error)
     return summary
 
 

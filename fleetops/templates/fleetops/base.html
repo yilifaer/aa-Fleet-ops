@@ -1,35 +1,48 @@
 {% extends "allianceauth/base-bs5.html" %}
-{% load static %}
+{% load i18n static fleetops_i18n %}
 {% block page_title %}FleetOps{% endblock %}
 {% block header_nav_brand %}FleetOps{% endblock %}
 {% block header_nav_collapse_left %}
 <ul class="navbar-nav">
-  <li class="nav-item"><a class="nav-link" href="{% url 'fleetops:dashboard' %}">Dashboard</a></li>
-  {% if perms.fleetops.start_fleet %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:start_fleet' %}">Start Fleet</a></li>{% endif %}
-  <li class="nav-item"><a class="nav-link" href="{% url 'fleetops:fleet_operations' %}">Fleets</a></li>
-  {% if perms.fleetops.create_manual_fleet %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:manual_fleet' %}">Add Manual Fleet</a></li>{% endif %}
-  <li class="nav-item"><a class="nav-link" href="{% url 'fleetops:my_statistics' %}">My Statistics</a></li>
-  <li class="nav-item"><a class="nav-link" href="{% url 'fleetops:attendance_history_me' %}">My History</a></li>
-  {% if perms.fleetops.manage_attendance %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:manual_attendance' %}">Manual Attendance</a></li>{% endif %}
-  {% if perms.fleetops.manage_fleets %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:approval_queue' %}">Approvals{% if pending_approval_count %} ({{ pending_approval_count }}){% endif %}</a></li>{% endif %}
-  {% if leaderboard_visible %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:leaderboard' %}">Leaderboard</a></li>{% endif %}
-  {% if perms.fleetops.view_corp_stats %}<li class="nav-item dropdown"><a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">Corporation</a><ul class="dropdown-menu"><li><a class="dropdown-item" href="{% url 'fleetops:corporation_statistics' %}">Statistics</a></li><li><a class="dropdown-item" href="{% url 'fleetops:corporation_members' %}">Members</a></li><li><a class="dropdown-item" href="{% url 'fleetops:corporation_members' %}?status=inactive">Inactive</a></li><li><a class="dropdown-item" href="{% url 'fleetops:attendance_history_corporation' %}">History</a></li></ul></li>{% endif %}
-  {% if perms.fleetops.view_all_stats %}<li class="nav-item dropdown"><a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">Alliance</a><ul class="dropdown-menu"><li><a class="dropdown-item" href="{% url 'fleetops:all_corporation_statistics' %}">All Corps</a></li><li><a class="dropdown-item" href="{% url 'fleetops:alliance_members' %}">Members</a></li><li><a class="dropdown-item" href="{% url 'fleetops:alliance_members' %}?status=inactive">Inactive</a></li><li><a class="dropdown-item" href="{% url 'fleetops:all_fc_statistics' %}">FC Stats</a></li><li><a class="dropdown-item" href="{% url 'fleetops:attendance_history_alliance' %}">PAP History</a></li></ul></li>{% endif %}
+  <li class="nav-item"><a class="nav-link" href="{% url 'fleetops:dashboard' %}">{% translate "Dashboard" context "FleetOps" %}</a></li>
+  {% if perms.fleetops.start_fleet %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:start_fleet' %}">{% translate "Start Fleet" %}</a></li>{% endif %}
+  <li class="nav-item"><a class="nav-link" href="{% url 'fleetops:fleet_operations' %}">{% translate "Fleets" %}</a></li>
+  {% if perms.fleetops.create_manual_fleet %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:manual_fleet' %}">{% translate "Add Manual Fleet" %}</a></li>{% endif %}
+  <li class="nav-item"><a class="nav-link" href="{% url 'fleetops:my_statistics' %}">{% translate "My Statistics" %}</a></li>
+  <li class="nav-item"><a class="nav-link" href="{% url 'fleetops:attendance_history_me' %}">{% translate "My History" %}</a></li>
+  {% if perms.fleetops.manage_attendance %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:manual_attendance' %}">{% translate "Manual PAP" %}</a></li>{% endif %}
+  {% if perms.fleetops.manage_fleets %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:approval_queue' %}">{% translate "Approvals" %}{% if pending_approval_count %} ({{ pending_approval_count }}){% endif %}</a></li>{% endif %}
+  {% if leaderboard_visible %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:leaderboard' %}">{% translate "Leaderboard" %}</a></li>{% endif %}
+  {% if perms.fleetops.view_corp_stats %}<li class="nav-item dropdown"><a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">{% translate "Corporation" context "FleetOps" %}</a><ul class="dropdown-menu"><li><a class="dropdown-item" href="{% url 'fleetops:corporation_statistics' %}">{% translate "Statistics" %}</a></li><li><a class="dropdown-item" href="{% url 'fleetops:corporation_members' %}">{% translate "Members" %}</a></li><li><a class="dropdown-item" href="{% url 'fleetops:corporation_members' %}?status=inactive">{% translate "Inactive" %}</a></li><li><a class="dropdown-item" href="{% url 'fleetops:attendance_history_corporation' %}">{% translate "History" %}</a></li></ul></li>{% endif %}
+  {% if perms.fleetops.view_all_stats %}<li class="nav-item dropdown"><a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">{% translate "Alliance" context "FleetOps" %}</a><ul class="dropdown-menu"><li><a class="dropdown-item" href="{% url 'fleetops:all_corporation_statistics' %}">{% translate "All Corps" %}</a></li><li><a class="dropdown-item" href="{% url 'fleetops:alliance_members' %}">{% translate "Members" %}</a></li><li><a class="dropdown-item" href="{% url 'fleetops:alliance_members' %}?status=inactive">{% translate "Inactive" %}</a></li><li><a class="dropdown-item" href="{% url 'fleetops:all_fc_statistics' %}">{% translate "FC Stats" %}</a></li><li><a class="dropdown-item" href="{% url 'fleetops:attendance_history_alliance' %}">{% translate "PAP History" %}</a></li></ul></li>{% endif %}
   {% if srp_nav.visible %}<li class="nav-item dropdown"><a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">SRP{% if srp_nav.pending_count %} <span class="badge bg-danger">{{ srp_nav.pending_count }}</span>{% endif %}</a><ul class="dropdown-menu">
-    {% if srp_nav.request %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_home' %}">My SRP</a></li>{% endif %}
-    {% if srp_nav.review %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_review' %}">Review{% if srp_nav.pending_count %} <span class="badge bg-danger">{{ srp_nav.pending_count }}</span>{% endif %}</a></li><li><a class="dropdown-item" href="{% url 'fleetops:srp_payments' %}">Payments</a></li>{% endif %}
+    {% if srp_nav.request %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_home' %}">{% translate "My SRP" %}</a></li>{% endif %}
+    {% if srp_nav.review %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_review' %}">{% translate "Review" %}{% if srp_nav.pending_count %} <span class="badge bg-danger">{{ srp_nav.pending_count }}</span>{% endif %}</a></li><li><a class="dropdown-item" href="{% url 'fleetops:srp_payments' %}">{% translate "Payments" %}</a></li>{% endif %}
     {% if srp_nav.summary %}
-    {% if perms.fleetops.manage_srp or perms.fleetops.view_all_stats %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_summary' %}">Summary</a></li>{% endif %}
-    {% if perms.fleetops.view_corp_stats %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_summary_own_corporation' %}">Corporation</a></li>{% endif %}
-    {% if perms.fleetops.start_fleet or perms.fleetops.manage_own_fleet or perms.fleetops.manage_fleets or perms.fleetops.create_manual_fleet %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_summary_own_fc' %}">My fleets</a></li>{% endif %}
+    {% if perms.fleetops.manage_srp or perms.fleetops.view_all_stats %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_summary' %}">{% translate "Summary" context "FleetOps" %}</a></li>{% endif %}
+    {% if perms.fleetops.view_corp_stats %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_summary_own_corporation' %}">{% translate "Corporation" context "FleetOps" %}</a></li>{% endif %}
+    {% if perms.fleetops.start_fleet or perms.fleetops.manage_own_fleet or perms.fleetops.manage_fleets or perms.fleetops.create_manual_fleet %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_summary_own_fc' %}">{% translate "My fleets" %}</a></li>{% endif %}
     {% endif %}
   </ul></li>{% endif %}
-  {% if show_incentives %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:incentive_review' %}">FC Incentive</a></li>{% endif %}
-  {% if perms.fleetops.manage_configuration %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:configuration_index' %}">Administration</a></li>{% endif %}
-  {% if perms.fleetops.view_audit_log %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:audit_log' %}">Audit</a></li>{% endif %}
+  {% if show_incentives %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:incentive_review' %}">{% translate "FC Incentive" %}</a></li>{% endif %}
+  {% if perms.fleetops.manage_configuration %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:configuration_index' %}">{% translate "Administration" context "FleetOps" %}</a></li>{% endif %}
+  {% if perms.fleetops.view_audit_log %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:audit_log' %}">{% translate "Audit" %}</a></li>{% endif %}
 </ul>
 {% endblock %}
 {% block content %}
-<link rel="stylesheet" href="{% static 'fleetops/fleetops.css' %}">
+<link rel="stylesheet" href="{% static 'fleetops/fleetops.css' %}?v={% fleetops_version %}">
+{% get_current_language as FLEETOPS_LANGUAGE %}
+<script src="{% url 'fleetops:jsi18n' %}?l={{ FLEETOPS_LANGUAGE }}&amp;v={% fleetops_version %}"></script>
+<script>
+if (typeof window.gettext !== 'function') {
+  // The catalog did not load: keep the pages working in English.
+  window.gettext = s => s;
+  window.gettext_noop = s => s;
+  window.ngettext = (s, p, n) => n === 1 ? s : p;
+  window.pgettext = (c, s) => s;
+  window.npgettext = (c, s, p, n) => n === 1 ? s : p;
+  window.interpolate = (f, o, named) => named ? f.replace(/%\((\w+)\)s/g, (m, k) => String(o[k])) : f.replace(/%s/g, () => String(o.shift()));
+}
+</script>
 <div class="container-fluid py-3 fleetops">{% block fleetops_content %}{% endblock %}</div>
 {% endblock %}

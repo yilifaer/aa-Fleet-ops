@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+// SPDX-License-Identifier: GPL-3.0-only
+
 // FleetOps SRP page helpers: copy buttons, selection totals, the approve form and a guard against double clicks.
 // Every form works without this script; it only makes the pages quicker to use.
 (() => {
@@ -55,7 +58,7 @@
 
   function showCopied(button, ok) {
     if (button.dataset.srpLabel === undefined) button.dataset.srpLabel = button.textContent;
-    button.textContent = ok ? 'Copied' : 'Copy failed';
+    button.textContent = ok ? gettext('Copied') : gettext('Copy failed');
     window.clearTimeout(Number(button.dataset.srpTimer || 0));
     button.dataset.srpTimer = String(window.setTimeout(() => {
       button.textContent = button.dataset.srpLabel;
@@ -134,7 +137,9 @@
       if (!hint) return;
       const needed = differs() && !reason.value.trim();
       hint.textContent = needed
-        ? (approved === null ? 'Reason required: the amount differs from the suggested amount.' : 'Reason required: say why the amount changes.')
+        ? (approved === null
+          ? gettext('Reason required: the amount differs from the suggested amount.')
+          : gettext('Reason required: say why the amount changes.'))
         : plainHint;
       hint.classList.toggle('text-danger', needed);
       reason.classList.toggle('is-invalid', needed);

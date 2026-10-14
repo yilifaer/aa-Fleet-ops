@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """PAP links: creating and revoking them, registering characters and PAP-link fleets."""
 
 from datetime import timedelta

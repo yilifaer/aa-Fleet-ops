@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Query budgets of the statistics pages and exports.
 
 A page or file costs the same number of queries whatever the number of corporations, members, fleets and
@@ -25,6 +28,7 @@ from . import factories as f
 UTC = dt_timezone.utc
 NOW = datetime(2026, 4, 14, 12, 0, tzinfo=UTC)
 MONTH = {"year": 2026, "month": 3}
+APRIL_FIRST = datetime(2026, 4, 1, tzinfo=UTC)
 
 ALL_STATS = f.MEMBER_PERMS + ["fleetops.view_all_stats"]
 FLEET_LEAD = ALL_STATS + ["fleetops.view_all_fleets", "fleetops.manage_incentives"]
@@ -50,6 +54,8 @@ class Dataset:
         self.corporations = []
         self.members = []
         self.fcs = []
+        # Users who registered after the measured month: not in its figures, but their pages open.
+        self.late = []
         self.types = [f.fleet_type("StratOp", "1.00"), f.fleet_type("Roam", "0.50")]
 
     def next(self):
@@ -64,6 +70,8 @@ class Dataset:
             for _ in range(members_each):
                 member = f.member(f"member{self.next()}", corporation=corporation, perms=f.MEMBER_PERMS)
                 self.members.append(member)
+            late = f.member(f"late{self.next()}", corporation=corporation, perms=f.MEMBER_PERMS, joined=APRIL_FIRST)
+            self.late.append(late)
         for _ in range(fcs):
             number = self.next()
             self.fcs.append(f.member(f"fc{number}", perms=f.FC_PERMS, main_name=f"Budget FC {number}"))
@@ -74,7 +82,7 @@ class Dataset:
             operation = f.closed_operation(
                 fc, utc(1 + index % 27, 10 + index % 12), type_obj=self.types[index % len(self.types)]
             )
-            for pilot in self.members[index % 2 :: 2]:
+            for pilot in self.members[index % 2 :: 2] + self.late[index % 2 :: 2]:
                 f.add_attendance(operation, pilot, value=1 + index % 3)
         return self
 
@@ -136,6 +144,7 @@ class StatisticsQueryBudgetTests(TestCase):
             ("leaderboard of the manager", self.statsmgr, route("leaderboard"), MONTH, 37),
             ("member detail", self.statsmgr, route("member_detail", self.pilot.pk), MONTH, 42),
             ("member detail of the corporation", self.corpmgr, route("member_detail", self.pilot.pk), MONTH, 42),
+            ("member detail of a later registration", self.statsmgr, route("member_detail", data.late[0].pk), MONTH, 42),
             ("history", self.pilot, route("attendance_history_me"), MONTH, 34),
             ("corporation history", self.corpmgr, route("attendance_history_corporation"), MONTH, 34),
             ("alliance history", self.statsmgr, route("attendance_history_alliance"), MONTH, 34),

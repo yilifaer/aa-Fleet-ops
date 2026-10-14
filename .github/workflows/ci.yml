@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   tests:
     name: Tests (Python ${{ matrix.python-version }}, AA ${{ matrix.allianceauth }}, ${{ matrix.database }})
@@ -88,15 +91,47 @@ jobs:
       - name: Coverage report
         run: coverage report --skip-covered --sort=cover
 
+  translations:
+    name: Translations
+    runs-on: ubuntu-latest
+    # Contributors do not have to write Chinese, so a gap only warns on branches and pull requests.
+    # The release build runs the same check and stops on any gap.
+    continue-on-error: ${{ github.ref_type != 'tag' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install gettext and Django
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gettext
+          python -m pip install --upgrade pip "Django>=5.2,<6"
+
+      - name: Update the catalogs, look for gaps and for catalogs that were not compiled
+        run: python tools/check_translations.py
+
   build:
     name: Build package
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: Build wheel and sdist
         run: |
-          python -m pip install --upgrade pip build
+          python -m pip install --upgrade pip build twine
           python -m build
+
+      - name: Check the distributions
+        run: |
+          twine check --strict dist/*
+          python tools/check_dist.py dist
+
+      - name: Check the links in the documentation
+        run: python tools/check_docs.py

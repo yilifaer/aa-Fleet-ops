@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+// SPDX-License-Identifier: GPL-3.0-only
+
 // Fleet tab: state polling, fragment swaps and the shared action handler (window.FleetOpsFleet).
 //
 // The server renders every piece of HTML (escaped there); this script only swaps those fragments
@@ -38,9 +41,9 @@
   const MAX_DELAY_SECONDS = 60;
   const FLASH_SECONDS = 8;
   const FLASHES_SHOWN = 3;
-  const SESSION_ENDED = 'Your session has expired — reload the page.';
-  const STILL_WAITING = 'Still waiting for ESI — the result will show after the next refresh.';
-  const NOT_SENT = 'The request did not reach the server. Check your connection and try again.';
+  const SESSION_ENDED = gettext('Your session has expired — reload the page.');
+  const STILL_WAITING = gettext('Still waiting for ESI — the result will show after the next refresh.');
+  const NOT_SENT = gettext('The request did not reach the server. Check your connection and try again.');
 
   const operation = root.dataset.operation || '';
   const stateUrl = root.dataset.stateUrl;
@@ -114,10 +117,12 @@
 
   function ago(seconds) {
     if (seconds < 120) {
-      return `${seconds} s ago`;
+      return interpolate(gettext('%(count)s s ago'), { count: seconds }, true);
     }
     const minutes = Math.floor(seconds / 60);
-    return minutes < 120 ? `${minutes} min ago` : `${Math.floor(minutes / 60)} h ago`;
+    return minutes < 120
+      ? interpolate(gettext('%(count)s min ago'), { count: minutes }, true)
+      : interpolate(gettext('%(count)s h ago'), { count: Math.floor(minutes / 60) }, true);
   }
 
   function parseTime(value) {
@@ -470,7 +475,7 @@
     if (!element) {
       return;
     }
-    element.textContent = `No connection to the server — trying again in ${Math.round(nextDelay() / 1000)} s.`;
+    element.textContent = interpolate(gettext('No connection to the server — trying again in %(seconds)s s.'), { seconds: Math.round(nextDelay() / 1000) }, true);
     element.classList.remove('d-none');
   }
 
@@ -490,14 +495,14 @@
       const link = document.createElement('a');
       link.href = '';
       link.className = 'alert-link ms-1';
-      link.textContent = 'Reload';
+      link.textContent = gettext('Reload');
       link.addEventListener('click', (event) => {
         event.preventDefault();
         window.location.reload();
       });
       alert.insertBefore(link, alert.lastChild);
     }
-    showReloadHint('Session expired — reload page');
+    showReloadHint(gettext('Session expired — reload page'));
   }
 
   async function poll() {
@@ -573,9 +578,9 @@
         throw new FleetError(SESSION_ENDED, 'warning');
       }
       if (response.status === 401 || response.status === 403) {
-        throw new FleetError('This was refused. Your session may have expired — reload the page.', 'error');
+        throw new FleetError(gettext('This was refused. Your session may have expired — reload the page.'), 'error');
       }
-      throw new FleetError(`The server answered with HTTP ${response.status}. Try again in a moment.`, 'error');
+      throw new FleetError(interpolate(gettext('The server answered with HTTP %(status)s. Try again in a moment.'), { status: response.status }, true), 'error');
     }
     const answer = await response.json();
     if (answer && answer.state) {
@@ -628,7 +633,7 @@
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'btn-close';
-    close.setAttribute('aria-label', 'Close');
+    close.setAttribute('aria-label', gettext('Close'));
     close.addEventListener('click', () => alert.remove());
     alert.appendChild(close);
     area.prepend(alert);

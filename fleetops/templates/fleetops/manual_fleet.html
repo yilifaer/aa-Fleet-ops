@@ -1,12 +1,12 @@
 {% extends "fleetops/base.html" %}
-{% load tz %}
+{% load i18n static fleetops_i18n tz %}
 {% block fleetops_content %}
 <div class="d-flex justify-content-between align-items-start mb-3 gap-2 flex-wrap">
-  <div><h2 class="mb-1">Add Manual Fleet</h2><div class="text-muted">Create a historical fleet record without ESI tracking or a Discord ping.</div></div>
-  <a class="btn btn-outline-secondary" href="{% url 'fleetops:fleet_operations' %}">Fleet Archive</a>
+  <div><h2 class="mb-1">{% translate "Add Manual Fleet" %}</h2><div class="text-muted">{% translate "Create a historical fleet record without ESI tracking or a Discord ping." %}</div></div>
+  <a class="btn btn-outline-secondary" href="{% url 'fleetops:fleet_operations' %}">{% translate "Fleet Archive" %}</a>
 </div>
-<div class="alert alert-info">The current user's main character is recorded as FC. After creating the fleet, use <strong>Manual Attendance</strong> or the fleet Attendance tab to add participants/credits.</div>
-{% if needs_approval %}<div class="alert alert-warning" id="manual-fleet-approval">A manual fleet and its PAP count in statistics and incentives once an FC lead approves them.</div>{% endif %}
+<div class="alert alert-info">{% blocktranslate trimmed %}The current user's main character is recorded as FC. After creating the fleet, use <strong>Manual PAP</strong> or the fleet PAP tab to add participants/credits.{% endblocktranslate %}</div>
+{% if needs_approval %}<div class="alert alert-warning" id="manual-fleet-approval">{% translate "A manual fleet and its PAP count in statistics and incentives once an FC lead approves them." %}</div>{% endif %}
 <div class="card"><div class="card-body">
 <form method="post" id="manual-fleet-form">{% csrf_token %}
   {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
@@ -14,7 +14,7 @@
     <div class="col-md-4">{{ form.fleet_type.label_tag }}{{ form.fleet_type }}{{ form.fleet_type.errors }}</div>
     <div class="col-md-4">{{ form.doctrine_name.label_tag }}{{ form.doctrine_name }}{{ form.doctrine_name.errors }}</div>
     <div class="col-md-4">{{ form.formup.label_tag }}{{ form.formup }}{{ form.formup.errors }}</div>
-    <div class="col-12"><div class="form-text">Enter both times in EVE time (UTC), not your local time. Current EVE time: <strong id="eve-time-now">{{ eve_time|utc|date:"Y-m-d H:i" }}</strong></div></div>
+    <div class="col-12"><div class="form-text">{% blocktranslate trimmed with now=eve_time|utc|date:"Y-m-d H:i" %}Enter both times in EVE time (UTC), not your local time. Current EVE time: <strong id="eve-time-now">{{ now }}</strong>{% endblocktranslate %}</div></div>
     <div class="col-md-4">{{ form.started_at.label_tag }}{{ form.started_at }}{{ form.started_at.errors }}</div>
     <div class="col-md-4">{{ form.ended_at.label_tag }}{{ form.ended_at }}{{ form.ended_at.errors }}<div class="form-text" id="manual-fleet-duration"></div></div>
     <div class="col-md-4">{{ form.attendance_multiplier.label_tag }}{{ form.attendance_multiplier }}{{ form.attendance_multiplier.errors }}</div>
@@ -24,9 +24,13 @@
     </div>
     <div class="col-12">{{ form.notes.label_tag }}{{ form.notes }}{{ form.notes.errors }}</div>
   </div>
-  <button class="btn btn-primary mt-3">Create Manual Fleet</button>
+  <button class="btn btn-primary mt-3">{% translate "Create Manual Fleet" %}</button>
 </form>
 </div></div>
+{% translate "End Time must be after Start Time." as end_before_start_text %}
+{% blocktranslate trimmed asvar duration_text with duration="%(duration)s" %}Duration: {{ duration }}{% endblocktranslate %}
+{% blocktranslate trimmed asvar duration_long_text with duration="%(duration)s" %}Duration: {{ duration }} — longer than 6 hours, please confirm below.{% endblocktranslate %}
+<script src="{% static 'fleetops/fleetops.js' %}?v={% fleetops_version %}"></script>
 <script>
 (() => {
  const started = document.getElementById('{{ form.started_at.id_for_label }}');
@@ -36,6 +40,11 @@
  const confirmBox = document.getElementById('{{ form.confirm_long_fleet.id_for_label }}');
  const now = document.getElementById('eve-time-now');
  const LONG_FLEET_MINUTES = 6 * 60;
+ const TEXT = {
+   endBeforeStart: '{{ end_before_start_text|escapejs }}',
+   duration: '{{ duration_text|escapejs }}',
+   durationLong: '{{ duration_long_text|escapejs }}',
+ };
  // The inputs hold EVE time, so they are read as UTC whatever the browser's time zone is.
  function asUtc(value){ return value ? Date.parse(value.length === 16 ? `${value}:00Z` : `${value}Z`) : NaN; }
  function showNow(){ now.textContent = new Date().toISOString().slice(0, 16).replace('T', ' '); }
@@ -45,14 +54,14 @@
    // The confirmation is only asked for while the fleet is longer than 6 hours.
    if(!(minutes > LONG_FLEET_MINUTES)){ confirmWrap.classList.add('d-none'); confirmBox.checked = false; }
    if(Number.isNaN(minutes)){ duration.textContent = ''; return; }
-   if(minutes <= 0){ duration.textContent = 'End Time must be after Start Time.'; duration.className = 'form-text text-danger'; return; }
-   const hours = Math.floor(minutes / 60);
-   const text = hours ? `${hours} h ${String(minutes % 60).padStart(2, '0')} min` : `${minutes} min`;
-   duration.textContent = `Duration: ${text}`;
+   if(minutes <= 0){ duration.textContent = TEXT.endBeforeStart; duration.className = 'form-text text-danger'; return; }
+   const text = window.FleetOps.duration(minutes);
    if(minutes > LONG_FLEET_MINUTES){
-     duration.textContent += ' — longer than 6 hours, please confirm below.';
+     duration.textContent = interpolate(TEXT.durationLong, {duration: text}, true);
      duration.className = 'form-text text-warning';
      confirmWrap.classList.remove('d-none');
+   } else {
+     duration.textContent = interpolate(TEXT.duration, {duration: text}, true);
    }
  }
  [started, ended].forEach(input => input.addEventListener('input', showDuration));

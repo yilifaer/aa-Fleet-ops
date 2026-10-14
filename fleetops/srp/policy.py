@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """SRP rules: which payout rule applies, what a loss is worth under the policy and who may claim it.
 
 ``calculate`` is a pure function of a policy snapshot, the loss and the monthly limit states, so the same
@@ -12,6 +15,7 @@ from allianceauth.authentication.models import CharacterOwnership
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Q
 from django.utils import timezone
+from django.utils.translation import gettext, gettext_lazy
 
 from fleetops.constants import CAPSULE_TYPE_IDS, MAX_ISK  # noqa: F401 - CAPSULE_TYPE_IDS is part of the interface
 from fleetops.models import SrpCorporationLimit, SrpPayoutRule, SrpSettings, srp_doctrine_key
@@ -41,13 +45,13 @@ BASIS_PERCENTAGE = "percentage"
 BASIS_NONE = "none"
 
 # Texts for the member; the reasons a loss cannot be claimed.
-BLOCK_SRP_DISABLED = "FleetOps SRP is not enabled."
-BLOCK_LINK_CLOSED = "This SRP link is closed."
-BLOCK_NO_PILOT = "This loss has no pilot."
-BLOCK_NOT_YOUR_CHARACTER = "This character is not on your Alliance Auth account."
-BLOCK_NO_MAIN = "Set a main character first."
-BLOCK_FLEET_ONLY = "Only losses in FleetOps fleets are covered."
-BLOCK_CAPSULE = "Capsule losses are not covered."
+BLOCK_SRP_DISABLED = gettext_lazy("FleetOps SRP is not enabled.")
+BLOCK_LINK_CLOSED = gettext_lazy("This SRP link is closed.")
+BLOCK_NO_PILOT = gettext_lazy("This loss has no pilot.")
+BLOCK_NOT_YOUR_CHARACTER = gettext_lazy("This character is not on your Alliance Auth account.")
+BLOCK_NO_MAIN = gettext_lazy("Set a main character first.")
+BLOCK_FLEET_ONLY = gettext_lazy("Only losses in FleetOps fleets are covered.")
+BLOCK_CAPSULE = gettext_lazy("Capsule losses are not covered.")
 
 # Ties between limits that leave the same amount: the monthly limits come before the per-loss cap,
 # and the personal limit before the corporation's.
@@ -316,25 +320,27 @@ def eligibility(*, km, user, scope: str, link, settings_obj, now=None, operation
     now = now or timezone.now()
     blockers = []
     if not srp.enabled:
-        blockers.append(BLOCK_SRP_DISABLED)
+        blockers.append(str(BLOCK_SRP_DISABLED))
     elif link is not None and not link.is_open:
-        blockers.append(BLOCK_LINK_CLOSED)
+        blockers.append(str(BLOCK_LINK_CLOSED))
 
     if km.victim_character_id is None:
-        blockers.append(BLOCK_NO_PILOT)
+        blockers.append(str(BLOCK_NO_PILOT))
     elif owned_character(user, km.victim_character_id) is None:
-        blockers.append(BLOCK_NOT_YOUR_CHARACTER)
+        blockers.append(str(BLOCK_NOT_YOUR_CHARACTER))
     if main_character(user) is None:
-        blockers.append(BLOCK_NO_MAIN)
+        blockers.append(str(BLOCK_NO_MAIN))
 
     if scope == OUT_OF_FLEET and not srp.out_of_fleet_enabled:
-        blockers.append(BLOCK_FLEET_ONLY)
+        blockers.append(str(BLOCK_FLEET_ONLY))
     if srp.claim_deadline_days and km.killmail_time < now - timedelta(days=srp.claim_deadline_days):
-        blockers.append(f"Losses older than {srp.claim_deadline_days} days cannot be submitted.")
+        blockers.append(
+            gettext("Losses older than %(days)s days cannot be submitted.") % {"days": srp.claim_deadline_days}
+        )
     if km.ship_type_id in CAPSULE_TYPE_IDS and srp.capsules_need_rule:
         if operation is None and link is not None:
             operation = link.operation
         rule = match_rule(ship_type_id=km.ship_type_id, scope=scope, operation=operation, capsules_need_rule=True)
         if not names_capsule(rule):
-            blockers.append(BLOCK_CAPSULE)
+            blockers.append(str(BLOCK_CAPSULE))
     return blockers

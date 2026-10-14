@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """PAP multiplier rules: which multipliers a fleet's duration allows.
 
 A fleet qualifies for a tier when it ran strictly longer than the tier's threshold, so a
@@ -7,6 +10,7 @@ A fleet qualifies for a tier when it ran strictly longer than the tier's thresho
 from datetime import timedelta
 
 from django.utils import timezone
+from django.utils.translation import gettext
 
 from fleetops.models import FleetOperation, FleetOpsSettings, MultiplierTier
 
@@ -58,15 +62,22 @@ def fleet_duration(operation, end=None):
 
 def requirements_text():
     """What the multipliers above 1x need, such as "2x > 90 min, 3x > 180 min"."""
-    return ", ".join(f"{tier.multiplier}x > {tier.threshold_minutes} min" for tier in tiers())
+    return ", ".join(
+        gettext("%(multiplier)sx > %(minutes)s min")
+        % {"multiplier": tier.multiplier, "minutes": tier.threshold_minutes}
+        for tier in tiers()
+    )
 
 
 def not_allowed_message(multiplier):
     """Why a fleet that did not run long enough cannot get ``multiplier``."""
     needed = [tier.threshold_minutes for tier in tiers() if tier.multiplier == multiplier]
     if not needed:
-        return f"{multiplier}x is not a configured PAP multiplier."
-    return f"{multiplier}x needs the fleet to run longer than {min(needed)} minutes."
+        return gettext("%(multiplier)sx is not a configured PAP multiplier.") % {"multiplier": multiplier}
+    return gettext("%(multiplier)sx needs the fleet to run longer than %(minutes)s minutes.") % {
+        "multiplier": multiplier,
+        "minutes": min(needed),
+    }
 
 
 def close_multiplier(operation, requested=None, settings=None):

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 import json
 import logging
 from dataclasses import dataclass
@@ -14,6 +17,49 @@ from esi.openapi_clients import ESIClientProvider
 from fleetops import __title__, __url__, __version__
 from fleetops.constants import FLEET_READ_SCOPE, FLEET_WRITE_SCOPE
 from fleetops.services.fleet_rules import normalize_wings, position_body
+from fleetops.texts import (
+    AFFILIATIONS_LOOKUP_FAILED,
+    CHARACTER_NAMES_LOOKUP_FAILED,
+    DETECT_DENIED,
+    DETECT_FAILED,
+    ESI_CONNECTION,
+    ESI_ERROR_LIMIT,
+    ESI_ERROR_LIMIT_RESET,
+    ESI_HTTP,
+    ESI_NO_TOKEN,
+    ESI_RATE_LIMIT,
+    ESI_TIMEOUT,
+    ESI_UNEXPECTED,
+    INVITE_CHARACTER_FAILED,
+    INVITE_FAILED,
+    ITEM_NAMES_LOOKUP_FAILED,
+    KICK_DENIED,
+    KICK_ESI_FAILED,
+    KICK_NOT_FOUND,
+    LOCATION_DENIED,
+    LOCATION_FAILED,
+    MOTD_DENIED,
+    MOTD_FAILED,
+    MOVE_CHARACTER_FAILED,
+    MOVE_FAILED,
+    NAMES_LOOKUP_FAILED,
+    NOT_IN_FLEET,
+    ONLINE_DENIED,
+    ONLINE_FAILED,
+    READ_FLEET_FAILED,
+    READ_MEMBERS_FAILED,
+    READ_WINGS_FAILED,
+    SHIP_DENIED,
+    SHIP_FAILED,
+    SQUAD_CREATE_FAILED,
+    SQUAD_DELETE_FAILED,
+    SQUAD_NO_ID,
+    SQUAD_RENAME_FAILED,
+    WING_CREATE_FAILED,
+    WING_DELETE_FAILED,
+    WING_NO_ID,
+    WING_RENAME_FAILED,
+)
 
 logger = get_extension_logger(__name__)
 
@@ -157,24 +203,24 @@ def _esi_request_id(exc) -> str:
 
 
 def describe_esi_failure(exc, status: int | None = None) -> str:
-    """A short, user-facing description of a failed ESI call.
+    """A short, user-facing description of a failed ESI call, as a stored message.
 
     django-esi exception texts embed every response header, so they are never shown.
     """
     status = _status_code(exc) if status is None else status
     if status is not None:
-        return f"ESI returned HTTP {status} ({_esi_error_field(exc) or _reason_phrase(status)})."
+        return ESI_HTTP(status=status, reason=_esi_error_field(exc) or _reason_phrase(status))
     if isinstance(exc, ESIErrorLimitException):
         reset = getattr(exc, "reset", None)
-        return f"ESI error limit reached; try again in {int(reset)} seconds." if reset else "ESI error limit reached."
+        return ESI_ERROR_LIMIT_RESET(seconds=int(reset)) if reset else ESI_ERROR_LIMIT()
     if isinstance(exc, ESIBucketLimitException):
-        return "ESI rate limit reached; try again later."
+        return ESI_RATE_LIMIT()
     chain = _exception_chain(exc)
     if any(isinstance(item, TIMEOUT_ERRORS) for item in chain):
-        return "ESI did not respond in time."
+        return ESI_TIMEOUT()
     if any(isinstance(item, CONNECTION_ERRORS) for item in chain):
-        return "Could not connect to ESI."
-    return f"Unexpected ESI error ({type(exc).__name__})."
+        return ESI_CONNECTION()
+    return ESI_UNEXPECTED(error_type=type(exc).__name__)
 
 
 def _log_esi_failure(context: str, exc: Exception, level=logging.WARNING):
@@ -193,11 +239,15 @@ def _log_esi_failure(context: str, exc: Exception, level=logging.WARNING):
     )
 
 
-def _esi_failure(code: str, context: str, exc: Exception) -> FleetESIError:
-    """Log a failed ESI call and return the short error shown to users."""
-    _log_esi_failure(context, exc)
+def _esi_failure(code: str, failure, exc: Exception, **params) -> FleetESIError:
+    """Log a failed ESI call and return the short error shown to users.
+
+    ``failure`` is the stored message for what failed; it takes the description of the answer as ``detail``
+    and the ``params`` besides.
+    """
+    _log_esi_failure(failure(detail="", **params)[: -len(": ")], exc)
     status = _status_code(exc)
-    return FleetESIError(code, f"{context}: {describe_esi_failure(exc, status)}", status)
+    return FleetESIError(code, failure(detail=describe_esi_failure(exc, status), **params), status)
 
 
 def _read(operation, fresh: bool = False):
@@ -268,7 +318,7 @@ def get_token(user, character_id: int, write: bool = False):
     if token is None:
         raise FleetESIError(
             "MISSING_WRITE_SCOPE" if write else "MISSING_READ_SCOPE",
-            "No valid ESI token with the required fleet scopes was found for this character.",
+            ESI_NO_TOKEN(),
         )
     return token
 
@@ -299,14 +349,14 @@ def detect_character_fleet(user, character_id: int, fresh: bool = False) -> Flee
         if status == 404:
             # Not being in a fleet is an ordinary answer, not an ESI problem.
             _log_esi_failure("Could not detect fleet", exc, level=logging.INFO)
-            raise FleetESIError("NOT_IN_FLEET", "Character is currently not in a fleet.", status) from exc
+            raise FleetESIError("NOT_IN_FLEET", NOT_IN_FLEET(), status) from exc
         if status in (401, 403):
-            raise _esi_failure("ESI_FORBIDDEN", "ESI denied access to this character's fleet", exc) from exc
-        raise _esi_failure("ESI_ERROR", "Could not detect fleet", exc) from exc
+            raise _esi_failure("ESI_FORBIDDEN", DETECT_DENIED, exc) from exc
+        raise _esi_failure("ESI_ERROR", DETECT_FAILED, exc) from exc
 
     fleet_id = payload.get("fleet_id")
     if not fleet_id:
-        raise FleetESIError("NOT_IN_FLEET", "Character is currently not in a fleet.")
+        raise FleetESIError("NOT_IN_FLEET", NOT_IN_FLEET())
     boss_id = payload.get("fleet_boss_id")
     return FleetDetectionResult(
         fleet_id=int(fleet_id),
@@ -323,7 +373,7 @@ def get_fleet_info(user, character_id: int, fleet_id: int) -> dict:
         return as_dict(_read(esi.client.Fleets.GetFleetsFleetId(fleet_id=fleet_id, token=token)))
     except Exception as exc:
         code = "FLEET_NOT_FOUND" if _status_code(exc) == 404 else "ESI_ERROR"
-        raise _esi_failure(code, "Could not read fleet information", exc) from exc
+        raise _esi_failure(code, READ_FLEET_FAILED, exc) from exc
 
 
 def get_fleet_members(user, character_id: int, fleet_id: int, fresh: bool = False) -> list[dict]:
@@ -335,7 +385,7 @@ def get_fleet_members(user, character_id: int, fleet_id: int, fresh: bool = Fals
     except Exception as exc:
         # Only the fleet boss can read a fleet: a 404 means the fleet is gone or the boss changed.
         code = "FLEET_NOT_FOUND" if _status_code(exc) == 404 else "ESI_ERROR"
-        raise _esi_failure(code, "Could not read fleet members", exc) from exc
+        raise _esi_failure(code, READ_MEMBERS_FAILED, exc) from exc
 
 
 def set_fleet_motd(user, character_id: int, fleet_id: int, motd: str) -> None:
@@ -349,8 +399,8 @@ def set_fleet_motd(user, character_id: int, fleet_id: int, motd: str) -> None:
         _write(esi.client.Fleets.PutFleetsFleetId(fleet_id=fleet_id, token=token, body=body))
     except Exception as exc:
         if _status_code(exc) in (401, 403):
-            raise _esi_failure("MOTD_FORBIDDEN", "ESI denied permission to update the fleet MOTD", exc) from exc
-        raise _esi_failure("MOTD_ERROR", "Could not update fleet MOTD", exc) from exc
+            raise _esi_failure("MOTD_FORBIDDEN", MOTD_DENIED, exc) from exc
+        raise _esi_failure("MOTD_ERROR", MOTD_FAILED, exc) from exc
 
 
 def kick_fleet_member(user, character_id: int, fleet_id: int, member_id: int) -> None:
@@ -372,10 +422,10 @@ def kick_fleet_member(user, character_id: int, fleet_id: int, member_id: int) ->
     except Exception as exc:
         code = _write_error_code(exc)
         if code == "FLEET_WRITE_NOT_FOUND":
-            raise _esi_failure("MEMBER_NOT_FOUND", f"Fleet member {member_id} was not found", exc) from exc
+            raise _esi_failure("MEMBER_NOT_FOUND", KICK_NOT_FOUND, exc, member=member_id) from exc
         if code == "FLEET_WRITE_FORBIDDEN":
-            raise _esi_failure(code, "ESI denied permission to kick this fleet member", exc) from exc
-        raise _esi_failure(code, f"Could not kick fleet member {member_id}", exc) from exc
+            raise _esi_failure(code, KICK_DENIED, exc) from exc
+        raise _esi_failure(code, KICK_ESI_FAILED, exc, member=member_id) from exc
 
 
 def get_fleet_wings(user, character_id: int, fleet_id: int, fresh: bool = False) -> list[dict]:
@@ -386,7 +436,7 @@ def get_fleet_wings(user, character_id: int, fleet_id: int, fresh: bool = False)
     except Exception as exc:
         # As for the members: only the fleet boss can read the wings.
         code = "FLEET_NOT_FOUND" if _status_code(exc) == 404 else "ESI_ERROR"
-        raise _esi_failure(code, "Could not read fleet wings", exc) from exc
+        raise _esi_failure(code, READ_WINGS_FAILED, exc) from exc
     return normalize_wings(result)
 
 
@@ -406,46 +456,46 @@ def _write_error_code(exc) -> str:
     return "FLEET_WRITE_ERROR"
 
 
-def _fleet_write(context: str, user, character_id: int, build):
+def _fleet_write(failure, user, character_id: int, build, **params):
     """Send one fleet write with the FC character's write token; ``build(token)`` prepares the operation.
 
-    Failures raise FleetESIError with the short text "<context>: ESI returned HTTP 404 (...)." and one
-    of the codes FLEET_WRITE_NOT_FOUND, FLEET_WRITE_FORBIDDEN, FLEET_WRITE_REJECTED, FLEET_WRITE_LIMITED
-    (error limit or rate limit reached) or FLEET_WRITE_ERROR.
+    Failures raise FleetESIError with the short text "<what failed>: ESI returned HTTP 404 (...)." (the stored
+    message ``failure`` with its ``params``) and one of the codes FLEET_WRITE_NOT_FOUND,
+    FLEET_WRITE_FORBIDDEN, FLEET_WRITE_REJECTED, FLEET_WRITE_LIMITED (error limit or rate limit reached) or
+    FLEET_WRITE_ERROR.
     """
     token = get_token(user, character_id, write=True)
     try:
         return _write(build(token))
     except Exception as exc:
-        raise _esi_failure(_write_error_code(exc), context, exc) from exc
+        raise _esi_failure(_write_error_code(exc), failure, exc, **params) from exc
 
 
-def _created_id(result, field: str, context: str, unit: str) -> int:
+def _created_id(result, field: str, no_id) -> int:
     value = result if isinstance(result, int) and not isinstance(result, bool) else _field(result, field)
     try:
         created = int(value)
     except (TypeError, ValueError):
         created = 0
     if created <= 0:
-        raise FleetESIError("FLEET_WRITE_ERROR", f"{context}: ESI did not return the new {unit} id.")
+        raise FleetESIError("FLEET_WRITE_ERROR", no_id())
     return created
 
 
 def create_fleet_wing(user, character_id: int, fleet_id: int) -> int:
     """Add a wing (EVE names it); returns the new wing id. The route takes no request body."""
-    context = "Could not create a wing"
     result = _fleet_write(
-        context,
+        WING_CREATE_FAILED,
         user,
         character_id,
         lambda token: esi.client.Fleets.PostFleetsFleetIdWings(fleet_id=fleet_id, token=token),
     )
-    return _created_id(result, "wing_id", context, "wing")
+    return _created_id(result, "wing_id", WING_NO_ID)
 
 
 def rename_fleet_wing(user, character_id: int, fleet_id: int, wing_id: int, name: str) -> None:
     _fleet_write(
-        "Could not rename the wing",
+        WING_RENAME_FAILED,
         user,
         character_id,
         lambda token: esi.client.Fleets.PutFleetsFleetIdWingsWingId(
@@ -457,7 +507,7 @@ def rename_fleet_wing(user, character_id: int, fleet_id: int, wing_id: int, name
 def delete_fleet_wing(user, character_id: int, fleet_id: int, wing_id: int) -> None:
     """Delete an empty wing; it may still hold empty squads."""
     _fleet_write(
-        "Could not delete the wing",
+        WING_DELETE_FAILED,
         user,
         character_id,
         lambda token: esi.client.Fleets.DeleteFleetsFleetIdWingsWingId(fleet_id=fleet_id, wing_id=wing_id, token=token),
@@ -466,21 +516,20 @@ def delete_fleet_wing(user, character_id: int, fleet_id: int, wing_id: int) -> N
 
 def create_fleet_squad(user, character_id: int, fleet_id: int, wing_id: int) -> int:
     """Add a squad to a wing (EVE names it); returns the new squad id. The route takes no request body."""
-    context = "Could not create a squad"
     result = _fleet_write(
-        context,
+        SQUAD_CREATE_FAILED,
         user,
         character_id,
         lambda token: esi.client.Fleets.PostFleetsFleetIdWingsWingIdSquads(
             fleet_id=fleet_id, wing_id=wing_id, token=token
         ),
     )
-    return _created_id(result, "squad_id", context, "squad")
+    return _created_id(result, "squad_id", SQUAD_NO_ID)
 
 
 def rename_fleet_squad(user, character_id: int, fleet_id: int, squad_id: int, name: str) -> None:
     _fleet_write(
-        "Could not rename the squad",
+        SQUAD_RENAME_FAILED,
         user,
         character_id,
         lambda token: esi.client.Fleets.PutFleetsFleetIdSquadsSquadId(
@@ -492,17 +541,13 @@ def rename_fleet_squad(user, character_id: int, fleet_id: int, squad_id: int, na
 def delete_fleet_squad(user, character_id: int, fleet_id: int, squad_id: int) -> None:
     """Delete an empty squad."""
     _fleet_write(
-        "Could not delete the squad",
+        SQUAD_DELETE_FAILED,
         user,
         character_id,
         lambda token: esi.client.Fleets.DeleteFleetsFleetIdSquadsSquadId(
             fleet_id=fleet_id, squad_id=squad_id, token=token
         ),
     )
-
-
-def _member_label(member_id, name) -> str:
-    return name or f"character {member_id}"
 
 
 def move_fleet_member(
@@ -514,13 +559,15 @@ def move_fleet_member(
     ValueError, before anything is sent.
     """
     body = position_body(role, wing_id, squad_id)
+    failure, params = (MOVE_FAILED, {"name": name}) if name else (MOVE_CHARACTER_FAILED, {"member": member_id})
     _fleet_write(
-        f"Could not move {_member_label(member_id, name)}",
+        failure,
         user,
         character_id,
         lambda token: esi.client.Fleets.PutFleetsFleetIdMembersMemberId(
             fleet_id=fleet_id, member_id=member_id, token=token, body=body
         ),
+        **params,
     )
 
 
@@ -537,39 +584,43 @@ def invite_fleet_member(
 ) -> None:
     """Invite a character; a squad member without wing and squad joins any squad with free positions."""
     body = {"character_id": int(invitee_id), **position_body(role, wing_id, squad_id, invite=True)}
+    failure, params = (
+        (INVITE_FAILED, {"name": name}) if name else (INVITE_CHARACTER_FAILED, {"member": invitee_id})
+    )
     _fleet_write(
-        f"Could not invite {_member_label(invitee_id, name)}",
+        failure,
         user,
         character_id,
         lambda token: esi.client.Fleets.PostFleetsFleetIdMembers(fleet_id=fleet_id, token=token, body=body),
+        **params,
     )
 
 
-def _character_read(operation_name, token, code, context):
+def _character_read(operation_name, token, code, denied, failed):
     """Read one of the location routes of the token's own character; failures raise short FleetESIError texts."""
     operation = getattr(esi.client.Location, operation_name)
     try:
         return as_dict(_read(operation(character_id=token.character_id, token=token)))
     except Exception as exc:
         if _status_code(exc) in (401, 403):
-            raise _esi_failure(f"{code}_FORBIDDEN", f"ESI denied access to {context}", exc) from exc
-        raise _esi_failure(f"{code}_ERROR", f"Could not read {context}", exc) from exc
+            raise _esi_failure(f"{code}_FORBIDDEN", denied, exc) from exc
+        raise _esi_failure(f"{code}_ERROR", failed, exc) from exc
 
 
 def character_online(token) -> bool:
     """Whether the token's character is logged in to the game (esi-location.read_online.v1)."""
-    payload = _character_read("GetCharactersCharacterIdOnline", token, "ONLINE", "the online status")
+    payload = _character_read("GetCharactersCharacterIdOnline", token, "ONLINE", ONLINE_DENIED, ONLINE_FAILED)
     return bool(payload.get("online"))
 
 
 def character_location(token) -> dict:
     """``solar_system_id`` (plus ``station_id`` or ``structure_id`` when docked) of the token's character."""
-    return _character_read("GetCharactersCharacterIdLocation", token, "LOCATION", "the location")
+    return _character_read("GetCharactersCharacterIdLocation", token, "LOCATION", LOCATION_DENIED, LOCATION_FAILED)
 
 
 def character_ship(token) -> dict:
     """``ship_type_id``, ``ship_name`` and ``ship_item_id`` of the ship the token's character flies."""
-    return _character_read("GetCharactersCharacterIdShip", token, "SHIP", "the current ship")
+    return _character_read("GetCharactersCharacterIdShip", token, "SHIP", SHIP_DENIED, SHIP_FAILED)
 
 
 class LookupBudget:
@@ -637,7 +688,7 @@ def resolve_names(ids, *, budget: LookupBudget | None = None) -> dict[int, tuple
         ids,
         budget if budget is not None else LookupBudget(),
         "NAMES_ERROR",
-        "Could not look up names",
+        NAMES_LOOKUP_FAILED,
     )
     result = {entity_id: (UNRESOLVED, "") for entity_id in invalid}
     for row in rows:
@@ -660,7 +711,7 @@ def character_affiliations(ids, *, budget: LookupBudget | None = None) -> dict[i
         ids,
         budget if budget is not None else LookupBudget(),
         "AFFILIATION_ERROR",
-        "Could not look up character affiliations",
+        AFFILIATIONS_LOOKUP_FAILED,
     )
     result = dict.fromkeys(invalid)
     for row in rows:
@@ -706,7 +757,7 @@ def universe_ids(names) -> dict[str, tuple[int, str]]:
     character are missing. Other categories in the answer (corporations, systems …) are ignored.
     Any failed call raises FleetESIError with a short message.
     """
-    return _universe_lookup(names, "characters", "IDS_ERROR", "Could not look up character names")
+    return _universe_lookup(names, "characters", "IDS_ERROR", CHARACTER_NAMES_LOOKUP_FAILED)
 
 
 def universe_type_ids(names) -> dict[str, tuple[int, str]]:
@@ -714,7 +765,7 @@ def universe_type_ids(names) -> dict[str, tuple[int, str]]:
 
     Used to turn the ship name of a payout rule into its type ID. Any failed call raises FleetESIError.
     """
-    return _universe_lookup(names, "inventory_types", "TYPE_IDS_ERROR", "Could not look up item names")
+    return _universe_lookup(names, "inventory_types", "TYPE_IDS_ERROR", ITEM_NAMES_LOOKUP_FAILED)
 
 
 # Alias for name entry and the roster import.

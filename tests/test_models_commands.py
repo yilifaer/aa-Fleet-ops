@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Tests for FleetOps models, migrations, admin, hooks and management commands."""
 
 import importlib
@@ -864,14 +867,14 @@ class PruneHistoryCommandTests(TestCase):
     def test_dry_run_deletes_nothing(self):
         output = run_command("fleetops_prune_history", "--dry-run")
 
-        self.assertIn("Would remove: 1 old attendance, 0 departed-member attendance, 1 old member events.", output)
+        self.assertIn("Would remove: 1 old PAP records, 0 departed-member PAP records, 1 old member events.", output)
         self.assertEqual(AttendanceRecord.objects.count(), 2)
         self.assertEqual(FleetMemberEvent.objects.count(), 2)
 
     def test_real_run_prunes_records_older_than_retention(self):
         output = run_command("fleetops_prune_history")
 
-        self.assertIn("Removed: 1 old attendance, 0 departed-member attendance, 1 old member events.", output)
+        self.assertIn("Removed: 1 old PAP records, 0 departed-member PAP records, 1 old member events.", output)
         self.assertEqual(list(AttendanceRecord.objects.all()), [self.recent_record])
         self.assertEqual(list(FleetMemberEvent.objects.all()), [self.recent_event])
         self.assertTrue(FleetOperation.objects.filter(pk=self.old_op.pk).exists())
@@ -879,7 +882,7 @@ class PruneHistoryCommandTests(TestCase):
     def test_second_run_has_nothing_left_to_prune(self):
         run_command("fleetops_prune_history")
         output = run_command("fleetops_prune_history")
-        self.assertIn("Removed: 0 old attendance, 0 departed-member attendance, 0 old member events.", output)
+        self.assertIn("Removed: 0 old PAP records, 0 departed-member PAP records, 0 old member events.", output)
 
     def test_records_just_inside_one_year_are_kept(self):
         edge_op = f.create_operation(self.fc, status=FleetOperation.Status.CLOSED, started_at=days_ago(364))
@@ -921,7 +924,7 @@ class PruneHistoryCommandTests(TestCase):
         unmapped_old = add_unmapped_attendance(self.old_op)
 
         dry_output = run_command("fleetops_prune_history", "--dry-run")
-        self.assertIn("1 departed-member attendance", dry_output)
+        self.assertIn("1 departed-member PAP records", dry_output)
         self.assertEqual(AttendanceRecord.objects.count(), 6)
 
         run_command("fleetops_prune_history")
@@ -969,7 +972,7 @@ class PruneHistoryCommandTests(TestCase):
 
         removed = before - AttendanceRecord.objects.count()
         old_count, departed_count = map(
-            int, re.search(r"(\d+) old attendance, (\d+) departed-member", output).groups()
+            int, re.search(r"(\d+) old PAP records, (\d+) departed-member", output).groups()
         )
         # old_op holds the member's and the departed user's rows: two rows removed in total.
         self.assertEqual(removed, 2)

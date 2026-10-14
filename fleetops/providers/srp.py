@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """SRP provider abstraction.
 
 FleetOps deliberately keeps SRP integration behind a tiny provider interface so any
@@ -13,9 +16,11 @@ from typing import Protocol
 from django.apps import apps
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
+from django.utils.translation import gettext_lazy
 
 from allianceauth.eveonline.models import EveCharacter
 
+from fleetops import texts
 from fleetops.models import SrpSettings
 from fleetops.services import links
 from fleetops.services.periods import format_eve
@@ -107,7 +112,7 @@ class AllianceAuthBuiltinSRPProvider:
 
     def create_for_operation(self, operation) -> SRPLinkResult:
         if not self.available():
-            return SRPLinkResult(self.key, message="Alliance Auth built-in SRP is not installed.")
+            return SRPLinkResult(self.key, message=texts.SRP_BUILTIN_MISSING())
 
         model = self._model()
         fields = {f.name for f in model._meta.concrete_fields}
@@ -121,7 +126,7 @@ class AllianceAuthBuiltinSRPProvider:
         if "fleet_commander" in fields:
             commander = EveCharacter.objects.filter(character_id=operation.fc_character_id).first()
             if commander is None:
-                return SRPLinkResult(self.key, message="FC character is not present in Alliance Auth EveCharacter data.")
+                return SRPLinkResult(self.key, message=texts.SRP_BUILTIN_NO_FC())
             values["fleet_commander"] = commander
         if "fleet_srp_code" in fields:
             # Alliance Auth treats a fleet with an empty code as disabled; it uses 8 uppercase characters.
@@ -131,7 +136,7 @@ class AllianceAuthBuiltinSRPProvider:
         if unknown:
             return SRPLinkResult(
                 self.key,
-                message="Unsupported built-in SRP schema; required fields: " + ", ".join(unknown),
+                message=texts.SRP_BUILTIN_SCHEMA(fields=", ".join(unknown)),
             )
 
         obj = model.objects.create(**values)
@@ -175,7 +180,7 @@ class AllianceAuthBuiltinSRPProvider:
             reference=reference,
             url=url,
             created=True,
-            message="Built-in Alliance Auth SRP fleet created.",
+            message=texts.SRP_BUILTIN_CREATED(),
         )
 
 
@@ -238,7 +243,7 @@ class AaSrpProvider:
 
     def create_for_operation(self, operation) -> SRPLinkResult:
         if not self.available():
-            return SRPLinkResult(self.key, message="aa-srp is not installed.")
+            return SRPLinkResult(self.key, message=texts.AASRP_MISSING())
 
         model = self._model()
         fields = {f.name for f in model._meta.concrete_fields}
@@ -246,7 +251,7 @@ class AaSrpProvider:
         if "aar_link" in fields:
             existing = model.objects.filter(aar_link=aar_link).order_by("pk").first()
             if existing is not None:
-                return self._result(existing, "Existing aa-srp link of this fleet reused.")
+                return self._result(existing, texts.AASRP_REUSED())
 
         fleet_time = operation.started_at or operation.scheduled_at or timezone.now()
         name = f"{operation.fleet_type} — {operation.fc_character_name} — {format_eve(fleet_time)} EVE"
@@ -262,11 +267,11 @@ class AaSrpProvider:
         values = {name: value for name, value in values.items() if name in fields}
         unknown = _required_unknown_fields(model, values)
         if unknown:
-            return SRPLinkResult(self.key, message="Unsupported aasrp schema; required fields: " + ", ".join(unknown))
+            return SRPLinkResult(self.key, message=texts.AASRP_SCHEMA(fields=", ".join(unknown)))
 
         # aa-srp fills srp_code with a random code when the link is saved.
         link = model.objects.create(**values)
-        return self._result(link, "aa-srp link created.")
+        return self._result(link, texts.AASRP_CREATED())
 
 
 class FleetOpsSRPProvider:
@@ -279,8 +284,8 @@ class FleetOpsSRPProvider:
     key = "fleetops"
     label = "FleetOps SRP"
     # What the settings page says about the provider instead of "installed" / "not installed".
-    state_labels = ("enabled", "not enabled")
-    unavailable_message = "FleetOps SRP is not enabled."
+    state_labels = (gettext_lazy("enabled"), gettext_lazy("not enabled"))
+    unavailable_message = texts.FLEETOPS_SRP_DISABLED()
 
     def available(self) -> bool:
         return bool(SrpSettings.get_solo().enabled)
@@ -294,7 +299,7 @@ class FleetOpsSRPProvider:
             reference=link.code,
             url=link_path(link),
             created=True,
-            message="FleetOps SRP link created." if created else "FleetOps SRP link already exists.",
+            message=texts.FLEETOPS_SRP_CREATED() if created else texts.FLEETOPS_SRP_EXISTS(),
         )
 
 
@@ -328,8 +333,8 @@ def create_srp_link(operation, provider_key: str = "auto") -> SRPLinkResult:
     if provider is None:
         key = (provider_key or "auto").strip() or "auto"
         if key == "auto":
-            return SRPLinkResult(key, message="No supported SRP provider is available.")
+            return SRPLinkResult(key, message=texts.SRP_NO_PROVIDER())
         # A provider that is registered but switched off says so (FleetOps SRP while it is not enabled).
         message = getattr(_PROVIDERS.get(_provider_key(key)), "unavailable_message", "")
-        return SRPLinkResult(key, message=message or f"SRP provider '{key}' is not installed.")
+        return SRPLinkResult(key, message=message or texts.SRP_PROVIDER_MISSING(key=key))
     return provider.create_for_operation(operation)

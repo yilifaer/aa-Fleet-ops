@@ -1,26 +1,26 @@
-<form method="get" class="row g-2 align-items-end fleetops-period-selector mb-2">
+{% load i18n %}<form method="get" class="row g-2 align-items-end fleetops-period-selector mb-2">
   {% for name, value in preserved_params %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
   <div class="col-sm-auto">
-    <label class="form-label mb-1" for="fleetops-period-month">Month (EVE time)</label>
+    <label class="form-label mb-1" for="fleetops-period-month">{% translate "Month (EVE time)" %}</label>
     <div class="input-group">
-      <select class="form-select" id="fleetops-period-year" name="year" aria-label="Year">
+      <select class="form-select" id="fleetops-period-year" name="year" aria-label="{% translate 'Year' %}">
         {% for y in year_options %}<option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>{% endfor %}
       </select>
-      <select class="form-select" id="fleetops-period-month" name="month" aria-label="Month">
+      <select class="form-select" id="fleetops-period-month" name="month" aria-label="{% translate 'Month' %}">
         {% for number,name in month_options %}<option value="{{ number }}" {% if number == selected_month %}selected{% endif %}>{{ name }}</option>{% endfor %}
       </select>
     </div>
   </div>
-  <div class="col-sm-auto"><button class="btn btn-primary" type="submit">View Period</button></div>
+  <div class="col-sm-auto"><button class="btn btn-primary" type="submit">{% translate "View Period" %}</button></div>
   {% if previous_period or next_period %}
   <div class="col-sm-auto ms-sm-auto">
-    <div class="btn-group" role="group" aria-label="Neighbouring months">
-      {% if previous_period %}<a class="btn btn-outline-secondary" href="{% querystring year=previous_period.year month=previous_period.month page=None %}" title="{{ previous_period.label }}">&lsaquo; Previous month</a>{% endif %}
-      {% if next_period %}<a class="btn btn-outline-secondary" href="{% querystring year=next_period.year month=next_period.month page=None %}" title="{{ next_period.label }}">Next month &rsaquo;</a>{% endif %}
+    <div class="btn-group" role="group" aria-label="{% translate 'Neighbouring months' %}">
+      {% if previous_period %}<a class="btn btn-outline-secondary" href="{% querystring year=previous_period.year month=previous_period.month page=None %}" title="{{ previous_period.label }}">&lsaquo; {% translate "Previous month" %}</a>{% endif %}
+      {% if next_period %}<a class="btn btn-outline-secondary" href="{% querystring year=next_period.year month=next_period.month page=None %}" title="{{ next_period.label }}">{% translate "Next month" %} &rsaquo;</a>{% endif %}
     </div>
   </div>
   {% endif %}
 </form>
-{% if month_ref.is_current %}<div class="small text-muted mb-3">Month in progress &mdash; day {{ month_ref.days_elapsed }} of {{ month_ref.days_in_month }} (EVE time)</div>
-{% elif month_ref.is_future %}<div class="small text-muted mb-3">This month has not begun yet (EVE time).</div>
+{% if month_ref.is_current %}<div class="small text-muted mb-3">{% blocktranslate trimmed with day=month_ref.days_elapsed days=month_ref.days_in_month %}Month in progress &mdash; day {{ day }} of {{ days }} (EVE time){% endblocktranslate %}</div>
+{% elif month_ref.is_future %}<div class="small text-muted mb-3">{% translate "This month has not begun yet (EVE time)." %}</div>
 {% else %}<div class="mb-3"></div>{% endif %}

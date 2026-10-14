@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Loss values on stored killmails: zKillboard lookups and their retry schedule, and the ESI estimate.
 
 The pure parts (value order, schedule maths, estimate arithmetic) are tested in test_srp_intake.py.

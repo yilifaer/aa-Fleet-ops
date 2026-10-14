@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Multiplier tiers: which PAP multipliers a fleet's duration allows, and the tier form."""
 
 from datetime import timedelta

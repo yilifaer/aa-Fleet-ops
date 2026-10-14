@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The SRP value sweep: zKillboard values for killmails that had none when they were claimed.
 
 The Celery task is ``fleetops.tasks.refresh_srp_values``; this module holds what it runs and the beat's queueing.

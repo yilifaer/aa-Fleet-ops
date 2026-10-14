@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 import uuid
 from datetime import datetime, timedelta, timezone as dt_timezone
 
@@ -5,6 +8,8 @@ from allianceauth.authentication.models import CharacterOwnership
 from django import forms
 from django.db.models import Q
 from django.utils import timezone
+from django.utils.translation import gettext, pgettext_lazy
+from django.utils.translation import gettext_lazy as _
 
 from fleetops.forms_config import (  # noqa: F401 - configuration forms, re-exported
     ChannelPresetForm,
@@ -46,12 +51,13 @@ from fleetops.services.mentions import (
 from fleetops.services.periods import EVE_CLOCK_PATTERN, format_eve, parse_eve_datetime
 from fleetops.services.roles import participant_rows
 from fleetops.services.roster_paste import clean_name, name_error
+from fleetops.texts import translate_stored
 
 PING_NOW = "now"
 PRE_PING = "pre_ping"
-PRE_PING_NEEDS_DISCORD = "A pre ping is a Discord message, so it cannot be sent in attendance tracking only mode."
-FLEET_TIME_MISSING = "Enter the fleet date and time in EVE time (UTC)."
-FLEET_TIME_PAST = "The fleet time must be in the future (EVE time)."
+PRE_PING_NEEDS_DISCORD = _("A pre ping is a Discord message, so it cannot be sent in PAP tracking only mode.")
+FLEET_TIME_MISSING = _("Enter the fleet date and time in EVE time (UTC).")
+FLEET_TIME_PAST = _("The fleet time must be in the future (EVE time).")
 
 
 def _style(fields):
@@ -73,7 +79,7 @@ def character_choices(user):
         c = ownership.character
         read = "R✓" if has_scope_token(user, c.character_id, write=False) else "R✗"
         write = "W✓" if has_scope_token(user, c.character_id, write=True) else "W✗"
-        marker = "MAIN" if c.character_id == main_id else "ALT"
+        marker = _("MAIN") if c.character_id == main_id else _("ALT")
         choices.append((str(c.character_id), f"{c.character_name} — {marker} — {read} {write}"))
     return choices
 
@@ -81,38 +87,58 @@ def character_choices(user):
 class FleetSettingsForm(forms.Form):
     """Fleet, communication and message fields shared by the start and the scheduled fleet forms."""
 
-    fleet_type = forms.ModelChoiceField(queryset=FleetType.objects.none())
-    doctrine_choice = forms.ChoiceField(label="Doctrine", required=False)
-    custom_doctrine = forms.CharField(label="Custom Doctrine", required=False, max_length=255)
-    formup = forms.CharField(label="Form Up / Staging", max_length=255)
+    fleet_type = forms.ModelChoiceField(label=_("Fleet type"), queryset=FleetType.objects.none())
+    doctrine_choice = forms.ChoiceField(label=pgettext_lazy("FleetOps", "Doctrine"), required=False)
+    custom_doctrine = forms.CharField(label=_("Custom Doctrine"), required=False, max_length=255)
+    formup = forms.CharField(label=_("Form Up / Staging"), max_length=255)
     fleet_date = forms.DateField(
-        label="Date",
+        label=_("Date"),
         required=False,
         widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
     )
     fleet_clock = forms.CharField(
-        label="Time (HH:MM)",
+        label=_("Time (HH:MM)"),
         required=False,
         max_length=5,
         widget=forms.TextInput(
             attrs={"pattern": EVE_CLOCK_PATTERN, "placeholder": "HH:MM", "inputmode": "numeric", "autocomplete": "off"}
         ),
     )
-    comms = forms.ModelChoiceField(queryset=CommsPreset.objects.none(), required=False)
-    logi_channel = forms.ModelChoiceField(queryset=ChannelPreset.objects.none(), required=False)
-    boost_channel = forms.ModelChoiceField(queryset=ChannelPreset.objects.none(), required=False)
+    comms = forms.ModelChoiceField(label=_("Comms"), queryset=CommsPreset.objects.none(), required=False)
+    logi_channel = forms.ModelChoiceField(
+        label=_("Logi channel"),
+        queryset=ChannelPreset.objects.none(),
+        required=False,
+    )
+    boost_channel = forms.ModelChoiceField(
+        label=_("Boost channel"),
+        queryset=ChannelPreset.objects.none(),
+        required=False,
+    )
     ping_channel = forms.ModelChoiceField(
-        label="Ping channel",
+        label=_("Ping channel"),
         queryset=DiscordWebhook.objects.none(),
         required=False,
-        empty_label="No Discord message (copy only)",
+        empty_label=_("No Discord message (copy only)"),
     )
     ping_mentions = forms.MultipleChoiceField(
-        label="Ping target", required=False, widget=forms.CheckboxSelectMultiple, initial=[NONE]
+        label=_("Ping target"), required=False, widget=forms.CheckboxSelectMultiple, initial=[NONE]
     )
-    ping_template = forms.ModelChoiceField(queryset=MessageTemplate.objects.none(), required=False)
-    motd_template = forms.ModelChoiceField(queryset=MessageTemplate.objects.none(), required=False)
-    additional_message = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 4}))
+    ping_template = forms.ModelChoiceField(
+        label=_("Ping template"),
+        queryset=MessageTemplate.objects.none(),
+        required=False,
+    )
+    motd_template = forms.ModelChoiceField(
+        label=_("MOTD template"),
+        queryset=MessageTemplate.objects.none(),
+        required=False,
+    )
+    additional_message = forms.CharField(
+        label=_("Additional message"),
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 4}),
+    )
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -124,11 +150,11 @@ class FleetSettingsForm(forms.Form):
         self.fields["ping_channel"].queryset = DiscordWebhook.objects.filter(is_active=True)
         self.fields["ping_template"].queryset = MessageTemplate.objects.filter(is_active=True, template_type=MessageTemplate.TemplateType.PING)
         self.fields["motd_template"].queryset = MessageTemplate.objects.filter(is_active=True, template_type=MessageTemplate.TemplateType.MOTD)
-        self.fields["ping_mentions"].choices = [(NONE, "No ping"), (EVERYONE, "@everyone"), (HERE, "@here")] + [
+        self.fields["ping_mentions"].choices = [(NONE, _("No ping")), (EVERYONE, "@everyone"), (HERE, "@here")] + [
             (role_choice(role), f"@{role.name}") for role in PingRole.objects.filter(is_active=True)
         ]
 
-        doctrines = [("", "None / Custom")]
+        doctrines = [("", _("None / Custom"))]
         for doctrine in get_doctrines(user):
             doctrines.append((f"{doctrine.source}|{doctrine.external_id}|{doctrine.name}", doctrine.name))
         self.fields["doctrine_choice"].choices = doctrines
@@ -157,7 +183,7 @@ class FleetSettingsForm(forms.Form):
             try:
                 source, external_id, name = choice.split("|", 2)
             except ValueError:
-                raise forms.ValidationError("Invalid doctrine selection.")
+                raise forms.ValidationError(_("Invalid doctrine selection."))
             data["doctrine_source"] = source
             data["doctrine_external_id"] = external_id
             data["doctrine_name"] = name
@@ -223,22 +249,22 @@ class StartFleetForm(FleetSettingsForm):
 
     request_id = forms.UUIDField(widget=forms.HiddenInput())
     operation_mode = forms.ChoiceField(
-        label="Operation Mode",
+        label=_("Operation Mode"),
         choices=[
-            ("full", "Send Ping + MOTD/SRP + Track Attendance"),
-            ("attendance_only", "Attendance Tracking Only (no Discord ping / MOTD / SRP)"),
+            ("full", _("Send Ping + MOTD/SRP + Track PAP")),
+            ("attendance_only", _("PAP Tracking Only (no Discord ping / MOTD / SRP)")),
         ],
         initial="full",
         widget=forms.RadioSelect,
     )
     fleet_timing = forms.ChoiceField(
-        label="Fleet Time",
-        choices=[(PING_NOW, "Ping now"), (PRE_PING, "Pre ping")],
+        label=pgettext_lazy("FleetOps", "Fleet Time"),
+        choices=[(PING_NOW, _("Ping now")), (PRE_PING, _("Pre ping"))],
         initial=PING_NOW,
         required=False,
         widget=forms.RadioSelect,
     )
-    fc_character_id = forms.ChoiceField(label="FC Character / Fleet Boss")
+    fc_character_id = forms.ChoiceField(label=_("FC Character / Fleet Boss"))
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, user=user, **kwargs)
@@ -259,7 +285,7 @@ class StartFleetForm(FleetSettingsForm):
 class ScheduledFleetForm(FleetSettingsForm):
     """Edit a scheduled fleet: the start form without FC, mode and timing choice."""
 
-    send_update = forms.BooleanField(label="Post the updated pre ping", required=False)
+    send_update = forms.BooleanField(label=_("Post the updated pre ping"), required=False)
     # One per edit page, so a double click on Save posts the updated pre ping once.
     edit_token = forms.UUIDField(widget=forms.HiddenInput(), required=False)
 
@@ -308,8 +334,8 @@ def scheduled_fleet_initial(operation):
 
 
 class StartScheduledFleetForm(forms.Form):
-    fc_character_id = forms.ChoiceField(label="FC Character / Fleet Boss")
-    send_ping = forms.BooleanField(label="Send a form-up ping now", required=False, initial=True)
+    fc_character_id = forms.ChoiceField(label=_("FC Character / Fleet Boss"))
+    send_ping = forms.BooleanField(label=_("Send a form-up ping now"), required=False, initial=True)
 
     def __init__(self, *args, user=None, operation=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -321,7 +347,7 @@ class StartScheduledFleetForm(forms.Form):
 
 
 class CancelScheduledFleetForm(forms.Form):
-    notify = forms.BooleanField(label="Post a cancellation notice", required=False)
+    notify = forms.BooleanField(label=_("Post a cancellation notice"), required=False)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -343,7 +369,7 @@ class EndFleetForm(forms.Form):
     """
 
     attendance_multiplier = forms.TypedChoiceField(
-        label="PAP multiplier", choices=multiplier_choices, coerce=int, widget=forms.RadioSelect
+        label=_("PAP multiplier"), choices=multiplier_choices, coerce=int, widget=forms.RadioSelect
     )
 
     def __init__(self, *args, allowed=None, **kwargs):
@@ -363,12 +389,12 @@ class FleetAttendanceMultiplierForm(forms.Form):
 
     REASON_MIN_LENGTH = 5
 
-    attendance_multiplier = forms.TypedChoiceField(label="PAP multiplier", choices=multiplier_choices, coerce=int)
+    attendance_multiplier = forms.TypedChoiceField(label=_("PAP multiplier"), choices=multiplier_choices, coerce=int)
     reason = forms.CharField(
-        label="Reason for an override",
+        label=_("Reason for an override"),
         max_length=255,
         required=False,
-        help_text="Required when the fleet did not run long enough for the multiplier.",
+        help_text=_("Required when the fleet did not run long enough for the multiplier."),
     )
 
     def __init__(self, *args, operation=None, can_override=False, **kwargs):
@@ -383,7 +409,8 @@ class FleetAttendanceMultiplierForm(forms.Form):
         field = self.fields["attendance_multiplier"]
         shown = sorted({*self.allowed, *all_multipliers()}) if can_override else self.allowed
         field.widget.choices = [
-            (value, f"{value}x" if value in self.allowed else f"{value}x (override)") for value in shown
+            (value, f"{value}x" if value in self.allowed else _("%(value)sx (override)") % {"value": value})
+            for value in shown
         ]
         if not can_override:
             del self.fields["reason"]
@@ -401,8 +428,8 @@ class FleetAttendanceMultiplierForm(forms.Form):
         elif len((cleaned.get("reason") or "").strip()) < self.REASON_MIN_LENGTH:
             self.add_error(
                 "reason",
-                f"{not_allowed_message(multiplier)} Give a reason of at least {self.REASON_MIN_LENGTH} "
-                "characters to override the duration rule.",
+                _("%(message)s Give a reason of at least %(count)s characters to override the duration rule.")
+                % {"message": not_allowed_message(multiplier), "count": self.REASON_MIN_LENGTH},
             )
         return cleaned
 
@@ -430,30 +457,40 @@ class EveDateTimeField(forms.DateTimeField):
 def format_duration(delta):
     minutes = int(delta.total_seconds() // 60)
     hours, minutes = divmod(minutes, 60)
-    return f"{hours} h {minutes:02d} min" if hours else f"{minutes} min"
+    if hours:
+        return gettext("%(hours)s h %(minutes)02d min") % {"hours": hours, "minutes": minutes}
+    return gettext("%(minutes)s min") % {"minutes": minutes}
+
+
+def long_fleet_message(duration):
+    """Why a fleet of this length needs the confirmation box."""
+    return _(
+        "This fleet would last %(duration)s. "
+        "Check the times, or tick this box if the fleet really ran for more than 6 hours."
+    ) % {"duration": format_duration(duration)}
 
 
 class ManualFleetForm(forms.Form):
     # Longer fleets are usually a mistyped date or time, so they need a confirmation.
     LONG_FLEET = timedelta(hours=6)
 
-    fleet_type = forms.ModelChoiceField(queryset=FleetType.objects.none())
-    doctrine_name = forms.CharField(max_length=255, required=False)
-    formup = forms.CharField(label="Form Up / Staging", max_length=255)
-    started_at = EveDateTimeField(label="Start Time — EVE time (UTC)")
-    ended_at = EveDateTimeField(label="End Time — EVE time (UTC)")
+    fleet_type = forms.ModelChoiceField(label=_("Fleet type"), queryset=FleetType.objects.none())
+    doctrine_name = forms.CharField(label=_("Doctrine name"), max_length=255, required=False)
+    formup = forms.CharField(label=_("Form Up / Staging"), max_length=255)
+    started_at = EveDateTimeField(label=_("Start Time — EVE time (UTC)"))
+    ended_at = EveDateTimeField(label=_("End Time — EVE time (UTC)"))
     confirm_long_fleet = forms.BooleanField(
-        label="This fleet really ran for more than 6 hours",
+        label=_("This fleet really ran for more than 6 hours"),
         required=False,
     )
     attendance_multiplier = forms.TypedChoiceField(
-        label="PAP multiplier",
+        label=_("PAP multiplier"),
         choices=multiplier_choices,
         coerce=int,
         initial=1,
-        help_text="Multipliers above 1x need a fleet that ran long enough.",
+        help_text=_("Multipliers above 1x need a fleet that ran long enough."),
     )
-    notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}))
+    notes = forms.CharField(label=_("Notes"), required=False, widget=forms.Textarea(attrs={"rows": 3}))
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -483,13 +520,9 @@ class ManualFleetForm(forms.Form):
         ended = data.get("ended_at")
         if started and ended:
             if ended <= started:
-                self.add_error("ended_at", "End Time must be after Start Time.")
+                self.add_error("ended_at", _("End Time must be after Start Time."))
             elif ended - started > self.LONG_FLEET and not data.get("confirm_long_fleet"):
-                self.add_error(
-                    "confirm_long_fleet",
-                    f"This fleet would last {format_duration(ended - started)}. "
-                    "Check the times, or tick this box if the fleet really ran for more than 6 hours.",
-                )
+                self.add_error("confirm_long_fleet", long_fleet_message(ended - started))
         return data
 
 
@@ -501,10 +534,10 @@ def _to_minute(value):
 class OperationEditForm(forms.ModelForm):
     LONG_FLEET = ManualFleetForm.LONG_FLEET
 
-    started_at = EveDateTimeField(label="Start Time — EVE time (UTC)")
-    ended_at = EveDateTimeField(label="End Time — EVE time (UTC)", required=False)
+    started_at = EveDateTimeField(label=_("Start Time — EVE time (UTC)"))
+    ended_at = EveDateTimeField(label=_("End Time — EVE time (UTC)"), required=False)
     confirm_long_fleet = forms.BooleanField(
-        label="This fleet really ran for more than 6 hours",
+        label=_("This fleet really ran for more than 6 hours"),
         required=False,
     )
 
@@ -552,13 +585,9 @@ class OperationEditForm(forms.ModelForm):
             stored = (_to_minute(self.instance.started_at), _to_minute(self.instance.ended_at))
             times_changed = (_to_minute(started), _to_minute(ended)) != stored
             if ended < started or (ended == started and times_changed):
-                self.add_error("ended_at", "End Time must be after Start Time.")
+                self.add_error("ended_at", _("End Time must be after Start Time."))
             elif times_changed and ended - started > self.LONG_FLEET and not data.get("confirm_long_fleet"):
-                self.add_error(
-                    "confirm_long_fleet",
-                    f"This fleet would last {format_duration(ended - started)}. "
-                    "Check the times, or tick this box if the fleet really ran for more than 6 hours.",
-                )
+                self.add_error("confirm_long_fleet", long_fleet_message(ended - started))
         return data
 
 
@@ -568,8 +597,8 @@ class IncentivePeriodForm(forms.ModelForm):
     class Meta:
         model = IncentivePeriod
         fields = ["budget", "minimum_fleets"]
-        labels = {"budget": "Budget (ISK)", "minimum_fleets": "Minimum fleets"}
-        help_texts = {"minimum_fleets": "Credited fleets an FC needs in this month to receive a payout."}
+        labels = {"budget": _("Budget (ISK)"), "minimum_fleets": _("Minimum fleets")}
+        help_texts = {"minimum_fleets": _("Credited fleets an FC needs in this month to receive a payout.")}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -579,25 +608,25 @@ class IncentivePeriodForm(forms.ModelForm):
 
 class ManualAttendanceForm(forms.Form):
     character_name = forms.CharField(
-        label="Character name",
+        label=_("Character name"),
         max_length=255,
         required=False,
-        help_text="Looked up in Alliance Auth, then in EVE.",
+        help_text=_("Looked up in Alliance Auth, then in EVE."),
     )
     character_id = forms.IntegerField(
-        label="Character ID",
+        label=_("Character ID"),
         min_value=1,
         max_value=MAX_DATABASE_ID,
         required=False,
-        help_text="Optional; use it when the name cannot be looked up.",
+        help_text=_("Optional; use it when the name cannot be looked up."),
     )
-    attendance_value = forms.IntegerField(min_value=1, max_value=100, initial=1)
+    attendance_value = forms.IntegerField(label=_("PAP value"), min_value=1, max_value=100, initial=1)
     duplicate_action = forms.ChoiceField(
-        label="If the character has tracked PAP",
+        label=_("If the character has tracked PAP"),
         choices=AttendanceRecord.Correction.choices,
         initial=AttendanceRecord.Correction.KEEP,
     )
-    notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2}))
+    notes = forms.CharField(label=_("Notes"), required=False, widget=forms.Textarea(attrs={"rows": 2}))
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -611,7 +640,8 @@ class ManualAttendanceForm(forms.Form):
         if character_id:
             if not CharacterOwnership.objects.filter(character__character_id=character_id).exists():
                 raise forms.ValidationError(
-                    f"Character {character_id} is not registered to any Alliance Auth user, so it cannot receive attendance."
+                    _("Character %(id)s is not registered to any Alliance Auth user, so it cannot receive PAP.")
+                    % {"id": character_id}
                 )
             return data
         if self.errors:
@@ -619,10 +649,13 @@ class ManualAttendanceForm(forms.Form):
             return data
         name = clean_name(data.get("character_name", ""))
         if not name:
-            raise forms.ValidationError("Enter a character name or a character ID.")
+            raise forms.ValidationError(_("Enter a character name or a character ID."))
         error = name_error(name)
         if error:
-            self.add_error("character_name", f"'{name}' cannot be an EVE character name. {error}")
+            self.add_error(
+                "character_name",
+                _("'%(name)s' cannot be an EVE character name. %(error)s") % {"name": name, "error": error},
+            )
             return data
         resolved = roster_import.resolve_character_name(name)
         if resolved.status == roster_import.AUTH:
@@ -631,16 +664,20 @@ class ManualAttendanceForm(forms.Form):
         elif resolved.status == roster_import.NOT_IN_AUTH:
             self.add_error(
                 "character_name",
-                f"Character '{resolved.name}' exists in EVE but is not registered in Alliance Auth, "
-                "so it cannot receive PAP.",
+                _(
+                    "Character '%(name)s' exists in EVE but is not registered in Alliance Auth, "
+                    "so it cannot receive PAP."
+                )
+                % {"name": resolved.name},
             )
         elif resolved.status == roster_import.ERROR:
             self.add_error(
                 "character_name",
-                f"Could not look the name up in ESI ({resolved.error.rstrip('.')}). Enter the character ID instead.",
+                _("Could not look the name up in ESI (%(error)s). Enter the character ID instead.")
+                % {"error": translate_stored(resolved.error).rstrip(".")},
             )
         else:
-            self.add_error("character_name", f"No EVE character named '{name}' was found.")
+            self.add_error("character_name", _("No EVE character named '%(name)s' was found.") % {"name": name})
         return data
 
 
@@ -660,8 +697,11 @@ def manageable_attendance_operations(user):
 class HistoricalManualAttendanceForm(ManualAttendanceForm):
     operation = forms.ModelChoiceField(
         queryset=FleetOperation.objects.none(),
-        label="Historical Fleet",
-        help_text="Active and closed fleets are available. Repeat entries or use Attendance Value > 1 when multiple credits are required.",
+        label=_("Historical Fleet"),
+        help_text=_(
+            "Active and closed fleets are available. Repeat entries or use PAP value > 1 when multiple credits "
+            "are required."
+        ),
     )
     field_order = ["operation"]
 
@@ -673,13 +713,14 @@ class HistoricalManualAttendanceForm(ManualAttendanceForm):
 
 class OperationRoleAssignmentForm(forms.Form):
     role = forms.ModelChoiceField(
+        label=_("Role"),
         queryset=SpecialRole.objects.none(),
         to_field_name="key",
         empty_label=None,
-        help_text="Roles marked FC credit count the fleet as an FC fleet for the pilot's FC points and incentives.",
+        help_text=_("Roles marked FC credit count the fleet as an FC fleet for the pilot's FC points and incentives."),
     )
-    character_id = forms.ChoiceField(label="Fleet Member")
-    notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2}))
+    character_id = forms.ChoiceField(label=_("Fleet Member"))
+    notes = forms.CharField(label=_("Notes"), required=False, widget=forms.Textarea(attrs={"rows": 2}))
 
     def __init__(self, *args, operation=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -695,7 +736,7 @@ class OperationRoleAssignmentForm(forms.Form):
 
 
 def _role_label(role):
-    return f"{role.name} (FC credit)" if role.grants_fc_credit else role.name
+    return _("%(name)s (FC credit)") % {"name": role.name} if role.grants_fc_credit else role.name
 
 
 def _fleet_member_choices(operation):
@@ -710,7 +751,11 @@ def _fleet_member_choices(operation):
     for source in (operation.pap_registrations, participant_rows(operation)):
         for character_id, name in source.values_list("character_id", "character_name"):
             names.setdefault(character_id, name)
+    unknown = _("Unknown corp")
     return [
-        (str(character_id), f"{name} — {corporations[character_id] or 'Unknown corp'}" if character_id in corporations else name)
+        (
+            str(character_id),
+            f"{name} — {corporations[character_id] or unknown}" if character_id in corporations else name,
+        )
         for character_id, name in sorted(names.items(), key=lambda item: (item[1].casefold(), item[0]))
     ]

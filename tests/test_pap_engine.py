@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The PAP engine: time in fleet from the tracking polls, and the PAP each character gets when a fleet closes."""
 
 from datetime import datetime, timedelta, timezone as dt_timezone

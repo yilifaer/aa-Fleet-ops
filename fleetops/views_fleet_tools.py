@@ -1,7 +1,11 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Fleet tab tools: inviting characters, structure templates and quick ship classification."""
 
 from allianceauth.authentication.decorators import permissions_required
 from django.contrib.auth.decorators import permission_required
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_POST
 
 from fleetops.models import FleetStructureTemplate
@@ -40,7 +44,7 @@ def invite_view(request, operation_uuid):
     operation = manage_operation_or_404(request, operation_uuid)
     character_ids = posted_ids(request)
     if not character_ids:
-        return fleet_response(request, operation, invalid("Choose the characters to invite."))
+        return fleet_response(request, operation, invalid(_("Choose the characters to invite.")))
     try:
         wing_id = posted_unit(request, "wing_id", "wing")
         squad_id = posted_unit(request, "squad_id", "squad")
@@ -87,7 +91,7 @@ def classify_view(request, operation_uuid):
     type_id = _database_id(request.POST.get("type_id", "").strip())
     function_id = _database_id(request.POST.get("function_id", "").strip())
     if type_id is None or function_id is None:
-        return fleet_response(request, operation, invalid("Choose a ship type and a ship function."))
+        return fleet_response(request, operation, invalid(_("Choose a ship type and a ship function.")))
     return run_fleet_action(
         request, operation, composition_config.classify_type, type_id, function_id, actor=request.user
     )

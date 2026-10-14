@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Fleet composition: ship functions, ship types, classes and systems, and the bridgeable mass (F8)."""
 
 from types import SimpleNamespace

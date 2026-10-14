@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The reviewer pages of FleetOps SRP: the review queue, the decisions on a claim and the payments list.
 
 The services that decide on claims (approving, paying, recalculating) have their own tests; the pages are tested with those
@@ -11,11 +14,12 @@ from django.db import connection
 from django.test import SimpleTestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
-from django.utils import timezone
+from django.utils import timezone, translation
 
 from fleetops.models import SrpClaim, SrpSettings
 from fleetops.srp import review
 from fleetops.srp.types import BulkResult, Calculation, ClaimWarning, LimitState, SrpError, SrpLimitError, SrpStateError
+from fleetops.texts import translate_stored
 from fleetops.views_srp_review import day_bounds
 
 from . import factories as f
@@ -533,6 +537,37 @@ class ClaimActionTests(ManagerPagesTestCase):
 
         self.assertEqual(approve.call_args.kwargs["amount"], 50_000_000)
         self.assertEqual(approve.call_args.kwargs["reason"], "Reduced to the remaining monthly personal limit.")
+
+    def test_the_reason_offered_in_another_language_is_stored_in_English(self):
+        approve = self.service("approve_claim")
+        client = self.client_for(self.manager)
+        client.cookies["django_language"] = "zh-hans"
+        with translation.override("zh-hans"):
+            offered = translate_stored("Reduced to the remaining monthly personal limit.")
+        self.assertNotEqual(offered, "Reduced to the remaining monthly personal limit.")
+
+        # Nothing written, and the sentence of the page left as it was: both are the message, in English.
+        for reason in ("", offered):
+            with self.subTest(reason=reason):
+                self.act("approve", {"mode": "within_limit", "reason": reason}, client=client)
+                self.assertEqual(
+                    approve.call_args.kwargs["reason"], "Reduced to the remaining monthly personal limit."
+                )
+
+        self.act("approve", {"mode": "within_limit", "reason": f"{offered} Checked."}, client=client)
+        self.assertEqual(approve.call_args.kwargs["reason"], f"{offered} Checked.")
+
+    def test_the_page_offers_the_sentence_in_the_language_of_the_reviewer(self):
+        client = self.client_for(self.manager)
+        client.cookies["django_language"] = "zh-hans"
+        with translation.override("zh-hans"):
+            offered = translate_stored("Reduced to the remaining monthly personal limit.")
+
+        english = self.client.get(self.page())
+        chinese = client.get(self.page())
+
+        self.assertContains(english, 'data-srp-limit-reason="Reduced to the remaining monthly personal limit."')
+        self.assertContains(chinese, f'data-srp-limit-reason="{offered}"')
 
     def test_approve_within_limit_keeps_the_reason_that_was_written(self):
         approve = self.service("approve_claim")

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Submitting claims: the preview a member confirms, the claim itself, withdrawing and submitting again.
 
 The helpers at the top (``record_event``, ``evaluate``, ``apply_evaluation``, the warning helpers) are shared
@@ -13,6 +16,7 @@ from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+from fleetops import texts
 from fleetops.models import SrpClaim, SrpClaimEvent, SrpFleetLink, SrpKillmail, SrpSettings
 from fleetops.providers.zkillboard import MIN_KILL_AGE
 from fleetops.services.audit import audit
@@ -57,10 +61,19 @@ PRESENCE_WARNING_CODES = frozenset(
     {display.NEAR, display.NOT_IN_FLEET, display.NEVER_SEEN, display.REGISTERED, display.OUTSIDE_WINDOW, "ship_mismatch"}
 )
 
-EXPIRED_TEXT = "This check has expired. Check the loss again."
-THROTTLED_TEXT = "You checked many losses in a short time. Wait a few minutes and try again."
-OWN_DUPLICATE_TEXT = "You already submitted this loss."
-OTHER_DUPLICATE_TEXT = "This loss was already claimed by another pilot."
+# Stored messages (English): the pages show them through ``translate_stored``.
+EXPIRED_TEXT = texts.SRP_CHECK_EXPIRED()
+THROTTLED_TEXT = texts.SRP_THROTTLED()
+OWN_DUPLICATE_TEXT = texts.SRP_OWN_DUPLICATE()
+OTHER_DUPLICATE_TEXT = texts.SRP_OTHER_DUPLICATE()
+# The reasons ``clean_reason`` knows by name: the message for a missing one and the one for a long one.
+REASON_MESSAGES = {
+    "reason": (texts.SRP_NEED_REASON, texts.SRP_REASON_TOO_LONG),
+    "reason for the rejection": (texts.APPROVAL_REASON_REQUIRED, texts.SRP_REJECTION_REASON_TOO_LONG),
+    "reason for revoking the approval": (texts.SRP_NEED_REASON_REVOKE, texts.SRP_REVOKE_REASON_TOO_LONG),
+    "reason for undoing the payment": (texts.SRP_NEED_REASON_UNPAY, texts.SRP_UNPAY_REASON_TOO_LONG),
+    "reason for reopening the claim": (texts.SRP_NEED_REASON_REOPEN, texts.SRP_REOPEN_REASON_TOO_LONG),
+}
 
 MAX_STORED_VALUE = Decimal(10**17)
 CENT = Decimal("0.01")
@@ -70,17 +83,25 @@ CENT = Decimal("0.01")
 
 
 def status_label(status) -> str:
-    try:
-        return SrpClaim.Status(status).label.lower()
-    except ValueError:
-        return str(status)
+    """The status in words, lower case, for a stored message: English, translated where it is shown."""
+    word = texts.CLAIM_STATUS_WORDS.get(str(status))
+    return word() if word else str(status)
+
+
+def limit_name(kind) -> str:
+    """The monthly limit that ``kind`` names, in words, for a stored message: English."""
+    if kind == LIMIT_PERSONAL:
+        return texts.SRP_LIMIT_PERSONAL()
+    if kind == LIMIT_CORPORATION:
+        return texts.SRP_LIMIT_CORPORATION()
+    return f"monthly {kind} limit" if kind else texts.SRP_LIMIT_MONTHLY()
 
 
 def wrong_state(claim, needs: str, target=None) -> SrpStateError:
     """The error for an action that cannot start from the claim's status: "This claim is already approved."
     when the claim already is where the action leads, else ``needs``."""
     if target is not None and claim.status == target:
-        return SrpStateError("already", f"This claim is already {status_label(target)}.")
+        return SrpStateError("already", texts.SRP_ALREADY_STATUS(status=status_label(target)))
     return SrpStateError("wrong_state", needs)
 
 
@@ -89,7 +110,7 @@ def lock_claim(claim) -> SrpClaim:
     try:
         return SrpClaim.objects.select_for_update().get(pk=claim.pk)
     except SrpClaim.DoesNotExist:
-        raise SrpError("missing", "This claim no longer exists.") from None
+        raise SrpError("missing", texts.SRP_CLAIM_GONE()) from None
 
 
 def sync_claim(target, source):
@@ -145,10 +166,11 @@ def record_event(
 def clean_reason(reason, *, required: bool = False, what: str = "reason") -> str:
     """A reason or note, trimmed; ``SrpError`` when it is required and empty or too long."""
     text = (reason or "").strip()
+    needed, too_long = REASON_MESSAGES[what]
     if required and not text:
-        raise SrpError("reason_required", f"Give a {what}.")
+        raise SrpError("reason_required", needed())
     if len(text) > MAX_REASON_LENGTH:
-        raise SrpError("reason_too_long", f"The {what} is too long (at most {MAX_REASON_LENGTH} characters).")
+        raise SrpError("reason_too_long", too_long(max=MAX_REASON_LENGTH))
     return text
 
 
@@ -261,7 +283,8 @@ def presence_warnings(result) -> list[ClaimWarning]:
     if result.level != display.LEVEL_OK:
         found.append(ClaimWarning(result.code, result.level, dict(result.params)))
     if result.tracked_ship_type_id or result.tracked_ship_name:
-        ship = result.tracked_ship_name or f"type {result.tracked_ship_type_id}"
+        # A ship without a name is shown by its type ID when the warning is read.
+        ship = result.tracked_ship_name or ""
         found.append(
             ClaimWarning(
                 "ship_mismatch", display.LEVEL_INFO, {"ship": ship, "ship_type_id": result.tracked_ship_type_id}
@@ -384,7 +407,7 @@ def duplicate_message(user, existing) -> str:
     if existing.user_id is not None and existing.user_id == user.pk:
         return OWN_DUPLICATE_TEXT
     if access.is_manager(user) and existing.main_character_name:
-        return f"This loss was already claimed by {existing.main_character_name}."
+        return texts.SRP_CLAIMED_BY(name=existing.main_character_name)
     return OTHER_DUPLICATE_TEXT
 
 
@@ -402,9 +425,7 @@ def decide_submission(calculation, policy) -> tuple[str, str, dict]:
     kind = monthly_limit_kind(calculation)
     state = calculation.limit(kind)
     cap = state.cap if state else None
-    name = display.MONTHLY_KIND_LABELS.get(kind, kind)
-    limit = f"monthly {name} limit" if name else "monthly limit"
-    text = f"Rejected automatically: the {limit} is used up (cap {display.format_isk(cap)})."
+    text = texts.SRP_REJECTED_LIMIT_USED_UP(limit=limit_name(kind), cap=display.format_isk(cap))
     return Status.REJECTED, text, {"code": "limit_used_up", "kind": kind, "cap": cap}
 
 
@@ -537,7 +558,7 @@ def _read_token(user, token) -> dict:
 def _clean_comment(comment) -> str:
     text = (comment or "").strip()
     if len(text) > MAX_COMMENT_LENGTH:
-        raise SrpError("comment_too_long", f"The comment is too long (at most {MAX_COMMENT_LENGTH} characters).")
+        raise SrpError("comment_too_long", texts.SRP_COMMENT_TOO_LONG(max=MAX_COMMENT_LENGTH))
     return text
 
 
@@ -666,12 +687,12 @@ def submit_claim(user, token: str, *, comment: str = "") -> SrpClaim:
 def withdraw_claim(claim: SrpClaim, *, actor, reason: str = "") -> SrpClaim:
     """Pending to withdrawn, by the claimant."""
     if actor is None or claim.user_id != actor.pk:
-        raise SrpError("forbidden", "Only the claimant can withdraw this claim.")
+        raise SrpError("forbidden", texts.SRP_ONLY_CLAIMANT_WITHDRAWS())
     reason = clean_reason(reason)
     with quota.quota_lock():
         locked = lock_claim(claim)
         if locked.status != Status.PENDING:
-            raise wrong_state(locked, "Only pending claims can be withdrawn.", Status.WITHDRAWN)
+            raise wrong_state(locked, texts.SRP_ONLY_PENDING_WITHDRAWN(), Status.WITHDRAWN)
         previous = locked.status
         locked.status = Status.WITHDRAWN
         locked.save(update_fields=["status", "updated_at"])
@@ -694,12 +715,12 @@ def resubmit_claim(claim: SrpClaim, *, actor) -> SrpClaim:
     stop a claim that exists already. Over the monthly limit the usual rules apply, rejection included.
     """
     if actor is None or claim.user_id != actor.pk:
-        raise SrpError("forbidden", "Only the claimant can submit this claim again.")
+        raise SrpError("forbidden", texts.SRP_ONLY_CLAIMANT_RESUBMITS())
     now = timezone.now()
     with quota.quota_lock() as srp:
         locked = lock_claim(claim)
         if locked.status != Status.WITHDRAWN:
-            raise wrong_state(locked, "Only withdrawn claims can be submitted again.", Status.PENDING)
+            raise wrong_state(locked, texts.SRP_ONLY_WITHDRAWN_RESUBMITTED(), Status.PENDING)
         km = locked.killmail
         # No link is given: a closed link does not stop a claim that exists, but the payout rules of its fleet
         # still apply, as they do in the calculation below.
@@ -760,7 +781,7 @@ def recalculate_under_lock(claim, *, actor, reason: str, action: str = Action.RE
     with quota.quota_lock() as srp:
         locked = lock_claim(claim)
         if locked.status != Status.PENDING:
-            raise wrong_state(locked, "Only pending claims can be recalculated.")
+            raise wrong_state(locked, texts.SRP_ONLY_PENDING_RECALCULATED())
         km = locked.killmail
         previous = calculation_snapshot(locked)
         evaluation = evaluate(
@@ -824,7 +845,7 @@ def _refresh_shown_value(claim) -> None:
             Action.VALUE_UPDATE,
             actor=None,
             from_status=locked.status,
-            reason="Loss value from zKillboard",
+            reason=texts.SRP_REASON_ZKILL_VALUE(),
             data={"previous": previous, "loss_value": calculation["loss_value"], "value_source": source},
             old=previous,
             new={"loss_value": calculation["loss_value"], "value_source": source},
@@ -843,7 +864,7 @@ def on_value_updated(km: SrpKillmail) -> None:
         _refresh_shown_value(claim)
         return
     try:
-        recalculate_under_lock(claim, actor=None, reason="Loss value from zKillboard", action=Action.VALUE_UPDATE)
+        recalculate_under_lock(claim, actor=None, reason=texts.SRP_REASON_ZKILL_VALUE(), action=Action.VALUE_UPDATE)
     except SrpStateError:
         # Decided or withdrawn while the value was being looked up.
         return

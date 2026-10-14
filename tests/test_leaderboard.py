@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The PAP leaderboard: places, ties, the viewer's rank, who sees which board and the query budget."""
 
 import html

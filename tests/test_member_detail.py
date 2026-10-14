@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The statistics page of one member: ranks, characters, fleet types, fleets, access and fleet links."""
 
 import html

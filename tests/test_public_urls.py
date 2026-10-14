@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """FleetOps URLs behind Alliance Auth's login check, and the one public page.
 
 The URL conf is built the way Alliance Auth builds it (``urls_from_apps`` with the FleetOps url hook),

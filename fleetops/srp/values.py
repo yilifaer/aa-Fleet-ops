@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Loss values: which value a claim uses, when zKillboard is asked again, and the ESI estimate."""
 
 from dataclasses import dataclass

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """What the statistics exports contain: the rows and columns of every dataset and the download around them."""
 
 import calendar

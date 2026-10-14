@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 import uuid
 from datetime import timedelta
 
@@ -6,13 +9,13 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 from kombu.exceptions import OperationalError as QueueError
 
+from fleetops import texts
 from fleetops.models import (
     AuditLog,
     FleetOperation,
     FleetOpsSettings,
     OperationAction,
     OperationActionAttempt,
-    end_reason_text,
 )
 from fleetops.providers.doctrines import doctrine_fits_snapshot
 from fleetops.providers.esi import FleetESIError, detect_character_fleet, set_fleet_motd
@@ -39,17 +42,17 @@ from fleetops.services.tracking import sync_operation
 
 logger = get_extension_logger(__name__)
 
-NOT_RENDERED = "Not sent because the fleet messages could not be rendered."
+NOT_RENDERED = texts.NOT_RENDERED()
 FINISHED_STATUSES = (FleetOperation.Status.CLOSED, FleetOperation.Status.CANCELLED)
 EndReason = FleetOperation.EndReason
 # A start moves its record forward within seconds. One that has not moved for this long was
 # interrupted (for example its web worker was killed) and no longer holds its ESI fleet.
 STARTING_ABANDONED_AFTER = timedelta(minutes=5)
-START_ABANDONED_MESSAGE = "The fleet start did not finish, so this operation was cancelled. Start the fleet again to track it."
-NOT_OWNED_MESSAGE = "Selected character is not owned by the current Alliance Auth user."
-NO_PING_CHANNEL = "No Discord channel selected; the ping is available to copy."
-PING_NOT_REQUESTED = "Form-up ping not requested."
-EMPTY_PING = "Not sent because the ping text is empty."
+START_ABANDONED_MESSAGE = texts.START_ABANDONED()
+NOT_OWNED_MESSAGE = texts.NOT_OWNED()
+NO_PING_CHANNEL = texts.NO_PING_CHANNEL()
+PING_NOT_REQUESTED = texts.PING_NOT_REQUESTED()
+EMPTY_PING = texts.EMPTY_PING()
 # What the SRP step stores on the fleet record.
 SRP_FIELDS = ["srp_provider", "srp_reference", "srp_url", "srp_error", "updated_at"]
 
@@ -73,12 +76,24 @@ def set_action(operation, action, success, error=""):
 
 
 def not_boss_message(character_name, boss_id):
-    return f"{character_name} is not the fleet boss. The current boss is {character_label(boss_id)}."
+    return texts.NOT_FLEET_BOSS(character=character_name, boss=character_label(boss_id))
 
 
 def _skipped_message(operation, step):
-    mode = "Manual fleet" if operation.is_manual else "Attendance-only mode"
-    return f"{mode}: {step} intentionally skipped."
+    """Why a step is not performed on purpose; ``step`` is the English name of the step."""
+    mode = texts.MODE_MANUAL_FLEET() if operation.is_manual else texts.MODE_PAP_ONLY()
+    return texts.STEP_SKIPPED(mode=mode, step=step)
+
+
+def end_label(reason, detail=""):
+    """How the end of a fleet is stored, in English; the page shows it in the viewer's language."""
+    if reason == EndReason.MANUAL:
+        return texts.END_MANUAL()
+    if reason == EndReason.FLEET_GONE:
+        return texts.END_FLEET_GONE()
+    if reason == EndReason.BOSS_HANDOVER:
+        return texts.END_BOSS_HANDOVER(name=detail) if detail else texts.END_BOSS_HANDOVER_UNKNOWN()
+    return ""
 
 
 def _keep_skipped(operation, action, message):
@@ -99,7 +114,7 @@ def _ping_channel_problem(operation, action):
     if channel is None:
         return set_action(operation, action, None, NO_PING_CHANNEL)
     if not channel.is_active:
-        return set_action(operation, action, False, f"Ping channel {channel.name} is disabled.")
+        return set_action(operation, action, False, texts.PING_CHANNEL_DISABLED(name=channel.name))
     return None
 
 
@@ -135,7 +150,7 @@ def send_channel_notice(operation, action, text):
 def _update_motd(operation, user, character_id):
     # An empty MOTD would wipe the one the FC already set in game.
     if not operation.motd_text:
-        return set_action(operation, "motd_update", False, "Not sent because the MOTD text is empty.")
+        return set_action(operation, "motd_update", False, texts.EMPTY_MOTD())
     try:
         set_fleet_motd(user, character_id, operation.esi_fleet_id, operation.motd_text)
     except Exception as exc:
@@ -244,7 +259,7 @@ def fleet_values(cleaned_data):
     """Fleet settings from the start or scheduled fleet form, as model field values."""
     fleet_type = cleaned_data["fleet_type"]
     full_mode = cleaned_data.get("operation_mode", "full") == "full"
-    # Attendance-only fleets never post, so their ping is only ever copied.
+    # PAP-only fleets never post, so their ping is only ever copied.
     channel = cleaned_data.get("ping_channel") if full_mode else None
     selection = cleaned_data.get("mention_selection") or MentionSelection()
     source = cleaned_data.get("doctrine_source", "") or "custom"
@@ -392,7 +407,7 @@ def record_start(operation, actor, *, character, from_schedule, handed_over):
                 "new_boss_character_id": character.character_id,
                 "new_operation_id": operation.pk,
             },
-            reason=end_reason_text(record.end_reason, record.end_detail),
+            reason=end_label(record.end_reason, record.end_detail),
         )
 
 
@@ -460,7 +475,7 @@ def create_srp_at_start(operation) -> None:
             _apply_srp_result(operation, srp)
             set_action(operation, "srp_link", True if srp.created else None, srp.message)
         else:
-            set_action(operation, "srp_link", None, "Automatic SRP link creation is disabled.")
+            set_action(operation, "srp_link", None, texts.SRP_AUTO_DISABLED())
     except Exception as exc:
         operation.srp_error = report_failure(logger, "SRP creation", exc, operation)[:4000]
         set_action(operation, "srp_link", False, operation.srp_error)
@@ -549,7 +564,7 @@ def retry_motd(operation):
 
 
 def retry_srp(operation):
-    # Manual records may link SRP later; attendance-only fleets never create one.
+    # Manual records may link SRP later; PAP-only fleets never create one.
     if not operation.send_ping and not operation.is_manual:
         return _keep_skipped(operation, "srp_link", _skipped_message(operation, "SRP creation"))
     try:
@@ -557,9 +572,7 @@ def retry_srp(operation):
             # Lock the row so concurrent retries cannot both create an SRP fleet.
             current = FleetOperation.objects.select_for_update().get(pk=operation.pk)
             if current.srp_reference or current.srp_url:
-                return set_action(
-                    operation, "srp_link", True, "SRP fleet is already linked; no new SRP fleet was created."
-                )
+                return set_action(operation, "srp_link", True, texts.SRP_ALREADY_LINKED())
             srp = create_srp_link(operation, FleetOpsSettings.get_solo().srp_provider)
             _apply_srp_result(operation, srp)
             operation.save(update_fields=["srp_provider", "srp_reference", "srp_url", "srp_error", "updated_at"])
@@ -636,7 +649,7 @@ def end_fleet(operation, actor=None, automatic=False, attendance_multiplier=None
             return operation
         operation.refresh_from_db()
         settings = FleetOpsSettings.get_solo()
-        label = end_reason_text(reason, detail)
+        label = end_label(reason, detail)
         ended_at = timezone.now()
         if operation.end_requested_at:
             # The fleet ended when its end was requested (or the boss handed it over), even if this
@@ -662,10 +675,11 @@ def end_fleet(operation, actor=None, automatic=False, attendance_multiplier=None
         # Whoever was still in fleet left when it ended.
         operation.member_states.filter(is_active=True).update(is_active=False, left_at=ended_at)
         summary = finalize_pap(operation, actor=actor)
-        pap_text = f"PAP: {summary['granted']} granted at {multiplier}x."
+        granted = {"granted": summary["granted"], "multiplier": multiplier}
+        pap_text = texts.FLEET_END_PAP(reason=label, **granted) if label else texts.PAP_GRANTED(**granted)
         if pending:
-            pap_text += " The multiplier choice is pending."
-        set_action(operation, "fleet_end", True, f"{label}. {pap_text}" if label else pap_text)
+            pap_text += " " + texts.PAP_MULTIPLIER_PENDING()
+        set_action(operation, "fleet_end", True, pap_text)
         new_state = {
             "status": operation.status,
             "tracking_enabled": operation.tracking_enabled,
@@ -761,7 +775,7 @@ def create_manual_fleet(*, user, cleaned_data: dict):
     profile = getattr(user, "profile", None)
     main = getattr(profile, "main_character", None)
     if main is None:
-        raise ValueError("A main character is required to create a manual fleet record.")
+        raise ValueError(texts.MAIN_REQUIRED())
     started_at = cleaned_data["started_at"]
     ended_at = cleaned_data.get("ended_at") or max(timezone.now(), started_at)
     fleet_type = cleaned_data["fleet_type"]
@@ -791,11 +805,11 @@ def create_manual_fleet(*, user, cleaned_data: dict):
     )
     if not evaluate_stats_inclusion(operation):
         operation.save(update_fields=["counts_for_stats", "updated_at"])
-    set_action(operation, "manual_fleet", True, "Manual fleet record created without ESI tracking.")
-    set_action(operation, "discord_ping", None, "Manual fleet: no Discord ping sent.")
-    set_action(operation, "motd_update", None, "Manual fleet: no MOTD update attempted.")
-    set_action(operation, "tracking_start", None, "Manual fleet: no ESI tracking started.")
-    set_action(operation, "srp_link", None, "Manual fleet: SRP can be linked/retried manually if needed.")
+    set_action(operation, "manual_fleet", True, texts.MANUAL_FLEET_CREATED())
+    set_action(operation, "discord_ping", None, texts.MANUAL_NO_PING())
+    set_action(operation, "motd_update", None, texts.MANUAL_NO_MOTD())
+    set_action(operation, "tracking_start", None, texts.MANUAL_NO_TRACKING())
+    set_action(operation, "srp_link", None, texts.MANUAL_SRP())
     audit(
         user,
         "fleet.manual_create",

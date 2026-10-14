@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Texts and number formats for the codes and amounts SRP stores.
 
 Warnings, fleet checks and calculation notes are stored as a code with parameters and turned into text
@@ -6,6 +9,8 @@ their code, never as an error.
 """
 
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+
+from django.utils.translation import gettext, gettext_lazy, pgettext_lazy
 
 LEVEL_INFO = "info"
 LEVEL_WARNING = "warning"
@@ -25,17 +30,17 @@ NOT_APPLICABLE = "not_applicable"
 
 # Which limit kept an amount down: "loss_cap" is the per-loss cap, the others the monthly limits.
 LIMIT_KIND_LABELS = {
-    "loss_cap": "per-loss cap",
-    "personal": "personal monthly limit",
-    "corporation": "corporation monthly limit",
+    "loss_cap": gettext_lazy("per-loss cap"),
+    "personal": gettext_lazy("personal monthly limit"),
+    "corporation": gettext_lazy("corporation monthly limit"),
 }
 # Name of the limit inside "the monthly ... limit".
 MONTHLY_KIND_LABELS = {"personal": "personal", "corporation": "corporation"}
 
 MATCH_LABELS = {
-    "doctrine_ship": "Doctrine and ship",
-    "doctrine": "Doctrine",
-    "ship": "Ship",
+    "doctrine_ship": gettext_lazy("Doctrine and ship"),
+    "doctrine": pgettext_lazy("FleetOps", "Doctrine"),
+    "ship": gettext_lazy("Ship"),
 }
 
 # Amounts with more digits than this are not ISK; they are shown as missing instead of failing the page.
@@ -107,45 +112,76 @@ def _isk(params, name) -> str:
 def _monthly_limit(params) -> str:
     """``monthly personal limit``, ``monthly corporation limit`` or just ``monthly limit``."""
     kind = (params or {}).get("kind", "")
-    kind = MONTHLY_KIND_LABELS.get(kind, str(kind or ""))
-    return f"monthly {kind} limit" if kind else "monthly limit"
+    if kind == "personal":
+        return gettext("monthly personal limit")
+    if kind == "corporation":
+        return gettext("monthly corporation limit")
+    if kind:
+        return gettext("monthly %(kind)s limit") % {"kind": kind}
+    return gettext("monthly limit")
 
 
 def _text_over_limit(params):
-    return (
-        f"Over the {_monthly_limit(params)}: {_isk(params, 'requested')} requested, "
-        f"{_isk(params, 'remaining')} left."
-    )
+    return gettext("Over the %(limit)s: %(requested)s requested, %(remaining)s left.") % {
+        "limit": _monthly_limit(params),
+        "requested": _isk(params, "requested"),
+        "remaining": _isk(params, "remaining"),
+    }
 
 
 def _text_reduced_by_limit(params):
-    return (
-        f"Reduced to the remaining {_monthly_limit(params)}: {_isk(params, 'remaining')} "
-        f"of {_isk(params, 'requested')} requested."
-    )
+    return gettext("Reduced to the remaining %(limit)s: %(remaining)s of %(requested)s requested.") % {
+        "limit": _monthly_limit(params),
+        "remaining": _isk(params, "remaining"),
+        "requested": _isk(params, "requested"),
+    }
 
 
 def _text_external_claim(params):
     claims = [str(item) for item in (params or {}).get("claims") or ()]
-    return f"Also claimed in {', '.join(claims)}." if claims else "Also claimed in another SRP system."
+    if claims:
+        return gettext("Also claimed in %(systems)s.") % {"systems": ", ".join(claims)}
+    return gettext("Also claimed in another SRP system.")
 
 
 def _text_ship_mismatch(params):
-    ship = (params or {}).get("ship") or "another ship"
-    return f"Tracked ship before the loss: {ship}."
+    params = params or {}
+    type_id = params.get("ship_type_id")
+    ship = params.get("ship") or (gettext("Type %(id)s") % {"id": type_id} if type_id else gettext("another ship"))
+    return gettext("Tracked ship before the loss: %(ship)s.") % {"ship": ship}
 
 
 def _text_near(params):
     params = params or {}
-    action = "leaving" if params.get("direction") == "leave" else "joining"
+    leaving = params.get("direction") == "leave"
     seconds = params.get("seconds")
     interval = params.get("interval")
-    text = "Not in the fleet at the loss time by the tracking data"
-    if isinstance(seconds, int):
-        text += f", but within {seconds} s of {action}"
-    if isinstance(interval, int):
-        text += f"; tracking polls every {interval} s"
-    return text + "."
+    values = {"seconds": seconds, "interval": interval}
+    if isinstance(seconds, int) and isinstance(interval, int):
+        if leaving:
+            text = gettext(
+                "Not in the fleet at the loss time by the tracking data, but within %(seconds)s s of leaving; "
+                "tracking polls every %(interval)s s."
+            )
+        else:
+            text = gettext(
+                "Not in the fleet at the loss time by the tracking data, but within %(seconds)s s of joining; "
+                "tracking polls every %(interval)s s."
+            )
+    elif isinstance(seconds, int):
+        if leaving:
+            text = gettext(
+                "Not in the fleet at the loss time by the tracking data, but within %(seconds)s s of leaving."
+            )
+        else:
+            text = gettext(
+                "Not in the fleet at the loss time by the tracking data, but within %(seconds)s s of joining."
+            )
+    elif isinstance(interval, int):
+        text = gettext("Not in the fleet at the loss time by the tracking data; tracking polls every %(interval)s s.")
+    else:
+        text = gettext("Not in the fleet at the loss time by the tracking data.")
+    return text % values
 
 
 # How serious a fleet presence code is; the claim stores the code only.
@@ -160,31 +196,32 @@ PRESENCE_LEVEL_BY_CODE = {
 }
 
 PRESENCE_TEXTS = {
-    IN_FLEET: lambda params: "In the fleet at the time of the loss.",
+    IN_FLEET: lambda params: gettext("In the fleet at the time of the loss."),
     NEAR: _text_near,
-    NOT_IN_FLEET: lambda params: "Not in the fleet at the time of the loss.",
-    NEVER_SEEN: lambda params: "This character was never seen in the fleet.",
-    REGISTERED: lambda params: "No tracking data; registered for PAP in this fleet.",
-    OUTSIDE_WINDOW: lambda params: "No tracking data; the loss is outside the time of the fleet.",
-    NOT_APPLICABLE: lambda params: "Not a fleet loss.",
+    NOT_IN_FLEET: lambda params: gettext("Not in the fleet at the time of the loss."),
+    NEVER_SEEN: lambda params: gettext("This character was never seen in the fleet."),
+    REGISTERED: lambda params: gettext("No tracking data; registered for PAP in this fleet."),
+    OUTSIDE_WINDOW: lambda params: gettext("No tracking data; the loss is outside the time of the fleet."),
+    NOT_APPLICABLE: lambda params: gettext("Not a fleet loss."),
 }
 
 WARNING_TEXTS = {
     "over_limit": _text_over_limit,
     "reduced_by_limit": _text_reduced_by_limit,
-    "value_estimate": lambda params: "Value is an ESI market estimate.",
-    "value_pending": lambda params: "The value from zKillboard is not available yet.",
-    "value_missing": lambda params: "No value available.",
+    "value_estimate": lambda params: gettext("Value is an ESI market estimate."),
+    "value_pending": lambda params: gettext("The value from zKillboard is not available yet."),
+    "value_missing": lambda params: gettext("No value available."),
     "external_claim": _text_external_claim,
     "ship_mismatch": _text_ship_mismatch,
 }
 
 NOTE_TEXTS = {
-    "no_rule": lambda params: "No payout rule for this ship.",
-    "no_value": lambda params: "Value not available yet.",
-    "percentage_zero": lambda params: "The payout percentage is 0.",
-    "loss_cap": lambda params: f"Capped at the per-loss cap of {_isk(params, 'cap')}.",
-    "monthly_limit": lambda params: f"Limited to the remaining {_monthly_limit(params)} of {_isk(params, 'remaining')}.",
+    "no_rule": lambda params: gettext("No payout rule for this ship."),
+    "no_value": lambda params: gettext("Value not available yet."),
+    "percentage_zero": lambda params: gettext("The payout percentage is 0."),
+    "loss_cap": lambda params: gettext("Capped at the per-loss cap of %(cap)s.") % {"cap": _isk(params, "cap")},
+    "monthly_limit": lambda params: gettext("Limited to the remaining %(limit)s of %(remaining)s.")
+    % {"limit": _monthly_limit(params), "remaining": _isk(params, "remaining")},
 }
 
 
@@ -222,8 +259,10 @@ def note_text(code, params=None) -> str:
 
 
 def limit_kind_label(kind) -> str:
-    return LIMIT_KIND_LABELS.get(kind, _humanize(kind))
+    label = LIMIT_KIND_LABELS.get(kind)
+    return _humanize(kind) if label is None else str(label)
 
 
 def match_label(match) -> str:
-    return MATCH_LABELS.get(match, _humanize(match))
+    label = MATCH_LABELS.get(match)
+    return _humanize(match) if label is None else str(label)

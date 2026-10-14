@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+// SPDX-License-Identifier: GPL-3.0-only
+
 // Fleet tab: renaming, drag and drop moves, member menus and the selection bar.
 //
 // Every change is a POST of a form[data-fleet-action]; the shared action handler of fleet_live.js
@@ -64,7 +67,7 @@
       return;
     }
     if (COMMANDER_ROLES.includes(role) && characterIds.length !== 1) {
-      flash('Only one member can take a commander position. Choose a single member.', 'warning');
+      flash(gettext('Only one member can take a commander position. Choose a single member.'), 'warning');
       return;
     }
     form.querySelectorAll('input[name="character_ids"]').forEach((input) => input.remove());
@@ -174,12 +177,12 @@
     const single = rows.length === 1 ? rows[0] : null;
     if (single && isAt(single, role, wingId, squadId)) {
       button.disabled = true;
-      button.textContent = `${label} (now)`;
+      button.textContent = interpolate(gettext('%(label)s (now)'), { label }, true);
     } else if (COMMANDER_ROLES.includes(role)) {
       const current = holder(role, wingId, squadId);
       if (current && (!single || current !== single)) {
         button.disabled = true;
-        button.title = `Taken by ${memberName(current) || 'another member'}`;
+        button.title = interpolate(gettext('Taken by %(name)s'), { name: memberName(current) || gettext('another member') }, true);
       }
     }
     return button;
@@ -200,7 +203,7 @@
     const single = ids.length === 1;
     const lines = [];
     if (single) {
-      lines.push(targetLine('Fleet', [targetButton('Fleet commander', 'fleet_commander', '', '', rows)], false));
+      lines.push(targetLine(gettext('Fleet'), [targetButton(gettext('Fleet commander'), 'fleet_commander', '', '', rows)], false));
     }
     const fleetTree = tree();
     const wings = fleetTree ? fleetTree.querySelectorAll('li.fleet-node[data-node="wing"]') : [];
@@ -209,8 +212,8 @@
       if (!isId(wingId)) {
         return;
       }
-      const wingButtons = single ? [targetButton('Wing commander', 'wing_commander', wingId, '', rows)] : [];
-      const wingLine = targetLine(nodeName(wing) || `Wing ${wingId}`, wingButtons, false);
+      const wingButtons = single ? [targetButton(gettext('Wing commander'), 'wing_commander', wingId, '', rows)] : [];
+      const wingLine = targetLine(nodeName(wing) || interpolate(gettext('Wing %(id)s'), { id: wingId }, true), wingButtons, false);
       wingLine.classList.add('fw-semibold', 'border-top');
       lines.push(wingLine);
       wing.querySelectorAll('li.fleet-node[data-node="squad"]').forEach((squad) => {
@@ -218,17 +221,17 @@
         if (!isId(squadId)) {
           return;
         }
-        const buttons = [targetButton('Member', 'squad_member', wingId, squadId, rows)];
+        const buttons = [targetButton(gettext('Member'), 'squad_member', wingId, squadId, rows)];
         if (single) {
-          buttons.push(targetButton('Commander', 'squad_commander', wingId, squadId, rows));
+          buttons.push(targetButton(gettext('Commander'), 'squad_commander', wingId, squadId, rows));
         }
-        lines.push(targetLine(nodeName(squad) || `Squad ${squadId}`, buttons, true));
+        lines.push(targetLine(nodeName(squad) || interpolate(gettext('Squad %(id)s'), { id: squadId }, true), buttons, true));
       });
     });
     if (!wings.length) {
       const empty = document.createElement('p');
       empty.className = 'text-muted mb-0';
-      empty.textContent = 'The wings and squads are not known yet. Try again after the next refresh.';
+      empty.textContent = gettext('The wings and squads are not known yet. Try again after the next refresh.');
       lines.push(empty);
     }
     container.replaceChildren(...lines);
@@ -241,7 +244,9 @@
     moveIds = ids;
     const title = document.getElementById('fleet-move-title');
     const name = ids.length === 1 ? memberName(memberRow(ids[0])) : '';
-    title.textContent = ids.length === 1 ? `Move ${name || 'member'} to…` : `Move ${ids.length} members to…`;
+    title.textContent = ids.length === 1
+      ? interpolate(gettext('Move %(name)s to…'), { name: name || gettext('member') }, true)
+      : interpolate(ngettext('Move %(count)s member to…', 'Move %(count)s members to…', ids.length), { count: ids.length }, true);
     const hint = document.getElementById('fleet-move-hint');
     if (hint) {
       hint.classList.toggle('d-none', ids.length === 1);
@@ -285,7 +290,7 @@
     bar.classList.toggle('d-flex', count > 0);
     const label = document.getElementById('fleet-bulk-count');
     if (label) {
-      label.textContent = `${count} selected`;
+      label.textContent = interpolate(gettext('%(count)s selected'), { count }, true);
     }
   }
 

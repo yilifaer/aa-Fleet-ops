@@ -1,4 +1,4 @@
-# AA FleetOps 0.1.0a6: remove Discord webhook tokens from stored errors and keep FC incentives on upgrade
+# AA FleetOps 0.2.0b1: remove Discord webhook tokens from stored errors and keep FC incentives on upgrade
 
 import re
 from urllib.parse import parse_qsl, urlsplit

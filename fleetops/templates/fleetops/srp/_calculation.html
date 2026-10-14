@@ -1,29 +1,29 @@
-{% load fleetops_srp %}{# How the amount came about. Context: calculation (Calculation) and policy (PolicySnapshot). #}
+{% load i18n fleetops_srp %}{# How the amount came about. Context: calculation (Calculation) and policy (PolicySnapshot). #}
 <dl class="row mb-0 fleetops-srp-calculation">
-  <dt class="col-sm-5">Loss value</dt>
+  <dt class="col-sm-5">{% translate "Loss value" %}</dt>
   <dd class="col-sm-7">
-    {% if calculation.loss_value is None %}<span class="text-muted">Not available yet</span>
+    {% if calculation.loss_value is None %}<span class="text-muted">{% translate "Not available yet" %}</span>
     {% else %}{{ calculation.loss_value|isk }}
-      <div class="small text-muted">{% if calculation.value_source == "zkill_fitted" %}zKillboard fitted value{% elif calculation.value_source == "zkill_total" %}zKillboard total value{% elif calculation.value_source == "esi_estimate" %}<span class="badge text-bg-warning">Estimate</span> ESI market estimate{% endif %}</div>
+      <div class="small text-muted">{% if calculation.value_source == "zkill_fitted" %}{% translate "zKillboard fitted value" %}{% elif calculation.value_source == "zkill_total" %}{% translate "zKillboard total value" %}{% elif calculation.value_source == "esi_estimate" %}<span class="badge text-bg-warning">{% translate "Estimate" %}</span> {% translate "ESI market estimate" %}{% endif %}</div>
     {% endif %}
   </dd>
-  <dt class="col-sm-5">Payout basis</dt>
+  <dt class="col-sm-5">{% translate "Payout basis" %}</dt>
   <dd class="col-sm-7">
-    {% if calculation.basis == "rule" %}Payout table
-      {% with rule=policy.rule %}{% if rule %}<div class="small text-muted">{{ rule.label|default:rule.ship_type_name|default:"Any ship" }}{% if rule.ship_type_name and rule.label %} &middot; {{ rule.ship_type_name }}{% endif %}{% if rule.doctrine_name %} &middot; doctrine {{ rule.doctrine_name }}{% endif %} &middot; {{ rule.match|srp_match_label }} &middot; {{ rule.amount|isk }}</div>{% endif %}{% endwith %}
-    {% elif calculation.basis == "percentage" %}{{ policy.percentage|floatformat:"-2" }}% of the loss value
-    {% else %}<span class="text-muted">No automatic amount</span>{% endif %}
+    {% if calculation.basis == "rule" %}{% translate "Payout table" %}
+      {% with rule=policy.rule %}{% if rule %}<div class="small text-muted">{{ rule.label|default:rule.ship_type_name|default:_("Any ship") }}{% if rule.ship_type_name and rule.label %} &middot; {{ rule.ship_type_name }}{% endif %}{% if rule.doctrine_name %} &middot; {% blocktranslate trimmed with doctrine=rule.doctrine_name %}doctrine {{ doctrine }}{% endblocktranslate %}{% endif %} &middot; {{ rule.match|srp_match_label }} &middot; {{ rule.amount|isk }}</div>{% endif %}{% endwith %}
+    {% elif calculation.basis == "percentage" %}{% blocktranslate trimmed with percentage=policy.percentage|floatformat:"-2" %}{{ percentage }}% of the loss value{% endblocktranslate %}
+    {% else %}<span class="text-muted">{% translate "No automatic amount" %}</span>{% endif %}
   </dd>
-  <dt class="col-sm-5">Amount before caps</dt>
+  <dt class="col-sm-5">{% translate "Amount before caps" %}</dt>
   <dd class="col-sm-7">{{ calculation.base|isk }}</dd>
-  <dt class="col-sm-5">Per-loss cap</dt>
-  <dd class="col-sm-7">{% if calculation.cap is None %}<span class="text-muted">No cap</span>{% else %}{{ calculation.cap|isk }}{% endif %}</dd>
-  <dt class="col-sm-5">Suggested amount</dt>
+  <dt class="col-sm-5">{% translate "Per-loss cap" %}</dt>
+  <dd class="col-sm-7">{% if calculation.cap is None %}<span class="text-muted">{% translate "No cap" %}</span>{% else %}{{ calculation.cap|isk }}{% endif %}</dd>
+  <dt class="col-sm-5">{% translate "Suggested amount" %}</dt>
   <dd class="col-sm-7"><strong>{{ calculation.suggested|isk }}</strong></dd>
-  <dt class="col-sm-5">Within the monthly limits</dt>
+  <dt class="col-sm-5">{% translate "Within the monthly limits" %}</dt>
   <dd class="col-sm-7">
     <strong{% if calculation.over_limit %} class="text-danger"{% endif %}>{{ calculation.limited|isk }}</strong>
-    {% if calculation.over_limit %}<span class="badge text-bg-danger">Over limit</span>{% if calculation.binding_limit %}<div class="small text-muted">Held down by the {{ calculation.binding_limit|srp_limit_label }}.</div>{% endif %}{% endif %}
+    {% if calculation.over_limit %}<span class="badge text-bg-danger">{% translate "Over limit" %}</span>{% if calculation.binding_limit %}<div class="small text-muted">{% blocktranslate trimmed with limit=calculation.binding_limit|srp_limit_label %}Held down by the {{ limit }}.{% endblocktranslate %}</div>{% endif %}{% endif %}
   </dd>
 </dl>
 {% if calculation.notes %}

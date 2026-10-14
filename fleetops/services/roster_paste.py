@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Read character names from a roster pasted out of the game client.
 
 Three kinds of text are understood, line by line:
@@ -13,6 +16,8 @@ caller.
 
 import re
 from dataclasses import dataclass
+
+from django.utils.translation import gettext, ngettext
 
 MAX_NAME_LENGTH = 37
 DEFAULT_MAX_LINES = 1000
@@ -70,14 +75,10 @@ def name_key(name: str) -> str:
 def name_error(name: str) -> str:
     """Why ``name`` cannot be an EVE character name, or an empty string when it can."""
     if len(name) > MAX_NAME_LENGTH:
-        return f"Character names are at most {MAX_NAME_LENGTH} characters long."
+        return gettext("Character names are at most %(max)s characters long.") % {"max": MAX_NAME_LENGTH}
     if any(not (char.isalnum() or char in _NAME_PUNCTUATION) for char in name):
-        return "Contains characters that cannot appear in a character name."
+        return gettext("Contains characters that cannot appear in a character name.")
     return ""
-
-
-def _plural(count: int, singular: str, plural: str) -> str:
-    return singular.format(count=count) if count == 1 else plural.format(count=count)
 
 
 def _fleet_row(line: str, line_no: int) -> RosterLine | None:
@@ -119,7 +120,10 @@ def _read_lines(text: str, warnings: list[str]) -> list[RosterLine]:
             if row is None:
                 continue
             if not clean_name(row.name):
-                warnings.append(f"Line {line_no}: no character name before the first tab, the line was skipped.")
+                warnings.append(
+                    gettext("Line %(line)s: no character name before the first tab, the line was skipped.")
+                    % {"line": line_no}
+                )
                 continue
             rows.append(row)
         else:
@@ -169,22 +173,25 @@ def parse_roster(text: str, *, max_lines: int = DEFAULT_MAX_LINES) -> tuple[list
 
     if ignored:
         warnings.append(
-            _plural(
+            ngettext(
+                "Ignored %(count)s line that is not a chat message.",
+                "Ignored %(count)s lines that are not chat messages.",
                 ignored,
-                "Ignored {count} line that is not a chat message.",
-                "Ignored {count} lines that are not chat messages.",
             )
+            % {"count": ignored}
         )
     if duplicates:
         warnings.append(
-            _plural(duplicates, "Skipped {count} duplicate name.", "Skipped {count} duplicate names.")
+            ngettext("Skipped %(count)s duplicate name.", "Skipped %(count)s duplicate names.", duplicates)
+            % {"count": duplicates}
         )
     if overflow:
         warnings.append(
-            _plural(
+            ngettext(
+                "Only the first %(max)s names are used, %(count)s more was ignored.",
+                "Only the first %(max)s names are used, %(count)s more were ignored.",
                 len(overflow),
-                f"Only the first {max_lines} names are used, {{count}} more was ignored.",
-                f"Only the first {max_lines} names are used, {{count}} more were ignored.",
             )
+            % {"max": max_lines, "count": len(overflow)}
         )
     return lines, warnings

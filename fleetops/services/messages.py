@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 import re
 import secrets
 from dataclasses import dataclass, field
@@ -6,12 +9,13 @@ from urllib.parse import urlsplit
 from django.template import Context, Template
 from django.utils import timezone
 from django.utils.html import strip_tags
+from django.utils.translation import gettext, gettext_lazy, pgettext
 
+from fleetops import texts
 from fleetops.constants import (
     DEFAULT_MOTD_TEMPLATE,
     DEFAULT_PING_TEMPLATE,
     MOTD_SOFT_LIMIT,
-    SCHEDULE_CANCELLED_TEMPLATE,
 )
 from fleetops.models import MessageTemplate
 from fleetops.providers.doctrines import doctrine_url
@@ -26,7 +30,9 @@ from fleetops.services.mentions import (
 )
 from fleetops.services.periods import discord_timestamp, format_eve, unix_timestamp
 
-MISSING_MENTION_WARNING = "The ping template does not contain {{ ping_mention }}; nobody will be notified."
+MISSING_MENTION_WARNING = gettext_lazy(
+    "The ping template does not contain {{ ping_mention }}; nobody will be notified."
+)
 
 
 def _default_template(template_type: str):
@@ -44,7 +50,9 @@ def _sender(operation, actor) -> str:
 
 def _fleet_times(scheduled_at) -> dict:
     if scheduled_at is None:
-        return {"fleet_time_eve": "", "fleet_time_unix": "", "fleet_time_discord": "", "fleet_time": "Now"}
+        with texts.outgoing_language():
+            now = pgettext("discord broadcast", "Now")
+        return {"fleet_time_eve": "", "fleet_time_unix": "", "fleet_time_discord": "", "fleet_time": now}
     eve = f"{format_eve(scheduled_at)} EVE"
     return {
         "fleet_time_eve": eve,
@@ -89,13 +97,15 @@ def _context(operation, selection, mention: str, *, actor, pre_ping, now) -> dic
     boost = operation.boost_channel
     doctrine_ships, doctrine_fits = _doctrine_lists(operation)
     label = target_label(selection)
+    with texts.outgoing_language():
+        doctrine = operation.doctrine_name or pgettext("discord broadcast", "None / Custom")
     return {
         "operation_id": str(operation.uuid),
         "fc": operation.fc_character_name,
         "fc_main": operation.fc_main_character_name or operation.fc_character_name,
         "sender": _sender(operation, actor),
         "fleet_type": str(operation.fleet_type),
-        "doctrine": operation.doctrine_name or "None / Custom",
+        "doctrine": doctrine,
         "doctrine_name": operation.doctrine_name or "",
         "doctrine_url": doctrine_url(operation.doctrine_source, operation.doctrine_external_id),
         "doctrine_ships": doctrine_ships,
@@ -156,10 +166,7 @@ def _render(record, fallback: str, values: dict, label: str, errors: list[str]) 
             return Template(record.content).render(Context(values, autoescape=False)).strip()
         except Exception as exc:
             # Admin-edited templates must never block a fleet start or the preview.
-            errors.append(
-                f'{label} template "{record.name}" could not be rendered ({type(exc).__name__}); '
-                "the built-in default was used."
-            )
+            errors.append(texts.TEMPLATE_FALLBACK(label=label, name=record.name, error_type=type(exc).__name__))
     return Template(fallback).render(Context(values, autoescape=False)).strip()
 
 
@@ -170,10 +177,10 @@ def _mention_placeholder() -> str:
 
 
 def ping_too_long_message(length: int) -> str:
-    return (
-        f"The ping is {length} characters; Discord accepts at most {DISCORD_MESSAGE_LIMIT}. "
-        "Shorten the additional information."
-    )
+    """The warning for a ping over Discord's limit, in the language of whoever looks at the preview."""
+    return gettext(
+        "The ping is %(length)s characters; Discord accepts at most %(limit)s. Shorten the additional information."
+    ) % {"length": length, "limit": DISCORD_MESSAGE_LIMIT}
 
 
 def _relative_links(values: dict, *texts: str) -> bool:
@@ -203,37 +210,47 @@ def render_messages(operation, *, actor=None, pre_ping=False, now=None) -> Rende
     replaced with the selected mention.
     """
     selection = selection_from_operation(operation)
-    placeholder = _mention_placeholder() if mention_text(selection) else ""
-    values = _context(operation, selection, placeholder, actor=actor, pre_ping=pre_ping, now=now)
     errors = []
-    ping_record = operation.ping_template or _default_template(MessageTemplate.TemplateType.PING)
-    motd_record = operation.motd_template or _default_template(MessageTemplate.TemplateType.MOTD)
-    ping = _render(ping_record, DEFAULT_PING_TEMPLATE, values, "Ping", errors)
-    motd = _render(motd_record, DEFAULT_MOTD_TEMPLATE, values, "MOTD", errors)
+    # The messages are read by the whole fleet, so they follow the site language, not the one of the FC
+    # who clicks (and the preview shows exactly what is sent). Warnings are for the person looking at the
+    # preview and follow their language.
+    with texts.outgoing_language():
+        placeholder = _mention_placeholder() if mention_text(selection) else ""
+        values = _context(operation, selection, placeholder, actor=actor, pre_ping=pre_ping, now=now)
+        ping_record = operation.ping_template or _default_template(MessageTemplate.TemplateType.PING)
+        motd_record = operation.motd_template or _default_template(MessageTemplate.TemplateType.MOTD)
+        ping = _render(ping_record, DEFAULT_PING_TEMPLATE, values, "Ping", errors)
+        motd = _render(motd_record, DEFAULT_MOTD_TEMPLATE, values, "MOTD", errors)
+
+        no_mention = selection.notifies and placeholder not in ping
+        ping = neutralize_mass_mentions(ping)
+        ping_display = ping
+        if placeholder:
+            ping_display = ping.replace(placeholder, mention_text(selection, display=True))
+            ping = ping.replace(placeholder, mention_text(selection))
+            motd = motd.replace(placeholder, mention_text(selection, display=True))
+        # EVE MOTD is HTML-like. Strip dangerous script-ish constructs while preserving basic tags.
+        motd = re.sub(r"<(/?script)", r"&lt;\1", motd, flags=re.IGNORECASE)
 
     warnings = []
-    if selection.notifies and placeholder not in ping:
-        warnings.append(MISSING_MENTION_WARNING)
-    ping = neutralize_mass_mentions(ping)
-    ping_display = ping
-    if placeholder:
-        ping_display = ping.replace(placeholder, mention_text(selection, display=True))
-        ping = ping.replace(placeholder, mention_text(selection))
-        motd = motd.replace(placeholder, mention_text(selection, display=True))
-    # EVE MOTD is HTML-like. Strip dangerous script-ish constructs while preserving basic tags.
-    motd = re.sub(r"<(/?script)", r"&lt;\1", motd, flags=re.IGNORECASE)
-
+    if no_mention:
+        warnings.append(str(MISSING_MENTION_WARNING))
     blocking = []
     ping_length = discord_length(ping)
     if ping_length > DISCORD_MESSAGE_LIMIT:
         # Only a ping that FleetOps posts must fit; a copy-only ping can still be shortened by hand.
         (blocking if operation.ping_channel_id else warnings).append(ping_too_long_message(ping_length))
     if len(motd) > MOTD_SOFT_LIMIT:
-        warnings.append(f"The MOTD is {len(motd)} characters; the game may cut a MOTD longer than {MOTD_SOFT_LIMIT}.")
+        warnings.append(
+            gettext("The MOTD is %(length)s characters; the game may cut a MOTD longer than %(limit)s.")
+            % {"length": len(motd), "limit": MOTD_SOFT_LIMIT}
+        )
     if _relative_links(values, ping, motd):
-        warnings.append("SITE_URL is not set, so the comms and doctrine links in the messages are incomplete.")
+        warnings.append(
+            gettext("SITE_URL is not set, so the comms and doctrine links in the messages are incomplete.")
+        )
     if _relative_srp_link(values, ping, motd):
-        warnings.append("SITE_URL is not set, so the SRP link in the messages is incomplete.")
+        warnings.append(gettext("SITE_URL is not set, so the SRP link in the messages is incomplete."))
     return RenderedMessages(
         ping,
         motd,
@@ -253,9 +270,20 @@ def render_operation_messages(operation):
 
 def render_cancellation_notice(operation, *, actor=None, now=None) -> str:
     """The notice posted when a scheduled fleet is cancelled; it never mentions anybody."""
-    values = build_context(operation, actor=actor, now=now, display=True)
-    text = Template(SCHEDULE_CANCELLED_TEMPLATE).render(Context(values, autoescape=False)).strip()
-    return neutralize_mass_mentions(text)
+    with texts.outgoing_language():
+        values = build_context(operation, actor=actor, now=now, display=True)
+        text = pgettext(
+            "discord broadcast",
+            "**Cancelled:** %(fleet_type)s at %(fleet_time)s (%(formup)s)\n"
+            "-# FleetOps notice from %(sender)s at %(sent_at)s EVE",
+        ) % {
+            "fleet_type": values["fleet_type"],
+            "fleet_time": values["fleet_time_eve"],
+            "formup": values["formup"],
+            "sender": values["sender"],
+            "sent_at": values["sent_at"],
+        }
+    return neutralize_mass_mentions(text.strip())
 
 
 def plain_motd(motd: str) -> str:

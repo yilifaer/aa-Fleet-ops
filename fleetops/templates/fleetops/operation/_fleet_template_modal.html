@@ -1,18 +1,19 @@
+{% load i18n %}
 {% if fleet_can_manage and fleet_live %}
 <div class="modal fade" id="fleet-template-modal" tabindex="-1" aria-labelledby="fleet-template-title" aria-hidden="true">
   <div class="modal-dialog"><div class="modal-content">
     <form method="post" action="{% url 'fleetops:fleet_apply_template' operation.uuid %}" data-fleet-action id="fleet-template-form">{% csrf_token %}
-      <div class="modal-header"><h5 class="modal-title" id="fleet-template-title">Apply a structure template</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+      <div class="modal-header"><h5 class="modal-title" id="fleet-template-title">{% translate "Apply a structure template" %}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% translate 'Close' %}"></button></div>
       <div class="modal-body">
-        <label class="form-label" for="fleet-template-select">Template</label>
+        <label class="form-label" for="fleet-template-select">{% translate "Template" %}</label>
         <select class="form-select mb-2" name="template_id" id="fleet-template-select" required>{% for template in structure_templates %}<option value="{{ template.pk }}" data-layout="{{ template.layout }}" data-description="{{ template.description }}">{{ template.name }}</option>{% endfor %}</select>
         <div class="small text-muted mb-2" id="fleet-template-description"></div>
         <ul class="small font-monospace list-unstyled border rounded px-2 py-1 mb-3" id="fleet-template-layout"></ul>
-        <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="delete_extra" value="1" id="fleet-template-delete-extra"><label class="form-check-label" for="fleet-template-delete-extra">Also delete empty wings and squads that are not in the template</label></div>
-        <p class="small text-muted mb-2">Wings and squads are matched in order: the first wing of the template names the first wing of the fleet, and so on. Members are never moved; wings and squads with members are kept.</p>
+        <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="delete_extra" value="1" id="fleet-template-delete-extra"><label class="form-check-label" for="fleet-template-delete-extra">{% translate "Also delete empty wings and squads that are not in the template" %}</label></div>
+        <p class="small text-muted mb-2">{% translate "Wings and squads are matched in order: the first wing of the template names the first wing of the fleet, and so on. Members are never moved; wings and squads with members are kept." %}</p>
         <div class="small" id="fleet-template-summary" aria-live="polite"></div>
       </div>
-      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary" id="fleet-template-submit">Apply</button></div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% translate "Cancel" %}</button><button type="submit" class="btn btn-primary" id="fleet-template-submit">{% translate "Apply" %}</button></div>
     </form>
   </div></div>
 </div>

@@ -1,31 +1,32 @@
-{% load fleetops_fleet %}
-<div class="card mb-3"><div class="card-header d-flex justify-content-between"><strong>Composition</strong><span class="badge bg-secondary" id="fleet-composition-total" title="Members counted">{{ composition.total }}</span></div>
+{% load i18n fleetops_fleet %}
+{% translate "Nobody to show." as nobody_text %}
+<div class="card mb-3"><div class="card-header d-flex justify-content-between"><strong>{% translate "Composition" %}</strong><span class="badge bg-secondary" id="fleet-composition-total" title="{% translate 'Members counted' %}">{{ composition.total }}</span></div>
 <div class="card-body">
-  {% if operation.status == 'closed' %}<div class="small text-muted mb-2">Last known ships of everyone tracked in this fleet.</div>{% endif %}
-  <h6>By function</h6>
+  {% if operation.status == 'closed' %}<div class="small text-muted mb-2">{% translate "Last known ships of everyone tracked in this fleet." %}</div>{% endif %}
+  <h6>{% translate "By function" %}</h6>
   <ul class="list-unstyled fleet-functions mb-3">
     {% for row in composition.by_function %}
     {% with color=row.color|hex_color %}
-    <li class="fleet-function-row" data-function-filter="{{ row.key|default_if_none:'none' }}"{% if fleet_view %} role="button" tabindex="0" aria-pressed="false" title="Highlight these pilots in the fleet"{% endif %}>
+    <li class="fleet-function-row" data-function-filter="{{ row.key|default_if_none:'none' }}"{% if fleet_view %} role="button" tabindex="0" aria-pressed="false" title="{% translate 'Highlight these pilots in the fleet' %}"{% endif %}>
       <div class="d-flex justify-content-between gap-2 small"><span>{% if color %}<span class="fleet-swatch" style="background-color: {{ color }}"></span> {% endif %}{{ row.label }}</span><span class="text-muted text-nowrap">{{ row.count }} · {{ row.percent|floatformat:0 }}%</span></div>
       <div class="progress fleet-bar"><div class="progress-bar{% if not color %} bg-secondary{% endif %}" style="width: {{ row.percent|bar_width }}{% if color %}; background-color: {{ color }}{% endif %}"></div></div>
     </li>
     {% endwith %}
-    {% empty %}<li class="small text-muted">Nobody to show.</li>{% endfor %}
+    {% empty %}<li class="small text-muted">{{ nobody_text }}</li>{% endfor %}
   </ul>
 
-  <h6>Ship types</h6>
+  <h6>{% translate "Ship types" %}</h6>
   <div class="table-responsive"><table class="table table-sm align-middle" id="fleet-by-type"><tbody>
     {% for row in composition.by_type %}<tr data-type-id="{{ row.key|default_if_none:'' }}">
       <td>{% if row.icon_url %}<img src="{{ row.icon_url }}" alt="" width="20" height="20" loading="lazy"> {% endif %}{{ row.label }}{% with color=row.extra.function_color|hex_color %}{% if row.extra.function_name %} <span class="badge text-bg-light border fleet-function-badge">{% if color %}<span class="fleet-swatch" style="background-color: {{ color }}"></span> {% endif %}{{ row.extra.function_name }}</span>{% endif %}{% endwith %}</td>
       <td class="text-end text-nowrap">{{ row.count }}</td>
       <td class="fleet-classify-cell">{% include "fleetops/operation/_fleet_classify.html" %}</td>
-    </tr>{% empty %}<tr><td class="small text-muted">Nobody to show.</td></tr>{% endfor %}
+    </tr>{% empty %}<tr><td class="small text-muted">{{ nobody_text }}</td></tr>{% endfor %}
   </tbody></table></div>
 
   {% if composition.unclassified %}
-  <h6>Unclassified ships</h6>
-  <div class="small text-muted mb-1">No ship function rule matches these ships{% if not composition.sde_available %}; recognising ships by class needs django-eveonline-sde{% endif %}.</div>
+  <h6>{% translate "Unclassified ships" %}</h6>
+  <div class="small text-muted mb-1">{% if composition.sde_available %}{% translate "No ship function rule matches these ships." %}{% else %}{% translate "No ship function rule matches these ships; recognising ships by class needs django-eveonline-sde." %}{% endif %}</div>
   <div class="table-responsive"><table class="table table-sm align-middle" id="fleet-unclassified"><tbody>
     {% for row in composition.unclassified %}<tr data-type-id="{{ row.key|default_if_none:'' }}">
       <td>{% if row.icon_url %}<img src="{{ row.icon_url }}" alt="" width="20" height="20" loading="lazy"> {% endif %}{{ row.label }}</td>
@@ -35,23 +36,23 @@
   </tbody></table></div>
   {% endif %}
 
-  <h6>Ship classes</h6>
+  <h6>{% translate "Ship classes" %}</h6>
   {% if composition.sde_available %}
-  <div class="table-responsive"><table class="table table-sm" id="fleet-by-group"><tbody>{% for row in composition.by_group %}<tr data-group-id="{{ row.key|default_if_none:'' }}"><td>{{ row.label }}</td><td class="text-end text-nowrap">{{ row.count }}</td></tr>{% empty %}<tr><td class="small text-muted">Nobody to show.</td></tr>{% endfor %}</tbody></table></div>
-  {% else %}<div class="small text-muted mb-3" id="fleet-by-group">Ship classes need django-eveonline-sde.</div>{% endif %}
+  <div class="table-responsive"><table class="table table-sm" id="fleet-by-group"><tbody>{% for row in composition.by_group %}<tr data-group-id="{{ row.key|default_if_none:'' }}"><td>{{ row.label }}</td><td class="text-end text-nowrap">{{ row.count }}</td></tr>{% empty %}<tr><td class="small text-muted">{{ nobody_text }}</td></tr>{% endfor %}</tbody></table></div>
+  {% else %}<div class="small text-muted mb-3" id="fleet-by-group">{% translate "Ship classes need django-eveonline-sde." %}</div>{% endif %}
 
-  <h6>Systems</h6>
+  <h6>{% translate "Systems" %}</h6>
   <div class="table-responsive"><table class="table table-sm" id="fleet-by-system"><tbody>{% for row in composition.by_system %}<tr data-system-id="{{ row.key|default_if_none:'' }}"{% if row.extra.fc_system %} class="fleet-fc-system"{% endif %}>
-    <td>{{ row.label }}{% if row.extra.fc_system %} <span class="badge bg-info text-dark" title="The FC character is in this system">FC</span>{% endif %}</td>
-    <td class="small text-muted text-nowrap">{% if row.extra.docked %}<i class="fa-solid fa-house" aria-hidden="true"></i> {{ row.extra.docked }} docked{% endif %}</td>
+    <td>{{ row.label }}{% if row.extra.fc_system %} <span class="badge bg-info text-dark" title="{% translate 'The FC character is in this system' %}">FC</span>{% endif %}</td>
+    <td class="small text-muted text-nowrap">{% if row.extra.docked %}<i class="fa-solid fa-house" aria-hidden="true"></i> {% blocktranslate trimmed with docked=row.extra.docked %}{{ docked }} docked{% endblocktranslate %}{% endif %}</td>
     <td class="text-end text-nowrap">{{ row.count }}</td>
-  </tr>{% empty %}<tr><td class="small text-muted">Nobody to show.</td></tr>{% endfor %}</tbody></table></div>
+  </tr>{% empty %}<tr><td class="small text-muted">{{ nobody_text }}</td></tr>{% endfor %}</tbody></table></div>
 
-  <h6>Bridgeable mass</h6>
+  <h6>{% translate "Bridgeable mass" %}</h6>
   {% if composition.sde_available %}
-  <div id="fleet-bridge"><strong>{{ composition.bridge.mass_kg|kilograms }}</strong> · {{ composition.bridge.ships }} ship{{ composition.bridge.ships|pluralize }}
-    {% if composition.bridge.excluded %}<div class="small" id="fleet-bridge-excluded">Not bridgeable: {% for row in composition.bridge.excluded %}{{ row.label }} {{ row.count }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
-    {% if composition.bridge.unknown_mass %}<div class="small text-warning" id="fleet-bridge-unknown">{{ composition.bridge.unknown_mass }} ship{{ composition.bridge.unknown_mass|pluralize }} without a known mass (not in the SDE).</div>{% endif %}
-    <div class="small text-muted">Hull mass from the SDE; fitted modules (plates, propulsion) not included.</div></div>
-  {% else %}<div class="small text-muted" id="fleet-bridge">Bridgeable mass needs django-eveonline-sde.</div>{% endif %}
+  <div id="fleet-bridge"><strong>{{ composition.bridge.mass_kg|kilograms }}</strong> · {% blocktranslate trimmed count counter=composition.bridge.ships %}{{ counter }} ship{% plural %}{{ counter }} ships{% endblocktranslate %}
+    {% if composition.bridge.excluded %}<div class="small" id="fleet-bridge-excluded">{% translate "Not bridgeable:" %} {% for row in composition.bridge.excluded %}{{ row.label }} {{ row.count }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+    {% if composition.bridge.unknown_mass %}<div class="small text-warning" id="fleet-bridge-unknown">{% blocktranslate trimmed count counter=composition.bridge.unknown_mass %}{{ counter }} ship without a known mass (not in the SDE).{% plural %}{{ counter }} ships without a known mass (not in the SDE).{% endblocktranslate %}</div>{% endif %}
+    <div class="small text-muted">{% translate "Hull mass from the SDE; fitted modules (plates, propulsion) not included." %}</div></div>
+  {% else %}<div class="small text-muted" id="fleet-bridge">{% translate "Bridgeable mass needs django-eveonline-sde." %}</div>{% endif %}
 </div></div>

@@ -1,209 +1,373 @@
 # Changelog
 
-## 0.1.0a6 (unreleased)
+## [0.2.0b1] - Unreleased
+
+The first public pre-release. It covers everything since 0.1.0a5: pre pings and a new ping and MOTD, PAP rules
+that are applied when a fleet closes, a Fleet tab to manage the fleet from the web page, monthly statistics
+with exports, FC points, FleetOps SRP, English and Simplified Chinese pages, and new documentation. Install it
+with the version named (`pip install --no-deps aa-fleetops==0.2.0b1`); once a stable release exists, pip skips
+pre-releases unless you name the version or pass `--pre`.
 
 ### Upgrade notes
 
-- Run `python manage.py migrate fleetops` after upgrading; this release adds migrations `0005` to `0017`.
-- Run `python manage.py collectstatic` after upgrading: the Fleet tab brings new static files (`fleetops/fleet_live.js`, `fleetops/fleet_actions.js`, `fleetops/fleet_tools.js` and `fleetops/fleet.css`). Without them the Fleet tab shows its first state but does not refresh, and its buttons do nothing.
-- Migration `0007` adds the end reason and end request fields to fleets and a history table for operation steps. It copies the latest result of every existing step into that history, labels closed fleets as ended manually or automatically from their recorded end step, and marks pilots that older versions left "in fleet" on closed fleets as having left when the fleet ended. Step messages and fleet errors that older versions stored as django-esi's full error text (with every response header) are shortened to the new form, for example `Could not update fleet MOTD: ESI returned HTTP 403 (Forbidden).`; audit log entries are left as they were. Its data steps are not undone when migrating back.
-- End Fleet now finishes in a Celery task, and the `fleetops.tasks.schedule_active_fleet_tracking` beat also completes ends whose task was lost and cancels starts that were interrupted. Keep the Celery worker and beat running; without a reachable broker the end is finished in the web request as before.
-- FleetOps now logs through Alliance Auth's extension logger, so its messages appear in `extensions.log` instead of only on stderr.
-- Keep the django-esi release that matches your Alliance Auth: django-esi 9 for Alliance Auth 5.4 and older, django-esi 10 for Alliance Auth 5.5.
-- FC incentive pages and calculations now follow the **Incentive enabled** setting in FleetOps Administration → General Settings. It is off by default on new installs. On existing installs that already have incentive periods, `python manage.py migrate fleetops` turns it on automatically; if you want FC incentives but have not created a period yet, tick it yourself.
-- When a Discord ping failed with a connection error, 0.1.0a1–0.1.0a5 could store the webhook token in the fleet's error message, where anyone who could open the fleet could read it. An upgrade step removes these tokens. If a ping failed with a connection error on one of those versions, replace that webhook (delete it in Discord, create a new one and save its URL in FleetOps), because the old token may already have been seen.
-- A default message template must now be active. If an upgraded install has an inactive template marked as default, editing it asks you to tick **Active** or untick **Default** before it can be saved.
-- Only Discord webhook URLs of the form `https://discord.com/api/webhooks/<id>/<token>` are accepted (the `ptb.`, `canary.` and `discordapp.com` variants are fine too, as is an API version segment such as `/api/v10/webhooks/...`), and the URL is checked again before every send. A webhook saved by an older version that does not match is not used until its URL is fixed in FleetOps Administration → Ping Channels.
-- Ping Targets are replaced by **Ping channels** (FleetOps Administration → Ping Channels, the former Discord Webhooks) and **Ping roles**. Migration `0009` converts every Ping Target: its webhook becomes a ping channel that allows the mention the target used (`@everyone` or `@here`), each `<@&id>` role mention becomes a ping role, and older fleets keep the channel and mention they were sent with. Any other text in a target's value is dropped (the ping texts of older fleets are already stored). Check each channel's **Allow @everyone**, **Allow @here** and allowed roles after the upgrade, and give converted roles a proper name. Ping Targets stay read-only in Django Admin.
-- The **Default Ping** and **Default MOTD** templates are replaced by the new built-in texts only if they were never edited. Edited templates are left alone (apart from the Logi/Boost channel variables in MOTD templates, see below) and keep working: `{{ ping_target }}` now renders the mention selected on Fleet Start, `{{ fleet_time }}` is `YYYY-MM-DD HH:MM EVE` (or `Now`) instead of an ISO time, and `{{ comms_link }}` is the comms join page for voice client links (the raw link is `{{ comms_voice_url }}`). See "Message templates" in the README.
-- Logi/Boost channel presets whose value is a pasted in-game link (`<a href="joinChannel:player_…">Name</a>`) are split into the channel name and the in-game channel ID, so the MOTD shows a clickable channel link. From this release `{{ logi_channel }}` and `{{ boost_channel }}` are the plain channel names and `{{ logi_channel_link }}` and `{{ boost_channel_link }}` the in-game links; the upgrade switches every MOTD template, also edited and custom ones, from `{{ logi_channel }}` and `{{ boost_channel }}` to the link variables. Ping templates keep the plain names.
-- Personal user names and passwords are removed from comms voice links (`mumble://user:pass@host/…` becomes `mumble://host/…`), because the link is shown on a public join page. Spaces in voice links are written as `%20` (`mumble://host/Fleet Ops` becomes `mumble://host/Fleet%20Ops`); voice links can no longer contain spaces or a user name.
-- Comms presets whose voice link does not start with `mumble://`, `ts3server://`, `teamspeak://`, `discord://`, `https://` or `http://` (for example a bare `ts.example.com:9987`) are no longer shown in pings and MOTDs and have no join link. The Comms Presets list marks them "Not a supported voice link"; change them to `ts3server://…` or `mumble://…`.
-- New site settings to check in `local.py`: add `"fleetops"` to `APPS_WITH_PUBLIC_VIEWS` so pilots who are not logged in can open comms join links, and make sure `SITE_URL` is the public https address of Alliance Auth (links in pings and MOTDs are built from it). The FleetOps Administration index shows a warning while either is missing.
-- Discord only notifies a role when the role is mentionable, or when the webhook may mention every role. Members need `fittings.access_fittings` to open the doctrine link in a ping or MOTD.
-- When aa-srp (`aasrp`) is installed, the `auto` SRP provider now creates aa-srp links at fleet start (when **SRP auto create** is on). Choose **Alliance Auth SRP** in General Settings to keep the old behaviour.
-- Ship and system names are now always stored in English. To fix fleets that were tracked while a user had another language active, run `python manage.py fleetops_refresh_names --dry-run` and then `python manage.py fleetops_refresh_names`.
-- `fleetops_seed --demo` no longer creates the `Manual / Copy Only` Ping Target; leave the ping channel empty on Fleet Start to copy the ping instead.
-- **PAP is now granted when a fleet closes, from each character's time in fleet.** Tracking no longer writes PAP rows while a fleet runs; it adds up the time every character spends in fleet, and End Fleet (or the automatic end) grants PAP from that time. The new **PAP minimum time** setting defaults to 0, so any presence in the fleet still earns PAP. Fleets that are running during the upgrade switch to the new rules with an approximated time in fleet (last seen minus first seen).
-- Migration `0012` seeds the PAP multiplier tiers 90 minutes → 2x and 180 minutes → 3x (the multipliers FCs could choose so far) and the special roles Back Seat FC (gives FC credit), Logi Anchor and Snowflake Member, and links every existing role assignment to its role without changing the FC credit it already gave. Fleets that were closed, cancelled or failed before the upgrade keep the PAP selection they were closed with; their multiplier, corrections and approvals are still recalculated. Every fleet gets the current attendance limit as its PAP character limit and a PAP minimum time of 0. Merged extra PAP and automatic rows that a manual "replace" took over are turned into the new correction fields, so they survive later recalculations: a merge still forces the PAP when the fleet closes, and the manual row a "replace" added (found in the audit log; without audit entries every manual row of that character) stays the replacement. Its data steps are not undone when migrating back.
-- The attendance limit is now called **PAP characters per player** and counts characters, never credits. When a player has more characters in a fleet than the limit, the FC character gets the PAP first, then the player's main, then the character with the longest time in fleet. Alts that got PAP under the old rules may now be marked "Capped (limit)".
-- **FC points are now the fleet type's weight times the PAP multiplier** (a 2x StratOp gives twice the points of a 1x one). A fleet whose multiplier choice is still pending counts at 1x. Finalized incentive periods keep their numbers; recalculating a period that is not finalized applies the new formula.
-- Manual fleets, manual PAP, pasted rosters and PAP-link fleets of users without `fleetops.manage_fleets` now wait for FC lead approval and count only once approved. Records that existed before the upgrade stay approved. Approvers need `fleetops.manage_fleets` (the FC Lead bundle); they find the queue under **Approvals** in the FleetOps menu.
-- Statistics, FC statistics and incentives now count only closed fleets that are approved and not excluded. The new **Minimum fleet duration** setting (default 0, count all) leaves shorter fleets out; it applies when a fleet closes or its times are edited, not to fleets that were already closed (use **Do not count** on the fleet page for those, for example old test fleets).
-- A special role's **Gives FC credit** switch alone decides whether its holder gets FC credit; the holder no longer needs `fleetops.start_fleet`. Changing the switch affects new assignments only.
-- The Discord webhook URL of a ping channel is now write-only: the form never shows the stored URL, and Django Admin users who may only view ping channels see "Stored (hidden)". Leave the field empty to keep the URL, or paste a new one to replace it.
-- With Fittings installed, Fleet Start and the PAP-link fleet page only list the doctrines the FC may see in Fittings (doctrines in a category limited to groups the FC is not in are hidden; `fittings.manage` sees all).
-- PAP links use the ESI scopes `esi-location.read_location.v1`, `esi-location.read_ship_type.v1` and `esi-location.read_online.v1`, the same as AFAT's click tracking. Enable them in your EVE SSO application (they already are where AFAT click tracking works); tokens AFAT or CharLink hold are reused, so pilots do not log in again.
-- aa-charlink is optional. When it is installed, `"fleetops"` must appear literally in `INSTALLED_APPS` (CharLink refuses the hook otherwise); CharLink then offers **FleetOps FC fleet control** and **FleetOps PAP links**.
-- Kicks of more than 10 members run on the Celery worker; keep it running.
-- **Fleet management.** Migration `0013` adds the wing and squad snapshot of a fleet, the docked and fleet warp state of members, the ship functions and their rules, fleet structure templates and two settings (**Live fleet refresh** and **Ship groups without bridge**). Migration `0014` creates the default ship functions (Fleet Command, DPS, Logistics, Tackle / EWAR, Interdictors, Boosts, Command Destroyers, Support, Cyno, Newbro, Capsules) with their ship group and type rules and the **Standard** structure template, but only while those tables are empty; `fleetops_seed` adds them later on empty tables too. Its data step is not undone when migrating back.
-- Changing a fleet from the Fleet tab (wings, squads, moves, invites, structure templates, kicks) uses the FC character's token with `esi-fleets.write_fleet.v1`, the scope MOTD updates and kicks already need. FCs whose token lacks it use **Authorize / Refresh Fleet ESI** on Start Fleet; until then the Fleet tab is read-only with the reason.
-- Moves of several members, invites of several characters and structure templates run as fleet jobs on the Celery worker, like big kick batches. Keep the worker running; without a reachable broker they are refused with "The background worker is not available. Try again later."
-- Tracking now also reads the fleet's wings and squads (`GetFleetsFleetIdWings`), one more ESI call per poll. While someone who manages a fleet has its Fleet tab open with **Live** on, FleetOps reads the fleet every **Live fleet refresh** seconds (15 by default; 0 turns it off): two ESI calls per read with the FC character's token, about 120 calls per 15 minutes of the 1800 ESI allows per character. However many managers watch, the fleet is read once per interval.
-- An active ESI fleet's page no longer reloads itself every minute. The Fleet tab, the Members tab, the PAP preview and the Fleet Control card are updated in place while they are shown; on the other tabs an "Updated — reload page" link appears in the header. Members who do not see the Fleet tab reload the page themselves. PAP-link and manual fleets have no Fleet tab: their page still reloads every minute for the people who manage the fleet (not while a dialog is open or a form is being filled in).
-- **Ship groups without bridge** defaults to Titan, Dreadnought, Freighter, Carrier, Supercarrier, Capital Industrial Ship (Rorqual), Jump Freighter, Industrial Command Ship (Orca, Porpoise), Force Auxiliary, Lancer Dreadnought and Command Carrier: their hull mass is not counted as bridgeable. Change the list in General Settings if your bridge rules differ.
-- **Statistics are counted in EVE time (UTC), everywhere.** A month runs from the 1st 00:00 UTC to the 1st 00:00 UTC of the next month, whatever `TIME_ZONE` the site uses and whatever time zone the browser has. Fleets that started shortly before or after midnight UTC on the edge of a month, which a site in another time zone used to count in the neighbouring month, now count in their EVE month; totals of a month near a boundary can change after the upgrade. All times on the statistics, history, dashboard and archive pages are shown in EVE time.
-- Migration `0015` adds **Monthly Targets** (FleetOps Administration → Monthly Targets) and the settings **Leaderboard places** (20) and **Leaderboard visibility** (everyone with FleetOps access). It converts no data: with no monthly target the corporation pages show no status and a member needs at least 1 PAP.
-- **Who counts as a member in the statistics changed.** A member is an active Alliance Auth user with a main character that is not in Doomheim (a biomassed character). Disabled accounts, users without a main and biomassed mains no longer appear in member lists and no longer count as mains in the average of their corporation, so some corporation averages differ slightly after the upgrade. The PAP they earned still counts in the totals of the corporation they earned it in.
-- The setting **Member alliance IDs** (formerly "History alliance IDs") has a new label and help text; the stored value is unchanged. Set it to your alliance ID: with it empty every Alliance Auth user with a main character counts as a member, and the corporation overview says so.
-- **FleetOps SRP (migrations `0016` and `0017`).** Migration `0016` creates the SRP tables; migration `0017` adds the SRP settings row (SRP stays **off** until you turn it on in FleetOps Administration → FleetOps SRP), creates the permissions `fleetops.request_srp` and `fleetops.manage_srp` and gives **`request_srp` to every group, state and user that holds `fleetops.basic_access` at the time of the upgrade**. `manage_srp` is given to nobody: it decides on money, so add it to your SRP managers (and, if they should open fleets from claims, `view_all_fleets`). Groups or states that get `basic_access` later need `request_srp` added by hand; the Member bundle in `docs/PERMISSIONS.md` includes it. No data of aa-srp or Alliance Auth SRP is imported.
-- The default MOTD gets a `SRP: Request SRP` line when it was never edited. A customised MOTD (or ping) template keeps its text; add `{{ srp_url }}` to it to put the SRP link in (see the template variables in README.md). `{{ srp_url }}` is empty for fleets without an SRP link and works for every SRP provider.
-- The SRP step of a fleet start now runs **before** the ping and the MOTD, so the link can be in them. It only writes to the database (or aa-srp), so nothing slow runs first; a failing SRP step is still recorded and never stops the start. The order of the steps on the fleet page changed accordingly.
-- With FleetOps SRP enabled, the `auto` SRP provider creates FleetOps SRP links first (before aa-srp and Alliance Auth SRP). Sites that do not enable FleetOps SRP see no change; sites that keep aa-srp or Alliance Auth SRP as their SRP system choose that provider in General Settings.
-- Run `python manage.py collectstatic`: the SRP pages need `fleetops/srp.js` and the new styles in `fleetops/fleetops.css`.
-- FleetOps SRP reads killmails from public ESI endpoints (no new ESI scope) and asks zKillboard (`https://zkillboard.com/api/`) for the hash of killboard links and for loss values. The server needs outbound HTTPS to `zkillboard.com`. Requests carry a descriptive `User-Agent` built from `ESI_USER_CONTACT_EMAIL` (else `SITE_URL`), so set one of them. zKillboard is optional: switch it off in the SRP settings and use the ESI market estimate.
-- The minute beat `fleetops.tasks.schedule_active_fleet_tracking` also queues the SRP value sweep `fleetops.tasks.refresh_srp_values` (at most every 5 minutes), and the daily `prune_attendance_history` also removes fetched killmails nobody claimed after 7 days. No new beat entry is needed; keep the Celery worker and beat running.
-- A claim counts in the **EVE (UTC) month of the loss**, for the monthly limits and every summary, whenever it is submitted or decided.
+Back up the database first. Then install the release with `--no-deps` (this keeps pip from changing the versions
+of Alliance Auth and django-esi), run the two commands below and restart the web process, the Celery worker and
+Celery beat.
+
+```bash
+python manage.py migrate fleetops
+python manage.py collectstatic --noinput
+```
+
+**What the commands do**
+
+- `migrate` applies the migrations `0005` to `0018`. `0018` only changes the labels of fields and choices; it
+  changes no table. The data steps of the other migrations are described under "Migrations" below.
+- `collectstatic` is needed: the Fleet tab, the SRP pages and the translated JavaScript bring new files. Without
+  them the Fleet tab shows its first state but does not refresh, and its buttons do nothing.
+- No beat entry is added or changed; the two entries from the README stay as they are.
+
+**Settings to check in `local.py`**
+
+- Add `"fleetops"` to `APPS_WITH_PUBLIC_VIEWS`, so pilots who are not logged in can open the comms join links
+  in pings and MOTDs.
+- `SITE_URL` must be the public https address of Alliance Auth. Links in pings, MOTDs, PAP links and SRP links
+  are built from it.
+- Set `ESI_USER_CONTACT_EMAIL` (or at least `SITE_URL`): FleetOps SRP sends it in the User-Agent of its
+  requests to zKillboard. The server needs outbound HTTPS to `zkillboard.com` and `esi.evetech.net`.
+- FleetOps Administration shows a warning while `APPS_WITH_PUBLIC_VIEWS` or `SITE_URL` is missing.
+- If aa-charlink is installed, `"fleetops"` must be written literally in `INSTALLED_APPS`.
+- Keep the django-esi release that matches your Alliance Auth: django-esi 9 for Alliance Auth 5.4 and older,
+  django-esi 10 for Alliance Auth 5.5. FleetOps works with both.
+
+**EVE SSO scopes.** Enable these five scopes in your EVE SSO application:
+
+- `esi-fleets.read_fleet.v1` and `esi-fleets.write_fleet.v1` for FCs. The write scope was already needed for MOTD
+  updates and kicks; the Fleet tab uses it for wings, squads, moves and invites. An FC whose token lacks it
+  chooses **Authorize / Refresh Fleet ESI** on Start Fleet; until then the Fleet tab is read-only and says why.
+- `esi-location.read_location.v1`, `esi-location.read_ship_type.v1` and `esi-location.read_online.v1` for PAP
+  links, the same scopes as AFAT's click tracking. Tokens that AFAT or CharLink already hold are reused, so
+  pilots do not log in again.
+- FleetOps SRP needs no scope.
+
+**Permissions.** The new permissions `fleetops.request_srp` and `fleetops.manage_srp` belong to FleetOps SRP.
+The migration gives `request_srp` to every group, state and user that holds `fleetops.basic_access` at the time
+of the upgrade; give it by hand to groups that get `basic_access` later. `manage_srp` goes to nobody, because it
+decides on money: add it to your SRP managers (and `view_all_fleets` if they should open fleets from claims). FC
+leads need `fleetops.manage_fleets` to approve manual records. The recommended groups are in
+[the permissions reference](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/permissions.md).
+
+**Keep Celery running.** End Fleet finishes in a Celery task. The minute beat also completes ends whose task
+was lost, cancels starts that were interrupted and fills in SRP loss values. Kicks of more than 10 members,
+moves of several members, invites and structure templates run on the worker too.
+
+**Behaviour that changed**
+
+- **PAP is granted when a fleet closes**, from each character's time in fleet, not while the fleet runs. The new
+  **PAP minimum time** setting is 0 by default, so any presence still earns PAP. Fleets that run during the
+  upgrade switch to the new rules with an approximated time in fleet (last seen minus first seen).
+- The attendance limit is now **PAP characters per player** and counts characters. When a player has more
+  characters in a fleet, the FC character gets the PAP first, then the player's main, then the character with
+  the longest time in fleet. Alts that got PAP under the old rule may now show "Capped (limit)".
+- **FC points are the fleet type's weight times the PAP multiplier.** A fleet whose multiplier choice is pending
+  counts at 1x. Finalized incentive periods keep their numbers.
+- Manual fleets, manual PAP, pasted rosters and PAP-link fleets of users without `fleetops.manage_fleets` wait
+  for approval and count only when approved. Records from before the upgrade stay approved.
+- Statistics, FC statistics and incentives count only closed fleets that are approved and not excluded. The
+  **Minimum fleet duration** setting (0 by default) leaves shorter fleets out of fleets that close after the
+  change; use **Do not count** on the fleet page for older ones.
+- **Statistics use EVE time (UTC).** A month runs from the 1st 00:00 UTC to the 1st 00:00 UTC of the next month,
+  whatever `TIME_ZONE` the site or the browser uses. Fleets near midnight on the edge of a month can move to
+  the neighbouring month, so the totals of such a month can change.
+- **Who is a member in the statistics changed.** A member is an active Alliance Auth user with a main character
+  that is not in Doomheim. Disabled accounts, users without a main and biomassed mains no longer appear in
+  member lists or count as mains of their corporation, so some corporation averages differ slightly. Users who
+  registered in Alliance Auth after a finished month are not part of that month. Set **Member alliance IDs**
+  (formerly "History alliance IDs") to your alliance ID; the stored value is unchanged.
+- FC incentive pages follow the **Incentive enabled** setting. It is off on new installs; an install that
+  already has incentive periods gets it switched on by the migration.
+- The `auto` SRP provider tries FleetOps SRP first (while it is enabled), then aa-srp, then Alliance Auth SRP.
+  With aa-srp installed, links are now created in aa-srp at fleet start; choose **Alliance Auth SRP** in
+  General Settings to keep the old behaviour.
+- A special role's **Gives FC credit** switch alone decides FC credit; the holder no longer needs
+  `fleetops.start_fleet`.
+- Ship and system names are always stored in English. To correct fleets tracked while a user had another
+  language active, run `python manage.py fleetops_refresh_names --dry-run`, then without `--dry-run`.
+- `fleetops_seed --demo` no longer creates a `Manual / Copy Only` ping target. Leave the ping channel empty on
+  Start Fleet to copy the ping.
+- Webhook URLs are write-only. Only Discord webhook URLs of the form
+  `https://discord.com/api/webhooks/<id>/<token>` are accepted (the `ptb.`, `canary.` and `discordapp.com` hosts
+  and an API version segment are fine), and the URL is checked again before every send. A webhook stored by an
+  older version that does not match is not used until you fix it in Administration > Ping Channels.
+- A default message template must be active. If an inactive template is marked as default, tick **Active** or
+  untick **Default** before saving it.
+- Members need `fittings.access_fittings` to open the doctrine link in a ping or MOTD, and Discord notifies a
+  role only when the role is mentionable or the webhook may mention every role.
+- With Fittings installed, Start Fleet and the PAP-link fleet page list only the doctrines the FC may see in
+  Fittings (`fittings.manage` sees all).
+
+**Security.** In 0.1.0a1 to 0.1.0a5 a Discord ping that failed with a connection error could store the webhook
+token in the fleet's error message, where anybody who could open the fleet could read it. The upgrade removes
+these tokens. If a ping failed that way, replace that webhook (delete it in Discord, create a new one and save
+its URL in FleetOps), because the old token may have been seen.
+
+**Migrations**
+
+- `0005` keeps one default message template per type.
+- `0006` removes webhook tokens from stored error messages and turns FC incentives on where periods exist.
+- `0007` adds the end reason and the step history. It copies the latest result of every step into the history,
+  labels closed fleets as ended manually or automatically, marks pilots that older versions left "in fleet" on
+  closed fleets as having left, and shortens step messages that older versions stored as django-esi's full error
+  text (with every response header). Audit entries are left as they were.
+- `0008` to `0010` replace Ping Targets by **Ping channels** and **Ping roles** and give every comms preset a join
+  token. A target's webhook becomes a ping channel that allows the mention the target used (`@everyone` or
+  `@here`), each `<@&id>` role mention becomes a ping role, and older fleets keep the channel and mention they
+  were sent with. Check **Allow @everyone**, **Allow @here** and the allowed roles of each channel, and give
+  converted roles a proper name. Logi and Boost channels that hold a pasted in-game link are split into the
+  channel name and the in-game ID. Comms voice links lose personal user names and passwords, and spaces become
+  `%20`. Presets whose link does not start with `mumble://`, `ts3server://`, `teamspeak://`, `discord://`,
+  `https://` or `http://` are no longer shown in pings and MOTDs; the Comms Presets list marks them "Not a
+  supported voice link".
+- `0011` and `0012` add the PAP rules. They seed the multiplier tiers 90 minutes for 2x and 180 minutes for 3x
+  and the special roles Back Seat FC (gives FC credit), Logi Anchor and Snowflake Member, and turn extra and
+  replacement PAP of earlier versions into correction rows that survive recalculation. Fleets closed before the
+  upgrade keep the PAP selection they were closed with.
+- `0013` and `0014` add fleet management: the wing and squad snapshot, ship functions and their rules, fleet
+  structure templates, and the settings **Live fleet refresh** and **Ship groups without bridge**. The defaults
+  are created only while those tables are empty.
+- `0015` adds Monthly Targets and the settings **Leaderboard places** (20) and **Leaderboard visibility**
+  (everyone with FleetOps access). No data is converted: without a target the corporation pages show no status
+  and a member needs at least 1 PAP.
+- `0016` and `0017` add FleetOps SRP. SRP stays off until you enable it under Administration > FleetOps SRP. No
+  data of aa-srp or Alliance Auth SRP is imported.
+- `0018` changes labels only.
+- The data steps of `0005`, `0006`, `0007`, `0009`, `0012`, `0014` and `0017` are not undone when migrating back.
+
+**Message templates.** The **Default Ping** and **Default MOTD** are replaced by the new built-in texts only if
+they were never edited; edited and custom templates keep working. `{{ ping_target }}` now renders the mention
+chosen on Start Fleet, `{{ fleet_time }}` is `YYYY-MM-DD HH:MM EVE` (or `Now`), and `{{ comms_link }}` is the
+comms join page for voice client links (the raw link is `{{ comms_voice_url }}`). `{{ logi_channel }}` and
+`{{ boost_channel }}` are plain names now; the upgrade switches every MOTD template to
+`{{ logi_channel_link }}` and `{{ boost_channel_link }}`. Add `{{ srp_url }}` to a customised ping or MOTD to
+put the SRP link in. The variables are listed in the message templates reference.
+
+**Languages.** FleetOps pages follow each user's language in Alliance Auth: English and Simplified Chinese are
+available, and other languages show English text. Discord pings and in-game MOTDs are always written in the site
+language (`LANGUAGE_CODE`), never in the language of the FC who clicked. Nothing needs configuring.
 
 ### Added
 
-- **Pre ping.** Fleet Start has a **Fleet time** choice: **Ping now** starts the fleet as before, **Pre ping** takes an EVE date and time (UTC), posts a pre ping with a Discord timestamp that shows each reader's local time, and creates a **Scheduled** fleet without any ESI call. The scheduled fleet page shows a countdown (and an "Overdue" badge two hours after the fleet time), the pre ping step, and cards to start, edit or cancel the fleet. Only the FC who scheduled a fleet can start it; starting it checks the fleet boss on ESI, optionally posts a form-up ping, sets the MOTD and starts tracking from that moment. Editing can post an updated pre ping (once per edit page, so a double click does not ping twice; a new ping channel needs it, so the channel of the pre ping is also the channel of a cancellation notice), and an overdue fleet can be edited without moving its time; cancelling can post a notice in the same channel that mentions nobody. The dashboard lists scheduled fleets, and the fleet archive files scheduled and cancelled pre pings under their fleet time.
-- **Ping channels and mentions.** Fleet Start picks a ping channel (or "No Discord message (copy only)") and a ping target: No ping, `@everyone`, `@here`, or one or more ping roles. Each channel decides whether `@everyone`, `@here` and which roles may be used; the start page disables what a channel does not allow and the server checks it again before every post. Discord is told exactly which mention may notify (`allowed_mentions`), so `@everyone`, `@here` or a role mention typed into the additional information never pings anybody; a stray `@everyone` in an `@here` ping stored by an older version is broken when it is retried.
-- **Ping roles.** Roles can be added by ID (digits or `<@&id>`) or read with **Sync roles from Discord** on the Ping Roles page when the Alliance Auth Discord service is installed and `DISCORD_GUILD_ID` is set. Synced roles start inactive; roles that disappear from Discord are marked "Not on Discord" and switched off. A role that a ping channel allows cannot be deleted, also not in Django Admin.
-- **New default Ping and MOTD.** The Ping is a broadcast with the mention, the additional information, FC, form-up, PAP type, comms and doctrine links, the fleet time on pre pings and a small footer line naming the sender, the target and the EVE time. It has no Logi/Boost lines. The MOTD uses the normal in-game text colour, keeps the line breaks of the additional information, links the comms name to the join page, the doctrine to Fittings and the Logi/Boost channels to the in-game channels. Empty lines are no longer printed.
-- New template variables: `sender`, `doctrine_name`, `doctrine_url`, `doctrine_ships`, `doctrine_fits`, `comms_voice_url`, `logi_channel_link`, `boost_channel_link`, `fleet_time_eve`, `fleet_time_unix`, `fleet_time_discord`, `is_pre_ping`, `ping_mention`, `ping_target_label`, `ping_target_name`, `ping_channel` and `sent_at`. `doctrine_ships` lists the hull of every fit of a Fittings doctrine in doctrine order (for example `Moa > Moa > Osprey`); the fits are saved with the fleet when it starts or is pre pinged.
-- **Comms join page.** Every comms preset has a public join page (`/fleetops/comms/<id>/join/`) that opens the voice client, so `mumble://` and other voice links can be clicked in Discord and in game. Pings and MOTDs link to it; the Comms Presets list shows each link with a Copy button. **Issue a new join link** on the preset form makes the old link stop working.
-- **In-game channel links.** The Logi/Boost channel form takes the link copied in game (the HTML, a `<url=…>` link, `joinChannel:player_…` or the bare ID) and fills in the channel name.
-- **Regenerate & Push MOTD** on an active fleet renders the MOTD again from the current templates, comms, channels and doctrine and pushes it to the fleet. Each push is kept in the MOTD step history and audited as `fleet.motd_regenerate`.
-- **aa-srp provider.** With aa-srp installed, FleetOps creates an aa-srp link at fleet start (see `docs/SRP_PROVIDER.md`). General Settings offers the SRP provider as a list that says which providers are installed.
-- **Pilots without an Alliance Auth account.** FleetOps looks up their name, corporation and alliance on ESI in the background (Celery task `fleetops.tasks.resolve_character_names`, no new beat entry; pilots who left before they were looked up are named by a later poll or when the fleet ends) and shows them with a "Not in Alliance Auth" badge and EveWho and zKillboard links.
-- New management command `fleetops_refresh_names [--dry-run]` that rewrites stored ship and system names of fleet members in English.
-- **Time in fleet and PAP at close.** Every poll adds the time each character spent in fleet since the previous poll, using ESI's join time for pilots who left and came back between polls. The Members tab shows **Time in fleet**. PAP is granted when the fleet closes to characters with at least the **PAP minimum time** (0 = any presence) and within **PAP characters per player**. Every character keeps a PAP row on the closed fleet with its status (Granted, Capped (limit), Below minimum, Replaced, Merged (+N), Pending approval, Rejected). **Recalculate PAP** grants PAP again, for example after an alt was added to Alliance Auth after the fleet (audited as `pap.recalculate`). PAP stays with the player it was credited to: a character that changed or lost its owner since keeps its PAP on recalculation. A fleet keeps the PAP rules in force when it started, and a fleet whose end finishes late (a busy worker, the recovery) ends at its end request: no time in fleet after it counts, and the duration rules measure to it.
-- **PAP preview and live PAP status.** A running fleet shows a PAP preview: who would get PAP if it closed now. Its managers and users with `view_all_fleets` or `manage_fleets` see everybody, other members only their own characters. Dashboard and My Statistics show "PAP in running fleets" for the user's characters (time in fleet, the minimum time and whether it is reached, the per-player limit), refreshed every minute while the user is in a fleet. Members can open the running fleets they fly in or registered for.
-- **PAP multiplier tiers.** FleetOps Administration → PAP Multipliers sets which multiplier a fleet may get once it ran longer than a number of minutes (strictly longer: 90 min 01 s qualifies for a 90-minute tier). In the **FC chooses when ending** mode, End Fleet on a fleet past a tier opens a choice of the allowed multipliers, with none preselected; the server refuses a multiplier the duration does not allow and asks for a choice when the fleet passed a tier after the page was loaded. In the **Automatic by fleet duration** mode End Fleet confirms the multiplier the duration gives. A fleet that ends automatically (gone, boss handover, recovery) in the FC mode gets 1x and is marked **Multiplier pending** when it ran long enough for more; its FC settles it from the fleet page banner (**Keep 1x** or a higher tier), the dashboard lists "Fleets waiting for your multiplier choice" and the incentive review warns about them.
-- **Multiplier changes after the close** stay within the duration rule. FC leads (`manage_fleets`) may go beyond it with a written reason of at least 5 characters; the fleet then shows "Override by an FC lead" and the audit entry (`attendance.multiplier`) keeps the reason.
-- **Counting rules.** The fleet page says whether a fleet counts in statistics and incentives and why not (pending approval, rejected, excluded, shorter than the minimum fleet duration). Whoever manages a fleet can exclude it with a reason (**Do not count**); FC leads can count it anyway (**Always count**) or go back to the setting (**Use the automatic rule**). Changes are audited as `fleet.stats_mode`, and the fleet archive marks such fleets "Not counted".
-- **FC lead approvals.** The **Approvals** page (FC leads) lists fleets and PAP rows waiting for approval, with approve or reject (a rejection needs a note), bulk decisions for PAP rows, and "With its PAP rows" to approve a fleet together with its waiting rows. The fleet page shows "Pending FC lead approval" or "Rejected by an FC lead" and lets approvers decide there. An FC who changes the times of an approved fleet, ESI-tracked fleets included, or the fleet type of an approved manual or PAP-link fleet sends it back for approval; the queue marks tracked fleets "Times edited" and shows the multiplier of closed ones. A multiplier the new times of a closed fleet do not allow is lowered at once (an FC lead's override stays). FCs delete their own manual PAP until it is approved; approved rows are deleted by FC leads. Decisions are audited (`approval.operation_approve`, `approval.operation_reject`, `approval.attendance_approve`, `approval.attendance_reject`) and the PAP of the fleet is recalculated. Manual PAP, roster imports and approvals that arrive while a fleet closes wait for the close and are then applied to its PAP.
-- **Configurable special roles.** FleetOps Administration → Special Roles adds, renames, orders and disables roles, each with its own **Gives FC credit** switch. Disabled roles disappear from the assign form; existing assignments stay and show "Disabled role". Roles can be given to anyone recorded in the fleet (tracked, registered by PAP link or with PAP), so PAP-link and manual fleets can have roles too. Manual PAP that is rejected, or waits for approval on an approved fleet, does not make a character eligible.
-- **Manual PAP by name and roster paste.** Manual attendance takes a character name instead of an ID; the name is looked up in Alliance Auth and then in ESI, and the page says when a character exists in EVE but is not in Alliance Auth. **Paste roster** on the fleet page (and on the Manual Attendance page) reads a fleet window copied from the Chinese or English client, a chat channel member list or chat lines, shows a preview (Add, Over the limit, Has PAP, Not in Alliance Auth, Not found, Not checked when ESI cannot be reached) and imports the ticked characters as imported PAP rows (audited as `attendance.roster_import`). A preview imported twice, also by a double click, credits each character once.
-- **PAP links.** On an active or closed fleet, the FC creates a PAP link (open for the **PAP link validity** setting, 30 minutes by default, or another time). Pilots open it, tick their characters and register them for PAP without being in the ESI fleet; a registered character needs no minimum time but counts towards the per-player limit. **Require online** is ticked by default and can be unticked per link for out-of-game events. Pilots without a token use **Add a character (EVE login)**. Links can be revoked; creating, revoking and registering are audited (`pap_link.create`, `pap_link.revoke`, `pap.register`). Fleets closed before the upgrade keep their PAP selection and take no PAP links. Shared links are built from `SITE_URL`. A link that closes while the pilot is at the EVE login refuses the new character and keeps its token from being handed to the pilot's next ESI login on another page.
-- **PAP-link fleets.** "No ESI fleet? Start a PAP-link fleet" on Fleet Start opens a fleet without an ESI fleet, ping or tracking, with its first PAP link. It is ended with End Fleet like any fleet and waits for FC lead approval unless an FC lead started it.
-- **CharLink.** With aa-charlink installed, CharLink offers **FleetOps FC fleet control** (fleet read and write scopes, for FCs) and **FleetOps PAP links** (the location scopes, ticked by default).
-- **Kicks.** Each member row of an active fleet has **Kick** (never the FC or the fleet boss) with a confirmation naming the pilot and corporation. **Kick outside system…** lists the fleet's systems (the FC's system first) and the members outside the chosen one, all ticked so the FC can untick some. **Kick Capsules** now lists the capsule pilots by name and kicks only the ticked ones. Kicks are audited (`fleet.kick_member`, `fleet.kick_outside_system`, `fleet.kick_capsules`), shown under Operation Actions (members who cannot see the member list of the running fleet see no names there), and followed by a fresh fleet read so the member list is right at once; a poll that read the fleet before the kick no longer brings the kicked pilot back. The buttons are disabled when the FC character has no token with `esi-fleets.write_fleet.v1`.
-- **Start presets.** Fleet Start can save the form as a named preset (**Save as preset…**), load it again, make one the default and keep the last used settings, including the ping channel and mentions. **My presets** renames, deletes and sets the default. A preset item that was disabled or deleted since is left blank with a warning.
-- Audit entries for start step results (in the `fleet.start` entry), retries (`fleet.retry_ping`, `fleet.retry_motd`, `fleet.retry_srp`), the first failed tracking poll after a good one and the recovery (`fleet.tracking_error`, `fleet.tracking_recovered`) and incentive period edits (`incentive.period_update`).
-- Incentive periods that are not finalized can change their budget and minimum fleets ("Recalculate to apply them").
-- Join and rejoin events keep ESI's join time; the Events tab shows "joined HH:MM EVE".
-- **Fleet tab.** An active ESI fleet opens on a new **Fleet** tab with the fleet as EVE shows it: the fleet commander, the wings and squads by name, and every member with portrait, ship, system, a docked and a "Not taking fleet warp" mark, the boss crown and the ship function colour. A status bar shows the EVE time, the last ESI read ("N s ago"), a **Refresh** button and a **Live** switch for the fleet's managers. The tab asks the server for changes every 10 seconds and swaps the tree, the composition, the member list and the PAP preview without reloading the page; collapsed wings, ticked members and the highlighted function stay as they were, and an open menu or dialog holds the update until it closes. While the fleet runs, the tab is shown to the people who manage the fleet (with its controls) and to users with `fleetops.view_all_fleets` (read-only); other members see the **Composition** tab once the fleet closed.
-- **Wings and squads.** "+" on the fleet adds a wing and opens its name editor at once, "+" on a wing adds a squad, the pencil renames (up to 10 characters, Enter saves, Esc cancels), and empty wings and squads can be deleted. EVE's limits (5 wings, 5 squads per wing) are shown on the buttons.
-- **Moving members.** Drag a member onto a squad (member), a squad head (squad commander), a wing head (wing commander) or the fleet head (fleet commander), or use the member menu: **Move to…**, **Make squad commander**, **Make squad member**, **Make wing commander**, **Make fleet commander** and **Kick…**. Ticked members move together (up to 50, as a background job whose progress shows above the tree). Taken commander positions are refused with the holder's name.
-- **Invites.** **Invite…** searches characters registered in Alliance Auth by active users (at least 3 letters; an empty search lists your own characters), into any squad with free positions or a chosen squad. The tree lists "Invitation sent — waiting for …" until the pilot accepts or for two minutes. Several characters are invited as a background job; characters that are already in the fleet are skipped and ESI's answer (for example a CSPA charge) is shown per character.
-- **Structure templates.** FleetOps Administration → Fleet Structure Templates keeps wing and squad layouts (one wing per line, `Wing: Squad 1, Squad 2`, with a live preview on the form). **Apply template…** on the Fleet tab renames and creates wings and squads in order, shows what will change first, and with **Also delete empty wings and squads that are not in the template** (unticked by default) deletes empty extras; wings and squads with members are kept and reported. Members are never moved. The **Standard** template is Main (Alpha, Bravo, Charlie), Logi, Boosts and Tackle.
-- **Composition.** Members by ship function, ship type, ship class and system (docked pilots and the FC's system marked), the ships no rule matches, and the **bridgeable mass** with the titan bridge rule (hull mass from the SDE; fitted modules not included). Ship functions and their rules (by ship type or ship group, entered by ID or exact English name) are configured under FleetOps Administration → Ship Functions and Ship Function Rules; a function can also count fleet positions such as the fleet commander. Configuration managers classify an unknown hull straight from the composition. Ship classes and the bridgeable mass need django-eveonline-sde; without it functions come from positions and type rules only.
-- **Recent fleet changes** on the Fleet tab lists the last 10 changes made from FleetOps with who made them; failed ones are marked.
-- Every change made from the Fleet tab is audited with its result (`fleet.wing_create`, `fleet.wing_rename`, `fleet.wing_delete`, `fleet.squad_create`, `fleet.squad_rename`, `fleet.squad_delete`, `fleet.member_move`, `fleet.move_job`, `fleet.invite`, `fleet.invite_job`, `fleet.template_job`, and quick classifications as `configuration.create` or `configuration.update`), and background jobs are listed under Operation Actions.
-- **Monthly Targets.** FleetOps Administration → Monthly Targets holds the **corporation average target** (average PAP per main character a corporation needs in a month) and the **member minimum PAP** of a month. An entry applies from its month until the next entry, so a new target never recolours finished months; edit the older entry for a retroactive change. Without an entry there is no corporation status and the member minimum is 1. Every change is audited.
-- **Corporation overview.** All Corporations lists every corporation of the alliance with mains, mains with PAP, mains below the minimum, total PAP, average PAP per main, the target and a status, plus the PAP per fleet type, sortable by name, mains, total, average and status. PAP earned in corporations without members in the statistics is shown in one **Other corporations** row so the columns add up to the alliance total. Cards show the alliance PAP, the average against the target, the corporations at target and the fleets that do not count (excluded, waiting for approval, rejected, still running). The corporation page adds the target, the PAP still missing and the mains below the minimum.
-- **Status colours.** Green when the target (or the member minimum) is reached; amber, "Not reached yet" or "Below minimum so far", while the month is still running; red, "Below target" or "Below minimum", only for a finished month that missed it. The status is always written out, colour is never the only signal.
-- **Members, inactive list and member details.** Alliance → Members (`view_all_stats`) and Corporation → Members (`view_corp_stats`, own corporation) list every member with rank, PAP, fleets, PAP per fleet type, characters used, last PAP, registration date and status; filter by status and name, sort by name, PAP, fleets or corporation, 100 rows per page, and the filters survive paging and month changes. **Inactive** is the same list with the members below the member minimum. A corporation manager sees their own corporation only (the alliance list and a corporation's page or members list by ID answer 403, the member page and the exports of another corporation answer 404); the member page of a member shows the fleets of the month, the characters used (alts included) and the ranks in the alliance and the corporation. Fleet links on it need `view_all_fleets` or `manage_fleets`.
-- **PAP leaderboard.** Top places of the month by PAP, for the alliance and for one corporation, with competition ranking (1, 2, 2, 4), all members tied on the last place shown, and a "Your rank" line when the viewer is outside the shown places. **Leaderboard places** (3 to 100) and **Leaderboard visibility** are settings: by default everyone with FleetOps access sees the alliance board and their own corporation's board; the other choice limits it to statistics managers.
-- **My Statistics** shows a **Monthly minimum** card (OK, Below minimum so far, Below minimum) and a **PAP rank** card when the leaderboard is visible to the user.
-- **FC statistics** show FC points (fleet type weight times PAP multiplier) per FC and fleet type with the formula, mark fleets whose multiplier is still pending, and use the same rows as the incentive calculation.
-- **Exports.** Excel (.xlsx) and CSV buttons on the corporations, members, member fleets, FC statistics, PAP history and FC incentive review pages. CSV is UTF-8 with a byte order mark, so Excel and WPS read Chinese names correctly; text cells that start with `=`, `+`, `-` or `@` are written with a leading apostrophe. The workbooks are written without an extra dependency and carry an About sheet (dataset, scope, month, export time, exporter, filters, target, member minimum, counting rule). A file always holds what its page shows for the same month and filters; files stop at 200000 rows with a note on the last row. Every download is audited as `statistics.export`. Corporation managers can download their own corporation's members and PAP history, `view_all_stats` everything, `manage_incentives` the incentive periods.
-- **PAP history month filter.** The history pages take a month (with **All retained** and previous/next month links); paging, sorting and the export links keep it. Their titles and the column say PAP.
-- **FleetOps SRP.** Members claim ship losses on **SRP → My SRP** (losses outside a fleet) or through the SRP link of a fleet (losses in a fleet). They paste an in-game killmail link (works at once), a zKillboard link, or the killmail ID and hash; FleetOps reads the killmail from ESI, checks that the victim is one of the member's characters and shows a preview: value, payout rule or percentage, per-loss cap, what is left of the monthly limits, the fleet presence check and warnings. The same killmail can only be claimed once, whichever link was pasted. SRP managers review, approve, change the amount, reject, revoke and mark claims paid; the pilot gets an Alliance Auth notification for every decision.
-- **Loss value.** zKillboard's fitted value (ship, modules, drones, implants; no cargo) by default, its total value or an ESI market estimate as the admin chooses. A loss younger than 6 minutes is never asked about at zKillboard (it withholds new kills); its value is filled in by the value sweep and the claim is calculated again. When zKillboard has no value after five tries, the ESI estimate is used and the claim says so.
-- **Payout table.** FleetOps Administration → SRP Payout Table keeps fixed amounts per ship type, per doctrine, or per ship of a doctrine, for losses in a fleet, outside a fleet or both. The most specific active rule wins; ships without a rule are paid the configured percentage of the loss value. A claim keeps the rule as it was when the claim was made.
-- **Caps and monthly limits.** Per-loss caps (in fleet and outside a fleet), a monthly limit per player and one per corporation (the default, with per-corporation overrides under SRP Corporation Limits), each with a switch whether losses in a fleet count. The most restrictive limit wins. A claim that does not fit goes to review with a red warning, or in "Reject automatically" mode is cut to what is left and reviewed (nothing left rejects it on the spot). Revoking an approval releases its amount; paid claims keep counting.
-- **Capsules.** A capsule loss is only paid from a capsule entry of the payout table (a fixed amount); the percentage and doctrine rules for any ship never cover a capsule while **Capsules need a payout rule** is on (the default).
-- **Review and payment.** The review queue (filters by status, scope, flag, corporation, FC, loss month and a search; red rows over a limit, amber rows to look at; bulk approval of clean claims at the suggested amount; recalculating all pending claims with the current policy), the claim page with calculation, limits, fleet check, warnings, killmail items and timeline, and the payments page that groups approved claims by main with copy buttons for the name and the amount (digits only, for the in-game field), a bulk **Mark selected paid** with a note, and the paid list filtered by payment date. Changing an amount needs a reason (also back to the suggested amount); paying more than the policy amount needs the confirmation "Pay more than the policy amount", and approving over the remaining monthly limit needs "Approve over the monthly limit" and is refused in "Reject automatically" mode. A decision is refused when the claim changed while the reviewer looked at it (another suggested amount, a revoked approval, another approved amount before **Mark paid**), and the payments page names the main character of the player as it is now. SRP managers cannot decide on their own claims unless **SRP managers may decide on their own claims** is ticked.
-- **Fleet presence check.** A loss in a fleet is checked against the tracking data (join and leave times, ESI's join time included), the member state and PAP registrations of fleets without tracking. A pilot who was not in the fleet gets a warning and can still be paid; reviewers can check again later.
-- **Summaries and exports.** SRP → Summary (alliance, corporations, FCs), Corporation (own corporation, members and claims) and My fleets (the fleets an FC led), by EVE month of the loss, with Excel and CSV files (`srp-claims`, `srp-members`, `srp-corporations`, `srp-fcs`). SRP managers and `view_all_stats` see everything (the latter read-only), `view_corp_stats` sees the own corporation and its members' claims, FCs see the claims and totals of the fleets they led. Internal notes on a claim, and the names of the people who decided on and paid it, are visible to SRP managers only; the audit log keeps only the length of a note, and the *Decided by* and *Paid by* columns of `srp-claims` are empty for other roles. The monthly usage on a claim page is not shown to the FC of the fleet.
-- **SRP link on the fleet page.** A card with the link and a Copy button (FC and managers), Open and Close for SRP managers, **Request SRP for this fleet** for pilots, and the claims of the fleet with totals for SRP managers, `view_all_stats` and the FC. **Create SRP link** makes the link for a fleet that has none. Fleets started from a PAP link get their FleetOps SRP link at creation when **SRP auto create** is on; the start form says that the link is added when the fleet starts.
-- **Template variable `srp_url`** (the full address of the fleet's SRP link, empty without one).
-- **SRP configuration.** FleetOps Administration → FleetOps SRP (settings), SRP Payout Table and SRP Corporation Limits. Caps can be typed as `250m` or `1.2b`. **Out-of-fleet losses** off limits claims to the SRP links of fleets; **Member instructions** (up to 2000 characters) is shown on My SRP and on the SRP page of a fleet. Every change is audited with the old and new values.
-- Audit entries for SRP: `srp.link_create`, `srp.link_open`, `srp.link_close`, `srp.claim_submit`, `srp.claim_auto_reject`, `srp.claim_withdraw`, `srp.claim_resubmit`, `srp.claim_approve`, `srp.claim_amount_change`, `srp.claim_reject`, `srp.claim_revoke`, `srp.claim_paid`, `srp.claim_unpaid`, `srp.claim_reopen`, `srp.claim_reclassify`, `srp.claim_recalculate`, `srp.claim_recheck`, `srp.claim_note` and `srp.export`; every claim also keeps its own timeline.
+**Starting a fleet**
 
-### Fixed
+- **Pre ping.** The **Fleet time** choice on Start Fleet announces a fleet for a later EVE time (UTC), with a
+  Discord timestamp that shows in every reader's own time zone, and creates a **Scheduled** fleet without
+  touching ESI. The scheduled fleet page has a countdown, an "Overdue" badge two hours after the fleet time, and
+  cards to start, edit or cancel it. Only the FC who scheduled a fleet can start it; starting checks the fleet
+  boss on ESI. Editing and cancelling can post a notice in the same channel, and a cancellation mentions nobody.
+- **Ping channels and mentions.** Start Fleet picks a ping channel (or "No Discord message (copy only)") and a
+  target: no mention, `@everyone`, `@here` or Discord roles. Each channel decides which mentions it allows, the
+  start page disables the rest and the server checks it again. Discord is told exactly which mention may notify
+  (`allowed_mentions`), so other mentions in the text never notify anybody.
+- **Ping roles.** Add roles by ID, or use **Sync roles from Discord** when the Alliance Auth Discord service is
+  installed and `DISCORD_GUILD_ID` is set. Synced roles start inactive; roles that disappear from Discord are
+  marked "Not on Discord" and switched off.
+- **New default Ping and MOTD.** The ping carries the mention, the additional information, FC, form-up, PAP type,
+  comms and doctrine links, the fleet time on pre pings and a footer naming the sender, the target and the EVE
+  time. The MOTD links the comms name to the join page, the doctrine to Fittings and the Logi and Boost channels
+  to the in-game channels. Embeds are suppressed so links do not unfurl. A ping over Discord's 2000 characters is
+  refused before anything is created; the preview counts the characters.
+- **Comms join page.** Every comms preset has a public join page (`/fleetops/comms/<token>/join/`) that opens the
+  voice client, so `mumble://` and other voice links can be clicked in Discord and in game. **Issue a new join
+  link** invalidates the old one. Logi and Boost channel forms accept the link copied in game.
+- **Start presets.** Save the Start Fleet form as a named preset, load it, make one the default, and keep the
+  last used settings.
+- **Regenerate & Push MOTD** on an active fleet renders the MOTD again from the current templates and pushes it.
+- **PAP-link fleets.** "No ESI fleet? Start a PAP-link fleet" on Start Fleet opens a fleet without an ESI fleet,
+  ping or tracking, with its first PAP link. It waits for FC lead approval unless an FC lead started it.
+- New template variables: `sender`, `doctrine_name`, `doctrine_url`, `doctrine_ships`, `doctrine_fits`,
+  `comms_voice_url`, `logi_channel_link`, `boost_channel_link`, `fleet_time_eve`, `fleet_time_unix`,
+  `fleet_time_discord`, `is_pre_ping`, `ping_mention`, `ping_target_label`, `ping_target_name`, `ping_channel`,
+  `sent_at` and `srp_url`.
 
-- The fleet boss is now taken from ESI's `fleet_boss_id` instead of the fleet position. A boss sitting as squad member or wing commander can start a fleet, and a character in the fleet commander position that is not the boss is rejected with the name of the current boss.
-- Handing the boss role to another pilot during a tracked fleet is no longer reported as "Fleet no longer exists." When a fleet read gets a 404, FleetOps checks the FC's own fleet and records either a boss handover or a fleet that is gone (disbanded, or the FC left it). Both count towards the automatic end, a successful read resets the count (so handing the boss back in time keeps the fleet open), and the fleet page shows which case it is and how many checks are left. A failed check is not counted.
-- Before ending a fleet automatically, FleetOps reads it once more and keeps it open if that read works. The automatic end itself no longer runs another sync.
-- A fleet that ends keeps a consistent state: the missing-fleet counter is saved, the last error is the end reason for automatic ends and empty for manual ends, and every pilot still marked as in fleet is marked as having left at the end time. Closed fleets no longer show the active-fleet warnings. A tracking poll that was still reading ESI when the fleet ended no longer puts pilots back in fleet, adds attendance or stores an error on the closed fleet.
-- Starting a fleet whose ESI fleet already has a Starting, Active or Ending record opens that record instead of creating a second one, also from a second browser tab or with a new request id. A start that was interrupted (for example a web worker killed mid-start) holds its fleet for about five minutes at most: after that the next start or the tracking beat cancels the stuck Starting record (audited as `fleet.start_abandoned`) and the fleet can be started again. A user who may not open the running record, such as a new boss after a handover, stays on the start page with an explanation, and the handover hint says when automatic end is disabled.
-- ESI errors no longer show django-esi's exception text, which includes every response header. Steps and pages show a short line such as `Could not read fleet members: ESI returned HTTP 503 (Service unavailable).`, and the log gets the HTTP status and `x-esi-request-id`, also for the 420 error limit and for gateway error pages that are not JSON.
-- The Kick Capsules button counts exactly the pilots that would be kicked: the FC and the fleet boss are never counted or kicked, and the button is disabled when nobody would be kicked. Unexpected kick errors are stored without their text.
-- The Start Fleet preview answers an incomplete form with HTTP 200, lists the missing fields and marks them, instead of returning HTTP 400; preview requests wait 400 ms after the last change.
-- End Fleet no longer keeps the browser waiting for the final ESI sync (the request could time out while the fleet still ended). The button disables itself and shows "Ending…", the request only records the end, and a background task runs the final sync, applies the attendance multiplier and closes the fleet. Repeated clicks do nothing and every end request is audited. If the worker is killed during the end task, the tracking beat finishes the fleet after about five minutes.
-- Manual fleet times are labelled and read as EVE time (UTC), whatever the site or browser time zone. The end time is required and must be after the start, the page shows the current EVE time and the duration, and a fleet longer than 6 hours needs an extra confirmation.
-- Fleet tracking, fleet detection and MOTD updates no longer fail when ESI data is unchanged since the last read (django-esi ETag/304 handling).
-- MOTD updates now send the request body in the form django-esi expects; previously every MOTD write was rejected.
-- A failed tracking poll now waits for the configured tracking interval before retrying, so the auto-end window is no longer shortened.
-- Tracking polls follow the configured interval even when the worker starts a little after the beat. Previously such a poll was put off until the next beat, so a 60-second interval polled every 120 seconds.
-- Discord webhook URLs and tokens are no longer stored in step error messages or shown on fleet pages. An upgrade step also removes tokens that older versions stored in fleet error messages (see the upgrade notes).
-- Discord webhook URLs are checked again before every send, not only when they are saved, so a URL stored before validation existed is never posted to unless it is a Discord webhook URL.
-- A broken Ping/MOTD template no longer blocks fleet start or crashes the preview; the built-in default text is used, the problem is reported on the fleet and the Start Fleet preview shows a template warning.
-- Unexpected errors in Discord, MOTD, tracking or SRP steps are recorded as failed steps and no longer leave a fleet stuck in Starting.
-- Unexpected step failures, including SRP and background tracking, are logged without exposing secrets and stored as a generic message instead of the raw error text.
-- A double-submitted Start Fleet request returns the fleet that was already started.
-- Retrying SRP no longer creates duplicate SRP fleets or erases an existing SRP link. Built-in AA SRP fleets get a valid SRP code and link.
-- Retry Ping/MOTD/SRP do nothing for Attendance Tracking Only fleets.
-- Retry Ping and Retry MOTD re-render empty messages (for example after a failed render at start) and never send an empty ping or clear the in-game MOTD.
-- FC incentives only count Closed fleets, follow the Incentive enabled setting (see the upgrade notes), and refuse invalid period actions instead of returning HTTP 500.
-- Departed members (when current alliance filtering is configured) are excluded from FC statistics and incentives.
-- `view_all_stats` no longer grants access to fleet records; use `view_all_fleets` or `manage_fleets`.
-- The 1x/2x/3x end prompt appears as soon as a fleet has run longer than 90 minutes.
-- Attendance history and the audit log are paginated instead of silently truncated.
-- Manual attendance and special roles can only be added to Active or Closed fleets; manual attendance requires a registered character and a sane value.
-- Invalid archive filters, oversized values and out-of-range periods no longer cause HTTP 500.
-- Configuration input is validated: Discord webhook URLs, message template syntax, alliance ID lists, retention days (365 to 36500) and fleet type weights. Only one default template per type is kept, a default template must be active, and a default that is replaced by another template is recorded in the audit log.
-- `fleetops_seed` no longer overwrites existing templates or fleet types.
-- Bulk deletes in Django admin are audited, and history pruning reports accurate totals.
-- Added the missing migration for the attendance record ordering.
-- Merged extra PAP is no longer lost when the multiplier of a fleet with a replaced row is changed: corrections are applied from the manual rows every time PAP is calculated, and deleting a correction gives the tracked PAP back.
-- The per-player attendance limit no longer depends on the multiplier or on manual credits; it counts characters.
-- End Fleet checks the posted multiplier against the fleet's duration on the server.
-- A manual attendance entry that could not be saved is shown again on the fleet's Attendance tab with its error, instead of only flashing a message.
-- Tracking polls stay at the configured interval when the worker is busy: the beat paces polls from the time it queued them and does not queue a second poll while one is waiting.
-- Incentive period creation shows its errors, and two managers creating the same month at once get the existing period.
-- The Members tab shows each pilot's own corporation and alliance; statistics still use the main's corporation.
-- Months, days and times in statistics, FC statistics, incentives, the dashboard, the fleet archive and the PAP history no longer follow the site's `TIME_ZONE`. A fleet at 23:30 UTC on the last day of a month counts in that month, and the archive filter, the daily totals and every displayed time use EVE time. On MariaDB the statistics no longer need the time zone tables.
-- The dashboard's month cards use the current EVE month and one grouped query instead of one query per fleet type and window.
-- The FC incentive review no longer reads the FC names one query at a time.
-- Attendance history and audit log paging keep the month and the other filters of the page.
+**Tracking and the Fleet tab**
+
+- **Fleet tab.** An active ESI fleet opens on the fleet as EVE shows it: wings, squads, every member with
+  portrait, ship, system and docked and fleet-warp marks, the boss crown and the ship function colour. A status
+  bar shows the last ESI read, a **Refresh** button and a **Live** switch. The tab updates in place; the one-minute
+  page reload of active fleets is gone. The people who manage the fleet see the controls; users with
+  `view_all_fleets` see the tab read-only; other members see the composition after the fleet closes.
+- **Wings, squads and members.** Add, rename and delete wings and squads, move members by drag and drop or from
+  the member menu (several at once as a background job), set squad, wing and fleet commanders, and invite
+  characters registered in Alliance Auth. **Apply template…** builds a wing and squad layout from a Fleet
+  Structure Template after showing what changes; members are never moved.
+- **Composition** by ship function, ship type, ship class and system, and the **bridgeable mass** with the titan
+  bridge rule. Ship functions and rules are configured under Administration (a function can also count fleet
+  positions). Ship classes and the mass need django-eveonline-sde.
+- **Kicks.** Kick one member, **Kick outside system…** or **Kick Capsules**, with a confirmation that names the
+  pilots. The FC and the fleet boss are never kicked. Every kick is audited and followed by a fresh fleet read.
+- **Time in fleet.** Every poll adds each character's time in fleet, using ESI's join time for pilots who left and
+  came back. The Members tab shows **Time in fleet**, and join and rejoin events show "joined HH:MM EVE".
+- Pilots without an Alliance Auth account are looked up on ESI in the background and shown with a "Not in
+  Alliance Auth" badge and EveWho and zKillboard links.
+- The management command `fleetops_refresh_names [--dry-run]` rewrites stored ship and system names in English.
+
+**PAP**
+
+- **PAP minimum time and PAP characters per player.** PAP is granted when the fleet closes, to characters that
+  reached the minimum time or registered through a PAP link. Every character keeps a PAP row with its status
+  (Granted, Capped (limit), Below minimum, Replaced, Merged, Pending approval, Rejected). **Recalculate PAP**
+  grants PAP again, for example after an alt joined Alliance Auth. A fleet keeps the rules in force when it started.
+- **PAP preview.** A running fleet shows who would get PAP if it closed now. The dashboard and My Statistics show
+  "PAP in running fleets" for the user's characters.
+- **PAP multipliers by duration.** Administration > PAP Multipliers sets which multiplier a fleet may get after a
+  number of minutes. In the **FC chooses when ending** mode, End Fleet asks for the multiplier; in the
+  **Automatic by fleet duration** mode the highest allowed multiplier applies. A fleet that ends without a choice
+  gets 1x and is marked **Multiplier pending** until its FC settles it. After the close, changes stay within the
+  duration rule; FC leads can go beyond it with a written reason of at least 5 characters (audited).
+- **PAP links.** On an active or closed fleet the FC creates a link that stays open for the **PAP link validity**
+  (30 minutes by default). Pilots tick their characters and register them without being in the ESI fleet.
+  **Require online** is ticked by default and can be unticked per link.
+- **Counting rules.** The fleet page says whether a fleet counts in statistics and why not. Whoever manages a fleet
+  can exclude it with a reason (**Do not count**); FC leads can count it anyway (**Always count**).
+- **FC lead approvals.** The **Approvals** page lists fleets and PAP rows that wait for approval, with approve or
+  reject (a rejection needs a note) and bulk decisions. An FC who edits the times of an approved fleet sends it back
+  for approval.
+- **Manual PAP by name and roster paste.** Add manual PAP by character name, or paste a fleet window, a chat
+  channel list or chat lines from the Chinese or English client; the preview shows who is added, over the limit,
+  already has PAP or is not in Alliance Auth.
+- **Special roles** are configurable (Administration > Special Roles), each with its own **Gives FC credit**
+  switch, and can be given to anybody recorded in the fleet, also after it closed.
+- **CharLink.** With aa-charlink installed, CharLink offers **FleetOps FC fleet control** and **FleetOps PAP links**.
+
+**Statistics, FC points and exports**
+
+- **Monthly Targets** (Administration) hold the corporation average target and the member minimum PAP of a month.
+  Status colours: green when reached, amber while the month runs, red only for a finished month that missed the
+  target. The status is always written out.
+- **Corporation overview** with mains, mains with PAP, mains below the minimum, total and average PAP, the target and
+  a status; PAP of corporations without members is shown in one **Other corporations** row.
+- **Members, inactive list and member pages** for the alliance (`view_all_stats`) and for the own corporation
+  (`view_corp_stats`), with rank, PAP per fleet type, characters used and status; filters survive paging and
+  month changes.
+- **PAP leaderboard** for the alliance and for one corporation with competition ranking. **Leaderboard places** and
+  **Leaderboard visibility** are settings.
+- **My Statistics** shows a **Monthly minimum** card and a **PAP rank** card.
+- **FC statistics** show FC points per FC and fleet type, and use the same rows as the incentive calculation.
+- **Exports.** Excel (.xlsx) and CSV for corporations, members, member fleets, FC statistics, PAP history, FC
+  incentive periods and SRP. CSV is UTF-8 with a byte order mark, so Excel and WPS read Chinese names, and cells
+  that start with `=`, `+`, `-` or `@` are written with a leading apostrophe. Workbooks need no extra dependency
+  and carry an About sheet. Every download is audited as `statistics.export` (SRP files as `srp.export`).
+
+**FleetOps SRP**
+
+- Members claim ship losses on **SRP > My SRP** or through the SRP link of a fleet. They paste an in-game
+  killmail link, a zKillboard link, or the killmail ID and hash; FleetOps reads the killmail from ESI, checks that
+  the victim is one of the member's characters and shows a preview with the value, the payout, the caps, what is
+  left of the monthly limits and warnings. A killmail can be claimed once.
+- **Loss value** from zKillboard's fitted or total value, or an ESI market estimate. A loss younger than 6
+  minutes is not asked about at zKillboard; a sweep fills in its value later.
+- **Payout table** with fixed amounts per ship, per doctrine or both, and a percentage for ships without a rule.
+  Capsule losses are paid only from a capsule entry (**Capsules need a payout rule**, on by default).
+- **Caps and monthly limits** per loss, per player and per corporation (**SRP Corporation Limits** override the
+  default). A claim that does not fit goes to review with a warning, or in **Reject automatically** mode is cut to
+  what is left.
+- **Review and payment.** A review queue with filters and bulk approval, a claim page with the calculation, the
+  limits, the fleet presence check and a timeline, and a payments page that groups approved claims by player with
+  copy buttons for the name and the amount. SRP managers cannot decide on their own claims unless the setting
+  allows it. FleetOps never moves ISK.
+- **Summaries and exports** by EVE month of the loss: alliance, corporations, FCs, own corporation and the fleets an
+  FC led. Internal notes and the names of the people who decided and paid a claim are visible to SRP managers only.
+- The fleet page has an SRP card with the link, **Open** and **Close**, **Request SRP for this fleet** and
+  **Create SRP link**.
+- **aa-srp provider.** With aa-srp installed, FleetOps creates an aa-srp link at fleet start.
+
+**Administration and audit**
+
+- The Administration pages cover fleet types, PAP multipliers, monthly targets, special roles, comms presets, Logi
+  and Boost channels, ping channels and roles, message templates, ship functions and rules, fleet structure
+  templates and the SRP settings, payout table and corporation limits. Every change is audited.
+- Audit entries for start step results, retries, tracking errors, boss handovers, approvals, multiplier changes,
+  statistics modes, PAP links, kicks, fleet changes, exports and every SRP action.
+
+**Languages, documentation and packaging**
+
+- **English and Simplified Chinese.** Menus, pages, forms, messages, exports and JavaScript follow the Alliance Auth
+  language of each user. Messages that FleetOps stores (results of start steps, why a fleet ended, ESI errors,
+  automatic SRP decisions) are stored in English and translated when shown. Ship and solar system names stay
+  English. The wording in the interface is "PAP" instead of "attendance"; the permission codename
+  `fleetops.manage_attendance` is unchanged. To add or improve a language, see the translations guide.
+- **Documentation.** A new README and a Chinese README (`README.zh-CN.md`), the configuration reference, permissions,
+  message templates and integrations also in Simplified Chinese, and guides for translators, developers and
+  release managers. Issue forms for bugs, feature requests and translations, a pull request template and a
+  security policy.
+- **Licence and packaging.** The full GPL-3.0 text, SPDX headers in all source files, the licence in the package
+  metadata, and no e-mail address in the metadata. The wheel contains all templates, static files and translations.
+  A GitHub Actions job builds and checks every release, creates the GitHub Release and, when enabled, uploads
+  to PyPI.
 
 ### Changed
 
-- Supports django-esi 9 and 10, so Alliance Auth 5.5 can be installed alongside FleetOps.
-- Added a Django test suite that runs against SQLite and MariaDB.
-- Every operation step keeps its attempts (status, short message, time). The fleet page lists earlier attempts under each step, so a failure stays visible after a retry succeeds.
-- Fleets record why they ended (manual, fleet gone, boss handover). The fleet page, the fleet archive and the audit entry show it, and the end request is audited separately (`fleet.end_request`).
-- FleetOps logs through `allianceauth.services.hooks.get_extension_logger`.
-- A closed fleet lists every pilot that was tracked in it on its Members tab.
-- The fleet detection endpoint returns `fleet_boss_id` and a message naming the boss when the selected character is not the boss.
-- The test settings now really run Celery tasks eagerly.
-- When ESI confirms a new fleet boss at Fleet Start and another FC's record still tracks that ESI fleet, the old record ends at once with "fleet boss handed over to <name>" and the new boss gets a separate record, instead of having to wait for the automatic end. Each record keeps its own attendance and FC credit. Both are audited (`fleet.boss_handover`, and one `fleet.start` per start).
-- The boss check at Fleet Start always reads ESI fresh instead of using the cached fleet data.
-- Discord pings are posted with embeds suppressed, so the join and doctrine links do not unfurl into preview cards. A ping over Discord's 2000-character limit is refused before anything is created or posted; the Start Fleet preview counts the characters, and a ping that is only copied gets a warning. A MOTD over 1000 characters gets a warning.
-- All EVE times in pings, MOTDs and FleetOps forms are UTC, whatever the site or browser time zone.
-- Ship and system names are stored in English whatever language the FC uses.
-- The fleet edit form takes its times in EVE time (UTC) like the manual fleet form; the end must be after the start, and new times that make a fleet longer than 6 hours need a confirmation. Changing the doctrine name drops the Fittings link and fits, and the form can change the Ping and MOTD templates for the next retry.
-- While a fleet is starting, active or ending, its members, map and events are only shown to people who manage the fleet or hold `view_all_fleets` or `manage_fleets`; other members see their own attendance and roles until the fleet closes.
-- The `auto` SRP provider tries FleetOps SRP first (while it is enabled), then aa-srp, then Alliance Auth SRP, then any other registered provider. The stored key `aa_srp` is read as `aasrp`, and an explicit provider that is not installed is reported as "SRP provider '<key>' is not installed."
-- The audit entry of a manual end records the status the fleet had before the end was requested.
-- The manual fleet page hides the long-fleet confirmation again when the duration drops below 6 hours.
-- The **Attendance limit** setting is called **PAP characters per player**.
-- Starting a PAP-link fleet writes the same single `fleet.start` audit entry as other starts, marked `link_only`.
-- Manual fleets follow the multiplier duration rule too (3x needs a fleet longer than 180 minutes with the default tiers).
-- The dashboard's top ships and the ships on My Statistics come from counted fleets only, like the PAP totals.
-- The Ping Channels page says that webhook URLs can be replaced but are never shown again.
-- The one-minute reload of an active fleet page is gone: the Fleet tab updates the page in place (see Upgrade notes).
-- The Members tab shows wing and squad names (Fleet Command for the fleet commander) and a docked mark instead of raw ids, and the Events tab shows wing and squad changes by name ("Main → Logi") and role changes as "Squad Member → Wing Commander". Events keep the raw ids, so a wing renamed later shows its current name.
-- Kicks are fleet changes like every other: they wait for a running fleet job, are refused with the reason, before anything is sent, after a boss handover, while the fleet cannot be read or without the FC character's write token, and the kick buttons say why they are disabled. A kick that ESI answers with "not found" checks whether the FC character is still the fleet boss: after a handover in game it says so (and the Fleet tab disables its controls) instead of reporting that the pilot already left. Kick batches stop at a handover, a forbidden kick or ESI's error limit instead of sending the remaining kicks; those that run on the worker are fleet jobs, show their progress on the Fleet tab (members who are no longer a target when the job runs leave its total) and read the fleet again after ESI's 5 second cache. Kick audit entries carry a result and a summary. A kick from the Members tab returns to the Members tab.
-- The General Settings help of **Ship groups without bridge** names the groups on the list.
-- A fleet that is ending is never counted past its end request, also by a read after a fleet job or kick batch: pilots who join after the end get no PAP.
-- Fleet positions of a ship function are stored in lower case, also when typed otherwise in Django Admin, so the composition counts them. Deleting a ship function writes an audit entry for each of its rules too.
-- The Fleet tab's answers are compressed, and the page only gets new HTML when something it shows changed (time in fleet counts in whole minutes). Keyboard focus stays on the control it was on when the tree is redrawn. Reads queued for a busy worker run once, not one after another, and a second click on **Refresh** right after a failed refresh says that it failed instead of "Refreshed a moment ago."
+- Supports django-esi 9 and 10, so Alliance Auth 5.5 can be installed alongside FleetOps. Python 3.10 to 3.14.
+- Every start step keeps its attempts (status, short message, time), so a failure stays visible after a retry
+  succeeds.
+- Fleets record why they ended (manual, fleet gone, boss handover). The fleet page, the archive and the audit entry
+  show it.
+- When ESI confirms a new fleet boss at Start Fleet and another FC's record still tracks that fleet, the old
+  record ends at once as a boss handover and the new boss gets a separate record with its own PAP and FC credit.
+- The boss check at Start Fleet always reads ESI fresh.
+- All EVE times in pings, MOTDs and FleetOps forms are UTC. The fleet edit form takes EVE time too; a fleet longer
+  than 6 hours needs a confirmation.
+- While a fleet is starting, active or ending, its members, map and events are shown only to the people who manage
+  it and to users with `view_all_fleets` or `manage_fleets`; other members see their own PAP and roles until it closes.
+- `view_corp_stats` also covers the members, inactive list and member pages of the own corporation and its exports;
+  `view_all_stats` covers the alliance members, every member page and all exports. It no longer grants access to
+  fleet records; use `view_all_fleets` or `manage_fleets`.
+- The Members tab shows each pilot's own corporation and alliance, wing and squad names and a docked mark. The
+  Events tab shows changes by name.
+- The statistics pages run a fixed number of queries whatever the number of corporations, members and fleets.
+- Logging goes through Alliance Auth's extension logger, so messages appear in `extensions.log`.
+- The fleet detection endpoint returns `fleet_boss_id` and names the boss when the selected character is not the
+  boss.
 
-- The statistics pages say **PAP** instead of attendance. The statistics sections of README.md describe the definitions.
-- **Corporation average = the corporation's total PAP divided by its current main characters.** The total counts the PAP earned while the main was in the corporation (the corporation at PAP time); the mains, the member lists and the counts of mains with PAP and below the minimum use each person's current corporation, and a person's PAP counts for them in any corporation or alliance their alts were in. A member who changed corporation in a month shows all their PAP in the member list of the new corporation, while the old corporation keeps the PAP they earned there. Every corporation page says so in one line.
-- Member alliance IDs: when set, statistics, leaderboards and history only include users whose main is currently in one of the alliances; departed members' PAP disappears from every page and export. When empty, every active user with a main counts and the overview shows a hint.
-- The statistics pages run a fixed number of queries whatever the number of corporations, members and fleets (checked by tests against a dataset three times the size).
-- FC points and the FC statistics page use the same rows as the incentive calculation, so the two always agree.
-- `view_corp_stats` now also covers the members, the inactive list and the member pages of the user's own corporation and the exports of that corporation; `view_all_stats` covers the alliance members and inactive pages, every member page and all exports. See `docs/PERMISSIONS.md`.
-- The default MOTD has a `SRP: Request SRP` line when the fleet has an SRP link (applied to the untouched default only).
-- The SRP link of a PAP-link fleet is created when the fleet is created, like the one of an ESI fleet; it was skipped before.
-- The permission lists in `docs/PERMISSIONS.md` have the SRP permissions and the SRP visibility rules; `docs/SRP_PROVIDER.md` describes the FleetOps SRP provider.
+### Fixed
+
+- The fleet boss is taken from ESI's `fleet_boss_id` instead of the fleet position. A boss sitting as squad member
+  or wing commander can start a fleet; a fleet commander who is not the boss is refused with the boss's name.
+- Handing the boss role to another pilot is no longer reported as "Fleet no longer exists". Handovers and missing
+  fleets are told apart, a successful read resets the count towards the automatic end, and the fleet is read once
+  more before it ends automatically.
+- A fleet that ends keeps a consistent state: pilots still marked as in fleet are marked as having left, and a poll
+  that was still running no longer puts pilots back or adds PAP to the closed fleet.
+- Starting a fleet whose ESI fleet already has a record opens that record instead of creating a second one. An
+  interrupted start no longer blocks the fleet for more than about five minutes.
+- ESI errors no longer show django-esi's exception text with every response header. Steps and pages show a short
+  line such as `Could not read fleet members: ESI returned HTTP 503 (Service unavailable).`
+- End Fleet no longer keeps the browser waiting for the final ESI sync. A background task finishes the fleet; the
+  beat finishes it if the worker was killed.
+- Fleet tracking and MOTD updates work when ESI data is unchanged since the last read (django-esi ETag handling), and
+  MOTD updates send the body in the form django-esi expects. Previously every MOTD write was rejected.
+- A failed tracking poll waits for the tracking interval before it is retried, and polls follow the interval when the
+  worker starts after the beat.
+- Discord webhook URLs and tokens no longer appear in step errors or on pages.
+- A broken Ping or MOTD template no longer blocks fleet start or the preview; the built-in text is used and the
+  problem is reported.
+- Retrying a ping, MOTD or SRP step does nothing for PAP-only fleets, never sends an empty ping or clears the MOTD,
+  and never creates a duplicate SRP link. A double-submitted Start Fleet returns the fleet that was already started.
+- Unexpected errors in Discord, MOTD, tracking and SRP steps are recorded as failed steps, logged without secrets
+  and no longer leave a fleet stuck in Starting.
+- The Kick Capsules button counts exactly the pilots that would be kicked. Kicks are refused with the reason after a
+  boss handover or without the FC's write token, and kick batches stop at a handover or ESI's error limit.
+- The Start Fleet preview answers an incomplete form with the missing fields instead of an error page.
+- FC incentives count only closed fleets, refuse invalid period actions instead of returning HTTP 500, and exclude
+  departed members.
+- Months, days and times in statistics, incentives, the dashboard, the archive and the PAP history no longer
+  follow the site's `TIME_ZONE`. On MariaDB the statistics no longer need the time zone tables.
+- Merged extra PAP is no longer lost when the multiplier is changed, and the per-player PAP limit no longer depends on
+  the multiplier.
+- Invalid archive filters, oversized values and out-of-range periods no longer return HTTP 500. Configuration input is
+  validated.
+- `fleetops_seed` no longer overwrites existing templates or fleet types, bulk deletes in the Django admin are
+  audited, and history pruning reports accurate totals.
 
 ## 0.1.0a5
 
@@ -215,7 +379,7 @@
 - Members can now browse/open their own participated Fleet Operations.
 - Added read-only `view_all_fleets` permission for FC historical archive access.
 - Added `create_manual_fleet` permission.
-- Added `docs/PERMISSIONS.md` with Member / Corp Management / FC / FC Lead role bundles.
+- Added a permissions document with Member / Corp Management / FC / FC Lead role bundles.
 - Added migration `0004_attendance_modes_permissions`.
 
 ## 0.1.0a4
@@ -229,31 +393,29 @@
 - Added direct Edit Operation access from operation detail.
 - No database migration is required from 0.1.0a3 to 0.1.0a4.
 
-
 ## 0.1.0a3
 
-- Added SRP provider abstraction with a best-effort adapter for Alliance Auth built-in SRP and a registration path for future Better SRP/community providers.
+- Added SRP provider abstraction with a best-effort adapter for Alliance Auth built-in SRP and a registration path for other providers.
 - Fleet Start now attempts SRP creation/linking as a non-blocking operation step and stores SRP reference/link/error snapshots.
 - Added front-end historical manual attendance for permitted FCs/admins, including closed fleets and repeated/multiple credits.
-- Removed the old one-row-per-character/source attendance uniqueness restriction so deliberate separate manual corrections can coexist.
+- Removed the old one-row-per-character/source attendance uniqueness restriction so separate manual corrections can coexist.
 - Added personal, corporation and alliance attendance-history pages with minimum 365-day retention.
 - Added optional current-alliance membership filtering/pruning, a Celery prune task and `fleetops_prune_history` management command.
 - Reworked the main dashboard with attendance metric cards, recent participations, top ships, active fleets and FC-month summary.
 - Added post-creation/post-close Back Seat FC, Logi Anchor and Snowflake role assignments.
 - Added FC-credit snapshots: assigned users with `fleetops.start_fleet` receive the same operation in FC statistics/incentive calculations.
 - Added one-click active-fleet capsule cleanup through the ESI fleet-member delete endpoint.
-- Added SRP, special-role, retention and capsule-cleanup staging test documentation.
+- Added SRP, special-role, retention and capsule-cleanup test documentation.
 
 ## 0.1.0a2
 
 - Added FleetOps front-end **Administration Center** for alliance administrators.
 - Added front-end CRUD for Fleet Types, Comms Presets, Logi/Boost Channels, Discord Webhooks, Ping Targets and Message Templates.
 - Added front-end General Settings management.
-- All configuration pages are protected by `fleetops.manage_configuration`; Django Admin is now documented as an IT/emergency interface rather than the normal configuration workflow.
+- All configuration pages are protected by `fleetops.manage_configuration`; Django Admin is now documented as an IT/emergency interface rather than the normal way to configure FleetOps.
 - Configuration changes are written to the FleetOps Audit Log.
 - Discord webhook URL values are redacted from front-end configuration audit snapshots.
 - Kept operational/system-created rows (FleetMemberState, FleetMemberEvent, OperationAction, AuditLog) out of raw front-end CRUD to protect data integrity.
-
 
 ## 0.1.0a1 - 2026-08-23
 
@@ -269,11 +431,4 @@ Initial testable alpha:
 - Admin-configurable Fleet Types, comms, channels, targets and templates
 - Manual Ping/MOTD copy fallback
 
-### Full development package documentation
-- Added complete product feature target (`FEATURES.md`)
-- Added implementation-status matrix
-- Added architecture notes
-- Added local macOS smoke-test gate
-- Added real-EVE staging test plan
-- Added GitHub release notes and contribution templates
-- Fixed standalone calculation test invocation documentation
+Added documentation and contribution templates.

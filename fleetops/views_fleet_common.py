@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Shared parts of the Fleet tab's views: answers for scripts and forms, object checks, posted ids."""
 
 from django.contrib import messages
@@ -6,12 +9,14 @@ from django.middleware.gzip import GZipMiddleware
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.cache import add_never_cache_headers
+from django.utils.translation import gettext as _
 
 from fleetops.models import MAX_DATABASE_ID
 from fleetops.services.fleet_access import FleetManageError, can_view_fleet_tab
 from fleetops.services.fleet_manage import FleetActionResult
 from fleetops.services.fleet_rules import NO_UNIT
 from fleetops.services.fleet_view import state_payload
+from fleetops.texts import translate_stored
 from fleetops.views import _database_id, _operation_for_user
 
 MANAGE_PERMISSIONS = ("fleetops.manage_own_fleet", "fleetops.manage_fleets")
@@ -91,7 +96,7 @@ def posted_unit(request, name, kind):
         return None
     number = _database_id(value)
     if number is None:
-        raise ValueError(f"That {kind} does not exist.")
+        raise ValueError(_("That wing does not exist.") if kind == "wing" else _("That squad does not exist."))
     return number
 
 
@@ -107,6 +112,8 @@ def _answer(result):
     else:
         ok, data = bool(result.ok), dict(result.data or {})
         message, status, level = result.message, result.status or 200, result.level
+    # Messages that services store or raise are English; the page shows them in the viewer's language.
+    message = translate_stored(message)
     if level not in MESSAGE_LEVELS or (level == "success" and not ok):
         level = "success" if ok else "error"
     return {"ok": ok, "message": message, "level": level, "data": data}, status

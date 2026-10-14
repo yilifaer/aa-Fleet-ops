@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """PAP multipliers: the end-fleet choice, the checks on the server, the close rules and later changes."""
 
 from datetime import timedelta
@@ -184,7 +187,7 @@ class EndFleetViewTests(TestCase):
         operation, texts = self.end(minutes(100), {"attendance_multiplier": "2"})
 
         self.assertEqual((operation.status, operation.attendance_multiplier), (Status.CLOSED, 2))
-        self.assertIn("Fleet ended. Attendance finalized at 2x.", texts)
+        self.assertIn("Fleet ended. PAP finalized at 2x.", texts)
 
     def test_a_fleet_past_a_tier_needs_a_choice(self):
         operation, texts = self.end(minutes(100), {})

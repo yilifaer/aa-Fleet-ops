@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Deciding on claims. Every action locks the claim, checks its status, writes a claim event and an audit
 entry and notifies the claimant; every action that changes a claim's status or amount runs under
 ``quota.quota_lock()``, so decisions and submissions queue up and see the usage the previous one left.
@@ -12,6 +15,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from fleetops.constants import MAX_ISK
+from fleetops import texts
 from fleetops.models import SrpClaim, SrpClaimEvent, SrpFleetLink, SrpSettings
 from fleetops.srp import access, claims, display, quota
 from fleetops.srp import policy as rules
@@ -24,9 +28,10 @@ Action = SrpClaimEvent.Action
 MAX_PAYMENT_NOTE_LENGTH = 255
 MAX_NOTE_LENGTH = 2000
 
-NOT_A_MANAGER = "You are not allowed to decide on SRP claims."
-OWN_CLAIM = "Another SRP manager has to decide on your own claim."
-OWN_CLAIM_SKIPPED = "Your own claims are decided by another SRP manager."
+# Stored messages (English): the pages show them through ``translate_stored``.
+NOT_A_MANAGER = texts.SRP_NOT_A_MANAGER()
+OWN_CLAIM = texts.SRP_OWN_CLAIM()
+OWN_CLAIM_SKIPPED = texts.SRP_OWN_CLAIM_SKIPPED()
 
 
 def can_review(user, claim: SrpClaim) -> bool:
@@ -51,13 +56,8 @@ def _amount(value) -> int:
     if isinstance(value, Decimal) and value == value.to_integral_value():
         value = int(value)
     if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= MAX_ISK:
-        raise SrpError("invalid_amount", f"Enter an amount between 1 and {MAX_ISK:,} ISK.")
+        raise SrpError("invalid_amount", texts.SRP_AMOUNT_RANGE(max=f"{MAX_ISK:,}"))
     return value
-
-
-def _limit_name(kind) -> str:
-    name = display.MONTHLY_KIND_LABELS.get(kind, kind)
-    return f"monthly {name} limit" if name else "monthly limit"
 
 
 def _tightest(states):
@@ -86,19 +86,16 @@ def _check_shown(locked: SrpClaim, *, status=None, suggested=None, limited=None)
     if status is not None and locked.status != status:
         raise SrpStateError(
             "changed",
-            f"This claim is {claims.status_label(locked.status)} now; it was {claims.status_label(status)} on your "
-            "page. Check it and decide again.",
+            texts.SRP_STATUS_CHANGED(now=claims.status_label(locked.status), was=claims.status_label(status)),
         )
     stored = (
-        ("suggested amount", suggested, locked.suggested_amount),
-        ("amount within the limits", limited, locked.limited_amount),
+        (texts.SRP_SUGGESTED_CHANGED, suggested, locked.suggested_amount),
+        (texts.SRP_LIMITED_CHANGED, limited, locked.limited_amount),
     )
-    for name, shown, current in stored:
+    for message, shown, current in stored:
         if shown is not None and shown != current:
             raise SrpStateError(
-                "amount_changed",
-                f"The {name} changed from {display.format_isk(shown)} to {display.format_isk(current)} while you "
-                "were looking at the claim. Check it and approve again.",
+                "amount_changed", message(shown=display.format_isk(shown), current=display.format_isk(current))
             )
 
 
@@ -116,12 +113,12 @@ def _approve_locked(
 ) -> SrpClaim:
     """Approve (or change the amount of) a locked claim. Call it inside ``quota_lock``."""
     if locked.status == Status.PAID:
-        raise SrpStateError("paid", "This claim is paid. Undo the payment before changing it.")
+        raise SrpStateError("paid", texts.SRP_PAID_CHANGE())
     if locked.status not in (Status.PENDING, Status.APPROVED):
-        raise claims.wrong_state(locked, "Only pending claims can be approved.")
+        raise claims.wrong_state(locked, texts.SRP_ONLY_PENDING_APPROVED())
     changing = locked.status == Status.APPROVED
     if changing and amount == locked.approved_amount:
-        raise SrpStateError("already", f"This claim is already approved for {display.format_isk(amount)}.")
+        raise SrpStateError("already", texts.SRP_ALREADY_APPROVED(amount=display.format_isk(amount)))
     _check_shown(locked, status=expected_status, suggested=expected_suggested, limited=expected_limited)
 
     policy = PolicySnapshot.from_json(locked.policy)
@@ -140,22 +137,27 @@ def _approve_locked(
     if amount > locked.suggested_amount and not confirm_above_policy:
         raise SrpLimitError(
             "confirm_above_policy",
-            f"{display.format_isk(amount)} is more than the policy amount of "
-            f"{display.format_isk(locked.suggested_amount)}. Confirm to pay more than the policy amount.",
+            texts.SRP_ABOVE_POLICY(
+                amount=display.format_isk(amount), policy=display.format_isk(locked.suggested_amount)
+            ),
         )
     if over_by:
         if policy.over_limit_action == SrpSettings.OverLimitAction.REJECT:
             raise SrpLimitError(
-                "over_limit", f"Only {display.format_isk(remaining)} left in the {_limit_name(kind)}."
+                "over_limit",
+                texts.SRP_LIMIT_LEFT(remaining=display.format_isk(remaining), limit=claims.limit_name(kind)),
             )
         if not confirm_over_limit:
             raise SrpLimitError(
                 "confirm_over_limit",
-                f"This is {display.format_isk(over_by)} over the {_limit_name(kind)} "
-                f"({display.format_isk(remaining)} left). Confirm to approve it anyway.",
+                texts.SRP_OVER_LIMIT(
+                    over=display.format_isk(over_by),
+                    limit=claims.limit_name(kind),
+                    remaining=display.format_isk(remaining),
+                ),
             )
     if (changing or over_by or amount != locked.suggested_amount) and not reason:
-        raise SrpError("reason_required", "Give a reason for this amount.")
+        raise SrpError("reason_required", texts.SRP_AMOUNT_REASON())
 
     previous = _approval_state(locked)
     locked.status = Status.APPROVED
@@ -234,12 +236,12 @@ def _approve_clean(claim, actor, expected_suggested=None) -> SrpClaim:
         locked = claims.lock_claim(claim)
         _require_reviewer(actor, locked, srp)
         if locked.status != Status.PENDING:
-            raise claims.wrong_state(locked, "Only pending claims can be approved.", Status.APPROVED)
+            raise claims.wrong_state(locked, texts.SRP_ONLY_PENDING_APPROVED(), Status.APPROVED)
         _check_shown(locked, suggested=expected_suggested)
         if locked.warnings or locked.over_limit:
-            raise SrpError("not_clean", "This claim has warnings. Review it on its own.")
+            raise SrpError("not_clean", texts.SRP_HAS_WARNINGS())
         if locked.suggested_amount <= 0:
-            raise SrpError("no_amount", "This claim has no suggested amount.")
+            raise SrpError("no_amount", texts.SRP_NO_SUGGESTION())
         _approve_locked(
             locked,
             actor=actor,
@@ -289,7 +291,7 @@ def reject_claim(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
         locked = claims.lock_claim(claim)
         _require_reviewer(actor, locked, srp)
         if locked.status != Status.PENDING:
-            raise claims.wrong_state(locked, "Only pending claims can be rejected.", Status.REJECTED)
+            raise claims.wrong_state(locked, texts.SRP_ONLY_PENDING_REJECTED(), Status.REJECTED)
         previous = locked.status
         locked.status = Status.REJECTED
         locked.approved_amount = None
@@ -318,9 +320,9 @@ def revoke_approval(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
         locked = claims.lock_claim(claim)
         _require_reviewer(actor, locked, srp)
         if locked.status == Status.PAID:
-            raise SrpStateError("paid", "This claim is paid. Undo the payment first, then revoke the approval.")
+            raise SrpStateError("paid", texts.SRP_PAID_REVOKE())
         if locked.status != Status.APPROVED:
-            raise claims.wrong_state(locked, "Only approved claims can be revoked.", Status.PENDING)
+            raise claims.wrong_state(locked, texts.SRP_ONLY_APPROVED_REVOKED(), Status.PENDING)
         previous = _approval_state(locked)
         locked.status = Status.PENDING
         locked.approved_amount = None
@@ -347,13 +349,13 @@ def _mark_paid(claim, actor, note, expected_amount=None) -> SrpClaim:
         locked = claims.lock_claim(claim)
         _require_reviewer(actor, locked, srp)
         if locked.status != Status.APPROVED:
-            raise claims.wrong_state(locked, "Only approved claims can be marked paid.", Status.PAID)
+            raise claims.wrong_state(locked, texts.SRP_ONLY_APPROVED_PAID(), Status.PAID)
         if expected_amount is not None and expected_amount != locked.approved_amount:
             raise SrpStateError(
                 "amount_changed",
-                f"The approved amount changed from {display.format_isk(expected_amount)} to "
-                f"{display.format_isk(locked.approved_amount)} after your page was loaded. Check it before "
-                "paying, so the books show what was sent.",
+                texts.SRP_APPROVED_CHANGED(
+                    expected=display.format_isk(expected_amount), current=display.format_isk(locked.approved_amount)
+                ),
             )
         locked.status = Status.PAID
         locked.paid_by = actor
@@ -384,7 +386,7 @@ def mark_paid(claims_, *, actor, note: str = "", expected_amounts=None) -> BulkR
     _require_manager(actor)
     note = (note or "").strip()
     if len(note) > MAX_PAYMENT_NOTE_LENGTH:
-        raise SrpError("note_too_long", f"The note is too long (at most {MAX_PAYMENT_NOTE_LENGTH} characters).")
+        raise SrpError("note_too_long", texts.SRP_NOTE_TOO_LONG(max=MAX_PAYMENT_NOTE_LENGTH))
     expected = expected_amounts or {}
     return _each(_claim_list(claims_), lambda claim: _mark_paid(claim, actor, note, expected.get(claim.pk)))
 
@@ -396,7 +398,7 @@ def undo_payment(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
         locked = claims.lock_claim(claim)
         _require_reviewer(actor, locked, srp)
         if locked.status != Status.PAID:
-            raise claims.wrong_state(locked, "Only paid claims can be marked unpaid.", Status.APPROVED)
+            raise claims.wrong_state(locked, texts.SRP_ONLY_PAID_UNPAID(), Status.APPROVED)
         previous = {"status": locked.status, "paid_at": locked.paid_at.isoformat() if locked.paid_at else None}
         locked.status = Status.APPROVED
         locked.paid_by = None
@@ -424,7 +426,7 @@ def reopen_claim(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
         locked = claims.lock_claim(claim)
         _require_reviewer(actor, locked, srp)
         if locked.status != Status.REJECTED:
-            raise claims.wrong_state(locked, "Only rejected claims can be reopened.", Status.PENDING)
+            raise claims.wrong_state(locked, texts.SRP_ONLY_REJECTED_REOPENED(), Status.PENDING)
         km = locked.killmail
         previous = claims.calculation_snapshot(locked)
         evaluation = claims.evaluate(
@@ -469,31 +471,31 @@ def reclassify_claim(claim: SrpClaim, *, actor, scope: str, link=None, reason: s
     """
     reason = claims.clean_reason(reason, required=True, what="reason")
     if scope not in (Scope.IN_FLEET, Scope.OUT_OF_FLEET):
-        raise SrpError("invalid_scope", "Choose in fleet or out of fleet.")
+        raise SrpError("invalid_scope", texts.SRP_CHOOSE_SCOPE())
     now = timezone.now()
     with quota.quota_lock() as srp:
         locked = claims.lock_claim(claim)
         _require_reviewer(actor, locked, srp)
         if locked.status != Status.PENDING:
-            raise claims.wrong_state(locked, "Only pending claims can be moved between in fleet and out of fleet.")
+            raise claims.wrong_state(locked, texts.SRP_ONLY_PENDING_MOVED())
         target = None
         if scope == Scope.IN_FLEET:
             if link is None:
-                raise SrpError("link_required", "Choose the fleet of the loss.")
+                raise SrpError("link_required", texts.SRP_CHOOSE_FLEET())
             target = (
                 SrpFleetLink.objects.select_related("operation__fleet_type", "fc_user").filter(pk=link.pk).first()
             )
             if target is None:
-                raise SrpError("link_required", "Choose the fleet of the loss.")
+                raise SrpError("link_required", texts.SRP_CHOOSE_FLEET())
             if not target.is_open:
-                raise SrpError("link_closed", "This SRP link is closed.")
+                raise SrpError("link_closed", texts.SRP_LINK_CLOSED())
             if locked.scope == Scope.IN_FLEET and locked.link_id == target.pk:
-                raise SrpError("unchanged", "The claim is already a loss of this fleet.")
+                raise SrpError("unchanged", texts.SRP_SAME_FLEET())
         else:
             if locked.scope == Scope.OUT_OF_FLEET:
-                raise SrpError("unchanged", "The claim is already an out-of-fleet loss.")
+                raise SrpError("unchanged", texts.SRP_SAME_OUT_OF_FLEET())
             if not srp.out_of_fleet_enabled:
-                raise SrpError("fleet_only", rules.BLOCK_FLEET_ONLY)
+                raise SrpError("fleet_only", str(rules.BLOCK_FLEET_ONLY))
 
         previous = claims.calculation_snapshot(locked)
         previous_link = locked.link.code if locked.link_id and locked.link else None
@@ -560,7 +562,7 @@ def recalculate_pending(*, actor) -> int:
         if not access.can_review(actor, claim, settings_obj=srp):
             continue
         try:
-            claims.recalculate_under_lock(claim, actor=actor, reason="Recalculated with the current policy")
+            claims.recalculate_under_lock(claim, actor=actor, reason=texts.SRP_REASON_RECALCULATED())
         except SrpError:
             # Decided or withdrawn since the list was read.
             continue
@@ -579,7 +581,7 @@ def recheck_presence(claim: SrpClaim, *, actor) -> SrpClaim:
         locked = claims.lock_claim(claim)
         km = locked.killmail
         if locked.scope == Scope.IN_FLEET and locked.operation is None:
-            raise SrpError("no_fleet", "The fleet of this claim no longer exists.")
+            raise SrpError("no_fleet", texts.SRP_FLEET_GONE())
         previous = {"fleet_check": locked.fleet_check, "fleet_check_params": locked.fleet_check_params}
         result = claims.loss_presence(locked.scope, locked.link, km)
         claims.apply_presence(locked, result, now)
@@ -601,9 +603,9 @@ def add_note(claim: SrpClaim, *, actor, text: str) -> SrpClaimEvent:
     _require_manager(actor)
     text = (text or "").strip()
     if not text:
-        raise SrpError("note_required", "Write the note.")
+        raise SrpError("note_required", texts.SRP_NOTE_REQUIRED())
     if len(text) > MAX_NOTE_LENGTH:
-        raise SrpError("note_too_long", f"The note is too long (at most {MAX_NOTE_LENGTH} characters).")
+        raise SrpError("note_too_long", texts.SRP_NOTE_TOO_LONG(max=MAX_NOTE_LENGTH))
     with transaction.atomic():
         locked = claims.lock_claim(claim)
         return claims.record_event(

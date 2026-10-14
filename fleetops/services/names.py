@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Names, corporations and alliances of characters Alliance Auth does not know.
 
 ESI answers are kept in two small caches, ``EveEntityName`` and ``CharacterAffiliation``. Fleet

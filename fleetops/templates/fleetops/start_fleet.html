@@ -1,43 +1,43 @@
 {% extends "fleetops/base.html" %}
-{% load static fleetops_messages %}
+{% load i18n static fleetops_i18n fleetops_messages %}
 {% block fleetops_content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   {% if operation %}
-  <div><h2 class="mb-0">Edit Scheduled Fleet</h2><div class="text-muted">{{ operation.fleet_type }} · FC {{ operation.fc_character_name }} · {{ operation.scheduled_at|eve_time }} EVE</div></div>
-  <a class="btn btn-outline-secondary" href="{% url 'fleetops:operation_detail' operation.uuid %}">Back to the scheduled fleet</a>
+  <div><h2 class="mb-0">{% translate "Edit Scheduled Fleet" %}</h2><div class="text-muted">{% blocktranslate trimmed with fleet_type=operation.fleet_type fc=operation.fc_character_name scheduled=operation.scheduled_at|eve_time %}{{ fleet_type }} · FC {{ fc }} · {{ scheduled }} EVE{% endblocktranslate %}</div></div>
+  <a class="btn btn-outline-secondary" href="{% url 'fleetops:operation_detail' operation.uuid %}">{% translate "Back to the scheduled fleet" %}</a>
   {% else %}
-  <div><h2 class="mb-0">Start Fleet</h2><div class="text-muted">One form, one start action. <a href="{% url 'fleetops:start_link_only_fleet' %}" id="link-only-fleet-link">No ESI fleet? Start a PAP-link fleet</a></div></div>
-  <a class="btn btn-outline-secondary" href="{% url 'fleetops:authorize_esi' %}">Authorize / Refresh Fleet ESI</a>
+  <div><h2 class="mb-0">{% translate "Start Fleet" %}</h2><div class="text-muted">{% url 'fleetops:start_link_only_fleet' as link_only_url %}{% blocktranslate trimmed with url=link_only_url %}One form, one start action. <a href="{{ url }}" id="link-only-fleet-link">No ESI fleet? Start a PAP-link fleet</a>{% endblocktranslate %}</div></div>
+  <a class="btn btn-outline-secondary" href="{% url 'fleetops:authorize_esi' %}">{% translate "Authorize / Refresh Fleet ESI" %}</a>
   {% endif %}
 </div>
 {% if not operation %}
 <div class="card mb-3" id="preset-bar"><div class="card-body py-2">
   <div class="d-flex flex-wrap align-items-center gap-2">
     <form method="get" class="d-flex flex-wrap align-items-center gap-2" id="preset-load">
-      <label class="form-label mb-0" for="preset-select">Preset</label>
+      <label class="form-label mb-0" for="preset-select">{% translate "Preset" %}</label>
       <select class="form-select form-select-sm w-auto" name="preset" id="preset-select">
-        <option value="none">No preset</option>
-        {% if has_last_used %}<option value="last"{% if preset_selected == "last" %} selected{% endif %}>Last used settings</option>{% endif %}
-        {% for preset in presets %}<option value="{{ preset.pk }}"{% if preset_selected == preset.pk|stringformat:"d" %} selected{% endif %}>{{ preset.name }}{% if preset.is_default %} (default){% endif %}</option>{% endfor %}
+        <option value="none">{% translate "No preset" %}</option>
+        {% if has_last_used %}<option value="last"{% if preset_selected == "last" %} selected{% endif %}>{% translate "Last used settings" %}</option>{% endif %}
+        {% for preset in presets %}<option value="{{ preset.pk }}"{% if preset_selected == preset.pk|stringformat:"d" %} selected{% endif %}>{% if preset.is_default %}{% blocktranslate trimmed with name=preset.name %}{{ name }} (default){% endblocktranslate %}{% else %}{{ preset.name }}{% endif %}</option>{% endfor %}
       </select>
-      <button class="btn btn-sm btn-outline-secondary" type="submit">Load</button>
+      <button class="btn btn-sm btn-outline-secondary" type="submit">{% translate "Load" %}</button>
     </form>
-    <a class="ms-auto small" href="{% url 'fleetops:preset_list' %}">My presets</a>
+    <a class="ms-auto small" href="{% url 'fleetops:preset_list' %}">{% translate "My presets" %}</a>
   </div>
-  {% if preset_notice %}<div class="form-text" id="preset-notice">{{ preset_notice }}{% if preset_default_applied %} · <a href="?preset=none">Clear</a>{% endif %}</div>{% endif %}
+  {% if preset_notice %}<div class="form-text" id="preset-notice">{{ preset_notice }}{% if preset_default_applied %} · <a href="?preset=none">{% translate "Clear" %}</a>{% endif %}</div>{% endif %}
   {% if preset_warnings %}<div class="alert alert-warning py-2 mt-2 mb-0" id="preset-warnings" role="status">{% for warning in preset_warnings %}<div>{{ warning }}</div>{% endfor %}</div>{% endif %}
   <details class="mt-2" id="preset-save">
-    <summary>Save as preset…</summary>
+    <summary>{% translate "Save as preset…" %}</summary>
     <div class="row g-2 align-items-end mt-1">
       <div class="col-sm-5">{{ preset_save_form.name.label_tag }}{{ preset_save_form.name }}</div>
       <div class="col-auto"><div class="form-check">{{ preset_save_form.remember_fc }} <label class="form-check-label" for="{{ preset_save_form.remember_fc.id_for_label }}">{{ preset_save_form.remember_fc.label }}</label></div></div>
       <div class="col-auto"><div class="form-check">{{ preset_save_form.make_default }} <label class="form-check-label" for="{{ preset_save_form.make_default.id_for_label }}">{{ preset_save_form.make_default.label }}</label></div></div>
       <div class="col-auto">{{ preset_save_form.overwrite }}
-        <button type="button" class="btn btn-sm btn-primary d-none" id="preset-save-button" data-url="{% url 'fleetops:preset_save' %}">Save preset</button>
-        <noscript><button type="submit" class="btn btn-sm btn-primary" form="fleet-start-form" formaction="{% url 'fleetops:preset_save' %}" formnovalidate>Save preset</button></noscript>
+        <button type="button" class="btn btn-sm btn-primary d-none" id="preset-save-button" data-url="{% url 'fleetops:preset_save' %}">{% translate "Save preset" %}</button>
+        <noscript><button type="submit" class="btn btn-sm btn-primary" form="fleet-start-form" formaction="{% url 'fleetops:preset_save' %}" formnovalidate>{% translate "Save preset" %}</button></noscript>
       </div>
     </div>
-    <div class="form-text">Keeps everything except the fleet time; the FC character only when ticked.</div>
+    <div class="form-text">{% translate "Keeps everything except the fleet time; the FC character only when ticked." %}</div>
     <div class="small mt-1" id="preset-save-result" role="status"></div>
   </details>
 </div></div>
@@ -49,26 +49,26 @@
   {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
   <div class="row g-3 mb-3">
     {% if not operation %}
-    <div class="col-lg-6"><div class="card h-100"><div class="card-header"><strong>Operation Mode</strong></div><div class="card-body">
+    <div class="col-lg-6"><div class="card h-100"><div class="card-header"><strong>{% translate "Operation Mode" %}</strong></div><div class="card-body">
       {% for radio in form.operation_mode %}<div class="form-check mb-2">{{ radio.tag }} <label class="form-check-label" for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label></div>{% endfor %}
-      <div class="form-text">Attendance Tracking Only still detects the Fleet Boss and tracks ESI attendance, but intentionally skips Discord Ping, automatic MOTD update and automatic SRP creation. Ping/MOTD previews remain available for manual copy.</div>
+      <div class="form-text">{% translate "PAP Tracking Only still detects the Fleet Boss and tracks PAP from ESI, but skips the Discord ping, the automatic MOTD update and automatic SRP creation. Ping/MOTD previews remain available for manual copy." %}</div>
     </div></div></div>
     {% endif %}
-    <div class="{% if operation %}col-12{% else %}col-lg-6{% endif %}"><div class="card h-100"><div class="card-header"><strong>Fleet Time</strong></div><div class="card-body">
+    <div class="{% if operation %}col-12{% else %}col-lg-6{% endif %}"><div class="card h-100"><div class="card-header"><strong>{% translate "Fleet Time" context "FleetOps" %}</strong></div><div class="card-body">
       {% if not operation %}
       <div class="d-flex gap-3 mb-2 flex-wrap">{% for radio in form.fleet_timing %}<div class="form-check">{{ radio.tag }} <label class="form-check-label" for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label></div>{% endfor %}</div>
       {{ form.fleet_timing.errors }}
-      <div class="form-text" id="fleet-timing-help">Ping now sends the form-up ping and starts the fleet. Pre ping announces the fleet for a later time; you start it from its page when it is due.</div>
+      <div class="form-text" id="fleet-timing-help">{% translate "Ping now sends the form-up ping and starts the fleet. Pre ping announces the fleet for a later time; you start it from its page when it is due." %}</div>
       {% endif %}
       <div id="pre-ping-fields" class="mt-2{% if not operation and form.fleet_timing.value != 'pre_ping' %} d-none{% endif %}">
-        <div class="form-text mb-2">EVE time (UTC), not your local time. Current EVE time <strong id="eve-clock">{{ eve_now|eve_time:"%H:%M" }}</strong></div>
+        <div class="form-text mb-2">{% blocktranslate trimmed with now=eve_now|eve_time:"%H:%M" %}EVE time (UTC), not your local time. Current EVE time <strong id="eve-clock">{{ now }}</strong>{% endblocktranslate %}</div>
         <div class="row g-2 align-items-end">
           <div class="col-sm-5">{{ form.fleet_date.label_tag }}{{ form.fleet_date }}</div>
           <div class="col-sm-3">{{ form.fleet_clock.label_tag }}{{ form.fleet_clock }}</div>
-          <div class="col-sm-4"><div class="btn-group btn-group-sm" role="group" aria-label="Quick fleet times">
-            <button type="button" class="btn btn-outline-secondary" data-offset="30">+30 min</button>
-            <button type="button" class="btn btn-outline-secondary" data-offset="60">+1 h</button>
-            <button type="button" class="btn btn-outline-secondary" data-offset="120">+2 h</button>
+          <div class="col-sm-4"><div class="btn-group btn-group-sm" role="group" aria-label="{% translate 'Quick fleet times' %}">
+            <button type="button" class="btn btn-outline-secondary" data-offset="30">{% translate "+30 min" %}</button>
+            <button type="button" class="btn btn-outline-secondary" data-offset="60">{% translate "+1 h" %}</button>
+            <button type="button" class="btn btn-outline-secondary" data-offset="120">{% translate "+2 h" %}</button>
           </div></div>
         </div>
         {{ form.fleet_date.errors }}{{ form.fleet_clock.errors }}
@@ -77,262 +77,42 @@
     </div></div></div>
   </div>
   <div class="row g-3">
-    <div class="col-lg-6"><div class="card h-100"><div class="card-header"><strong>Fleet</strong></div><div class="card-body">
+    <div class="col-lg-6"><div class="card h-100"><div class="card-header"><strong>{% translate "Fleet" %}</strong></div><div class="card-body">
       {% if not operation %}
-      <div class="mb-3">{{ form.fc_character_id.label_tag }}{{ form.fc_character_id }}{{ form.fc_character_id.errors }}<div id="fleet-detection" class="form-text">Select a character to detect its current ESI fleet.</div></div>
+      <div class="mb-3">{{ form.fc_character_id.label_tag }}{{ form.fc_character_id }}{{ form.fc_character_id.errors }}<div id="fleet-detection" class="form-text">{% translate "Select a character to detect its current ESI fleet." %}</div></div>
       {% endif %}
       <div class="mb-3">{{ form.fleet_type.label_tag }}{{ form.fleet_type }}{{ form.fleet_type.errors }}</div>
       <div class="mb-3">{{ form.doctrine_choice.label_tag }}{{ form.doctrine_choice }}{{ form.doctrine_choice.errors }}</div>
       <div class="mb-3" id="custom-doctrine-wrap">{{ form.custom_doctrine.label_tag }}{{ form.custom_doctrine }}</div>
-      <div class="mb-3">{{ form.formup.label_tag }}{{ form.formup }}<div class="form-text">Entered by the FC for this fleet; not an admin preset.</div>{{ form.formup.errors }}</div>
+      <div class="mb-3">{{ form.formup.label_tag }}{{ form.formup }}<div class="form-text">{% translate "Entered by the FC for this fleet; not an admin preset." %}</div>{{ form.formup.errors }}</div>
     </div></div></div>
-    <div class="col-lg-6"><div class="card h-100"><div class="card-header"><strong>Communication</strong></div><div class="card-body">
+    <div class="col-lg-6"><div class="card h-100"><div class="card-header"><strong>{% translate "Communication" %}</strong></div><div class="card-body">
       <div class="mb-3">{{ form.comms.label_tag }}{{ form.comms }}</div>
       <div class="mb-3">{{ form.logi_channel.label_tag }}{{ form.logi_channel }}</div>
       <div class="mb-3">{{ form.boost_channel.label_tag }}{{ form.boost_channel }}</div>
-      <div class="mb-3">{{ form.ping_channel.label_tag }}{{ form.ping_channel }}{{ form.ping_channel.errors }}<div class="form-text" id="ping-channel-help">Without a channel nothing is posted; copy the ping from the preview.</div></div>
+      <div class="mb-3">{{ form.ping_channel.label_tag }}{{ form.ping_channel }}{{ form.ping_channel.errors }}<div class="form-text" id="ping-channel-help">{% translate "Without a channel nothing is posted; copy the ping from the preview." %}</div></div>
       <div class="mb-3"><label class="form-label d-block">{{ form.ping_mentions.label }}</label>
         <div id="ping-mentions">{% for box in form.ping_mentions %}<div class="form-check form-check-inline">{{ box.tag }} <label class="form-check-label" for="{{ box.id_for_label }}">{{ box.choice_label }}</label></div>{% endfor %}</div>
         {{ form.ping_mentions.errors }}
-        <div class="form-text">No ping, @everyone and @here stand alone; several roles can be combined. Options the channel does not allow are disabled.</div>
+        <div class="form-text">{% translate "No ping, @everyone and @here stand alone; several roles can be combined. Options the channel does not allow are disabled." %}</div>
       </div>
       <div class="mb-3">{{ form.ping_template.label_tag }}{{ form.ping_template }}</div>
       <div class="mb-3">{{ form.motd_template.label_tag }}{{ form.motd_template }}</div>
     </div></div></div>
-    <div class="col-12"><div class="card"><div class="card-header"><strong>Additional Information</strong></div><div class="card-body">{{ form.additional_message }}</div></div></div>
-    <div class="col-lg-6"><div class="card h-100"><div class="card-header d-flex justify-content-between align-items-center gap-2"><strong>Ping Preview</strong><span class="small text-muted ms-auto" id="ping-length"></span><button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy="#ping-preview">Copy Ping</button></div><div class="card-body"><pre id="ping-preview" class="preview-box">Complete the form to render a preview.</pre></div></div></div>
-    <div class="col-lg-6"><div class="card h-100"><div class="card-header d-flex justify-content-between align-items-center gap-2"><strong>MOTD Preview</strong><span class="small text-muted ms-auto" id="motd-length"></span><button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy="#motd-preview">Copy MOTD</button></div><div class="card-body"><pre id="motd-preview" class="preview-box">Complete the form to render a preview.</pre></div></div></div>
+    <div class="col-12"><div class="card"><div class="card-header"><strong>{% translate "Additional Information" %}</strong></div><div class="card-body">{{ form.additional_message }}</div></div></div>
+    <div class="col-lg-6"><div class="card h-100"><div class="card-header d-flex justify-content-between align-items-center gap-2"><strong>{% translate "Ping Preview" %}</strong><span class="small text-muted ms-auto" id="ping-length"></span><button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy="#ping-preview">{% translate "Copy Ping" %}</button></div><div class="card-body"><pre id="ping-preview" class="preview-box">{% translate "Complete the form to render a preview." %}</pre></div></div></div>
+    <div class="col-lg-6"><div class="card h-100"><div class="card-header d-flex justify-content-between align-items-center gap-2"><strong>{% translate "MOTD Preview" %}</strong><span class="small text-muted ms-auto" id="motd-length"></span><button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy="#motd-preview">{% translate "Copy MOTD" %}</button></div><div class="card-body"><pre id="motd-preview" class="preview-box">{% translate "Complete the form to render a preview." %}</pre></div></div></div>
     <div class="col-12 d-none" id="preview-missing"><div class="alert alert-info mb-0" role="status"></div></div>
     <div class="col-12 d-none" id="preview-blocking"><div class="alert alert-danger mb-0" role="alert"></div></div>
     <div class="col-12 d-none" id="preview-warnings"><div class="alert alert-warning mb-0" role="status"></div></div>
     <div class="col-12 d-none" id="preview-notes"><div class="alert alert-info mb-0" role="status"></div></div>
   </div>
   {% if operation %}
-  <div class="form-check mt-3">{{ form.send_update }} <label class="form-check-label" for="{{ form.send_update.id_for_label }}">{{ form.send_update.label }}{% if operation.ping_channel_name %} in {{ operation.ping_channel_name }}{% endif %}</label>{{ form.send_update.errors }}</div>
+  <div class="form-check mt-3">{{ form.send_update }} <label class="form-check-label" for="{{ form.send_update.id_for_label }}">{% if operation.ping_channel_name %}{% blocktranslate trimmed with label=form.send_update.label channel=operation.ping_channel_name %}{{ label }} in {{ channel }}{% endblocktranslate %}{% else %}{{ form.send_update.label }}{% endif %}</label>{{ form.send_update.errors }}</div>
   {% endif %}
-  <div class="d-grid mt-3"><button class="btn btn-primary btn-lg" id="fleet-start-submit" type="submit">{% if operation %}SAVE CHANGES{% else %}SEND PING &amp; START FLEET{% endif %}</button></div>
+  <div class="d-grid mt-3"><button class="btn btn-primary btn-lg" id="fleet-start-submit" type="submit" data-label-save="{% translate 'SAVE CHANGES' %}" data-label-pap-only="{% translate 'START PAP TRACKING' %}" data-label-pre-ping="{% translate 'SEND PRE PING & SCHEDULE FLEET' %}" data-label-now="{% translate 'SEND PING & START FLEET' %}">{% if operation %}{% translate "SAVE CHANGES" %}{% else %}{% translate "SEND PING & START FLEET" %}{% endif %}</button></div>
 </form>
 {{ channel_rules|json_script:"ping-channel-rules" }}
-<script src="{% static 'fleetops/fleetops.js' %}"></script>
-<script>
-(() => {
- const form = document.getElementById('fleet-start-form');
- const editing = form.dataset.mode === 'edit';
- const char = document.getElementById('id_fc_character_id');
- const detect = document.getElementById('fleet-detection');
- const doctrine = document.getElementById('id_doctrine_choice');
- const customWrap = document.getElementById('custom-doctrine-wrap');
- const submitButton = document.getElementById('fleet-start-submit');
- const modeRadios = form.querySelectorAll('input[name="operation_mode"]');
- const timingRadios = form.querySelectorAll('input[name="fleet_timing"]');
- const prePingFields = document.getElementById('pre-ping-fields');
- const dateInput = document.getElementById('id_fleet_date');
- const clockInput = document.getElementById('id_fleet_clock');
- const eveClock = document.getElementById('eve-clock');
- const relative = document.getElementById('fleet-time-relative');
- const channel = document.getElementById('id_ping_channel');
- const mentionBoxes = Array.from(form.querySelectorAll('input[name="ping_mentions"]'));
- const channelRules = JSON.parse(document.getElementById('ping-channel-rules').textContent);
- const previewWarnings = document.getElementById('preview-warnings');
- const previewBlocking = document.getElementById('preview-blocking');
- const previewNotes = document.getElementById('preview-notes');
- const previewMissing = document.getElementById('preview-missing');
- const pingPreview = document.getElementById('ping-preview');
- const motdPreview = document.getElementById('motd-preview');
- const pingLength = document.getElementById('ping-length');
- const motdLength = document.getElementById('motd-length');
- const PING_LIMIT = Number(form.dataset.pingLimit);
- const SINGLE_TARGETS = ['none', 'everyone', 'here'];
- const PREVIEW_DELAY = 400;
- let previewTimer;
- let previewRequest = 0;
- function attendanceOnly(){
-   const selected = form.querySelector('input[name="operation_mode"]:checked');
-   return !!selected && selected.value === 'attendance_only';
- }
- function prePing(){
-   if(editing){ return true; }
-   const selected = form.querySelector('input[name="fleet_timing"]:checked');
-   return !!selected && selected.value === 'pre_ping';
- }
- function updateMode(){
-   const attendance = attendanceOnly();
-   // A pre ping is a Discord message, so attendance-only fleets start now.
-   timingRadios.forEach(radio => {
-     if(radio.value !== 'pre_ping'){ return; }
-     radio.disabled = attendance;
-     if(attendance && radio.checked){ form.querySelector('input[name="fleet_timing"][value="now"]').checked = true; }
-   });
-   // Attendance-only fleets never post, so their ping is only copied.
-   channel.disabled = attendance;
-   const pre = prePing();
-   prePingFields.classList.toggle('d-none', !pre);
-   // Hidden date and time are neither checked by the browser nor sent.
-   dateInput.disabled = clockInput.disabled = !pre;
-   if(editing){ submitButton.textContent = 'SAVE CHANGES'; }
-   else if(attendance){ submitButton.textContent = 'START ATTENDANCE TRACKING'; }
-   else { submitButton.textContent = pre ? 'SEND PRE PING & SCHEDULE FLEET' : 'SEND PING & START FLEET'; }
-   applyChannelRules();
-   if(detect && pre){ detect.textContent = 'Not needed for a pre ping.'; detect.className = 'form-text'; }
-   else if(detect && detect.textContent === 'Not needed for a pre ping.'){ detectFleet(); }
- }
- function toggleCustom(){ customWrap.style.display = doctrine.value ? 'none' : 'block'; }
- async function detectFleet(){
-   if(!detect || prePing()){ return; }
-   if(!char.value){ detect.textContent='Select a character to detect its current ESI fleet.'; detect.className='form-text'; return; }
-   detect.textContent='Checking fleet…';
-   const url = form.dataset.detectUrl.replace('999999', char.value);
-   try { const r=await fetch(url); const d=await r.json(); detect.textContent=d.ok ? (d.is_fleet_boss ? `✓ Fleet ${d.fleet_id} — role: ${d.role} — Fleet Boss` : `⚠ Fleet ${d.fleet_id} — ${d.message}`) : `⚠ ${d.message}`; detect.className=d.ok&&d.is_fleet_boss?'form-text text-success':'form-text text-warning'; }
-   catch(e){ detect.textContent='⚠ Fleet detection request failed.'; }
- }
- function oneTargetChecked(){
-   if(mentionBoxes.some(box => box.checked)){ return; }
-   const none = mentionBoxes.find(box => box.value === 'none');
-   if(none){ none.checked = true; }
- }
- // No ping, @everyone and @here stand alone; roles can be combined with each other.
- function exclusiveTargets(event){
-   const box = event.target;
-   if(box.checked){
-     const single = SINGLE_TARGETS.includes(box.value);
-     mentionBoxes.forEach(other => { if(other !== box && (single || SINGLE_TARGETS.includes(other.value))){ other.checked = false; } });
-   }
-   oneTargetChecked();
- }
- function targetAllowed(rule, value){
-   if(!rule){ return true; }
-   if(value === 'everyone'){ return rule.everyone; }
-   if(value === 'here'){ return rule.here; }
-   if(value.startsWith('role:')){ return rule.roles === null || rule.roles.includes(Number(value.slice(5))); }
-   return true;
- }
- function applyChannelRules(){
-   const rule = !channel.disabled && channel.value ? channelRules[channel.value] : null;
-   mentionBoxes.forEach(box => {
-     const allowed = targetAllowed(rule, box.value);
-     box.disabled = !allowed;
-     if(!allowed){ box.checked = false; }
-   });
-   oneTargetChecked();
- }
- function chosenTime(){
-   if(!dateInput.value || !/^([01]\d|2[0-3]):[0-5]\d$/.test(clockInput.value)){ return NaN; }
-   return Date.parse(`${dateInput.value}T${clockInput.value}:00Z`);
- }
- function showRelative(){
-   const minutes = Math.round((chosenTime() - Date.now()) / 60000);
-   relative.className = 'form-text';
-   if(Number.isNaN(minutes)){ relative.textContent = ''; return; }
-   if(minutes <= 0){ relative.textContent = 'This time has already passed.'; relative.className = 'form-text text-danger'; return; }
-   relative.textContent = `in ${FleetOps.duration(minutes)}`;
- }
- function showClock(){ eveClock.textContent = FleetOps.eveClock(new Date()); showRelative(); }
- function setFleetTime(offsetMinutes){
-   const time = FleetOps.roundedEveTime(new Date(), offsetMinutes);
-   dateInput.value = time.date;
-   clockInput.value = time.clock;
-   showRelative();
-   queuePreview();
- }
- function showList(box, list){
-   const items = (list||[]).map(text=>{const item=document.createElement('div'); item.textContent=text; return item;});
-   box.firstElementChild.replaceChildren(...items);
-   box.classList.toggle('d-none', !items.length);
- }
- function markFields(errors){
-   form.querySelectorAll('.is-invalid').forEach(field=>field.classList.remove('is-invalid'));
-   Object.keys(errors||{}).forEach(name=>{ const field=form.querySelector(`[name="${name}"]`); if(field && field.type!=='hidden'){ field.classList.add('is-invalid'); } });
- }
- function showMissing(missing, errors){
-   let text = '';
-   if((missing||[]).length){ text = `Missing: ${missing.join(', ')}`; }
-   else if(Object.keys(errors||{}).length){ text = 'Check the highlighted fields.'; }
-   previewMissing.firstElementChild.textContent = text;
-   previewMissing.classList.toggle('d-none', !text);
-   markFields(errors);
- }
- function showLengths(d){
-   pingLength.textContent = d ? `Ping ${d.ping_length} / ${PING_LIMIT}` : '';
-   pingLength.classList.toggle('text-danger', !!d && d.ping_length > PING_LIMIT);
-   pingLength.classList.toggle('text-muted', !d || d.ping_length <= PING_LIMIT);
-   motdLength.textContent = d ? `MOTD ${d.motd_length} characters` : '';
- }
- function clearPreview(text){
-   pingPreview.textContent = text; motdPreview.textContent = text;
-   delete pingPreview.dataset.copyText;
-   showLengths(null); showList(previewWarnings, []); showList(previewBlocking, []); showList(previewNotes, []);
- }
- async function preview(){
-   const body = new FormData(form);
-   body.append('preview', '1');
-   const current = ++previewRequest;
-   try {
-     const r=await fetch(form.dataset.previewUrl,{method:'POST',body}); const d=await r.json();
-     if(current !== previewRequest){ return; }
-     if(d.ok){
-       // Roles are shown by name; Copy Ping copies the text that is posted.
-       pingPreview.textContent=d.ping_display; pingPreview.dataset.copyText=d.ping; motdPreview.textContent=d.motd;
-       showLengths(d); showList(previewWarnings, d.warnings); showList(previewBlocking, d.blocking); showList(previewNotes, d.notes); showMissing([], {});
-     }
-     else if(d.missing || d.errors){ clearPreview('Complete the form to render a preview.'); showMissing(d.missing, d.errors); }
-     else if(d.error){ clearPreview(d.error); showMissing([], {}); }
-   }
-   catch(e){}
- }
- // Wait until the FC stops typing instead of sending a request for every character.
- function queuePreview(){ clearTimeout(previewTimer); previewTimer=setTimeout(preview,PREVIEW_DELAY); }
- const presetSaveButton = document.getElementById('preset-save-button');
- const presetName = document.getElementById('id_preset-name');
- const presetOverwrite = document.getElementById('id_preset-overwrite');
- const presetResult = document.getElementById('preset-save-result');
- const presetSelect = document.getElementById('preset-select');
- function showPresetResult(text, ok){
-   presetResult.textContent = text;
-   presetResult.className = `small mt-1 ${ok ? 'text-success' : 'text-danger'}`;
- }
- // The preset fields belong to the start form, so the preset is saved from the same values.
- async function savePreset(overwrite){
-   const name = presetName.value.trim();
-   presetOverwrite.value = overwrite ? '1' : '';
-   const body = new FormData(form);
-   presetSaveButton.disabled = true;
-   try {
-     const r = await fetch(presetSaveButton.dataset.url, {method:'POST', body, headers:{'Accept':'application/json'}});
-     const d = await r.json();
-     if(d.conflict && !overwrite){
-       if(confirm(`A preset named "${name}" exists. Overwrite?`)){ return await savePreset(true); }
-       showPresetResult('Preset not saved.', false);
-       return;
-     }
-     showPresetResult(d.message, d.ok);
-     if(d.ok && d.preset_id){
-       let option = presetSelect.querySelector(`option[value="${d.preset_id}"]`);
-       if(!option){ option = new Option(name, d.preset_id); presetSelect.add(option); }
-       presetSelect.value = String(d.preset_id);
-     }
-   }
-   catch(e){ showPresetResult('The preset could not be saved.', false); }
-   finally { presetSaveButton.disabled = false; presetOverwrite.value = ''; }
- }
- if(presetSaveButton){
-   presetSaveButton.classList.remove('d-none');
-   presetSaveButton.addEventListener('click', () => savePreset(false));
-   // Enter in the preset name saves the preset; it must never start the fleet.
-   presetName.addEventListener('keydown', event => { if(event.key === 'Enter'){ event.preventDefault(); savePreset(false); } });
- }
- if(char){ char.addEventListener('change',()=>{detectFleet();queuePreview();}); }
- doctrine.addEventListener('change',()=>{toggleCustom();queuePreview();});
- modeRadios.forEach(x=>x.addEventListener('change',()=>{updateMode();queuePreview();}));
- timingRadios.forEach(x=>x.addEventListener('change',()=>{updateMode();queuePreview();}));
- channel.addEventListener('change',()=>{applyChannelRules();queuePreview();});
- mentionBoxes.forEach(box=>box.addEventListener('change',event=>{exclusiveTargets(event);queuePreview();}));
- [dateInput, clockInput].forEach(input=>input.addEventListener('input',showRelative));
- form.querySelectorAll('[data-offset]').forEach(btn=>btn.addEventListener('click',()=>setFleetTime(Number(btn.dataset.offset))));
- form.querySelectorAll('input,select,textarea').forEach(x=>x.addEventListener('input',queuePreview));
- // A double click must not send the form twice.
- form.addEventListener('submit', () => { submitButton.disabled = true; });
- document.querySelectorAll('.copy-btn').forEach(btn=>btn.addEventListener('click',()=>{ const source=document.querySelector(btn.dataset.copy); navigator.clipboard.writeText(source.dataset.copyText ?? source.textContent); }));
- toggleCustom(); updateMode(); if(char && char.value) detectFleet(); showClock(); setInterval(showClock, 15000); queuePreview();
-})();
-</script>
+<script src="{% static 'fleetops/fleetops.js' %}?v={% fleetops_version %}"></script>
+<script src="{% static 'fleetops/start_fleet.js' %}?v={% fleetops_version %}"></script>
 {% endblock %}

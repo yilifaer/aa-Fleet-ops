@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """What the Fleet tab shows: the fleet tree, the composition, and the state the page's poller applies."""
 
 import hashlib
@@ -8,6 +11,7 @@ from datetime import timezone as dt_timezone
 from django.db.models import Count, Max, Q
 from django.template.loader import render_to_string
 from django.utils import timezone
+from django.utils.translation import gettext
 
 from fleetops import __version__
 from fleetops.models import AuditLog, FleetOperation, FleetOpsSettings, FleetStructureTemplate, ShipFunction
@@ -25,6 +29,7 @@ from fleetops.services.fleet_rules import (
     squad_index,
 )
 from fleetops.services.periods import format_eve
+from fleetops.texts import translate_stored
 
 # How often the Fleet tab asks for a new state while it is shown.
 POLL_SECONDS = 10
@@ -159,7 +164,7 @@ def _member_view(data, *, boss_id, protected_ids, infos, classifier):
     info = infos.get(type_id)
     member = MemberView(
         character_id=character_id,
-        name=data.get("name") or f"Character {character_id}",
+        name=data.get("name") or gettext("Character %(id)s") % {"id": character_id},
         in_auth=bool(getattr(state, "auth_user_id", None)),
         main_name=getattr(state, "main_character_name", "") or "",
         corporation=getattr(state, "corporation_name", "") or "",
@@ -209,11 +214,15 @@ def build_fleet_view(operation, *, classifier=None) -> FleetView:
     wing_views, squads_by_id = [], {}
     for wing in wings:
         wing_view = WingView(
-            id=wing["id"], name=wing["name"] or f"Wing {wing['id']}", pending=bool(wing.get("pending"))
+            id=wing["id"],
+            name=wing["name"] or gettext("Wing %(id)s") % {"id": wing["id"]},
+            pending=bool(wing.get("pending")),
         )
         for squad in wing["squads"]:
             squad_view = SquadView(
-                id=squad["id"], name=squad["name"] or f"Squad {squad['id']}", pending=bool(squad.get("pending"))
+                id=squad["id"],
+                name=squad["name"] or gettext("Squad %(id)s") % {"id": squad["id"]},
+                pending=bool(squad.get("pending")),
             )
             wing_view.squads.append(squad_view)
             squads_by_id.setdefault(squad_view.id, (wing_view, squad_view))
@@ -263,7 +272,7 @@ def build_fleet_view(operation, *, classifier=None) -> FleetView:
     elif boss_id == operation.fc_character_id:
         boss_name = operation.fc_character_name
     else:
-        boss_name = f"Character {boss_id}"
+        boss_name = gettext("Character %(id)s") % {"id": boss_id}
     return FleetView(
         commander=commander,
         wings=wing_views,
@@ -432,6 +441,17 @@ def stat_text(value) -> str:
     return f"{format_eve(value, '%Y-%m-%d %H:%M:%S')} EVE"
 
 
+def _job_payload(job):
+    """The fleet's job for the JSON answer, with its label and messages in the language of the viewer."""
+    if not job:
+        return job
+    return {
+        **job,
+        "label": translate_stored(job.get("label", "")),
+        "messages": [{**line, "text": translate_stored(line.get("text", ""))} for line in job.get("messages", [])],
+    }
+
+
 def state_payload(request, operation, *, known_version=None) -> dict:
     """The Fleet tab's state for the page's poller and for the JSON answer of every fleet action.
 
@@ -447,7 +467,7 @@ def state_payload(request, operation, *, known_version=None) -> dict:
         "last_esi_update": _iso(operation.last_esi_update),
         "structure_read_at": _iso(operation.fleet_wings_read_at),
         "stale": panel["fleet_stale"],
-        "job": panel["fleet_job"],
+        "job": _job_payload(panel["fleet_job"]),
     }
     if known_version and known_version == panel["fleet_version"]:
         return {"unchanged": True, **head}
@@ -462,7 +482,11 @@ def state_payload(request, operation, *, known_version=None) -> dict:
         "member_count": fleet_view.member_count if fleet_view else panel["composition"].total,
         "max_members": FLEET_MAX_MEMBERS,
         "stat_last_esi": stat_text(operation.last_esi_update),
-        "write": {"allowed": state.allowed, "reason": state.reason, "show_authorize": state.show_authorize},
+        "write": {
+            "allowed": state.allowed,
+            "reason": translate_stored(state.reason),
+            "show_authorize": state.show_authorize,
+        },
         **{
             key: render_to_string(template, panel, request=request)
             if fleet_view is not None or key in CLOSED_FRAGMENTS

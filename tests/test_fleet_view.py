@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The fleet tree of the Fleet tab (F1, #33a): placement, markers, pending changes and the view version."""
 
 import time

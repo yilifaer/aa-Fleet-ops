@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The month of the statistics pages: EVE time, neighbour month links, kept filters and the navigation."""
 
 import html

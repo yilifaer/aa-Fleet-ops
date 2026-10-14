@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The Fleet tab's state endpoint, the live ESI refresh, the Refresh button and the fleet page parts (F9, Q1)."""
 
 import gzip
@@ -178,7 +181,7 @@ class StatePayloadTests(FleetStateTestCase):
 
         self.assertIn('id="composition-hidden"', parts["members_html"])
         self.assertNotIn("State Boss", parts["members_html"])
-        self.assertIn("While the fleet is open you see the attendance of your own characters.", parts["pap_html"])
+        self.assertIn("While the fleet is open you see the PAP of your own characters.", parts["pap_html"])
         self.assertIn("Line Pilot", parts["pap_html"])
         self.assertNotIn("State Boss", parts["pap_html"])
 

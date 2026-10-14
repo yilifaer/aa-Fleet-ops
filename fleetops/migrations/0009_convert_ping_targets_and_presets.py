@@ -1,4 +1,4 @@
-# AA FleetOps 0.1.0a6: convert ping targets into ping channels and mentions, split in-game channel links,
+# AA FleetOps 0.2.0b1: convert ping targets into ping channels and mentions, split in-game channel links,
 # remove personal user names and spaces from voice links, update the untouched default templates and
 # link the channels in the other MOTD templates
 

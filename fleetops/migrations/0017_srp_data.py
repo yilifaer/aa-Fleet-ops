@@ -1,4 +1,4 @@
-# AA FleetOps 0.1.0a6: FleetOps SRP data: the SRP settings row (SRP is disabled until an admin turns it on),
+# AA FleetOps 0.2.0b1: FleetOps SRP data: the SRP settings row (SRP is disabled until an admin turns it on),
 # the new permissions and request_srp for everyone who holds basic_access (groups, states and users), and the
 # SRP line in the untouched default MOTD. manage_srp is not granted to anybody: it decides on money.
 # Customised MOTD templates are left alone; they need {{ srp_url }} added by hand.

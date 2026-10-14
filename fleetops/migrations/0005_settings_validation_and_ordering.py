@@ -1,4 +1,4 @@
-# AA FleetOps 0.1.0a6: settings validation and attendance ordering
+# AA FleetOps 0.2.0b1: settings validation and attendance ordering
 
 import django.core.validators
 import fleetops.models

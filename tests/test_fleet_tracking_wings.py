@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Tracking reads the fleet's wings and squads too (F1, #33a), and the member details the tree shows."""
 
 from datetime import timedelta

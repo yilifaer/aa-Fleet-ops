@@ -1,9 +1,12 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Whether the victim of a loss was in the fleet at the time: a warning for the reviewer, never a block.
 
 Fleet tracking polls ESI, so the events it wrote are a few seconds to a minute late. A loss that falls just
 outside the time in fleet by that margin (the polling interval plus a minute) is ``near`` and not an outright
 miss. Fleets without tracking (manual records, PAP-link fleets) are checked against PAP registrations and
-granted attendance instead.
+granted PAP instead.
 """
 
 from datetime import datetime, timedelta

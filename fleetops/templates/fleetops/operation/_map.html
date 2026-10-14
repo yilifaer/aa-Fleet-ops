@@ -1,11 +1,12 @@
+{% load i18n %}
 {% if show_composition %}
 <div class="jump-map">
   {% for row in map_rows %}
     <div class="jump-system jump-{{ row.jump_distance }}">
-      <div><strong>{{ row.system_name }}</strong><span>{{ row.jump_distance }} jump{{ row.jump_distance|pluralize }}</span></div>
+      <div><strong>{{ row.system_name }}</strong><span>{% blocktranslate trimmed count counter=row.jump_distance %}{{ counter }} jump{% plural %}{{ counter }} jumps{% endblocktranslate %}</span></div>
       <b>{{ row.members|length }}</b>
-      <details><summary>Members</summary>{% for m in row.members %}<div class="small">{{ m.character_name }} — {{ m.ship_type_name|default:m.ship_type_id }}</div>{% endfor %}</details>
+      <details><summary>{% translate "Members" %}</summary>{% for m in row.members %}<div class="small">{{ m.character_name }} — {{ m.ship_type_name|default:m.ship_type_id }}</div>{% endfor %}</details>
     </div>
-  {% empty %}<div class="text-muted">Map requires the FC solar system and optional <code>eve_sde</code> Stargate data.</div>{% endfor %}
+  {% empty %}<div class="text-muted">{% blocktranslate trimmed %}Map requires the FC solar system and optional <code>eve_sde</code> Stargate data.{% endblocktranslate %}</div>{% endfor %}
 </div>
-{% else %}<div class="text-muted">The map is shown once the fleet has closed.</div>{% endif %}
+{% else %}<div class="text-muted">{% translate "The map is shown once the fleet has closed." %}</div>{% endif %}

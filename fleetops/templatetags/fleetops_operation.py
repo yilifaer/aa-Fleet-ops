@@ -1,4 +1,8 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 from django import template
+from django.utils.translation import gettext as _
 
 from fleetops.models import FleetOperation
 from fleetops.services.mentions import mention_text, selection_from_operation
@@ -44,7 +48,7 @@ def hides_details(step, show_composition):
 
 @register.filter
 def owned_by(rows, user):
-    """Rows (attendance, special roles) that belong to ``user``."""
+    """Rows (PAP, special roles) that belong to ``user``."""
     user_id = getattr(user, "pk", None)
     return [row for row in rows if user_id is not None and row.auth_user_id == user_id]
 
@@ -60,7 +64,7 @@ def visible_rows(context, rows, show_all):
 @register.filter
 def ping_mention_label(operation):
     """Who the fleet's ping notified, as people read it."""
-    return mention_text(selection_from_operation(operation), display=True) or "No ping"
+    return mention_text(selection_from_operation(operation), display=True) or _("No ping")
 
 
 @register.filter

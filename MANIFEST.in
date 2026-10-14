@@ -1,0 +1,5 @@
+include CHANGELOG.md README.zh-CN.md SECURITY.md CONTRIBUTING.md
+recursive-include docs *.md
+recursive-include tools *.py
+# The tests need the test project and helpers that are not shipped, so they stay in the repository.
+prune tests

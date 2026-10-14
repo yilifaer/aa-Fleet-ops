@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Month aggregates of PAP and FC points for the statistics pages, exports and incentives.
 
 A month is an EVE (UTC) month. PAP is credited to the main character of the owner of the character that
@@ -11,6 +14,7 @@ from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Prefetch, Q, Sum
+from django.utils.translation import gettext_lazy
 
 from fleetops.models import (
     AttendanceRecord,
@@ -43,7 +47,7 @@ from fleetops.services.periods import month_bounds, month_ref, utc_day  # noqa: 
 from fleetops.services.stats_types import CorporationOverview, CorporationRow, FcRow
 
 TWO_PLACES = Decimal("0.01")
-OTHER_CORPORATIONS = "Other corporations"
+OTHER_CORPORATIONS = gettext_lazy("Other corporations")
 # The orders of the corporation overview; the first is the default.
 OVERVIEW_SORTS = ("name", "-name", "average", "-average", "total", "-total", "mains", "-mains", "status", "-status")
 # Worst first (``status``), so that the corporations to look at come on top; ``-status`` puts the best first.
@@ -197,7 +201,7 @@ def member_statistics(user, year, month):
         .annotate(count=Count("id"))
         .order_by("special_role__sort_order", "special_role__name", "role")
     )
-    role_labels = dict(OperationRoleAssignment.Role.choices)
+    role_labels = {key: str(label) for key, label in OperationRoleAssignment.Role.choices}
     roles = [
         {
             "key": row["role"],
@@ -226,7 +230,9 @@ def member_rank(user, year, month, *, corporation_id=None, settings_obj=None) ->
     Ranks share places on equal PAP (1, 2, 2, 4). A user who is not a member of the scope, or has no PAP,
     has no rank. Two queries.
     """
-    member_ids = population.member_user_ids_subquery(corporation_id=corporation_id, settings_obj=settings_obj)
+    member_ids = population.member_user_ids_subquery(
+        corporation_id=corporation_id, registered_before=month_bounds(year, month)[1], settings_obj=settings_obj
+    )
     base = attendance_queryset(year, month, settings_obj=settings_obj)
     totals = user_totals(base.filter(auth_user_id__in=member_ids))
     paps = [entry.pap for entry in totals.values()]
@@ -273,8 +279,12 @@ def corporation_statistics(corporation_id: int, year: int, month: int):
     # A fleet has one type, so the counts of the types add up to the distinct fleets.
     fleets = sum(row["fleets"] for row in type_rows.values())
 
-    main_count = population.member_profiles(corporation_id=corporation_id, settings_obj=settings_obj).count()
-    member_ids = population.member_user_ids_subquery(corporation_id=corporation_id, settings_obj=settings_obj)
+    main_count = population.member_profiles(
+        corporation_id=corporation_id, registered_before=ref.end, settings_obj=settings_obj
+    ).count()
+    member_ids = population.member_user_ids_subquery(
+        corporation_id=corporation_id, registered_before=ref.end, settings_obj=settings_obj
+    )
     personal = [entry.pap for entry in user_totals(base.filter(auth_user_id__in=member_ids)).values()]
     below = sum(1 for pap in personal if _below_minimum(pap, target, ref))
     if _below_minimum(0, target, ref):
@@ -338,18 +348,23 @@ def corporation_overview(year: int, month: int, *, sort: str = "name") -> Corpor
     target = month_target(year, month)
     base = attendance_queryset(year, month, settings_obj=settings_obj)
 
-    people = population.members(settings_obj=settings_obj)
+    # Every current member, to know which corporations exist; only those who registered by the end of the
+    # month are mains of it.
+    everyone = population.members(settings_obj=settings_obj)
+    people = [person for person in everyone if population.registered_by(person, ref.end)]
     personal = user_totals(base)
     corporations = {}
+    for person in everyone:
+        corporations.setdefault(
+            person.corporation_id, {"person": person, "mains": 0, "with_pap": 0, "below": 0}
+        )
     member_pap = 0
     mains_with_pap = 0
     for person in people:
         entry = personal.get(person.user_id)
         pap = entry.pap if entry is not None else 0
         member_pap += pap
-        corporation = corporations.get(person.corporation_id)
-        if corporation is None:
-            corporation = corporations[person.corporation_id] = {"person": person, "mains": 0, "with_pap": 0, "below": 0}
+        corporation = corporations[person.corporation_id]
         corporation["mains"] += 1
         if pap > 0:
             corporation["with_pap"] += 1
@@ -372,6 +387,9 @@ def corporation_overview(year: int, month: int, *, sort: str = "name") -> Corpor
 
     rows = []
     for corporation_id, corporation in corporations.items():
+        if not corporation["mains"] and corporation_id not in totals:
+            # Only recruits of a later month and no PAP in this one: nothing to list.
+            continue
         person = corporation["person"]
         snapshot = totals.get(corporation_id) or {}
         total = snapshot.get("pap") or 0
@@ -408,7 +426,7 @@ def corporation_overview(year: int, month: int, *, sort: str = "name") -> Corpor
                 by_type[type_id] += pap
         other = CorporationRow(
             corporation_id=None,
-            corporation_name=OTHER_CORPORATIONS,
+            corporation_name=str(OTHER_CORPORATIONS),
             corporation_ticker="",
             alliance_id=None,
             alliance_name="",

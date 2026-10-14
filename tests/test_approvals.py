@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """FC lead approval of manual fleets and manual PAP: the services, the approvals page and the fleet page."""
 
 from datetime import timedelta
@@ -768,7 +771,7 @@ class ReviewOnCreateTests(TestCase):
 
         rows = list(operation.attendance_records.filter(source=MANUAL).order_by("pk"))
         self.assertEqual([(row.created_by, row.review_status) for row in rows], [(self.fc, PENDING), (self.lead, APPROVED)])
-        self.assertEqual(message_texts(response), ["Manual attendance saved. It counts once an FC lead approves it."])
+        self.assertEqual(message_texts(response), ["Manual PAP saved. It counts once an FC lead approves it."])
 
     def test_roster_imports(self):
         operation = f.create_operation(self.fc, status=Status.CLOSED)

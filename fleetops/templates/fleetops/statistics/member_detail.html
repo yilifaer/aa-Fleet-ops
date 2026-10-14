@@ -1,49 +1,49 @@
 {% extends "fleetops/base.html" %}
-{% load fleetops_messages fleetops_stats %}
+{% load i18n fleetops_messages fleetops_stats %}
 {% block fleetops_content %}
 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
   <div>
     <h2 class="mb-1">{{ row.main_character_name }}</h2>
     <div class="text-muted">{{ row.corporation_name }}{% if row.corporation_ticker %} [{{ row.corporation_ticker }}]{% endif %}{% if row.alliance_name %} &middot; {{ row.alliance_name }}{% endif %} &middot; {{ month_ref.label }}</div>
-    <div class="small text-muted">Registered {{ row.registered_at|eve_time:"%Y-%m-%d" }}{% if row.last_pap_at %} &middot; Last PAP {{ row.last_pap_at|eve_time }} EVE{% endif %}</div>
+    <div class="small text-muted">{% blocktranslate trimmed with date=row.registered_at|eve_time:"%Y-%m-%d" %}Registered {{ date }}{% endblocktranslate %}{% if row.last_pap_at %} &middot; {% blocktranslate trimmed with time=row.last_pap_at|eve_time %}Last PAP {{ time }} EVE{% endblocktranslate %}{% endif %}</div>
   </div>
   <div class="d-flex flex-wrap gap-2">
     {% include "fleetops/statistics/_export_buttons.html" with dataset="member-fleets" %}
-    <a class="btn btn-sm btn-outline-secondary" href="{{ back_url }}">Back to members</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ back_url }}">{% translate "Back to members" %}</a>
   </div>
 </div>
 {% include "fleetops/month_selector.html" %}
-{% if retention_days %}<div class="small text-muted mb-2">PAP older than {{ retention_days }} days is removed, so this month may be incomplete.</div>{% endif %}
+{% if retention_days %}<div class="small text-muted mb-2">{% blocktranslate trimmed with days=retention_days %}PAP older than {{ days }} days is removed, so this month may be incomplete.{% endblocktranslate %}</div>{% endif %}
 <div class="row g-3 mb-3">
-  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>PAP</span><strong>{{ row.pap }}</strong><small class="text-muted">All characters, this month</small></div></div>
-  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>Fleets</span><strong>{{ row.fleets }}</strong><small class="text-muted">Fleets with PAP</small></div></div>
-  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>Characters used</span><strong>{{ row.characters }}</strong><small class="text-muted">Including alts</small></div></div>
-  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>Status</span><strong>{% include "fleetops/statistics/_status_badge.html" with status=row.status %}</strong><small class="text-muted">Minimum {{ detail.target.minimum }} PAP</small></div></div>
-  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>Rank</span>
-    {% if detail.alliance_rank %}<strong>#{{ detail.alliance_rank }} <small class="text-muted fs-6">of {{ detail.alliance_ranked }} in the alliance</small></strong>
-    <small class="text-muted">#{{ detail.corporation_rank }} of {{ detail.corporation_ranked }} in {{ row.corporation_name }}</small>
-    {% else %}<strong>&mdash;</strong><small class="text-muted">Ranked from the first PAP</small>{% endif %}
+  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>PAP</span><strong>{{ row.pap }}</strong><small class="text-muted">{% translate "All characters, this month" %}</small></div></div>
+  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>{% translate "Fleets" %}</span><strong>{{ row.fleets }}</strong><small class="text-muted">{% translate "Fleets with PAP" %}</small></div></div>
+  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>{% translate "Characters used" %}</span><strong>{{ row.characters }}</strong><small class="text-muted">{% translate "Including alts" %}</small></div></div>
+  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>{% translate "Status" %}</span><strong>{% include "fleetops/statistics/_status_badge.html" with status=row.status %}</strong><small class="text-muted">{% blocktranslate trimmed with minimum=detail.target.minimum %}Minimum {{ minimum }} PAP{% endblocktranslate %}</small></div></div>
+  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>{% translate "Rank" %}</span>
+    {% if detail.alliance_rank %}<strong>{% blocktranslate trimmed with rank=detail.alliance_rank ranked=detail.alliance_ranked %}#{{ rank }} <small class="text-muted fs-6">of {{ ranked }} in the alliance</small>{% endblocktranslate %}</strong>
+    <small class="text-muted">{% blocktranslate trimmed with rank=detail.corporation_rank ranked=detail.corporation_ranked corporation=row.corporation_name %}#{{ rank }} of {{ ranked }} in {{ corporation }}{% endblocktranslate %}</small>
+    {% else %}<strong>&mdash;</strong><small class="text-muted">{% translate "Ranked from the first PAP" %}</small>{% endif %}
   </div></div>
 </div>
 <div class="row g-3 mb-3">
   <div class="col-xl-5">
-    <div class="card h-100"><div class="card-header"><strong>Fleet types</strong></div>
-      <div class="card-body">{% for fleet_type, pap in detail.fleet_types %}<div class="d-flex justify-content-between align-items-center border-bottom py-2"><span>{{ fleet_type }}</span><span class="badge bg-secondary fs-6">{{ pap }}</span></div>{% empty %}<div class="text-muted">No PAP in this month.</div>{% endfor %}</div>
+    <div class="card h-100"><div class="card-header"><strong>{% translate "Fleet types" %}</strong></div>
+      <div class="card-body">{% for fleet_type, pap in detail.fleet_types %}<div class="d-flex justify-content-between align-items-center border-bottom py-2"><span>{{ fleet_type }}</span><span class="badge bg-secondary fs-6">{{ pap }}</span></div>{% empty %}<div class="text-muted">{% translate "No PAP in this month." %}</div>{% endfor %}</div>
     </div>
   </div>
   <div class="col-xl-7">
-    <div class="card h-100"><div class="card-header"><strong>Characters used</strong></div>
-      <div class="table-responsive"><table class="table table-sm table-hover mb-0"><thead><tr><th scope="col">Character</th><th scope="col" class="text-end">Fleets</th><th scope="col" class="text-end">PAP</th></tr></thead><tbody>
-        {% for character in detail.characters %}<tr><td>{{ character.character_name }}{% if character.character_id == row.main_character_id %} <span class="badge text-bg-secondary">Main</span>{% endif %}</td><td class="text-end">{{ character.fleets }}</td><td class="text-end"><strong>{{ character.pap }}</strong></td></tr>{% empty %}<tr><td colspan="3" class="text-muted p-4">No characters used in this month.</td></tr>{% endfor %}
+    <div class="card h-100"><div class="card-header"><strong>{% translate "Characters used" %}</strong></div>
+      <div class="table-responsive"><table class="table table-sm table-hover mb-0"><thead><tr><th scope="col">{% translate "Character" %}</th><th scope="col" class="text-end">{% translate "Fleets" %}</th><th scope="col" class="text-end">PAP</th></tr></thead><tbody>
+        {% for character in detail.characters %}<tr><td>{{ character.character_name }}{% if character.character_id == row.main_character_id %} <span class="badge text-bg-secondary">{% translate "Main" %}</span>{% endif %}</td><td class="text-end">{{ character.fleets }}</td><td class="text-end"><strong>{{ character.pap }}</strong></td></tr>{% empty %}<tr><td colspan="3" class="text-muted p-4">{% translate "No characters used in this month." %}</td></tr>{% endfor %}
       </tbody></table></div>
     </div>
   </div>
 </div>
 <div class="card">
-  <div class="card-header"><strong>Fleets</strong></div>
+  <div class="card-header"><strong>{% translate "Fleets" %}</strong></div>
   <div class="table-responsive">
     <table class="table table-sm table-hover align-middle mb-0">
-      <thead><tr><th scope="col">Start (EVE)</th><th scope="col">End (EVE)</th><th scope="col">Type</th><th scope="col">Doctrine</th><th scope="col">FC</th><th scope="col">Character</th><th scope="col">Source</th><th scope="col" class="text-end">PAP</th>{% if can_open_fleets %}<th scope="col"><span class="visually-hidden">Open</span></th>{% endif %}</tr></thead>
+      <thead><tr><th scope="col">{% translate "Start (EVE)" %}</th><th scope="col">{% translate "End (EVE)" %}</th><th scope="col">{% translate "Type" context "fleet type" %}</th><th scope="col">{% translate "Doctrine" context "FleetOps" %}</th><th scope="col">FC</th><th scope="col">{% translate "Character" %}</th><th scope="col">{% translate "Source" %}</th><th scope="col" class="text-end">PAP</th>{% if can_open_fleets %}<th scope="col"><span class="visually-hidden">{% translate "Open" context "open a record" %}</span></th>{% endif %}</tr></thead>
       <tbody>
         {% for fleet in detail.fleets %}
         <tr>
@@ -55,15 +55,15 @@
           <td>{{ fleet.character_name }}</td>
           <td>{{ fleet.source }}</td>
           <td class="text-end"><strong>{{ fleet.pap }}</strong></td>
-          {% if can_open_fleets %}<td class="text-end"><a href="{% url 'fleetops:operation_detail' fleet.operation_uuid %}">Open</a></td>{% endif %}
+          {% if can_open_fleets %}<td class="text-end"><a href="{% url 'fleetops:operation_detail' fleet.operation_uuid %}">{% translate "Open" context "open a record" %}</a></td>{% endif %}
         </tr>
         {% empty %}
-        <tr><td colspan="9" class="text-muted p-4">No PAP in this month.</td></tr>
+        <tr><td colspan="9" class="text-muted p-4">{% translate "No PAP in this month." %}</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-  {% if detail.fleets_truncated %}<div class="card-footer small text-muted">The newest {{ detail.fleets|length }} of {{ row.fleets }} fleets are listed.</div>{% endif %}
+  {% if detail.fleets_truncated %}<div class="card-footer small text-muted">{% blocktranslate trimmed with shown=detail.fleets|length total=row.fleets %}The newest {{ shown }} of {{ total }} fleets are listed.{% endblocktranslate %}</div>{% endif %}
 </div>
-<p class="small text-muted mt-3 mb-0">PAP of alts counts for the main character, whatever corporation or alliance the alt is in. Only fleets that count are included.</p>
+<p class="small text-muted mt-3 mb-0">{% translate "PAP of alts counts for the main character, whatever corporation or alliance the alt is in. Only fleets that count are included." %}{% if month_ref.is_finished and row.registered_at >= month_ref.end %} {% translate "Members who registered after this month are not counted in it." %}{% endif %}</p>
 {% endblock %}

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Tests for the monthly targets, the leaderboard settings and the Monthly Targets configuration section."""
 
 from datetime import datetime, timezone as dt_timezone

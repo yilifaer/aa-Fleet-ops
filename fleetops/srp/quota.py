@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Monthly limit accounting. Usage is never stored: it is the sum of the approved and paid claims of the month.
 
 Every change that can alter usage runs inside ``quota_lock()``, which must be the outermost transaction:

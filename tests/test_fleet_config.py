@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Configuration of the Fleet tab: ship functions and rules, structure templates, settings and quick classify."""
 
 from types import SimpleNamespace

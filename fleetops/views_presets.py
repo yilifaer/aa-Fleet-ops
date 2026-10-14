@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Fleet Start presets of the signed-in FC."""
 
 from django.contrib import messages
@@ -6,6 +9,7 @@ from django.db import IntegrityError, transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 
 from fleetops.forms_presets import PRESET_FORM_PREFIX, PresetRenameForm, PresetSaveForm
@@ -30,7 +34,7 @@ def _summary(preset):
     if not labels.get("doctrine_choice") and fields.get("custom_doctrine"):
         parts.insert(1 if labels.get("fleet_type") else 0, str(fields["custom_doctrine"]))
     if preset.fc_character_id:
-        parts.append(f"FC {labels.get(FC_CHARACTER) or preset.fc_character_id}")
+        parts.append(_("FC %(name)s") % {"name": labels.get(FC_CHARACTER) or preset.fc_character_id})
     return " · ".join(parts)
 
 
@@ -62,8 +66,8 @@ def _save_result(request, *, ok, message, conflict=False, preset=None):
 def preset_save_view(request):
     form = PresetSaveForm(request.POST, prefix=PRESET_FORM_PREFIX)
     if not form.is_valid():
-        errors = form.errors.get("name") or ["Enter a name for the preset."]
-        return _save_result(request, ok=False, message=f"Preset not saved: {errors[0]}")
+        errors = form.errors.get("name") or [_("Enter a name for the preset.")]
+        return _save_result(request, ok=False, message=_("Preset not saved: %(error)s") % {"error": errors[0]})
     data = form.cleaned_data
     name = data["name"]
     try:
@@ -76,16 +80,16 @@ def preset_save_view(request):
             make_default=data["make_default"],
         )
     except PresetConflict:
-        message = f"A preset named {name} exists."
+        sentences = [_("A preset named %(name)s exists.") % {"name": name}]
         if _from_page(request):
-            message += " Choose another name, or rename or delete the old preset under My presets."
-        return _save_result(request, ok=False, conflict=True, message=message)
-    message = f"Preset {preset.name} saved."
+            sentences.append(_("Choose another name, or rename or delete the old preset under My presets."))
+        return _save_result(request, ok=False, conflict=True, message=" ".join(sentences))
+    sentences = [_("Preset %(name)s saved.") % {"name": preset.name}]
     if data["remember_fc"] and preset.fc_character_id is None:
-        message += " No FC character of yours was selected, so none was remembered."
+        sentences.append(_("No FC character of yours was selected, so none was remembered."))
     if preset.is_default:
-        message += " It is your default preset."
-    return _save_result(request, ok=True, message=message, preset=preset)
+        sentences.append(_("It is your default preset."))
+    return _save_result(request, ok=True, message=" ".join(sentences), preset=preset)
 
 
 @permission_required("fleetops.start_fleet", raise_exception=True)
@@ -94,7 +98,7 @@ def preset_rename_view(request, pk):
     preset = _own_preset(request, pk)
     form = PresetRenameForm(request.POST)
     if not form.is_valid():
-        messages.error(request, f"Preset not renamed: {form.errors['name'][0]}")
+        messages.error(request, _("Preset not renamed: %(error)s") % {"error": form.errors["name"][0]})
         return redirect("fleetops:preset_list")
     name = form.cleaned_data["name"]
     taken = (
@@ -111,9 +115,9 @@ def preset_rename_view(request, pk):
         except IntegrityError:
             taken = True
         else:
-            messages.success(request, f"Preset {old_name} renamed to {name}.")
+            messages.success(request, _("Preset %(old)s renamed to %(new)s.") % {"old": old_name, "new": name})
     if taken:
-        messages.error(request, f"You already have a preset named {name}.")
+        messages.error(request, _("You already have a preset named %(name)s.") % {"name": name})
     return redirect("fleetops:preset_list")
 
 
@@ -123,7 +127,7 @@ def preset_delete_view(request, pk):
     preset = _own_preset(request, pk)
     name = preset.name
     preset.delete()
-    messages.success(request, f"Preset {name} deleted.")
+    messages.success(request, _("Preset %(name)s deleted.") % {"name": name})
     return redirect("fleetops:preset_list")
 
 
@@ -136,7 +140,9 @@ def preset_default_view(request, pk):
         preset.is_default = make_default
         preset.save(update_fields=["is_default", "updated_at"])
     if make_default:
-        messages.success(request, f"Preset {preset.name} is now your default; Start Fleet opens with it.")
+        messages.success(
+            request, _("Preset %(name)s is now your default; Start Fleet opens with it.") % {"name": preset.name}
+        )
     else:
-        messages.success(request, f"Preset {preset.name} is no longer your default.")
+        messages.success(request, _("Preset %(name)s is no longer your default.") % {"name": preset.name})
     return redirect("fleetops:preset_list")

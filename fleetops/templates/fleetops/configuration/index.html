@@ -1,14 +1,15 @@
 {% extends "fleetops/base.html" %}
+{% load i18n %}
 {% block fleetops_content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
-    <h2 class="mb-1">FleetOps Administration</h2>
-    <div class="text-muted">Alliance-level FleetOps configuration. No Django Admin access is required.</div>
+    <h2 class="mb-1">{% translate "FleetOps Administration" %}</h2>
+    <div class="text-muted">{% translate "Alliance-level FleetOps configuration. No Django Admin access is required." %}</div>
   </div>
 </div>
 
 <div class="alert alert-info">
-  This area is controlled by the <code>fleetops.manage_configuration</code> permission. Django Admin remains an IT / emergency interface only.
+  {% blocktranslate trimmed %}This area is controlled by the <code>fleetops.manage_configuration</code> permission. Django Admin remains an IT / emergency interface only.{% endblocktranslate %}
 </div>
 {% include "fleetops/configuration/link_hints.html" %}
 
@@ -16,21 +17,21 @@
   <div class="col-md-6 col-xl-4">
     <div class="card h-100">
       <div class="card-body d-flex flex-column">
-        <h5 class="card-title">General Settings</h5>
-        <p class="text-muted flex-grow-1">Tracking, stale-data, automatic fleet-end, attendance limit and default FC incentive settings.</p>
-        <div><a class="btn btn-primary" href="{% url 'fleetops:configuration_settings' %}">Manage Settings</a></div>
+        <h5 class="card-title">{% translate "General Settings" %}</h5>
+        <p class="text-muted flex-grow-1">{% translate "Tracking, stale-data, automatic fleet-end, PAP limit and default FC incentive settings." %}</p>
+        <div><a class="btn btn-primary" href="{% url 'fleetops:configuration_settings' %}">{% translate "Manage Settings" %}</a></div>
       </div>
     </div>
   </div>
   <div class="col-md-6 col-xl-4">
     <div class="card h-100">
       <div class="card-body d-flex flex-column">
-        <div class="d-flex justify-content-between gap-2"><h5 class="card-title">FleetOps SRP</h5>{% if srp_settings.enabled %}<span class="badge bg-success align-self-start">Enabled</span>{% else %}<span class="badge bg-secondary align-self-start">Disabled</span>{% endif %}</div>
-        <p class="text-muted flex-grow-1">Turn SRP on, choose the value source, the payout percentage, the per-loss caps and the monthly limits. The payout table and the corporation limits are managed separately.</p>
+        <div class="d-flex justify-content-between gap-2"><h5 class="card-title">{% translate "FleetOps SRP" %}</h5>{% if srp_settings.enabled %}<span class="badge bg-success align-self-start">{% translate "Enabled" context "FleetOps" %}</span>{% else %}<span class="badge bg-secondary align-self-start">{% translate "Disabled" context "FleetOps" %}</span>{% endif %}</div>
+        <p class="text-muted flex-grow-1">{% translate "Turn SRP on, choose the value source, the payout percentage, the per-loss caps and the monthly limits. The payout table and the corporation limits are managed separately." %}</p>
         <div class="d-flex flex-wrap gap-2">
-          <a class="btn btn-primary" href="{% url 'fleetops:configuration_list' 'srp' %}">SRP Settings</a>
-          <a class="btn btn-outline-primary" href="{% url 'fleetops:configuration_list' 'srp-rules' %}">Payout Table</a>
-          <a class="btn btn-outline-primary" href="{% url 'fleetops:configuration_list' 'srp-corporation-limits' %}">Corporation Limits</a>
+          <a class="btn btn-primary" href="{% url 'fleetops:configuration_list' 'srp' %}">{% translate "SRP Settings" %}</a>
+          <a class="btn btn-outline-primary" href="{% url 'fleetops:configuration_list' 'srp-rules' %}">{% translate "Payout Table" %}</a>
+          <a class="btn btn-outline-primary" href="{% url 'fleetops:configuration_list' 'srp-corporation-limits' %}">{% translate "Corporation Limits" %}</a>
         </div>
       </div>
     </div>
@@ -41,7 +42,7 @@
       <div class="card-body d-flex flex-column">
         <div class="d-flex justify-content-between gap-2"><h5 class="card-title">{{ card.title }}</h5><span class="badge bg-secondary align-self-start">{{ card.count }}</span></div>
         <p class="text-muted flex-grow-1">{{ card.description }}</p>
-        <div><a class="btn btn-outline-primary" href="{% url 'fleetops:configuration_list' card.key %}">Manage</a></div>
+        <div><a class="btn btn-outline-primary" href="{% url 'fleetops:configuration_list' card.key %}">{% translate "Manage" %}</a></div>
       </div>
     </div>
   </div>
@@ -49,14 +50,14 @@
 </div>
 
 <div class="card">
-  <div class="card-header"><strong>Operational management</strong></div>
+  <div class="card-header"><strong>{% translate "Operational management" %}</strong></div>
   <div class="card-body">
-    <p class="mb-2">Operational data recorded by FleetOps is intentionally not edited as raw database rows.</p>
+    <p class="mb-2">{% translate "Operational data recorded by FleetOps is not edited as raw database rows." %}</p>
     <div class="d-flex flex-wrap gap-2">
-      {% if show_incentives %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:incentive_review' %}">FC Incentive</a>{% endif %}
-      {% if perms.fleetops.view_audit_log %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:audit_log' %}">Audit Log</a>{% endif %}
-      {% if perms.fleetops.view_all_stats %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:all_fc_statistics' %}">FC Statistics</a>{% endif %}
-      {% if perms.fleetops.view_all_stats %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:all_corporation_statistics' %}">Corporation Statistics</a>{% endif %}
+      {% if show_incentives %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:incentive_review' %}">{% translate "FC Incentive" %}</a>{% endif %}
+      {% if perms.fleetops.view_audit_log %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:audit_log' %}">{% translate "Audit Log" context "FleetOps" %}</a>{% endif %}
+      {% if perms.fleetops.view_all_stats %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:all_fc_statistics' %}">{% translate "FC Statistics" %}</a>{% endif %}
+      {% if perms.fleetops.view_all_stats %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:all_corporation_statistics' %}">{% translate "Corporation Statistics" %}</a>{% endif %}
     </div>
   </div>
 </div>

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Public ESI reads used by SRP: killmails and market prices.
 
 Both calls go through the shared client in ``fleetops.providers.esi``, whose ``operations``
@@ -13,13 +16,14 @@ import requests
 from esi.exceptions import ESIBucketLimitException, ESIErrorLimitException
 
 from fleetops.providers import esi as esi_provider
+from fleetops import texts
 from fleetops.providers.esi import FleetESIError, _read, _status_code
 
 logger = logging.getLogger(__name__)
 
 KILLMAIL_OPERATIONS = esi_provider.KILLMAIL_OPERATIONS
 NOT_FOUND_STATUSES = (404, 422)
-KILLMAIL_NOT_FOUND = "Killmail not found. Check the link or the hash."
+KILLMAIL_NOT_FOUND = texts.KILLMAIL_NOT_FOUND()
 
 
 def _http_timeouts():
@@ -48,25 +52,26 @@ def _describe(exc, status: int | None) -> str:
     # django-esi exception texts carry every response header, so they are never shown.
     chain = _chain(exc)
     if status == 420 or any(isinstance(item, ESIErrorLimitException) for item in chain):
-        return "ESI error limit reached; try again in a minute."
+        return texts.ESI_ERROR_LIMIT_MINUTE()
     if any(isinstance(item, ESIBucketLimitException) for item in chain):
-        return "ESI rate limit reached; try again later."
+        return texts.ESI_RATE_LIMIT()
     if status is not None:
-        return f"ESI returned HTTP {status}."
+        return texts.ESI_HTTP_PLAIN(status=status)
     if any(isinstance(item, TIMEOUT_ERRORS) for item in chain):
-        return "ESI did not respond in time."
-    return f"Unexpected ESI error ({type(exc).__name__})."
+        return texts.ESI_TIMEOUT()
+    return texts.ESI_UNEXPECTED(error_type=type(exc).__name__)
 
 
-def _failure(code: str, context: str, exc: Exception) -> FleetESIError:
+def _failure(code: str, failure, exc: Exception) -> FleetESIError:
+    """The short error for a failed call; ``failure`` is the stored message that takes the ``detail``."""
     status = _status_code(exc)
     logger.warning(
         "FleetOps ESI call failed: %s (%s, HTTP status %s).",
-        context,
+        failure(detail="")[: -len(": ")],
         type(exc).__name__,
         status if status is not None else "none",
     )
-    return FleetESIError(code, f"{context}: {_describe(exc, status)}", status)
+    return FleetESIError(code, failure(detail=_describe(exc, status)), status)
 
 
 def to_plain(value):
@@ -95,10 +100,10 @@ def get_killmail(killmail_id: int, killmail_hash: str) -> dict:
         status = _status_code(exc)
         if status in NOT_FOUND_STATUSES:
             raise FleetESIError("KILLMAIL_NOT_FOUND", KILLMAIL_NOT_FOUND, status) from exc
-        raise _failure("ESI_ERROR", "Could not read the killmail", exc) from exc
+        raise _failure("ESI_ERROR", texts.KILLMAIL_READ_FAILED, exc) from exc
     payload = to_plain(result)
     if not isinstance(payload, dict) or not payload:
-        raise FleetESIError("ESI_ERROR", "Could not read the killmail: ESI returned an empty answer.")
+        raise FleetESIError("ESI_ERROR", texts.KILLMAIL_EMPTY())
     return payload
 
 
@@ -114,7 +119,7 @@ def get_market_prices() -> dict[int, Decimal]:
     try:
         rows = _read(esi_provider.esi.client.Market.GetMarketsPrices())
     except Exception as exc:
-        raise _failure("ESI_ERROR", "Could not read market prices", exc) from exc
+        raise _failure("ESI_ERROR", texts.MARKET_READ_FAILED, exc) from exc
     prices = {}
     for row in rows or ():
         row = to_plain(row)

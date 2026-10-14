@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 from django.core.management.base import BaseCommand
 
 from fleetops.services.history import prune_history
@@ -18,8 +21,8 @@ class Command(BaseCommand):
         prefix = "Would remove" if options["dry_run"] else "Removed"
         self.stdout.write(
             self.style.SUCCESS(
-                f"{prefix}: {result['old_attendance']} old attendance, "
-                f"{result['left_alliance']} departed-member attendance, "
+                f"{prefix}: {result['old_attendance']} old PAP records, "
+                f"{result['left_alliance']} departed-member PAP records, "
                 f"{result['old_events']} old member events."
             )
         )

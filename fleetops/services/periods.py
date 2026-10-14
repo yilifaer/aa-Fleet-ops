@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """EVE time (UTC) helpers for months, display strings and Discord timestamps.
 
 Everything here works in UTC, whatever ``TIME_ZONE`` the site uses and whatever
@@ -13,6 +16,8 @@ from datetime import date, datetime, time, timedelta, timezone as dt_timezone
 
 from django.db.models.functions import TruncDate
 from django.utils import timezone
+from django.utils.dates import MONTHS
+from django.utils.translation import gettext
 
 UTC = dt_timezone.utc
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
@@ -23,8 +28,11 @@ EVE_DATETIME_FORMAT = "%Y-%m-%d %H:%M"
 MIN_YEAR = 2003
 MAX_YEAR = 2200
 
-# English month names for month selectors; the C library's locale must not decide what the page says.
-MONTH_NAMES = (
+# Month names for month selectors, in the language of the viewer (Django's own names, so the C library's
+# locale does not decide what the page says).
+MONTH_NAMES = tuple(MONTHS[number] for number in range(1, 13))
+# The same months in English, for file names and logs.
+ENGLISH_MONTH_NAMES = (
     "January",
     "February",
     "March",
@@ -62,7 +70,8 @@ def eve_now() -> datetime:
 
 
 def month_name(month: int) -> str:
-    return MONTH_NAMES[month - 1]
+    """The English name of a month, whatever language is active."""
+    return ENGLISH_MONTH_NAMES[month - 1]
 
 
 def shift_month(year: int, month: int, delta: int) -> tuple[int, int]:
@@ -168,11 +177,11 @@ def parse_eve_date(value) -> date:
         return value
     text = str(value or "").strip()
     if not _DATE_RE.fullmatch(text):
-        raise ValueError("Enter the date as YYYY-MM-DD.")
+        raise ValueError(gettext("Enter the date as YYYY-MM-DD."))
     try:
         return date(int(text[:4]), int(text[5:7]), int(text[8:]))
     except ValueError:
-        raise ValueError(f"{text} is not a valid date.") from None
+        raise ValueError(gettext("%(date)s is not a valid date.") % {"date": text}) from None
 
 
 def parse_eve_clock(value) -> time:
@@ -181,7 +190,7 @@ def parse_eve_clock(value) -> time:
         return value.replace(tzinfo=None)
     text = str(value or "").strip()
     if not _CLOCK_RE.fullmatch(text):
-        raise ValueError("Enter the time as HH:MM (24-hour EVE time).")
+        raise ValueError(gettext("Enter the time as HH:MM (24-hour EVE time)."))
     return time(int(text[:2]), int(text[3:]))
 
 

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The statistics exports: who may download which dataset and what a file contains.
 
 Each dataset has a ``check`` that reads the request, applies the permission rules and returns the scope of
@@ -17,6 +20,7 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpRequest
+from django.utils.translation import gettext, gettext_lazy, pgettext, pgettext_lazy
 
 from fleetops.models import (
     MAX_DATABASE_ID,
@@ -40,6 +44,7 @@ from fleetops.srp import access as srp_access
 from fleetops.srp import display as srp_display
 from fleetops.srp import summaries as srp_summaries
 from fleetops.srp.types import warnings_from_json
+from fleetops.texts import translate_stored
 
 BASIC_ACCESS = "fleetops.basic_access"
 VIEW_CORP_STATS = "fleetops.view_corp_stats"
@@ -49,13 +54,13 @@ MANAGE_INCENTIVES = "fleetops.manage_incentives"
 PARAM_TEXT_LIMIT = 100
 ATTENDANCE_CHUNK_ROWS = 2000
 POINTS_PLACES = Decimal("0.01")
-OTHER_CORPORATIONS = "Other corporations"
-ALLIANCE_TOTAL = "Alliance total"
-COUNTING_RULE = (
+OTHER_CORPORATIONS = gettext_lazy("Other corporations")
+ALLIANCE_TOTAL = gettext_lazy("Alliance total")
+COUNTING_RULE = gettext_lazy(
     "PAP of closed, approved fleets that count in the statistics, in the month the fleet started (EVE time). "
     "The PAP of all characters of a person is added up on the main character."
 )
-FC_RULE = (
+FC_RULE = gettext_lazy(
     "Fleets that count in the statistics, for the FC and for special roles that give FC credit. "
     "FC points are the fleet type weight times the PAP multiplier."
 )
@@ -66,7 +71,7 @@ class ExportScope:
     """What a download covers, as the check of a dataset decided it.
 
     ``label`` names the scope in the file name and the audit entry (``alliance``, ``corporation-98000001``,
-    ``me``); ``year`` and ``month`` are None for "all retained" attendance. ``params`` holds the validated
+    ``me``); ``year`` and ``month`` are None for "all retained" PAP. ``params`` holds the validated
     query parameters and is stored in the audit entry, so it carries no secrets.
     """
 
@@ -238,11 +243,11 @@ def _display_name(user) -> str:
 def _table(request, scope, title, columns, rows, *, scope_text, details=()) -> tuple[Table, str]:
     """The table of a dataset with its About sheet, and the file name for the scope."""
     about = [
-        ("Dataset", title),
-        ("Scope", scope_text),
-        ("Month (EVE time)", scope.period_label if scope.year else "All retained"),
-        ("Exported at (EVE)", eve_now()),
-        ("Exported by", _display_name(request.user)),
+        (gettext("Dataset"), title),
+        (gettext("Scope"), scope_text),
+        (gettext("Month (EVE time)"), scope.period_label if scope.year else gettext("All retained")),
+        (gettext("Exported at (EVE)"), eve_now()),
+        (gettext("Exported by"), _display_name(request.user)),
     ]
     about.extend((label, value) for label, value in details if value not in (None, ""))
     table = Table(name=title, columns=columns, rows=rows, about=about)
@@ -250,8 +255,11 @@ def _table(request, scope, title, columns, rows, *, scope_text, details=()) -> t
 
 
 def _target_details(target):
-    average = "No target" if target.average is None else target.average
-    return [("Corporation average target (PAP per main)", average), ("Member minimum PAP", target.minimum)]
+    average = gettext("No target") if target.average is None else target.average
+    return [
+        (gettext("Corporation average target (PAP per main)"), average),
+        (gettext("Member minimum PAP"), target.minimum),
+    ]
 
 
 def _fleet_types(known: Iterable[FleetType], mappings) -> list[FleetType]:
@@ -278,27 +286,27 @@ def _points(value) -> Decimal:
 
 def _not_counted_text(summary) -> str:
     labels = (
-        ("excluded", "excluded"),
-        ("pending", "waiting for approval"),
-        ("rejected", "rejected"),
-        ("running", "still running"),
+        ("excluded", gettext("%(count)s excluded")),
+        ("pending", gettext("%(count)s waiting for approval")),
+        ("rejected", gettext("%(count)s rejected")),
+        ("running", gettext("%(count)s still running")),
     )
-    return "; ".join(f"{summary[key]} {text}" for key, text in labels if summary.get(key))
+    return "; ".join(text % {"count": summary[key]} for key, text in labels if summary.get(key))
 
 
 def build_corporations(request, scope):
     overview = statistics_service.corporation_overview(scope.year, scope.month, sort=scope.params.get("sort") or "name")
     columns = [
-        Column("corporation", "Corporation"),
-        Column("ticker", "Ticker"),
-        Column("alliance", "Alliance"),
-        Column("mains", "Mains", "int"),
-        Column("mains_with_pap", "Mains with PAP", "int"),
-        Column("mains_below_minimum", "Mains below minimum", "int"),
-        Column("total_pap", "Total PAP", "int"),
-        Column("average", "Average PAP per main", "decimal"),
-        Column("target", "Target", "decimal"),
-        Column("status", "Status"),
+        Column("corporation", pgettext("FleetOps", "Corporation")),
+        Column("ticker", pgettext("FleetOps", "Ticker")),
+        Column("alliance", pgettext("FleetOps", "Alliance")),
+        Column("mains", pgettext("FleetOps", "Mains"), "int"),
+        Column("mains_with_pap", gettext("Mains with PAP"), "int"),
+        Column("mains_below_minimum", gettext("Mains below minimum"), "int"),
+        Column("total_pap", gettext("Total PAP"), "int"),
+        Column("average", gettext("Average PAP per main"), "decimal"),
+        Column("target", gettext("Target"), "decimal"),
+        Column("status", gettext("Status")),
     ]
     rows = overview.rows
     other = overview.other
@@ -326,7 +334,7 @@ def build_corporations(request, scope):
         # Snapshot totals of corporations without members in scope; they make the columns add up.
         lines.append(
             [
-                OTHER_CORPORATIONS,
+                str(OTHER_CORPORATIONS),
                 "",
                 "",
                 None,
@@ -342,7 +350,7 @@ def build_corporations(request, scope):
     type_totals = [sum(mapping.get(fleet_type.pk, 0) for mapping in mappings) for fleet_type in fleet_types]
     lines.append(
         [
-            ALLIANCE_TOTAL,
+            str(ALLIANCE_TOTAL),
             "",
             "",
             overview.mains,
@@ -358,36 +366,40 @@ def build_corporations(request, scope):
     details = _target_details(overview.target)
     if overview.corporations_with_target:
         details.append(
-            ("Corporations meeting the target", f"{overview.corporations_met} of {overview.corporations_with_target}")
+            (
+                gettext("Corporations meeting the target"),
+                gettext("%(met)s of %(total)s")
+                % {"met": overview.corporations_met, "total": overview.corporations_with_target},
+            )
         )
-    details.append(("Fleets not counted", _not_counted_text(overview.not_counted)))
-    details.append(("Counting rule", COUNTING_RULE))
+    details.append((gettext("Fleets not counted"), _not_counted_text(overview.not_counted)))
+    details.append((gettext("Counting rule"), str(COUNTING_RULE)))
     return _table(
         request,
         scope,
-        "Corporations",
+        pgettext("FleetOps", "Corporations"),
         columns + _type_columns(fleet_types),
         lines,
-        scope_text="Alliance",
+        scope_text=pgettext("FleetOps", "Alliance"),
         details=details,
     )
 
 
 def _members_scope_text(table, scope) -> str:
     if scope.corporation_id is None:
-        return "Alliance"
+        return pgettext("FleetOps", "Alliance")
     name = table.rows[0].corporation_name if table.rows else ""
-    return f"Corporation {name or scope.corporation_id}"
+    return gettext("Corporation %(name)s") % {"name": name or scope.corporation_id}
 
 
 def _members_filters(params) -> str:
     parts = []
     if params.get("status"):
-        parts.append(f"Status: {params['status']}")
+        parts.append(gettext("Status: %(value)s") % {"value": params["status"]})
     if params.get("q"):
-        parts.append(f"Name contains: {params['q']}")
+        parts.append(gettext("Name contains: %(value)s") % {"value": params["q"]})
     if params.get("sort"):
-        parts.append(f"Sort: {params['sort']}")
+        parts.append(gettext("Sort: %(value)s") % {"value": params["sort"]})
     return "; ".join(parts)
 
 
@@ -406,17 +418,17 @@ def build_members(request, scope):
     member_service.fill_last_pap(rows)
     fleet_types = _fleet_types(table.fleet_types, (row.by_fleet_type for row in rows))
     columns = [
-        Column("rank", "Rank", "int"),
-        Column("main", "Main character"),
-        Column("corporation", "Corporation"),
-        Column("ticker", "Ticker"),
-        Column("alliance", "Alliance"),
+        Column("rank", gettext("Rank"), "int"),
+        Column("main", pgettext("FleetOps", "Main character")),
+        Column("corporation", pgettext("FleetOps", "Corporation")),
+        Column("ticker", pgettext("FleetOps", "Ticker")),
+        Column("alliance", pgettext("FleetOps", "Alliance")),
         Column("pap", "PAP", "int"),
-        Column("fleets", "Fleets", "int"),
-        Column("characters", "Characters used", "int"),
-        Column("status", "Status"),
-        Column("last_pap", "Last PAP (EVE)", "datetime"),
-        Column("registered", "Registered (EVE)", "datetime"),
+        Column("fleets", gettext("Fleets"), "int"),
+        Column("characters", gettext("Characters used"), "int"),
+        Column("status", gettext("Status")),
+        Column("last_pap", gettext("Last PAP (EVE)"), "datetime"),
+        Column("registered", gettext("Registered (EVE)"), "datetime"),
         *_type_columns(fleet_types),
     ]
     lines = [
@@ -437,25 +449,25 @@ def build_members(request, scope):
         for row in rows
     ]
     details = [
-        ("Filters", _members_filters(params)),
+        (pgettext("FleetOps", "Filters"), _members_filters(params)),
         *_target_details(table.target),
-        ("Counting rule", COUNTING_RULE),
+        (gettext("Counting rule"), str(COUNTING_RULE)),
     ]
     scope_text = _members_scope_text(table, scope)
-    return _table(request, scope, "Members", columns, lines, scope_text=scope_text, details=details)
+    return _table(request, scope, gettext("Members"), columns, lines, scope_text=scope_text, details=details)
 
 
 def build_member_fleets(request, scope):
     # The page lists the latest fleets only; the file holds every fleet of the month.
     fleets = member_service.member_fleets(scope.user, scope.year, scope.month, limit=exports.MAX_EXPORT_ROWS)
     columns = [
-        Column("started", "Fleet start (EVE)", "datetime"),
-        Column("ended", "Fleet end (EVE)", "datetime"),
-        Column("fleet_type", "Fleet type"),
-        Column("doctrine", "Doctrine"),
+        Column("started", gettext("Fleet start (EVE)"), "datetime"),
+        Column("ended", gettext("Fleet end (EVE)"), "datetime"),
+        Column("fleet_type", gettext("Fleet type")),
+        Column("doctrine", pgettext("FleetOps", "Doctrine")),
         Column("fc", "FC"),
-        Column("character", "Character"),
-        Column("source", "Source"),
+        Column("character", gettext("Character")),
+        Column("source", gettext("Source")),
         Column("pap", "PAP", "int"),
     ]
     lines = [
@@ -474,11 +486,11 @@ def build_member_fleets(request, scope):
     return _table(
         request,
         scope,
-        "Member fleets",
+        gettext("Member fleets"),
         columns,
         lines,
-        scope_text=f"Member {_display_name(scope.user)}",
-        details=[("Counting rule", COUNTING_RULE)],
+        scope_text=gettext("Member %(name)s") % {"name": _display_name(scope.user)},
+        details=[(gettext("Counting rule"), str(COUNTING_RULE))],
     )
 
 
@@ -494,10 +506,14 @@ def _fc_type_names(rows) -> list[str]:
 def build_fcs(request, scope):
     rows = statistics_service.fc_rows(scope.year, scope.month)
     type_names = _fc_type_names(rows)
-    columns = [Column("fc", "FC (main)"), Column("fleets", "Fleets", "int"), Column("points", "FC points", "decimal")]
+    columns = [
+        Column("fc", gettext("FC (main)")),
+        Column("fleets", gettext("Fleets"), "int"),
+        Column("points", gettext("FC points"), "decimal"),
+    ]
     for index, name in enumerate(type_names):
-        columns.append(Column(f"fleets_{index}", f"{name} fleets", "int"))
-        columns.append(Column(f"points_{index}", f"{name} points", "decimal"))
+        columns.append(Column(f"fleets_{index}", gettext("%(name)s fleets") % {"name": name}, "int"))
+        columns.append(Column(f"points_{index}", gettext("%(name)s points") % {"name": name}, "decimal"))
     lines = []
     for row in rows:
         line = [row.main_name, row.fleets, _points(row.points)]
@@ -506,7 +522,13 @@ def build_fcs(request, scope):
             line.extend((part.get("count", 0), _points(part.get("points"))))
         lines.append(line)
     return _table(
-        request, scope, "FCs", columns, lines, scope_text="Alliance", details=[("Counting rule", FC_RULE)]
+        request,
+        scope,
+        gettext("FCs"),
+        columns,
+        lines,
+        scope_text=pgettext("FleetOps", "Alliance"),
+        details=[(gettext("Counting rule"), str(FC_RULE))],
     )
 
 
@@ -553,31 +575,37 @@ def build_attendance(request, scope):
         scope.label, user=scope.user, corporation_id=scope.corporation_id, month=month
     )
     if scope.label == "me":
-        scope_text = f"Personal PAP of {_display_name(request.user)}"
+        scope_text = gettext("Personal PAP of %(name)s") % {"name": _display_name(request.user)}
     elif scope.label == "corporation":
         corporation = stats_access.own_corporation(request.user)
-        scope_text = f"Corporation {corporation[1] or corporation[0]} (at PAP time)"
+        scope_text = gettext("Corporation %(name)s (at PAP time)") % {"name": corporation[1] or corporation[0]}
     else:
-        scope_text = "Alliance"
+        scope_text = pgettext("FleetOps", "Alliance")
     columns = [
-        Column("started", "Fleet start (EVE)", "datetime"),
-        Column("ended", "Fleet end (EVE)", "datetime"),
-        Column("fleet_type", "Fleet type"),
-        Column("doctrine", "Doctrine"),
+        Column("started", gettext("Fleet start (EVE)"), "datetime"),
+        Column("ended", gettext("Fleet end (EVE)"), "datetime"),
+        Column("fleet_type", gettext("Fleet type")),
+        Column("doctrine", pgettext("FleetOps", "Doctrine")),
         Column("fc", "FC"),
-        Column("character", "Character"),
-        Column("main", "Main character"),
-        Column("corporation", "Corporation (at PAP time)"),
-        Column("source", "Source"),
+        Column("character", gettext("Character")),
+        Column("main", pgettext("FleetOps", "Main character")),
+        Column("corporation", gettext("Corporation (at PAP time)")),
+        Column("source", gettext("Source")),
         Column("pap", "PAP", "int"),
-        Column("fleet_id", "Fleet ID"),
+        Column("fleet_id", gettext("Fleet ID")),
     ]
     details = [
-        ("History window", f"The last {retention_days()} days"),
-        ("Counting rule", COUNTING_RULE),
+        (gettext("History window"), gettext("The last %(days)s days") % {"days": retention_days()}),
+        (gettext("Counting rule"), str(COUNTING_RULE)),
     ]
     return _table(
-        request, scope, "PAP history", columns, _attendance_rows(queryset), scope_text=scope_text, details=details
+        request,
+        scope,
+        gettext("PAP history"),
+        columns,
+        _attendance_rows(queryset),
+        scope_text=scope_text,
+        details=details,
     )
 
 
@@ -587,13 +615,13 @@ def build_incentives(request, scope):
     status = period.get_status_display()
     columns = [
         Column("fc", "FC"),
-        Column("fleets", "Fleets", "int"),
-        Column("points", "FC points", "decimal"),
-        Column("eligible", "Eligible", "bool"),
-        Column("waived", "Waived", "bool"),
-        Column("calculated", "Calculated payout", "int"),
-        Column("final", "Final payout", "int"),
-        Column("status", "Period status"),
+        Column("fleets", gettext("Fleets"), "int"),
+        Column("points", gettext("FC points"), "decimal"),
+        Column("eligible", gettext("Eligible"), "bool"),
+        Column("waived", gettext("Waived"), "bool"),
+        Column("calculated", gettext("Calculated payout"), "int"),
+        Column("final", gettext("Final payout"), "int"),
+        Column("status", gettext("Period status")),
     ]
     lines = [
         [
@@ -609,18 +637,20 @@ def build_incentives(request, scope):
         for row in statistics
     ]
     details = [
-        ("Budget (ISK)", period.budget),
-        ("Minimum fleets", period.minimum_fleets),
-        ("Period status", status),
-        ("Finalized at (EVE)", period.finalized_at),
-        ("Counting rule", FC_RULE),
+        (gettext("Budget (ISK)"), period.budget),
+        (gettext("Minimum fleets"), period.minimum_fleets),
+        (gettext("Period status"), status),
+        (gettext("Finalized at (EVE)"), period.finalized_at),
+        (gettext("Counting rule"), str(FC_RULE)),
     ]
-    return _table(request, scope, "FC incentives", columns, lines, scope_text="Alliance", details=details)
+    return _table(
+        request, scope, gettext("FC incentives"), columns, lines, scope_text=pgettext("FleetOps", "Alliance"), details=details
+    )
 
 
 # SRP
 
-SRP_RULE = (
+SRP_RULE = gettext_lazy(
     "Claims count in the EVE month of the loss (killmail time). Withdrawn claims are left out. "
     "Approved counts approved and paid claims; outstanding is approved minus paid."
 )
@@ -631,7 +661,7 @@ SRP_STATUS_FILTERS = (
     SrpClaim.Status.PAID,
     SrpClaim.Status.REJECTED,
 )
-SRP_TOTAL_ROW = "Total"
+SRP_TOTAL_ROW = gettext_lazy("Total")
 
 
 def _srp_corporation(request):
@@ -726,7 +756,7 @@ def _srp_claim_lines(claims, *, show_reviewers: bool = False) -> Iterator[list]:
             claim.get_status_display(),
             _display_name(claim.decided_by) if show_reviewers and claim.decided_by_id else "",
             claim.decided_at,
-            claim.decision_reason,
+            translate_stored(claim.decision_reason),
             claim.paid_at,
             _display_name(claim.paid_by) if show_reviewers and claim.paid_by_id else "",
             srp_display.presence_text(claim.fleet_check, claim.fleet_check_params) if claim.fleet_check else "",
@@ -736,8 +766,8 @@ def _srp_claim_lines(claims, *, show_reviewers: bool = False) -> Iterator[list]:
 
 def _srp_scope_text(scope, name="") -> str:
     if scope.corporation_id is None:
-        return "Alliance"
-    return f"Corporation {name or scope.corporation_id}"
+        return pgettext("FleetOps", "Alliance")
+    return gettext("Corporation %(name)s") % {"name": name or scope.corporation_id}
 
 
 def build_srp_claims(request, scope):
@@ -750,47 +780,51 @@ def build_srp_claims(request, scope):
     if params.get("scope"):
         claims = claims.filter(scope=params["scope"])
     columns = [
-        Column("claim", "Claim"),
-        Column("loss", "Loss time (EVE)", "datetime"),
-        Column("pilot", "Pilot (main)"),
-        Column("character", "Character"),
-        Column("corporation", "Corporation"),
-        Column("ship", "Ship"),
-        Column("system", "System"),
-        Column("scope", "Scope"),
-        Column("fleet", "Fleet"),
+        Column("claim", gettext("Claim")),
+        Column("loss", gettext("Loss time (EVE)"), "datetime"),
+        Column("pilot", gettext("Pilot (main)")),
+        Column("character", gettext("Character")),
+        Column("corporation", pgettext("FleetOps", "Corporation")),
+        Column("ship", gettext("Ship")),
+        Column("system", gettext("System")),
+        Column("scope", gettext("Scope")),
+        Column("fleet", gettext("Fleet")),
         Column("fc", "FC"),
-        Column("value", "Value (ISK)", "decimal"),
-        Column("value_source", "Value source"),
-        Column("basis", "Payout basis"),
-        Column("suggested", "Suggested (ISK)", "int"),
-        Column("limited", "Within limit (ISK)", "int"),
-        Column("approved", "Approved (ISK)", "int"),
-        Column("status", "Status"),
-        Column("decided_by", "Decided by"),
-        Column("decided_at", "Decided at (EVE)", "datetime"),
-        Column("reason", "Reason"),
-        Column("paid_at", "Paid at (EVE)", "datetime"),
-        Column("paid_by", "Paid by"),
-        Column("fleet_check", "Fleet check"),
-        Column("warnings", "Warnings"),
+        Column("value", gettext("Value (ISK)"), "decimal"),
+        Column("value_source", gettext("Value source")),
+        Column("basis", gettext("Payout basis")),
+        Column("suggested", gettext("Suggested (ISK)"), "int"),
+        Column("limited", gettext("Within limit (ISK)"), "int"),
+        Column("approved", gettext("Approved (ISK)"), "int"),
+        Column("status", gettext("Status")),
+        Column("decided_by", gettext("Decided by")),
+        Column("decided_at", gettext("Decided at (EVE)"), "datetime"),
+        Column("reason", gettext("Reason")),
+        Column("paid_at", gettext("Paid at (EVE)"), "datetime"),
+        Column("paid_by", gettext("Paid by")),
+        Column("fleet_check", gettext("Fleet check")),
+        Column("warnings", gettext("Warnings")),
     ]
     filters = "; ".join(
         text
         for text in (
-            f"Status: {_label(SrpClaim.Status.choices, params['status'])}" if params.get("status") else "",
-            f"Scope: {_label(SrpClaim.Scope.choices, params['scope'])}" if params.get("scope") else "",
+            gettext("Status: %(value)s") % {"value": _label(SrpClaim.Status.choices, params["status"])}
+            if params.get("status")
+            else "",
+            gettext("Scope: %(value)s") % {"value": _label(SrpClaim.Scope.choices, params["scope"])}
+            if params.get("scope")
+            else "",
         )
         if text
     )
     return _table(
         request,
         scope,
-        "SRP claims",
+        gettext("SRP claims"),
         columns,
         _srp_claim_lines(claims, show_reviewers=srp_access.is_manager(request.user)),
         scope_text=_srp_scope_text(scope),
-        details=[("Filters", filters), ("Counting rule", SRP_RULE)],
+        details=[(pgettext("FleetOps", "Filters"), filters), (gettext("Counting rule"), str(SRP_RULE))],
     )
 
 
@@ -810,85 +844,106 @@ def _totals_cells(totals) -> list:
 
 def _totals_columns() -> list[Column]:
     return [
-        Column("claims", "Claims", "int"),
-        Column("pending", "Pending", "int"),
-        Column("approved_count", "Approved claims", "int"),
-        Column("paid_count", "Paid claims", "int"),
-        Column("rejected", "Rejected", "int"),
-        Column("requested", "Requested (ISK)", "int"),
-        Column("approved", "Approved (ISK)", "int"),
-        Column("paid", "Paid (ISK)", "int"),
-        Column("outstanding", "Outstanding (ISK)", "int"),
+        Column("claims", gettext("Claims"), "int"),
+        Column("pending", pgettext("FleetOps", "Pending"), "int"),
+        Column("approved_count", gettext("Approved claims"), "int"),
+        Column("paid_count", gettext("Paid claims"), "int"),
+        Column("rejected", pgettext("FleetOps", "Rejected"), "int"),
+        Column("requested", gettext("Requested (ISK)"), "int"),
+        Column("approved", gettext("Approved (ISK)"), "int"),
+        Column("paid", gettext("Paid (ISK)"), "int"),
+        Column("outstanding", gettext("Outstanding (ISK)"), "int"),
     ]
 
 
 def build_srp_members(request, scope):
     rows = srp_summaries.by_member(scope.year, scope.month, corporation_id=scope.corporation_id)
-    columns = [Column("main", "Main character"), Column("corporation", "Corporation"), *_totals_columns()]
+    columns = [
+        Column("main", pgettext("FleetOps", "Main character")),
+        Column("corporation", pgettext("FleetOps", "Corporation")),
+        *_totals_columns(),
+    ]
     lines = [[row.main_character_name, row.corporation_name, *_totals_cells(row.totals)] for row in rows]
     name = rows[0].corporation_name if rows else ""
     return _table(
         request,
         scope,
-        "SRP members",
+        gettext("SRP members"),
         columns,
         lines,
         scope_text=_srp_scope_text(scope, name),
-        details=[("Counting rule", SRP_RULE)],
+        details=[(gettext("Counting rule"), str(SRP_RULE))],
     )
 
 
 def build_srp_corporations(request, scope):
     rows = srp_summaries.by_corporation(scope.year, scope.month)
     columns = [
-        Column("corporation", "Corporation"),
-        Column("ticker", "Ticker"),
+        Column("corporation", pgettext("FleetOps", "Corporation")),
+        Column("ticker", pgettext("FleetOps", "Ticker")),
         *_totals_columns(),
-        Column("cap", "Monthly cap (ISK)", "int"),
-        Column("used", "Used of the cap (ISK)", "int"),
-        Column("remaining", "Remaining (ISK)", "int"),
+        Column("cap", gettext("Monthly cap (ISK)"), "int"),
+        Column("used", gettext("Used of the cap (ISK)"), "int"),
+        Column("remaining", gettext("Remaining (ISK)"), "int"),
     ]
     lines = [
         [row.corporation_name, row.corporation_ticker, *_totals_cells(row.totals), row.cap, row.used, row.remaining]
         for row in rows
     ]
     total = srp_summaries.add_totals(*(row.totals for row in rows))
-    lines.append([SRP_TOTAL_ROW, "", *_totals_cells(total), None, None, None])
+    lines.append([str(SRP_TOTAL_ROW), "", *_totals_cells(total), None, None, None])
     return _table(
-        request, scope, "SRP corporations", columns, lines, scope_text="Alliance", details=[("Counting rule", SRP_RULE)]
+        request,
+        scope,
+        gettext("SRP corporations"),
+        columns,
+        lines,
+        scope_text=pgettext("FleetOps", "Alliance"),
+        details=[(gettext("Counting rule"), str(SRP_RULE))],
     )
 
 
 def build_srp_fcs(request, scope):
     rows = srp_summaries.by_fc(scope.year, scope.month)
-    columns = [Column("fc", "FC (main)"), Column("fleets", "Fleets", "int"), *_totals_columns()]
+    columns = [Column("fc", gettext("FC (main)")), Column("fleets", gettext("Fleets"), "int"), *_totals_columns()]
     lines = [[row.fc_name, row.fleets, *_totals_cells(row.totals)] for row in rows]
     total = srp_summaries.add_totals(*(row.totals for row in rows))
-    lines.append([SRP_TOTAL_ROW, sum(row.fleets for row in rows), *_totals_cells(total)])
+    lines.append([str(SRP_TOTAL_ROW), sum(row.fleets for row in rows), *_totals_cells(total)])
     return _table(
         request,
         scope,
-        "SRP FCs",
+        gettext("SRP FCs"),
         columns,
         lines,
-        scope_text="Alliance",
-        details=[("Counting rule", f"{SRP_RULE} Only claims for losses in FleetOps fleets are grouped by FC.")],
+        scope_text=pgettext("FleetOps", "Alliance"),
+        details=[
+            (
+                gettext("Counting rule"),
+                f"{SRP_RULE} " + gettext("Only claims for losses in FleetOps fleets are grouped by FC."),
+            )
+        ],
     )
 
 
 DATASETS = {
     dataset.slug: dataset
     for dataset in (
-        Dataset("corporations", "Corporations", check_corporations, build_corporations),
-        Dataset("members", "Members", check_members, build_members),
-        Dataset("member-fleets", "Member fleets", check_member_fleets, build_member_fleets),
-        Dataset("fcs", "FCs", check_fcs, build_fcs),
-        Dataset("attendance", "PAP history", check_attendance, build_attendance),
-        Dataset("incentives", "FC incentives", check_incentives, build_incentives),
-        Dataset("srp-claims", "SRP claims", check_srp_claims, build_srp_claims, **SRP_AUDIT),
-        Dataset("srp-members", "SRP members", check_srp_members, build_srp_members, **SRP_AUDIT),
-        Dataset("srp-corporations", "SRP corporations", check_srp_corporations, build_srp_corporations, **SRP_AUDIT),
-        Dataset("srp-fcs", "SRP FCs", check_srp_fcs, build_srp_fcs, **SRP_AUDIT),
+        Dataset("corporations", pgettext_lazy("FleetOps", "Corporations"), check_corporations, build_corporations),
+        Dataset("members", gettext_lazy("Members"), check_members, build_members),
+        Dataset("member-fleets", gettext_lazy("Member fleets"), check_member_fleets, build_member_fleets),
+        Dataset("fcs", gettext_lazy("FCs"), check_fcs, build_fcs),
+        Dataset("attendance", gettext_lazy("PAP history"), check_attendance, build_attendance),
+        Dataset("incentives", gettext_lazy("FC incentives"), check_incentives, build_incentives),
+        Dataset("srp-claims", gettext_lazy("SRP claims"), check_srp_claims, build_srp_claims, **SRP_AUDIT),
+        Dataset("srp-members", gettext_lazy("SRP members"), check_srp_members, build_srp_members, **SRP_AUDIT),
+        Dataset(
+            "srp-corporations",
+            gettext_lazy("SRP corporations"),
+            check_srp_corporations,
+            build_srp_corporations,
+            **SRP_AUDIT,
+        ),
+        Dataset("srp-fcs", gettext_lazy("SRP FCs"), check_srp_fcs, build_srp_fcs, **SRP_AUDIT),
     )
 }
 

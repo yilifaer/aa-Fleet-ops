@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Downloads of the statistics as CSV and Excel files."""
 
 from django.contrib.auth.decorators import permission_required

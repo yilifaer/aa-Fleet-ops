@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """FleetOps SRP: the member pages for starting a claim, the fleet SRP link and the claim page."""
 
 from datetime import timedelta
@@ -7,9 +10,11 @@ from django.contrib.auth.decorators import permission_required
 from django.core.paginator import Paginator
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
+from django.utils.translation import gettext as _
+from django.utils.translation import gettext_lazy, gettext_noop
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from fleetops import __version__
+from fleetops import __version__, texts
 from fleetops.forms_srp import (
     ApproveForm,
     ClaimInputForm,
@@ -29,11 +34,12 @@ from fleetops.srp import access, claims, links, summaries
 from fleetops.srp import policy as rules
 from fleetops.srp.access import REQUEST_SRP
 from fleetops.srp.types import Calculation, PolicySnapshot, SrpDuplicateError, SrpError, warnings_from_json
+from fleetops.texts import translate_stored
 from fleetops.views import _period_render_context, _render, _year_month
 
 CLAIMS_PER_PAGE = 25
-NOT_ENABLED = "FleetOps SRP is not enabled."
-OUT_OF_FLEET_OFF = "Only losses in FleetOps fleets are covered."
+NOT_ENABLED = gettext_lazy("FleetOps SRP is not enabled.")
+OUT_OF_FLEET_OFF = gettext_lazy("Only losses in FleetOps fleets are covered.")
 
 # The forms of the claim page, by the action that receives them. A form without an entry (recalculate and
 # recheck) is just a button.
@@ -57,42 +63,50 @@ ACTIONS_BY_STATUS = {
 }
 # The decisions that need nothing but a reason: title, button, button style and the help text under the box.
 REASON_ACTIONS = {
-    "reject": ("Reject claim", "Reject", "btn-danger", "The pilot sees the reason."),
+    "reject": (
+        gettext_lazy("Reject claim"),
+        gettext_lazy("Reject"),
+        "btn-danger",
+        gettext_lazy("The pilot sees the reason."),
+    ),
     "revoke": (
-        "Revoke approval",
-        "Revoke approval",
+        gettext_lazy("Revoke approval"),
+        gettext_lazy("Revoke approval"),
         "btn-outline-danger",
-        "The claim is pending again and its amount no longer counts toward the limits. The pilot sees the reason.",
+        gettext_lazy(
+            "The claim is pending again and its amount no longer counts toward the limits. The pilot sees the reason."
+        ),
     ),
     "unpaid": (
-        "Undo payment",
-        "Undo payment",
+        gettext_lazy("Undo payment"),
+        gettext_lazy("Undo payment"),
         "btn-outline-danger",
-        "Use this when the ISK was not sent after all. The claim is approved again.",
+        gettext_lazy("Use this when the ISK was not sent after all. The claim is approved again."),
     ),
     "reopen": (
-        "Reopen claim",
-        "Reopen",
+        gettext_lazy("Reopen claim"),
+        gettext_lazy("Reopen"),
         "btn-outline-primary",
-        "The claim is calculated again with the current rules and waits for a decision.",
+        gettext_lazy("The claim is calculated again with the current rules and waits for a decision."),
     ),
 }
 # Fleets a claim can be moved into: open links of fleets that started shortly before the loss.
 LINK_CANDIDATE_WINDOW = timedelta(hours=24)
 LINK_CANDIDATES_SHOWN = 20
 
-# Inventory flags by group, in the order the groups are listed.
+# Inventory flags by group, in the order the groups are listed. The names are English keys that
+# item_groups() translates when it builds the page.
 ITEM_GROUPS = (
-    ("High slots", range(27, 35)),
-    ("Mid slots", range(19, 27)),
-    ("Low slots", range(11, 19)),
-    ("Rigs", range(92, 100)),
-    ("Subsystems", range(125, 133)),
-    ("Drone bay", (87,)),
-    ("Fighters", range(158, 164)),
-    ("Implants", (89,)),
+    (gettext_noop("High slots"), range(27, 35)),
+    (gettext_noop("Mid slots"), range(19, 27)),
+    (gettext_noop("Low slots"), range(11, 19)),
+    (gettext_noop("Rigs"), range(92, 100)),
+    (gettext_noop("Subsystems"), range(125, 133)),
+    (gettext_noop("Drone bay"), (87,)),
+    (gettext_noop("Fighters"), range(158, 164)),
+    (gettext_noop("Implants"), (89,)),
 )
-OTHER_ITEMS = "Cargo and other"
+OTHER_ITEMS = gettext_noop("Cargo and other")
 MAX_ITEM_ROWS = 300
 MAX_ITEM_DEPTH = 4
 
@@ -122,7 +136,7 @@ def claim_redirect(claim):
 
 def error_text(exc) -> str:
     """The sentence for a failed lookup or claim step; ESI texts are written for people."""
-    return exc.message if isinstance(exc, SrpError) else str(exc)
+    return translate_stored(exc.message if isinstance(exc, SrpError) else str(exc))
 
 
 # --- My SRP ------------------------------------------------------------------------------------------------
@@ -245,22 +259,28 @@ def srp_submit(request):
         return redirect("fleetops:srp_home")
     form = SubmitClaimForm(request.POST)
     if not form.is_valid():
-        messages.error(request, "That claim could not be read. Check the loss again and submit it.")
+        messages.error(request, _("That claim could not be read. Check the loss again and submit it."))
         return redirect("fleetops:srp_home")
     try:
         claim = claims.submit_claim(request.user, form.cleaned_data["token"], comment=form.cleaned_data["comment"])
     except SrpDuplicateError as exc:
-        messages.error(request, exc.message)
+        messages.error(request, translate_stored(exc.message))
         if exc.claim is not None and exc.claim.user_id == request.user.pk:
             return claim_redirect(exc.claim)
         return redirect("fleetops:srp_home")
     except SrpError as exc:
-        messages.error(request, exc.message)
+        messages.error(request, translate_stored(exc.message))
         return redirect("fleetops:srp_home")
     if claim.status == SrpClaim.Status.REJECTED:
-        messages.warning(request, f"{claim.reference} was rejected automatically. {claim.decision_reason}".strip())
+        text = _("%(reference)s was rejected automatically. %(reason)s") % {
+            "reference": claim.reference,
+            "reason": translate_stored(claim.decision_reason),
+        }
+        messages.warning(request, text.strip())
     else:
-        messages.success(request, f"{claim.reference} submitted. A reviewer will decide on it.")
+        messages.success(request, _(
+            "%(reference)s submitted. A reviewer will decide on it."
+        ) % {"reference": claim.reference})
     return claim_redirect(claim)
 
 
@@ -308,9 +328,14 @@ def item_groups(items):
     order = [name for name, _flags in ITEM_GROUPS] + [OTHER_ITEMS]
     return [
         {
-            "name": name,
+            "name": _(name),
             "rows": [
-                {"type_id": type_id, "name": names.get(type_id) or f"Type {type_id}", "destroyed": counts[0], "dropped": counts[1]}
+                {
+                    "type_id": type_id,
+                    "name": names.get(type_id) or _("Type %(id)s") % {"id": type_id},
+                    "destroyed": counts[0],
+                    "dropped": counts[1],
+                }
                 for type_id, counts in sorted(grouped[name].items(), key=lambda pair: (names.get(pair[0]) or "", pair[0]))
             ][:MAX_ITEM_ROWS],
         }
@@ -332,11 +357,17 @@ def decision_form(action, data=None, claim=None):
 
 
 def within_limit_reason(claim) -> str:
-    """The reason that goes with "Approve within limit" when the reviewer wrote none."""
+    """The reason that goes with "Approve within limit" when the reviewer wrote none.
+
+    It is a stored message (English): the claim page, the audit log and the notification show it in the
+    language of whoever reads it.
+    """
     kind = Calculation.from_json(claim.calculation).binding_limit
-    if kind in ("personal", "corporation"):
-        return f"Reduced to the remaining monthly {kind} limit."
-    return "Reduced to the remaining monthly limit."
+    if kind == "personal":
+        return texts.SRP_REDUCED_PERSONAL()
+    if kind == "corporation":
+        return texts.SRP_REDUCED_CORPORATION()
+    return texts.SRP_REDUCED_MONTHLY()
 
 
 def link_candidates(claim):
@@ -398,7 +429,7 @@ def claim_page_context(request, claim, *, bound=None, settings_obj=None):
                 {
                     "actions": actions,
                     "forms": forms,
-                    "limit_reason": within_limit_reason(claim),
+                    "limit_reason": translate_stored(within_limit_reason(claim)),
                     "reason_actions": [
                         {"action": action, "title": title, "button": button, "css": css, "help": text, "form": forms[action]}
                         for action, (title, button, css, text) in REASON_ACTIONS.items()
@@ -444,9 +475,13 @@ def srp_claim_withdraw(request, claim_uuid):
     try:
         claims.withdraw_claim(claim, actor=request.user, reason=reason)
     except SrpError as exc:
-        messages.error(request, exc.message)
+        messages.error(request, translate_stored(exc.message))
     else:
-        messages.success(request, f"{claim.reference} withdrawn. You can submit it again while it is within the deadline.")
+        messages.success(
+            request,
+            _("%(reference)s withdrawn. You can submit it again while it is within the deadline.")
+            % {"reference": claim.reference},
+        )
     return claim_redirect(claim)
 
 
@@ -460,7 +495,9 @@ def srp_claim_resubmit(request, claim_uuid):
     try:
         claims.resubmit_claim(claim, actor=request.user)
     except SrpError as exc:
-        messages.error(request, exc.message)
+        messages.error(request, translate_stored(exc.message))
     else:
-        messages.success(request, f"{claim.reference} submitted again with the current rules.")
+        messages.success(
+            request, _("%(reference)s submitted again with the current rules.") % {"reference": claim.reference}
+        )
     return claim_redirect(claim)

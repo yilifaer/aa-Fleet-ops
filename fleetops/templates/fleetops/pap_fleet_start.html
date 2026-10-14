@@ -1,19 +1,20 @@
 {% extends "fleetops/base.html" %}
+{% load i18n %}
 {% block fleetops_content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <div><h2 class="mb-0">Start a PAP-link Fleet</h2><div class="text-muted">A fleet without an ESI fleet; pilots get PAP through PAP links.</div></div>
-  <a class="btn btn-outline-secondary" href="{% url 'fleetops:start_fleet' %}">Start Fleet</a>
+  <div><h2 class="mb-0">{% translate "Start a PAP-link Fleet" %}</h2><div class="text-muted">{% translate "A fleet without an ESI fleet; pilots get PAP through PAP links." %}</div></div>
+  <a class="btn btn-outline-secondary" href="{% url 'fleetops:start_fleet' %}">{% translate "Start Fleet" %}</a>
 </div>
 <div class="alert alert-info" id="link-only-notes">
-  No Discord ping, MOTD or ESI tracking: pilots register through the PAP link the fleet page shows; any pilot with FleetOps access who has the link can use it.
-  End the fleet with End Fleet on its page when it is over.
-  {% if not perms.fleetops.manage_fleets %}<strong>The fleet and its PAP count once an FC lead has approved it.</strong>{% endif %}
+  {% translate "No Discord ping, MOTD or ESI tracking: pilots register through the PAP link the fleet page shows; any pilot with FleetOps access who has the link can use it." %}
+  {% translate "End the fleet with End Fleet on its page when it is over." %}
+  {% if not perms.fleetops.manage_fleets %}<strong>{% translate "The fleet and its PAP count once an FC lead has approved it." %}</strong>{% endif %}
 </div>
 <form method="post" id="link-only-fleet-form">{% csrf_token %}{{ form.request_id }}
   {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
   {{ form.request_id.errors }}
   <div class="row g-3">
-    <div class="col-lg-6"><div class="card h-100"><div class="card-header"><strong>Fleet</strong></div><div class="card-body">
+    <div class="col-lg-6"><div class="card h-100"><div class="card-header"><strong>{% translate "Fleet" %}</strong></div><div class="card-body">
       <div class="mb-3">{{ form.fc_character_id.label_tag }}{{ form.fc_character_id }}{{ form.fc_character_id.errors }}</div>
       <div class="mb-3">{{ form.fleet_type.label_tag }}{{ form.fleet_type }}{{ form.fleet_type.errors }}</div>
       <div class="mb-3">{{ form.doctrine_choice.label_tag }}{{ form.doctrine_choice }}{{ form.doctrine_choice.errors }}</div>
@@ -21,18 +22,19 @@
       <div class="mb-3">{{ form.formup.label_tag }}{{ form.formup }}{{ form.formup.errors }}</div>
       <div class="mb-3">{{ form.notes.label_tag }}{{ form.notes }}{{ form.notes.errors }}</div>
     </div></div></div>
-    <div class="col-lg-6"><div class="card h-100"><div class="card-header"><strong>PAP link</strong></div><div class="card-body">
-      <div class="mb-3">{{ form.link_minutes.label_tag }}{{ form.link_minutes }}{{ form.link_minutes.errors }}<div class="form-text">You can create more links, or revoke this one, on the fleet page.</div></div>
+    <div class="col-lg-6"><div class="card h-100"><div class="card-header"><strong>{% translate "PAP link" %}</strong></div><div class="card-body">
+      <div class="mb-3">{{ form.link_minutes.label_tag }}{{ form.link_minutes }}{{ form.link_minutes.errors }}<div class="form-text">{% translate "You can create more links, or revoke this one, on the fleet page." %}</div></div>
       <div class="form-check">{{ form.require_online }} <label class="form-check-label" for="{{ form.require_online.id_for_label }}">{{ form.require_online.label }}</label><div class="form-text" id="{{ form.require_online.auto_id }}_helptext">{{ form.require_online.help_text }}</div></div>
     </div></div></div>
   </div>
-  <div class="d-grid mt-3"><button class="btn btn-primary btn-lg" id="link-only-fleet-submit" type="submit">START PAP-LINK FLEET</button></div>
+  <div class="d-grid mt-3"><button class="btn btn-primary btn-lg" id="link-only-fleet-submit" type="submit">{% translate "START PAP-LINK FLEET" %}</button></div>
 </form>
+{% translate "Starting…" as starting_label %}
 <script>
 document.getElementById('link-only-fleet-form').addEventListener('submit',()=>{
   // The form carries a request id, so a second submit would only return the same fleet.
   const button=document.getElementById('link-only-fleet-submit');
-  button.disabled=true; button.textContent='Starting…';
+  button.disabled=true; button.textContent='{{ starting_label|escapejs }}';
 });
 </script>
 {% endblock %}

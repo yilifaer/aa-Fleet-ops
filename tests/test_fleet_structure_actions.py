@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Wing and squad changes from the Fleet tab, against the in-memory EVE fleet: create, rename, delete."""
 
 from datetime import timedelta

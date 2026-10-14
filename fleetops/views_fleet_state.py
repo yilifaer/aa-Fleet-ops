@@ -1,9 +1,13 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The Fleet tab of the fleet page: its context, the poller's state endpoint and the Refresh button."""
 
 from allianceauth.authentication.decorators import permissions_required
 from django.contrib.auth.decorators import permission_required
 from django.template.loader import render_to_string
 from django.utils import timezone
+from django.utils.translation import gettext_lazy
 from django.views.decorators.http import require_GET, require_POST
 
 from fleetops.models import AttendanceRecord, FleetOperation, FleetOpsSettings
@@ -24,8 +28,8 @@ from fleetops.views_fleet_common import (
 
 # The Fleet tab opens first while the fleet runs; otherwise the Members tab does.
 DEFAULT_TAB_STATUSES = (FleetOperation.Status.ACTIVE, FleetOperation.Status.ENDING)
-NOT_ACTIVE = "The fleet is not active any more."
-LAST_REFRESH_FAILED = "The last refresh failed a moment ago; try again in a few seconds."
+NOT_ACTIVE = gettext_lazy("The fleet is not active any more.")
+LAST_REFRESH_FAILED = gettext_lazy("The last refresh failed a moment ago; try again in a few seconds.")
 MEMBERS_TEMPLATE = "fleetops/operation/_members.html"
 CONTROLS_TEMPLATE = "fleetops/operation/_controls_card.html"
 PAP_PREVIEW_TEMPLATE = "fleetops/operation/_attendance_table.html"

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 from django.forms.models import model_to_dict
 
 from fleetops.models import AuditLog, DiscordWebhook, ShipFunction

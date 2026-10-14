@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Regression tests for fleet start robustness, ping error secrecy, retries and SRP links."""
 
 import uuid
@@ -635,7 +638,7 @@ class RetrySafetyTests(TestCase):
         result = retry_ping(operation)
 
         self.assertEqual(result.status, ActionStatus.SKIPPED)
-        self.assertIn("Attendance-only", result.error_message)
+        self.assertIn("PAP-only", result.error_message)
         self.post.assert_not_called()
 
     def test_manual_fleet_never_pings_but_can_still_link_srp(self):

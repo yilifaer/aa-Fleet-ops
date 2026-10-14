@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Applying a fleet structure template (wing and squad names) to a running fleet.
 
 Wings and squads are matched by position: template wing *i* is the *i*-th wing of the fleet in ESI
@@ -23,6 +26,7 @@ from fleetops.providers.esi import (
     rename_fleet_squad,
     rename_fleet_wing,
 )
+from fleetops import texts
 from fleetops.services import fleet_jobs, fleet_overlay, fleet_refresh
 from fleetops.services.fleet_access import FleetManageError, require_writable
 from fleetops.services.fleet_manage import FleetActionResult, job_failure, structure
@@ -31,13 +35,15 @@ from fleetops.services.fleet_rules import FleetRuleError, squad_members, wing_me
 # Waits between ESI reads of the job; patched in tests.
 sleep = time.sleep
 
-TEMPLATE_GONE = "That structure template no longer exists or is disabled."
+# Stored messages (English): they go into audit entries and job messages, and the pages show them through
+# ``translate_stored``.
+TEMPLATE_GONE = texts.TEMPLATE_GONE()
 # Reads of the wings after creating some, until the new wings show.
 READ_ATTEMPTS = 3
 
 
 def job_label(template) -> str:
-    return f"Apply template {template.name}"
+    return texts.TEMPLATE_JOB(name=template.name)
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +121,7 @@ def apply_template(operation, template, *, actor, delete_extra=False) -> FleetAc
     try:
         layout = template.wings
     except FleetRuleError as exc:
-        raise FleetManageError(f"The template “{template.name}” cannot be applied. {exc}", 400) from exc
+        raise FleetManageError(texts.TEMPLATE_INVALID(name=template.name, reason=str(exc)), 400) from exc
     wings, members, known = structure(operation)
     job = fleet_jobs.start_job(
         operation,
@@ -133,7 +139,7 @@ def apply_template(operation, template, *, actor, delete_extra=False) -> FleetAc
     )
     return FleetActionResult(
         True,
-        f"Applying template “{template.name}” in the background. Members are not moved.",
+        texts.TEMPLATE_APPLYING(name=template.name),
         level="info",
         data={"job_id": job["id"]},
     )
@@ -219,11 +225,16 @@ class _TemplateRun:
         self.changed = self.changed or key in ("created", "renamed", "deleted")
         fleet_jobs.step(self.job, ok=True, message=message)
 
-    def failed(self, where, exc, step) -> None:
-        """Report a failed call; raises JobStopped when it ends the job."""
+    def failed(self, where, exc, step, failure) -> None:
+        """Report a failed call; raises JobStopped when it ends the job.
+
+        ``where`` names the unit in the audit record; ``failure`` is the stored message for the job (the
+        message of the unit and its parameters).
+        """
         message, stop = job_failure(self.job, self.operation, exc, step)
         self.record["failures"].append({"unit": where, "error": message})
-        fleet_jobs.step(self.job, ok=False, message=f"{where}: {message}")
+        entry, params = failure
+        fleet_jobs.step(self.job, ok=False, message=entry(error=message, **params))
         if stop:
             raise fleet_jobs.JobStopped(stop) from exc
 
@@ -244,10 +255,12 @@ class _TemplateRun:
         try:
             rename_fleet_wing(*self._fc(), wing["id"], name)
         except Exception as exc:
-            self.failed(f"Wing “{wing['name']}”", exc, "Renaming a wing")
+            self.failed(
+                f"Wing “{wing['name']}”", exc, "Renaming a wing", (texts.WING_FAILED, {"name": wing["name"]})
+            )
             return
         self.done(
-            f"Renamed wing “{wing['name']}” to “{name}”.",
+            texts.TEMPLATE_WING_RENAMED(old=wing["name"], name=name),
             {"kind": "wing", "wing_id": wing["id"], "old": wing["name"], "name": name},
             "renamed",
             {"kind": "wing_renamed", "wing_id": wing["id"], "name": name},
@@ -259,7 +272,12 @@ class _TemplateRun:
         try:
             wing_id = create_fleet_wing(*self._fc())
         except Exception as exc:
-            self.failed(f"Wing {index + 1} “{name}”", exc, "Creating a wing")
+            self.failed(
+                f"Wing {index + 1} “{name}”",
+                exc,
+                "Creating a wing",
+                (texts.WING_NUMBER_FAILED, {"number": index + 1, "name": name}),
+            )
             return None
         expected = {"kind": "wing_created", "wing_id": wing_id}
         entry = {"kind": "wing", "wing_id": wing_id}
@@ -272,10 +290,18 @@ class _TemplateRun:
             rename_fleet_wing(*self._fc(), wing_id, name)
         except Exception as exc:
             self.created_unnamed(expected, entry)
-            self.failed(f"Wing {index + 1} was created, but not named “{name}”", exc, "Renaming a wing")
+            self.failed(
+                f"Wing {index + 1} was created, but not named “{name}”",
+                exc,
+                "Renaming a wing",
+                (texts.WING_UNNAMED_FAILED, {"number": index + 1, "name": name}),
+            )
             return wing_id
         self.done(
-            f"Created wing {index + 1} “{name}”.", {**entry, "name": name}, "created", {**expected, "name": name}
+            texts.TEMPLATE_WING_CREATED(number=index + 1, name=name),
+            {**entry, "name": name},
+            "created",
+            {**expected, "name": name},
         )
         return wing_id
 
@@ -286,10 +312,15 @@ class _TemplateRun:
         try:
             rename_fleet_squad(*self._fc(), squad["id"], name)
         except Exception as exc:
-            self.failed(f"{wing_name} / {squad['name']}", exc, "Renaming a squad")
+            self.failed(
+                f"{wing_name} / {squad['name']}",
+                exc,
+                "Renaming a squad",
+                (texts.SQUAD_UNIT_FAILED, {"wing": wing_name, "squad": squad["name"]}),
+            )
             return
         self.done(
-            f"Renamed squad “{squad['name']}” of {wing_name} to “{name}”.",
+            texts.TEMPLATE_SQUAD_RENAMED(old=squad["name"], wing=wing_name, name=name),
             {"kind": "squad", "squad_id": squad["id"], "wing": wing_name, "old": squad["name"], "name": name},
             "renamed",
             {"kind": "squad_renamed", "squad_id": squad["id"], "name": name},
@@ -300,7 +331,12 @@ class _TemplateRun:
         try:
             squad_id = create_fleet_squad(*self._fc(), wing_id)
         except Exception as exc:
-            self.failed(f"{wing_name} / {name}", exc, "Creating a squad")
+            self.failed(
+                f"{wing_name} / {name}",
+                exc,
+                "Creating a squad",
+                (texts.SQUAD_UNIT_FAILED, {"wing": wing_name, "squad": name}),
+            )
             return
         expected = {"kind": "squad_created", "wing_id": wing_id, "squad_id": squad_id}
         entry = {"kind": "squad", "wing_id": wing_id, "squad_id": squad_id, "wing": wing_name}
@@ -313,9 +349,14 @@ class _TemplateRun:
             rename_fleet_squad(*self._fc(), squad_id, name)
         except Exception as exc:
             self.created_unnamed(expected, entry)
-            self.failed(f"{wing_name}: a squad was created, but not named “{name}”", exc, "Renaming a squad")
+            self.failed(
+                f"{wing_name}: a squad was created, but not named “{name}”",
+                exc,
+                "Renaming a squad",
+                (texts.SQUAD_UNNAMED_FAILED, {"wing": wing_name, "name": name}),
+            )
             return
-        message = f"Created squad “{name}” in {wing_name}."
+        message = texts.TEMPLATE_SQUAD_CREATED(name=name, wing=wing_name)
         self.done(message, {**entry, "name": name}, "created", {**expected, "name": name})
 
     # Extras
@@ -323,19 +364,23 @@ class _TemplateRun:
     def remove(self, action, kind, unit, wing_name) -> None:
         name = unit["name"] or f"{kind.title()} {unit['id']}"
         where = f"squad “{name}” of {wing_name}" if kind == "squad" else f"wing “{name}”"
+        params = {"name": name, "wing": wing_name} if kind == "squad" else {"name": name}
         entry = {"kind": kind, f"{kind}_id": unit["id"], "name": unit["name"]}
         if action == "keep":
-            self.done(f"Kept the {where}: it has members.", entry, "kept")
+            kept = texts.TEMPLATE_KEPT_SQUAD if kind == "squad" else texts.TEMPLATE_KEPT_WING
+            self.done(kept(**params), entry, "kept")
             return
         self.check()
         delete = delete_fleet_squad if kind == "squad" else delete_fleet_wing
         try:
             delete(*self._fc(), unit["id"])
         except Exception as exc:
-            self.failed(where[0].upper() + where[1:], exc, f"Deleting a {kind}")
+            failure = texts.SQUAD_FAILED if kind == "squad" else texts.WING_FAILED
+            self.failed(where[0].upper() + where[1:], exc, f"Deleting a {kind}", (failure, params))
             return
         expected = {"kind": f"{kind}_deleted", f"{kind}_id": unit["id"]}
-        self.done(f"Deleted the empty {where}.", entry, "deleted", expected)
+        deleted = texts.TEMPLATE_DELETED_SQUAD if kind == "squad" else texts.TEMPLATE_DELETED_WING
+        self.done(deleted(**params), entry, "deleted", expected)
 
     # The whole run
 
@@ -373,9 +418,9 @@ class _TemplateRun:
                 continue
             wing = by_id.get(wing_id)
             if wing is None and wing_id not in created:
-                error = "The wing is no longer in the fleet."
+                error = texts.TEMPLATE_WING_GONE()
                 self.record["failures"].append({"unit": target["name"], "error": error})
-                fleet_jobs.step(self.job, ok=False, message=f"Wing “{target['name']}”: {error}")
+                fleet_jobs.step(self.job, ok=False, message=texts.WING_FAILED(name=target["name"], error=error))
                 continue
             # A new wing ESI does not show yet gets all its squads created.
             squads = wing["squads"] if wing is not None else []
@@ -409,7 +454,7 @@ class _TemplateRun:
 
         if not self.job["done"] and not self.job["failed"]:
             self.set_remaining(1)
-            message = f"Nothing to change: the fleet already matches “{self.record['template']}”."
+            message = texts.TEMPLATE_NOTHING(name=self.record["template"])
             fleet_jobs.step(self.job, ok=True, message=message)
         if self.changed:
             # Read the fleet once ESI's cache shows the changes, so the fleet page shows them too.

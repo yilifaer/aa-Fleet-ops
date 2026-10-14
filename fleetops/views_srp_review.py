@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """FleetOps SRP: the review queue, the decisions on claims and the payments list. SRP managers only."""
 
 import re
@@ -11,6 +14,8 @@ from django.db.models import Count, Q, Sum
 from django.http import Http404
 from django.shortcuts import redirect
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.translation import gettext as _
+from django.utils.translation import ngettext
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from fleetops.forms_srp import ClaimSelectionForm, PaidForm, PaymentFilterForm, ReviewFilterForm
@@ -20,6 +25,7 @@ from fleetops.srp import access, display, review
 from fleetops.srp import policy as rules
 from fleetops.srp.access import MANAGE_SRP
 from fleetops.srp.types import SrpError, SrpPayRow, SrpStateError
+from fleetops.texts import translate_stored
 from fleetops.views import _period_render_context, _year_month
 from fleetops.views_srp import (
     DECISION_FORMS,
@@ -85,12 +91,12 @@ def form_errors(form):
 
 def report_skipped(request, skipped):
     """Tell what a bulk action left out: the first few reasons, then a count."""
-    lines = [f"{claim.reference}: {text}" for claim, text in skipped]
+    lines = [f"{claim.reference}: {translate_stored(text)}" for claim, text in skipped]
     if lines:
         shown = lines[:SKIPPED_SHOWN]
         if len(lines) > SKIPPED_SHOWN:
-            shown.append(f"and {len(lines) - SKIPPED_SHOWN} more.")
-        messages.warning(request, "Skipped: " + " ".join(shown))
+            shown.append(_("and %(count)s more.") % {"count": len(lines) - SKIPPED_SHOWN})
+        messages.warning(request, _("Skipped: %(details)s") % {"details": " ".join(shown)})
 
 
 def expected_amounts(form, claims):
@@ -106,7 +112,7 @@ def split_by_review_right(user, claims, settings_obj):
         if access.can_review(user, claim, settings_obj=settings_obj):
             reviewable.append(claim)
         else:
-            skipped.append((claim, "your own claim; another SRP manager has to decide."))
+            skipped.append((claim, _("your own claim; another SRP manager has to decide.")))
     return reviewable, skipped
 
 
@@ -124,7 +130,7 @@ def filter_choices():
     for pk, name in (
         SrpClaim.objects.exclude(fc_user=None).values_list("fc_user_id", "fc_main_character_name").order_by("fc_main_character_name")
     ):
-        fcs.setdefault(pk, name or f"User {pk}")
+        fcs.setdefault(pk, name or _("User %(id)s") % {"id": pk})
     return list(corporations.items()), list(fcs.items())
 
 
@@ -218,10 +224,15 @@ def bulk_approve(request):
         skipped.extend(result.skipped)
         if result.done:
             count = len(result.done)
-            messages.success(request, f"{count} claim{'s' if count != 1 else ''} approved at the suggested amount.")
+            text = ngettext(
+                "%(count)s claim approved at the suggested amount.",
+                "%(count)s claims approved at the suggested amount.",
+                count,
+            )
+            messages.success(request, text % {"count": count})
     report_skipped(request, skipped)
     if not reviewable and not skipped:
-        messages.error(request, "None of the selected claims exist any more.")
+        messages.error(request, _("None of the selected claims exist any more."))
     return back(request, redirect("fleetops:srp_review"))
 
 
@@ -230,7 +241,12 @@ def bulk_approve(request):
 def recalculate_pending(request):
     """Recalculate every pending claim with the current policy."""
     count = review.recalculate_pending(actor=request.user)
-    messages.success(request, f"{count} pending claim{'s' if count != 1 else ''} recalculated with the current policy.")
+    text = ngettext(
+        "%(count)s pending claim recalculated with the current policy.",
+        "%(count)s pending claims recalculated with the current policy.",
+        count,
+    )
+    messages.success(request, text % {"count": count})
     return back(request, redirect("fleetops:srp_review"))
 
 
@@ -244,8 +260,12 @@ def _isk(amount) -> str:
 def do_approve(request, claim, form):
     amount = form.amount_for(claim)
     reason = form.cleaned_data["reason"]
-    if not reason and form.cleaned_data["mode"] == form.WITHIN_LIMIT:
-        reason = within_limit_reason(claim)
+    if form.cleaned_data["mode"] == form.WITHIN_LIMIT:
+        # The page offers the sentence in the language of the reviewer; left as it is, it is stored as the
+        # message it is, in English.
+        offered = within_limit_reason(claim)
+        if reason in ("", offered, translate_stored(offered)):
+            reason = offered
     changed = claim.status == SrpClaim.Status.APPROVED
     review.approve_claim(
         claim,
@@ -256,17 +276,20 @@ def do_approve(request, claim, form):
         confirm_over_limit=form.cleaned_data["confirm_over_limit"],
         **form.expected(),
     )
-    return f"{claim.reference}: amount changed to {_isk(amount)}." if changed else f"{claim.reference} approved for {_isk(amount)}."
+    text = _("%(reference)s: amount changed to %(amount)s.") if changed else _("%(reference)s approved for %(amount)s.")
+    return text % {"reference": claim.reference, "amount": _isk(amount)}
 
 
 def do_reject(request, claim, form):
     review.reject_claim(claim, actor=request.user, reason=form.cleaned_data["reason"])
-    return f"{claim.reference} rejected."
+    return _("%(reference)s rejected.") % {"reference": claim.reference}
 
 
 def do_revoke(request, claim, form):
     review.revoke_approval(claim, actor=request.user, reason=form.cleaned_data["reason"])
-    return f"Approval of {claim.reference} revoked. It is pending again and no longer counts toward the limits."
+    return _("Approval of %(reference)s revoked. It is pending again and no longer counts toward the limits.") % {
+        "reference": claim.reference
+    }
 
 
 def do_paid(request, claim, form):
@@ -279,17 +302,17 @@ def do_paid(request, claim, form):
     )
     if result.skipped:
         raise SrpStateError("not_payable", result.skipped[0][1])
-    return f"{claim.reference} marked paid."
+    return _("%(reference)s marked paid.") % {"reference": claim.reference}
 
 
 def do_unpaid(request, claim, form):
     review.undo_payment(claim, actor=request.user, reason=form.cleaned_data["reason"])
-    return f"Payment of {claim.reference} undone. It is approved again."
+    return _("Payment of %(reference)s undone. It is approved again.") % {"reference": claim.reference}
 
 
 def do_reopen(request, claim, form):
     review.reopen_claim(claim, actor=request.user, reason=form.cleaned_data["reason"])
-    return f"{claim.reference} reopened and recalculated."
+    return _("%(reference)s reopened and recalculated.") % {"reference": claim.reference}
 
 
 def do_reclassify(request, claim, form):
@@ -298,26 +321,30 @@ def do_reclassify(request, claim, form):
     if scope == SrpClaim.Scope.IN_FLEET:
         link = SrpFleetLink.objects.select_related("operation").filter(code=form.cleaned_data["link"]).first()
         if link is None:
-            form.add_error("link", "There is no fleet with this SRP link.")
-            raise SrpError("unknown_link", "There is no fleet with this SRP link.")
+            problem = _("There is no fleet with this SRP link.")
+            form.add_error("link", problem)
+            raise SrpError("unknown_link", problem)
     review.reclassify_claim(claim, actor=request.user, scope=scope, link=link, reason=form.cleaned_data["reason"])
-    where = "in fleet" if scope == SrpClaim.Scope.IN_FLEET else "out of fleet"
-    return f"{claim.reference} moved to {where} and recalculated."
+    if scope == SrpClaim.Scope.IN_FLEET:
+        text = _("%(reference)s moved to in fleet and recalculated.")
+    else:
+        text = _("%(reference)s moved to out of fleet and recalculated.")
+    return text % {"reference": claim.reference}
 
 
 def do_recalculate(request, claim, form):
     review.recalculate_claim(claim, actor=request.user)
-    return f"{claim.reference} recalculated with the current policy."
+    return _("%(reference)s recalculated with the current policy.") % {"reference": claim.reference}
 
 
 def do_recheck(request, claim, form):
     review.recheck_presence(claim, actor=request.user)
-    return f"Fleet presence of {claim.reference} checked again."
+    return _("Fleet presence of %(reference)s checked again.") % {"reference": claim.reference}
 
 
 def do_note(request, claim, form):
     review.add_note(claim, actor=request.user, text=form.cleaned_data["text"])
-    return "Note added. Only SRP managers can see it."
+    return _("Note added. Only SRP managers can see it.")
 
 
 HANDLERS = {
@@ -362,10 +389,10 @@ def claim_action(request, claim_uuid, action):
     try:
         message = HANDLERS[action](request, claim, form)
     except SrpStateError as exc:
-        messages.error(request, exc.message)
+        messages.error(request, translate_stored(exc.message))
         return back(request, claim_redirect(claim))
     except SrpError as exc:
-        messages.error(request, exc.message)
+        messages.error(request, translate_stored(exc.message))
         if form is None:
             return back(request, claim_redirect(claim))
         return claim_response(request, claim, bound={action: form}, settings_obj=settings_obj)
@@ -423,10 +450,13 @@ def mark_selected_paid(request, settings_obj):
         if result.done:
             count = len(result.done)
             total = sum(claim.approved_amount or 0 for claim in result.done)
-            messages.success(request, f"{count} claim{'s' if count != 1 else ''} marked paid ({_isk(total)}).")
+            text = ngettext(
+                "%(count)s claim marked paid (%(total)s).", "%(count)s claims marked paid (%(total)s).", count
+            )
+            messages.success(request, text % {"count": count, "total": _isk(total)})
     report_skipped(request, skipped)
     if not reviewable and not skipped:
-        messages.error(request, "None of the selected claims exist any more.")
+        messages.error(request, _("None of the selected claims exist any more."))
     return back(request, redirect("fleetops:srp_payments"))
 
 

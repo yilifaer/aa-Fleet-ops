@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 from datetime import timedelta
 
 from allianceauth.services.hooks import get_extension_logger
@@ -7,6 +10,7 @@ from django.core.cache import cache
 from django.db.models import Q
 from django.utils import timezone
 
+from fleetops import texts
 from fleetops.models import FleetOperation, FleetOpsSettings
 from fleetops.providers.esi import FleetESIError
 from fleetops.services import fleet_jobs
@@ -195,7 +199,7 @@ def _unreadable_fleet(operation, settings, *, had_error=False):
     observation = observe_unreadable_fleet(operation)
     if observation is None:
         # Whether the fleet is gone could not be checked, so this poll proves nothing.
-        message = "The fleet could not be read and the fleet boss check failed; this check was not counted."
+        message = texts.CHECK_NOT_COUNTED()
         if not _save_if_active(operation, last_error=message):
             return "inactive"
         _audit_tracking_error(operation, had_error, "FLEET_CHECK_FAILED", message)
@@ -238,7 +242,7 @@ def _unreadable_fleet(operation, settings, *, had_error=False):
 
 @shared_task
 def finish_fleet_end(operation_id):
-    """Final sync, attendance multiplier and close for a fleet whose end was requested."""
+    """Final sync, PAP multiplier and close for a fleet whose end was requested."""
     lock_key = f"fleetops:end:{operation_id}"
     if not cache.add(lock_key, "1", timeout=END_LOCK_TIMEOUT):
         return "already-running"
@@ -354,7 +358,7 @@ def refresh_srp_values():
 
 @shared_task
 def prune_attendance_history():
-    """Apply configured retention and remove attendance for departed alliance members.
+    """Apply configured retention and remove PAP for departed alliance members.
 
     Also deletes the killmails that SRP read but nobody claimed.
     """

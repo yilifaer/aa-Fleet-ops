@@ -1,8 +1,12 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Regenerate the MOTD of a running fleet from the current templates and push it to EVE."""
 
 from allianceauth.services.hooks import get_extension_logger
 from django.db import transaction
 
+from fleetops import texts
 from fleetops.models import FleetOperation
 from fleetops.providers.doctrines import FITTINGS_DOCTRINE_SOURCE, doctrine_fits_snapshot
 from fleetops.services.audit import audit
@@ -18,7 +22,8 @@ from fleetops.services.messages import render_messages
 
 logger = get_extension_logger(__name__)
 
-NOT_ACTIVE = "The MOTD can only be regenerated while the fleet is active."
+# Stored message (English); the page shows it through ``translate_stored``.
+NOT_ACTIVE = texts.MOTD_NOT_ACTIVE()
 
 
 def _refresh_doctrine_fits(operation) -> bool:
@@ -38,7 +43,7 @@ def _refresh_doctrine_fits(operation) -> bool:
 def regenerate_and_push_motd(operation, *, actor):
     """Render the MOTD again (current templates, comms, channels and doctrine) and push it to the fleet.
 
-    Attendance-only and manual fleets never send messages; their step stays skipped. Raises
+    PAP-only and manual fleets never send messages; their step stays skipped. Raises
     ValueError when the fleet is not active. Returns the ``motd_update`` step.
     """
     if operation.is_manual or not operation.send_ping:

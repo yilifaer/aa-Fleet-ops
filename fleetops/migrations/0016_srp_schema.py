@@ -1,4 +1,4 @@
-# AA FleetOps 0.1.0a6: FleetOps SRP: settings, payout rules, corporation limits, fleet SRP links, fetched
+# AA FleetOps 0.2.0b1: FleetOps SRP: settings, payout rules, corporation limits, fleet SRP links, fetched
 # killmails, claims and the claim history, the request_srp and manage_srp permissions and the new help text of
 # the SRP provider setting. Schema only; 0017 fills the settings row, grants request_srp and adds the SRP line
 # to the untouched default MOTD.

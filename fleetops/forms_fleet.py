@@ -1,34 +1,40 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Configuration forms of the Fleet tab: ship functions, their rules and fleet structure templates."""
 
 from django import forms
+from django.utils.translation import gettext_lazy as _
+from django.utils.translation import pgettext_lazy
 
 from fleetops.forms import _style
 from fleetops.models import MAX_DATABASE_ID, FleetStructureTemplate, ShipFunction, ShipFunctionRule
 from fleetops.services import composition_config, sde
-from fleetops.services.fleet_rules import COMMANDER_ROLES, ROLE_LABELS, format_fleet_roles
+from fleetops.services.fleet_rules import COMMANDER_ROLES, format_fleet_roles
+from fleetops.texts import FLEET_ROLE_LABELS
 
-NEEDS_SDE = "Enter the numeric ID; name lookup needs django-eveonline-sde."
-SDE_UNREADABLE = "The SDE could not be read. Enter the numeric ID."
+NEEDS_SDE = _("Enter the numeric ID; name lookup needs django-eveonline-sde.")
+SDE_UNREADABLE = _("The SDE could not be read. Enter the numeric ID.")
 
 
 class ShipFunctionForm(forms.ModelForm):
     fleet_roles = forms.MultipleChoiceField(
-        label="Fleet positions",
-        choices=[(role, ROLE_LABELS[role]) for role in COMMANDER_ROLES],
+        label=_("Fleet positions"),
+        choices=[(role, FLEET_ROLE_LABELS[role]) for role in COMMANDER_ROLES],
         required=False,
         widget=forms.CheckboxSelectMultiple,
-        help_text="Members in these positions count under this function whatever they fly.",
+        help_text=_("Members in these positions count under this function whatever they fly."),
     )
 
     class Meta:
         model = ShipFunction
         fields = ["name", "color", "fleet_roles", "is_default", "sort_order", "is_active"]
         widgets = {"color": forms.TextInput(attrs={"type": "color"})}
-        labels = {"color": "Colour", "is_default": "Default function"}
+        labels = {"color": _("Colour"), "is_default": _("Default function")}
         help_texts = {
-            "color": "Shown as a small swatch next to the function in the fleet composition.",
-            "sort_order": "Lower numbers come first; when two rules match a ship, the lower one wins.",
-            "is_active": "Inactive functions and their rules are ignored.",
+            "color": _("Shown as a small swatch next to the function in the fleet composition."),
+            "sort_order": _("Lower numbers come first; when two rules match a ship, the lower one wins."),
+            "is_active": _("Inactive functions and their rules are ignored."),
         }
 
     def __init__(self, *args, **kwargs):
@@ -45,23 +51,23 @@ class ShipFunctionForm(forms.ModelForm):
         function = super().save(commit=commit)
         # Shown after saving: the previous default lost its flag.
         demoted = getattr(function, "demoted_defaults", ())
-        self.warnings = [f"“{other.name}” is no longer the default function." for other in demoted]
+        self.warnings = [_("“%(name)s” is no longer the default function.") % {"name": other.name} for other in demoted]
         return function
 
 
 class ShipFunctionRuleForm(forms.ModelForm):
     target = forms.CharField(
-        label="Ship type or group",
+        label=_("Ship type or group"),
         max_length=255,
-        help_text="The SDE ID, or the exact English name (ship types by name need django-eveonline-sde).",
+        help_text=_("The SDE ID, or the exact English name (ship types by name need django-eveonline-sde)."),
     )
 
     class Meta:
         model = ShipFunctionRule
         fields = ["function", "kind", "target", "label"]
-        labels = {"function": "Ship function", "label": "Name"}
+        labels = {"function": _("Ship function"), "label": pgettext_lazy("FleetOps", "Name")}
         help_texts = {
-            "label": "Filled from the SDE when it knows the ID; shown in the lists without the SDE.",
+            "label": _("Filled from the SDE when it knows the ID; shown in the lists without the SDE."),
         }
 
     def __init__(self, *args, **kwargs):
@@ -75,7 +81,7 @@ class ShipFunctionRuleForm(forms.ModelForm):
         if text.isascii() and text.isdigit():
             target_id = int(text)
             if not 0 < target_id <= MAX_DATABASE_ID:
-                self.add_error("target", "Enter a valid ID.")
+                self.add_error("target", _("Enter a valid ID."))
                 return None
             return target_id, composition_config.target_label(kind, target_id)
         try:
@@ -84,8 +90,12 @@ class ShipFunctionRuleForm(forms.ModelForm):
             self.add_error("target", SDE_UNREADABLE if sde.sde_installed() else NEEDS_SDE)
             return None
         if found is None:
-            noun = composition_config.KIND_LABELS[kind].lower()
-            self.add_error("target", f"No {noun} is called “{text}”. Enter the exact English name or the ID.")
+            noun = str(composition_config.KIND_LABELS[kind]).lower()
+            self.add_error(
+                "target",
+                _("No %(noun)s is called “%(text)s”. Enter the exact English name or the ID.")
+                % {"noun": noun, "text": text},
+            )
         return found
 
     def clean(self):
@@ -107,7 +117,9 @@ class ShipFunctionRuleForm(forms.ModelForm):
         )
         if duplicate is not None:
             self.add_error(
-                "target", f"{composition_config.rule_text(duplicate)} is already mapped to {duplicate.function.name}."
+                "target",
+                _("%(rule)s is already mapped to %(function)s.")
+                % {"rule": composition_config.rule_text(duplicate), "function": duplicate.function.name},
             )
             return cleaned
         cleaned["label"] = label

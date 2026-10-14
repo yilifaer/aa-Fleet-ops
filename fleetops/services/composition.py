@@ -1,7 +1,11 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Fleet composition: members by ship function, ship type, ship group and system, and bridgeable mass."""
 
 from collections import Counter
 from dataclasses import dataclass, field
+from django.utils.translation import gettext, gettext_lazy
 
 from fleetops.fleet_defaults import KNOWN_SHIP_GROUPS
 from fleetops.models import FleetOpsSettings, ShipFunction, ShipFunctionRule
@@ -11,7 +15,7 @@ from fleetops.services.fleet_rules import ShipFunctionMap
 # Which ship function a member counts under (see fleet_rules.ShipFunctionMap).
 Classifier = ShipFunctionMap
 
-UNCLASSIFIED = "Unclassified"
+UNCLASSIFIED = gettext_lazy("Unclassified")
 TYPE_ICON_URL = "https://images.evetech.net/types/{}/icon?size=32"
 
 
@@ -115,14 +119,14 @@ def _by_count(rows):
 
 def _type_label(type_id, names, info):
     if type_id is None:
-        return "Unknown ship"
-    return names.get(type_id) or (info.name if info else "") or f"Type {type_id}"
+        return gettext("Unknown ship")
+    return names.get(type_id) or (info.name if info else "") or gettext("Type %(id)s") % {"id": type_id}
 
 
 def _system_label(system_id, names):
     if system_id is None:
-        return "Unknown system"
-    return names.get(system_id) or f"System {system_id}"
+        return gettext("Unknown system")
+    return names.get(system_id) or gettext("System %(id)s") % {"id": system_id}
 
 
 def _docked(member):
@@ -179,7 +183,10 @@ def build_composition(members, *, fc_system_id=None, settings=None, classifier=N
         group_counts[info.group_id] += 1
         if info.group_id is not None:
             group_names.setdefault(
-                info.group_id, info.group_name or KNOWN_SHIP_GROUPS.get(info.group_id) or f"Group {info.group_id}"
+                info.group_id,
+                info.group_name
+                or KNOWN_SHIP_GROUPS.get(info.group_id)
+                or gettext("Group %(id)s") % {"id": info.group_id},
             )
         if info.group_id in excluded_groups:
             excluded_counts[info.group_id] += 1
@@ -204,7 +211,7 @@ def build_composition(members, *, fc_system_id=None, settings=None, classifier=N
     ]
     if function_counts[None]:
         count = function_counts[None]
-        by_function.append(Row(key=None, label=UNCLASSIFIED, count=count, percent=_percent(count, total)))
+        by_function.append(Row(key=None, label=str(UNCLASSIFIED), count=count, percent=_percent(count, total)))
 
     def type_row(type_id, count):
         info = infos.get(type_id)
@@ -233,7 +240,7 @@ def build_composition(members, *, fc_system_id=None, settings=None, classifier=N
         by_group = _by_count(
             Row(
                 key=group_id,
-                label=group_names.get(group_id) or "Not in the SDE",
+                label=group_names.get(group_id) or gettext("Not in the SDE"),
                 count=count,
                 percent=_percent(count, total),
             )
@@ -252,7 +259,7 @@ def build_composition(members, *, fc_system_id=None, settings=None, classifier=N
     )
 
     bridge.excluded = _by_count(
-        Row(key=group_id, label=group_names.get(group_id) or f"Group {group_id}", count=count)
+        Row(key=group_id, label=group_names.get(group_id) or gettext("Group %(id)s") % {"id": group_id}, count=count)
         for group_id, count in excluded_counts.items()
     )
     return Composition(

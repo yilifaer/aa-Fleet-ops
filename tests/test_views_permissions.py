@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Permission matrix, object isolation and page rendering tests for FleetOps views."""
 
 import uuid
@@ -535,6 +538,8 @@ class PermissionMatrixTests(SrpViewTestCase):
             Case("configuration_index", "get", r("fleetops:configuration_index"), None, member_only),
             Case("configuration_settings", "get", r("fleetops:configuration_settings"), None, member_only),
             Case("sync_discord_roles", "post", r("fleetops:sync_discord_roles"), None, lead_post),
+            # The translations of the page scripts need a login only (see test_js_catalog).
+            Case("jsi18n", "get", r("fleetops:jsi18n"), None, dict.fromkeys(ROLES, OK)),
             # Public page; anonymous access depends on APPS_WITH_PUBLIC_VIEWS (see test_public_urls).
             Case("comms_join", "get", r("fleetops:comms_join", args=[self.comms.join_token]), None,
                  dict.fromkeys(ROLES, OK)),
@@ -964,8 +969,8 @@ class PermissionMatrixTests(SrpViewTestCase):
         for case in self.cases():
             with self.subTest(case=case.label):
                 response = self.perform(client, case, self.no_perms)
-                # The comms join page is the one public FleetOps page.
-                self.assertEqual(response.status_code, OK if case.label == "comms_join" else DENIED)
+                # The comms join page is the one public FleetOps page; the script catalog only needs a login.
+                self.assertEqual(response.status_code, OK if case.label in {"comms_join", "jsi18n"} else DENIED)
 
     def test_member_matrix(self):
         self.run_matrix("member")
@@ -1595,7 +1600,7 @@ class PageRenderingTests(FleetOpsViewTestCase):
         )
         response = self.client_for(self.fc).get(self.detail_url(operation))
         content = response.content.decode()
-        self.assertIn("Attendance Only", content)
+        self.assertIn("PAP Only", content)
         self.assertIn("Ping preview text", content)
         self.assertIn("MOTD preview text", content)
         self.assertNotIn(reverse("fleetops:retry_ping", args=[operation.uuid]), content)
@@ -2081,7 +2086,7 @@ class ViewRuleViolationTests(FleetOpsViewTestCase):
             operation=operation,
             action="discord_ping",
             status=OperationAction.Status.SKIPPED,
-            error_message="Attendance-only mode: Discord ping intentionally skipped.",
+            error_message="PAP-only mode: Discord ping intentionally skipped.",
         )
         self.client_for(self.fc).post(reverse("fleetops:retry_ping", args=[operation.uuid]))
         self.discord_post.assert_not_called()

@@ -1,4 +1,4 @@
-# AA FleetOps 0.1.0a6: comms join tokens are unique now that every preset has one
+# AA FleetOps 0.2.0b1: comms join tokens are unique now that every preset has one
 
 import uuid
 

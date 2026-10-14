@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The SRP link of a fleet: creation, opening and closing, the links a member can use and the fleet page card."""
 
 import secrets
@@ -118,7 +121,7 @@ def set_link_open(link: SrpFleetLink, *, actor, is_open: bool) -> SrpFleetLink:
 
 def recent_links_for_user(user, *, days: int = 30, limit: int = 20) -> list[SrpFleetLink]:
     """Open links of fleets started in the last ``days`` days in which the user was a member, was granted
-    attendance or registered for PAP, or that the user led; the newest fleets first."""
+    PAP or registered for PAP, or that the user led; the newest fleets first."""
     since = timezone.now() - timedelta(days=days)
     mine = (
         Q(operation__fc_user=user)
@@ -173,7 +176,7 @@ def operation_srp_context(operation: FleetOperation, user) -> dict:
     manager = access.is_manager(user)
     # The fleet may carry a link of another SRP app; FleetOps then offers no second one.
     has_other_link = link is None and bool(operation.srp_reference or operation.srp_url)
-    # Attendance-only fleets never get an SRP link (the retry refuses them too).
+    # PAP-only fleets never get an SRP link (the retry refuses them too).
     creatable = operation.send_ping or operation.is_manual
     can_create = bool(
         manages

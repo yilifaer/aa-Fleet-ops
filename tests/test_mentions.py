@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Tests for ping mentions: selections, channel rules and the exact Discord payload."""
 
 from types import SimpleNamespace

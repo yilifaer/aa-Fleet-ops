@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Tests for manual PAP corrections, the PAP multiplier of closed fleets, identity resolution and history retention."""
 
 from datetime import timedelta
@@ -414,7 +417,7 @@ class ManualAttendanceViewTests(TestCase):
         )
         flashed = [str(message) for message in get_messages(response.wsgi_request)]
         self.assertEqual(
-            flashed, ["Invalid manual attendance entry. Ensure this value is less than or equal to 100."]
+            flashed, ["Invalid manual PAP entry. Ensure this value is less than or equal to 100."]
         )
         self.assertFalse(AttendanceRecord.objects.exists())
 
@@ -1071,5 +1074,5 @@ class PruneHistoryTests(TestCase):
 
         call_command("fleetops_prune_history", "--dry-run", stdout=out)
 
-        self.assertIn("Would remove: 1 old attendance", out.getvalue())
+        self.assertIn("Would remove: 1 old PAP records", out.getvalue())
         self.assertTrue(self._exists(old))

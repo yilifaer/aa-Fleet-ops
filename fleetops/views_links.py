@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """PAP links: creating and revoking them, the registration page and PAP-link fleets."""
 
 from allianceauth.authentication.decorators import permissions_required
@@ -8,6 +11,7 @@ from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 from esi.decorators import token_required
 from esi.models import CallbackRedirect, Token
@@ -32,6 +36,7 @@ from fleetops.services.pap_links import (
     start_link_only_fleet,
 )
 from fleetops.services.periods import format_eve
+from fleetops.texts import translate_stored
 from fleetops.views import _can_manage_operation, _database_id, _operation_for_user, _render
 
 
@@ -122,9 +127,12 @@ def _register_context(request, link):
 
 def _report(request, result):
     for _character_id, name in result.registered:
-        messages.success(request, f"{name} is registered for PAP in this fleet.")
+        messages.success(request, _("%(name)s is registered for PAP in this fleet.") % {"name": name})
     for _character_id, name, reason in result.rejected:
-        messages.warning(request, f"{name} was not registered: {reason}")
+        messages.warning(
+            request,
+            _("%(name)s was not registered: %(reason)s") % {"name": name, "reason": translate_stored(reason)},
+        )
 
 
 @permission_required("fleetops.basic_access", raise_exception=True)
@@ -136,7 +144,7 @@ def pap_link_register(request, code):
         if ids:
             _report(request, register_characters(link, request.user, ids))
         else:
-            messages.warning(request, "Select the characters to register.")
+            messages.warning(request, _("Select the characters to register."))
         return redirect("fleetops:pap_link_register", code=link.code)
     return _render(request, "fleetops/pap_link_register.html", _register_context(request, link))
 
@@ -157,7 +165,7 @@ def pap_link_authorize(request, code):
     link = _link(code)
     if not link_is_valid(link) and not _back_from_login(request):
         # Nothing to log in for.
-        messages.error(request, LINK_CLOSED)
+        messages.error(request, translate_stored(LINK_CLOSED))
         return redirect("fleetops:pap_link_register", code=link.code)
     # Back from an EVE login during which the link closed, the token is still taken from the login
     # (and the registration refused), so it is not handed to the user's next ESI login on another page.
@@ -186,7 +194,7 @@ def create_pap_link_view(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid, manage=True)
     form = PapLinkForm(request.POST)
     if not form.is_valid():
-        messages.error(request, f"PAP link not created. {_form_errors(form)}")
+        messages.error(request, _("PAP link not created. %(errors)s") % {"errors": _form_errors(form)})
         return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     try:
         link = create_link(
@@ -196,10 +204,13 @@ def create_pap_link_view(request, operation_uuid):
             require_online=form.cleaned_data["require_online"],
         )
     except PapLinkError as exc:
-        messages.error(request, str(exc))
+        messages.error(request, translate_stored(str(exc)))
     else:
-        online = "characters must be online" if link.require_online else "no online check"
-        messages.success(request, f"PAP link created; open until {format_eve(link.expires_at)} EVE, {online}.")
+        if link.require_online:
+            text = _("PAP link created; open until %(time)s EVE, characters must be online.")
+        else:
+            text = _("PAP link created; open until %(time)s EVE, no online check.")
+        messages.success(request, text % {"time": format_eve(link.expires_at)})
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
@@ -210,10 +221,10 @@ def revoke_pap_link_view(request, pk):
     if not _can_manage_operation(request.user, link.operation):
         raise Http404
     if link.revoked_at is not None:
-        messages.info(request, "This PAP link was already revoked.")
+        messages.info(request, _("This PAP link was already revoked."))
     else:
         revoke_link(link, actor=request.user)
-        messages.success(request, "PAP link revoked; it no longer accepts registrations.")
+        messages.success(request, _("PAP link revoked; it no longer accepts registrations."))
     return redirect("fleetops:operation_detail", operation_uuid=link.operation.uuid)
 
 
@@ -224,10 +235,10 @@ def start_link_only_fleet_view(request):
         try:
             operation = start_link_only_fleet(request.user, form.cleaned_data)
         except PermissionError as exc:
-            form.add_error("fc_character_id", str(exc))
+            form.add_error("fc_character_id", translate_stored(str(exc)))
         else:
-            messages.success(request, "PAP-link fleet started. Share its PAP link with your pilots.")
+            messages.success(request, _("PAP-link fleet started. Share its PAP link with your pilots."))
             if operation.review_status == ReviewStatus.PENDING:
-                messages.info(request, "The fleet counts in statistics once an FC lead has approved it.")
+                messages.info(request, _("The fleet counts in statistics once an FC lead has approved it."))
             return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     return _render(request, "fleetops/pap_fleet_start.html", {"form": form})

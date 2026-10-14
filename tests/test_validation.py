@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Regression tests for configuration validation, seeding, pruning and admin auditing."""
 
 import importlib
@@ -277,7 +280,7 @@ class PruneTotalsTests(TestCase):
     def test_command_output_matches_rows_removed(self):
         output = run_command("fleetops_prune_history")
 
-        old_count, departed_count = map(int, re.search(r"(\d+) old attendance, (\d+) departed-member", output).groups())
+        old_count, departed_count = map(int, re.search(r"(\d+) old PAP records, (\d+) departed-member", output).groups())
         self.assertEqual(old_count + departed_count, 3)
         self.assertEqual(AttendanceRecord.objects.count(), 1)
 
@@ -554,7 +557,7 @@ class ManualAttendanceFormTests(TestCase):
                     form.non_field_errors(),
                     [
                         f"Character {unowned.character_id} is not registered to any Alliance Auth user, "
-                        "so it cannot receive attendance."
+                        "so it cannot receive PAP."
                     ],
                 )
 

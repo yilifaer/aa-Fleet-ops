@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The PAP engine: who gets PAP in a fleet, from time in fleet and PAP link registrations.
 
 ``compute_pap`` only reads and works on fleets in any state; ``finalize_pap`` writes the

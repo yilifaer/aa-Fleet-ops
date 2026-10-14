@@ -1,4 +1,8 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 from django import template
+from django.utils.translation import gettext as _
 
 from fleetops.services.mentions import ROLE_MENTION_RE
 from fleetops.services.periods import EVE_DATETIME_FORMAT, format_eve
@@ -28,6 +32,6 @@ def ping_display(text, operation):
 
     def replace(match):
         role_id = match.group(1)
-        return f"@{names[role_id]}" if role_id in names else f"@role {role_id}"
+        return f"@{names[role_id]}" if role_id in names else _("@role %(id)s") % {"id": role_id}
 
     return ROLE_MENTION_RE.sub(replace, str(text or ""))

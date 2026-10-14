@@ -1,0 +1,34 @@
+name: Feature request
+description: Suggest a change or an addition
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem first; the solution can follow. Questions about how FleetOps works belong in
+        [Discussions](https://github.com/yilifaer/aa-fleetops/discussions).
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can you not do today, or what is harder than it should be?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What should FleetOps do? Name the page, the setting or the message if you can.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Other ways you considered, or what you do instead now.
+  - type: textarea
+    id: affected
+    attributes:
+      label: Who it affects
+      description: The alliances, corporations or roles (members, FCs, FC leads, SRP managers, administrators) that need it.

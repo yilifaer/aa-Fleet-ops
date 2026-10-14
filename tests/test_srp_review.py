@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Deciding on SRP claims: every transition and the states it is refused from, the reason and confirmation
 rules, the monthly limits at approval, self review, bulk actions, events, audit entries and notifications."""
 

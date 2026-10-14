@@ -1,10 +1,15 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 from datetime import datetime
 
 from allianceauth.services.hooks import get_extension_logger
 from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from django.utils.translation import gettext, ngettext
 
+from fleetops import texts
 from fleetops.models import FleetMemberEvent, FleetMemberState, FleetOperation
 from fleetops.providers.esi import FleetESIError, detect_character_fleet, get_fleet_members, get_fleet_wings
 from fleetops.services.errors import log_failure, report_failure
@@ -126,7 +131,7 @@ def sync_operation(operation, fresh=False, until=None):
     counts up to its end request, whoever reads it (a refresh after a fleet job, a kick batch).
     """
     if not operation.esi_fleet_id:
-        raise FleetESIError("NO_FLEET_ID", "Operation has no ESI fleet ID.")
+        raise FleetESIError("NO_FLEET_ID", texts.NO_ESI_FLEET())
     now = timezone.now()
     members = get_fleet_members(operation.fc_user, operation.fc_character_id, operation.esi_fleet_id, fresh=fresh)
     wings = _read_wings(operation, fresh)
@@ -326,25 +331,50 @@ def observe_unreadable_fleet(operation):
 
 
 def unreadable_fleet_message(reason, detail=""):
+    """Why the fleet could not be read, as the stored message kept with the fleet (English)."""
     if reason == EndReason.BOSS_HANDOVER:
-        return f"Fleet boss handed over to {detail or 'another character'}."
-    return "The fleet could not be read: it no longer exists or the FC left it."
+        return texts.UNREADABLE_HANDOVER(name=detail) if detail else texts.UNREADABLE_HANDOVER_UNKNOWN()
+    return texts.UNREADABLE_GONE()
 
 
 def unreadable_fleet_warning(operation, settings):
-    """Warning for an active fleet whose latest polls could not read it, or an empty string."""
+    """Warning for an active fleet whose latest polls could not read it, or an empty string.
+
+    The warning is worked out each time the page is shown, so it follows the language of the viewer.
+    """
     if not (operation.fleet_missing_count and operation.missing_reason):
         return ""
     count = operation.fleet_missing_count
-    checks = f"Unreadable checks in a row: {count}."
-    if operation.missing_reason == EndReason.BOSS_HANDOVER:
-        what = f"Fleet boss handed over to {operation.missing_detail or 'another character'}"
-        unless = "unless the boss is returned"
-    else:
-        what = "The fleet could not be read: it no longer exists or the FC left it"
-        unless = "unless it can be read again"
+    checks = gettext("Unreadable checks in a row: %(count)s.") % {"count": count}
+    handover = operation.missing_reason == EndReason.BOSS_HANDOVER
+    boss = {"name": texts.shown_name(operation.missing_detail) or gettext("another character")}
     if not settings.auto_end_enabled:
-        return f"{what} — automatic end is disabled, so this fleet stays open until it is ended manually. {checks}"
+        if handover:
+            what = gettext(
+                "Fleet boss handed over to %(name)s — automatic end is disabled, so this fleet stays open "
+                "until it is ended manually."
+            )
+        else:
+            what = gettext(
+                "The fleet could not be read: it no longer exists or the FC left it — automatic end is "
+                "disabled, so this fleet stays open until it is ended manually."
+            )
+        return f"{what % boss} {checks}"
     remaining = max(settings.auto_end_missing_count - count, 1)
-    plural = "" if remaining == 1 else "s"
-    return f"{what} — this fleet will end automatically after {remaining} more check{plural} {unless}. {checks}"
+    if handover:
+        what = ngettext(
+            "Fleet boss handed over to %(name)s — this fleet will end automatically after %(remaining)s more "
+            "check unless the boss is returned.",
+            "Fleet boss handed over to %(name)s — this fleet will end automatically after %(remaining)s more "
+            "checks unless the boss is returned.",
+            remaining,
+        )
+    else:
+        what = ngettext(
+            "The fleet could not be read: it no longer exists or the FC left it — this fleet will end "
+            "automatically after %(remaining)s more check unless it can be read again.",
+            "The fleet could not be read: it no longer exists or the FC left it — this fleet will end "
+            "automatically after %(remaining)s more checks unless it can be read again.",
+            remaining,
+        )
+    return f"{what % {**boss, 'remaining': remaining}} {checks}"

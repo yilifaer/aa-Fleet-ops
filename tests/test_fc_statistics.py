@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """FC statistics: the rows shared by the FC pages and the incentive periods, and their pages."""
 
 from collections import defaultdict

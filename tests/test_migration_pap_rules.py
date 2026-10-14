@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Upgrade steps of migrations 0011-0012: multiplier tiers, special roles, PAP rule snapshots, time in fleet
 and the merged and replaced attendance of earlier versions."""
 
@@ -502,7 +505,7 @@ class NewTablesTests(TestCase):
 
 
 class UpgradeFrom0010Tests(TransactionTestCase):
-    """Migrates a database holding 0.1.0a6 development data from 0010 to 0012."""
+    """Migrates a database holding pre-release development data from 0010 to 0012."""
 
     serialized_rollback = True
     start = [("fleetops", "0010_comms_join_token_unique")]

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The FleetOps SRP provider, the fleet SRP link and the fleet page card."""
 
 from datetime import timedelta

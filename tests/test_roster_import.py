@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Manual PAP from a pasted roster and manual PAP by character name."""
 
 from types import SimpleNamespace
@@ -7,8 +10,10 @@ from django.contrib.messages import get_messages
 from django.core import signing
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import translation
 
 from fleetops.forms import HistoricalManualAttendanceForm, ManualAttendanceForm
+from fleetops.forms_records import RosterPasteForm
 from fleetops.models import AttendanceRecord, AuditLog, FleetOperation, ReviewStatus
 from fleetops.providers import esi as esi_provider
 from fleetops.providers.esi import FleetESIError
@@ -22,6 +27,7 @@ from fleetops.services.roster_import import (
     resolve_names,
     sign_preview,
 )
+from fleetops.texts import translate_stored
 
 from . import factories as f
 from .test_roster_paste import CHINESE_FLEET, ENGLISH_FLEET
@@ -430,7 +436,7 @@ class ImportRowsTests(RosterTestCase):
     def test_only_open_and_closed_fleets(self):
         cancelled = f.create_operation(self.fc, status=Status.CANCELLED)
 
-        with self.assertRaisesMessage(ValueError, "Manual attendance can only be added to Active or Closed fleets."):
+        with self.assertRaisesMessage(ValueError, "Manual PAP can only be added to Active or Closed fleets."):
             self.run_import([self.row(f.main_of(self.sally))], operation=cancelled)
         self.assertFalse(AuditLog.objects.exists())
 
@@ -497,6 +503,47 @@ class RosterImportViewTests(RosterTestCase):
         record = AttendanceRecord.objects.get(source=IMPORTED)
         self.assertEqual((record.character_name, record.attendance_value, record.notes), ("Sally en Chalune", 2, "Ops"))
         self.assertIn("Imported PAP for 1 character.", message_texts(response)[0])
+
+    def test_the_offered_note_is_in_the_language_of_the_importer_and_stored_as_a_message(self):
+        self.esi.add("Stream Sarum")
+        self.client.force_login(self.fc)
+        self.client.cookies["django_language"] = "zh-hans"
+        with translation.override("zh-hans"):
+            offered = translate_stored("Imported from fleet roster paste")
+        self.assertNotEqual(offered, "Imported from fleet roster paste")
+
+        page = self.client.get(self.url())
+        self.assertContains(page, offered)
+        self.assertNotContains(page, "Imported from fleet roster paste")
+
+        # Sent back as it was offered, the note is the message of the system, in English.
+        data = {"step": "parse", "text": CHINESE_FLEET, "attendance_value": "1", "duplicate_action": "keep"}
+        preview = self.client.post(self.url(), {**data, "notes": offered})
+        self.client.post(self.url(), {"step": "import", "payload": preview.context["payload"], "rows": ["0"]})
+        record = AttendanceRecord.objects.get(source=IMPORTED)
+        self.assertEqual(record.notes, "Imported from fleet roster paste")
+
+        # The pages read it in the language of the reader.
+        self.client.force_login(self.lead)
+        approvals = self.client.get(reverse("fleetops:approval_queue"))
+        self.assertContains(approvals, offered)
+        self.assertNotContains(approvals, "Imported from fleet roster paste")
+        self.client.cookies["django_language"] = "en"
+        self.assertContains(self.client.get(reverse("fleetops:approval_queue")), "Imported from fleet roster paste")
+
+    def test_a_note_the_importer_changed_is_kept_as_written(self):
+        self.client.force_login(self.fc)
+        self.client.cookies["django_language"] = "zh-hans"
+        with translation.override("zh-hans"):
+            offered = translate_stored("Imported from fleet roster paste")
+
+        for notes in (f"{offered} Checked by hand.", "Imported from fleet roster paste, second half"):
+            with self.subTest(notes=notes):
+                form = RosterPasteForm(
+                    {"text": CHINESE_FLEET, "attendance_value": "1", "duplicate_action": "keep", "notes": notes}
+                )
+                self.assertTrue(form.is_valid())
+                self.assertEqual(form.cleaned_data["notes"], notes)
 
     def test_nothing_pasted_or_selected(self):
         self.client.force_login(self.fc)

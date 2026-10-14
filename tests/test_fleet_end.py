@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Ending a fleet: background end task, recovery, end reasons and the state left behind."""
 
 from contextlib import nullcontext
@@ -90,7 +93,7 @@ class BackgroundEndTests(EndTestBase):
         self.assertEqual(operation.attendance_multiplier, 1)
         self.assertIsNone(operation.ended_at)
         self.assertIn(
-            "Ending the fleet. The final sync and attendance are being finished; this page updates when the fleet is closed.",
+            "Ending the fleet. The final sync and PAP are being finished; this page updates when the fleet is closed.",
             message_texts(response),
         )
         entry = AuditLog.objects.get(action="fleet.end_request")
@@ -127,7 +130,7 @@ class BackgroundEndTests(EndTestBase):
         self.assertEqual(operation.status, Status.CLOSED)
         self.assertEqual(operation.attendance_multiplier, 3)
         self.assertFalse(operation.tracking_enabled)
-        self.assertIn("Fleet ended. Attendance finalized at 3x.", message_texts(response))
+        self.assertIn("Fleet ended. PAP finalized at 3x.", message_texts(response))
         values = dict(
             AttendanceRecord.objects.filter(operation=operation).values_list("character_id", "attendance_value")
         )
@@ -214,7 +217,7 @@ class BackgroundEndTests(EndTestBase):
             response = self.client.post(self.end_url(), {"attendance_multiplier": "2"})
 
         self.assertEqual(self.refresh().status, Status.CLOSED)
-        self.assertIn("Fleet ended. Attendance finalized at 2x.", message_texts(response))
+        self.assertIn("Fleet ended. PAP finalized at 2x.", message_texts(response))
 
     def test_end_buttons_disable_themselves_after_the_click(self):
         page = self.detail()

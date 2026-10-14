@@ -1,116 +1,34 @@
+{% load i18n static fleetops_i18n %}
 {% if kick_enabled %}
 <div id="fleet-control-fragment">{% include "fleetops/operation/_controls_card.html" %}</div>
 <div class="modal fade" id="kickListModal" tabindex="-1" aria-hidden="true" data-preview-url="{% url 'fleetops:kick_preview' operation.uuid %}" data-capsules-url="{% url 'fleetops:kick_capsules' operation.uuid %}" data-system-url="{% url 'fleetops:kick_outside_system' operation.uuid %}">
   <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
     <form method="post" id="kick-list-form">{% csrf_token %}
-      <div class="modal-header"><h5 class="modal-title" id="kick-list-title">Kick members</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+      <div class="modal-header"><h5 class="modal-title" id="kick-list-title">{% translate "Kick members" %}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% translate 'Close' %}"></button></div>
       <div class="modal-body">
         <div id="kick-list-systems" class="mb-3"></div>
         <div id="kick-list-status" class="small text-muted mb-2"></div>
         <div id="kick-list-members"></div>
       </div>
-      <div class="modal-footer"><span class="me-auto fw-bold" id="kick-list-summary"></span><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button class="btn btn-danger" id="kick-list-submit" disabled>Kick</button></div>
+      <div class="modal-footer"><span class="me-auto fw-bold" id="kick-list-summary"></span><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% translate "Cancel" %}</button><button class="btn btn-danger" id="kick-list-submit" disabled>{% translate "Kick" %}</button></div>
     </form>
   </div></div>
 </div>
+<script src="{% static 'fleetops/fleet_kick.js' %}?v={% fleetops_version %}"></script>
 <script>
 (function(){
-  const modal=document.getElementById('kickListModal');
-  const form=document.getElementById('kick-list-form');
-  const systemsBox=document.getElementById('kick-list-systems');
-  const membersBox=document.getElementById('kick-list-members');
-  const status=document.getElementById('kick-list-status');
-  const summary=document.getElementById('kick-list-summary');
-  const submit=document.getElementById('kick-list-submit');
-  let mode='system';
-  let systemName='';
-
-  // Names come from ESI, so they are only ever set as text.
-  function element(tag, attrs, text){
-    const node=document.createElement(tag);
-    Object.entries(attrs||{}).forEach(([key,value])=>node.setAttribute(key,value));
-    if(text!==undefined){ node.textContent=text; }
-    return node;
-  }
-
-  function updateSummary(){
-    const count=membersBox.querySelectorAll('input[name="character_ids"]:checked').length;
-    const what=mode==='capsules' ? `capsule pilot${count===1?'':'s'}` : `member${count===1?'':'s'} outside ${systemName}`;
-    summary.textContent=`Kick ${count} ${what}`;
-    submit.textContent=`Kick ${count}`;
-    submit.disabled=count===0;
-  }
-
-  function render(data){
-    systemsBox.replaceChildren();
-    membersBox.replaceChildren();
-    if(mode==='system'){
-      systemsBox.append(element('div',{class:'fw-bold mb-1'},'Members in this system stay in the fleet'));
-      data.systems.forEach(system=>{
-        const id=`kick-system-${system.id}`;
-        const input=element('input',{class:'form-check-input',type:'radio',name:'system_id',value:system.id,id:id});
-        if(system.id===data.selected_system_id){ input.checked=true; systemName=system.name; }
-        input.addEventListener('change',()=>load(system.id));
-        let label=`${system.name} (${system.count})`;
-        if(system.id===data.fc_system_id){ label+=" — FC's system, the default"; }
-        const row=element('div',{class:'form-check'});
-        row.append(input, element('label',{class:'form-check-label',for:id},label));
-        systemsBox.append(row);
-      });
-    }
-    if(data.members.length){
-      status.textContent='Untick the members to spare.';
-    } else {
-      status.textContent=mode==='capsules' ? 'No capsule pilots to kick.' : 'Nobody is outside this system.';
-    }
-    data.members.forEach(member=>{
-      const id=`kick-target-${member.character_id}`;
-      const input=element('input',{class:'form-check-input',type:'checkbox',name:'character_ids',value:member.character_id,id:id});
-      input.checked=true;
-      input.addEventListener('change',updateSummary);
-      const details=[member.corporation, member.ship, member.system].filter(Boolean).join(' · ');
-      const row=element('div',{class:'form-check'});
-      row.append(input, element('label',{class:'form-check-label',for:id}, details ? `${member.name} — ${details}` : member.name));
-      membersBox.append(row);
-    });
-    updateSummary();
-  }
-
-  function load(systemId){
-    status.textContent='Reading the fleet…';
-    submit.disabled=true;
-    const params=new URLSearchParams({mode:mode});
-    if(systemId){ params.set('system_id',systemId); }
-    fetch(`${modal.dataset.previewUrl}?${params}`,{credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}})
-      .then(response=>response.ok ? response.json() : Promise.reject(response.status))
-      .then(render)
-      .catch(()=>{ membersBox.replaceChildren(); status.textContent='The fleet could not be read. Close this window and try again.'; });
-  }
-
-  function open(newMode){
-    mode=newMode;
-    form.action=mode==='capsules' ? modal.dataset.capsulesUrl : modal.dataset.systemUrl;
-    document.getElementById('kick-list-title').textContent=mode==='capsules' ? 'Kick capsule pilots' : 'Kick members outside a system';
-    systemsBox.replaceChildren();
-    membersBox.replaceChildren();
-    summary.textContent='';
-    bootstrap.Modal.getOrCreateInstance(modal).show();
-    load(null);
-  }
-
   // The card is replaced while the page is open (Fleet tab updates), so its buttons are handled on the document.
   document.addEventListener('submit',event=>{
     const trigger=event.target;
     if(!(trigger instanceof HTMLFormElement) || !trigger.classList.contains('kick-list-trigger')){ return; }
-    if(window.bootstrap){ event.preventDefault(); open(trigger.dataset.kickMode); return; }
+    if(window.bootstrap){ event.preventDefault(); window.FleetOpsKick.open(trigger.dataset.kickMode); return; }
     // Without the list window the names are confirmed in a plain dialog.
-    if(!confirm(`Kick these capsule pilots from the fleet? ${trigger.dataset.kickNames}`)){ event.preventDefault(); }
+    if(!confirm(window.FleetOpsKick.confirmText(trigger.dataset.kickNames))){ event.preventDefault(); }
   });
   document.addEventListener('click',event=>{
     const button=event.target.closest('.kick-list-open');
-    if(button && window.bootstrap){ open(button.dataset.kickMode); }
+    if(button && window.bootstrap){ window.FleetOpsKick.open(button.dataset.kickMode); }
   });
-  form.addEventListener('submit',()=>{ submit.disabled=true; submit.textContent='Kicking…'; });
 })();
 </script>
 {% endif %}

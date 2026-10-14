@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """SRP value objects, the texts of stored codes and the template filters."""
 
 import json
@@ -6,6 +9,7 @@ from decimal import Decimal
 
 from django.template import Context, Template
 from django.test import SimpleTestCase, TestCase
+from django.utils import translation
 
 from fleetops.models import SrpClaim, SrpClaimEvent
 from fleetops.srp import display
@@ -111,6 +115,19 @@ class CodeTextTests(SimpleTestCase):
         for code, params, text in cases:
             with self.subTest(code=code, params=params):
                 self.assertEqual(display.warning_text(code, params), text)
+
+    def test_a_tracked_ship_without_a_name_is_named_by_its_type_in_the_language_of_the_reader(self):
+        params = {"ship": "", "ship_type_id": 587}
+
+        self.assertEqual(display.warning_text("ship_mismatch", params), "Tracked ship before the loss: Type 587.")
+        with translation.override("zh-hans"):
+            text = display.warning_text("ship_mismatch", params)
+        self.assertIn("类型 587", text)
+        self.assertNotIn("Type", text)
+        self.assertEqual(
+            display.warning_text("ship_mismatch", {"ship": "", "ship_type_id": None}),
+            "Tracked ship before the loss: another ship.",
+        )
 
     def test_presence_texts(self):
         self.assertEqual(display.presence_text("in_fleet"), "In the fleet at the time of the loss.")

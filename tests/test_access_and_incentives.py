@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Regression tests for fleet record access, FC incentives, paging and manual fleet records."""
 
 import json
@@ -500,7 +503,7 @@ class EndFleetTests(TestCase):
                 operation.refresh_from_db()
                 self.assertEqual((operation.status, operation.attendance_multiplier), (Status.CLOSED, 1))
                 self.assertFalse(operation.multiplier_pending)
-                self.assertIn("Fleet ended. Attendance finalized at 1x.", message_texts(response))
+                self.assertIn("Fleet ended. PAP finalized at 1x.", message_texts(response))
 
     def test_invalid_multiplier_does_not_end_the_fleet(self):
         for value in ("0", "4", "11", "abc", "2.5"):
@@ -694,7 +697,7 @@ class ManualRecordStatusTests(TestCase):
                     reverse("fleetops:operation_detail", args=[operation.uuid]),
                     fetch_redirect_response=False,
                 )
-                self.assertIn("Manual attendance can only be added to Active or Closed fleets.", message_texts(response))
+                self.assertIn("Manual PAP can only be added to Active or Closed fleets.", message_texts(response))
                 self.assertFalse(AttendanceRecord.objects.filter(operation=operation).exists())
         self.assertFalse(AuditLog.objects.exists())
 

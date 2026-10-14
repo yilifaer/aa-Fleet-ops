@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Which fleets and PAP count in statistics and incentives.
 
 Every statistics query asks these functions, so the rule lives in one place: a fleet counts when
@@ -7,13 +10,16 @@ statistics; PAP counts when it is granted, approved and its fleet counts.
 
 from django.db import transaction
 from django.db.models import Q
+from django.utils.translation import gettext, pgettext
 
+from fleetops import texts
 from fleetops.models import AttendanceRecord, FleetOperation, FleetOpsSettings, ReviewStatus
 from fleetops.services.multipliers import fleet_duration
 
 Status = FleetOperation.Status
 StatsMode = FleetOperation.StatsMode
-STATS_NOTE_REQUIRED = "Give a reason for excluding this fleet from the statistics."
+# Stored message (English); the pages show it through ``translate_stored``.
+STATS_NOTE_REQUIRED = texts.COUNTING_REASON_REQUIRED()
 
 
 def counted_operation_q(prefix="", *, include_active=False):
@@ -43,19 +49,24 @@ def counted_attendance(qs=None):
 
 
 def operation_count_reason(operation, settings=None):
-    """Why a fleet does not count, or "" when it counts (or will count once it closes)."""
+    """Why a fleet does not count, or "" when it counts (or will count once it closes).
+
+    The reason is worked out whenever a page is shown, in the language of the viewer.
+    """
     if operation.review_status == ReviewStatus.PENDING:
-        return "Pending approval"
+        return gettext("Pending approval")
     if operation.review_status == ReviewStatus.REJECTED:
-        return "Rejected"
+        return pgettext("fleet review", "Rejected")
     if operation.counts_for_stats:
         return ""
     if operation.stats_mode == StatsMode.EXCLUDE:
-        return f"Excluded: {operation.stats_note}" if operation.stats_note else "Excluded"
+        if operation.stats_note:
+            return gettext("Excluded: %(note)s") % {"note": operation.stats_note}
+        return gettext("Excluded")
     settings = settings or FleetOpsSettings.get_solo()
     if settings.minimum_fleet_minutes:
-        return f"Shorter than {settings.minimum_fleet_minutes} minutes"
-    return "Shorter than the minimum fleet duration"
+        return gettext("Shorter than %(minutes)s minutes") % {"minutes": settings.minimum_fleet_minutes}
+    return gettext("Shorter than the minimum fleet duration")
 
 
 def evaluate_stats_inclusion(operation, settings=None):
@@ -85,7 +96,7 @@ def set_stats_mode(operation, mode, *, actor, note):
     from fleetops.services.audit import audit
 
     if mode not in StatsMode.values:
-        raise ValueError("Choose whether this fleet counts automatically, always or never.")
+        raise ValueError(texts.COUNTING_MODE_CHOICE())
     note = " ".join((note or "").split())[:255]
     if mode == StatsMode.EXCLUDE and not note:
         raise ValueError(STATS_NOTE_REQUIRED)

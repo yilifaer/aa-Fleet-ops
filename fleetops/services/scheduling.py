@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Pre pings: fleets announced for a later time and started by their FC when it is due."""
 
 import uuid
@@ -7,6 +10,7 @@ from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+from fleetops import texts
 from fleetops.models import AuditLog, FleetOperation, OperationAction
 from fleetops.providers.doctrines import doctrine_fits_snapshot
 from fleetops.services.audit import audit
@@ -34,14 +38,12 @@ logger = get_extension_logger(__name__)
 
 Status = FleetOperation.Status
 
-NOT_SCHEDULED_MESSAGE = "This fleet is no longer scheduled."
-CHANNEL_CHANGE_NEEDS_POST = (
-    "Post the updated pre ping when you change the ping channel: "
-    "a cancellation notice is posted in the channel of the pre ping."
-)
+# Stored messages (English); the pages show them through ``translate_stored``.
+NOT_SCHEDULED_MESSAGE = texts.NOT_SCHEDULED()
+CHANNEL_CHANGE_NEEDS_POST = texts.CHANNEL_CHANGE_NEEDS_POST()
 # How long a posted edit is remembered against a repeated submit of the same page.
 EDIT_POST_TTL = 600
-ONLY_SCHEDULING_FC_MESSAGE = "Only the FC who scheduled this fleet can start it."
+ONLY_SCHEDULING_FC_MESSAGE = texts.ONLY_SCHEDULING_FC()
 # Fields an edit of a scheduled fleet can change, as listed in its audit entry.
 EDITABLE_FIELDS = (
     "fleet_type",
@@ -294,7 +296,7 @@ def cancel_scheduled_fleet(operation, *, actor, notify: bool) -> FleetOperation:
         current.status = Status.CANCELLED
         current.tracking_enabled = False
         current.save(update_fields=["status", "tracking_enabled", "updated_at"])
-        set_action(current, "fleet_cancel", True, "Scheduled fleet cancelled.")
+        set_action(current, "fleet_cancel", True, texts.FLEET_CANCELLED())
         audit(
             actor,
             "fleet.schedule_cancel",

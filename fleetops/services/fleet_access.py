@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Who may see and change a running EVE fleet from the fleet page, and whether a change is possible now.
 
 Every change goes to ESI with the FC character's token, never with the acting user's: only the fleet
@@ -10,6 +13,7 @@ from dataclasses import dataclass
 
 from esi.models import Token
 
+from fleetops import texts
 from fleetops.constants import FLEET_SCOPES, FLEET_WRITE_SCOPE
 from fleetops.models import FleetOperation
 
@@ -20,10 +24,11 @@ EndReason = FleetOperation.EndReason
 FLEET_TAB_STATUSES = (Status.ACTIVE, Status.ENDING, Status.CLOSED)
 LIVE_STATUSES = (Status.ACTIVE, Status.ENDING)
 
-NOT_ACTIVE = "Fleet management is only available while the fleet is active."
-FLEET_GONE = "The fleet could not be read. It may have been disbanded, or the FC left it."
-NO_WRITE_TOKEN = f"The FC character has no ESI token with the fleet write scope ({FLEET_WRITE_SCOPE})."
-WRITE_BUSY = "Another change to this fleet is in progress. Try again in a moment."
+# Stored messages (English); the pages show them through ``translate_stored``.
+NOT_ACTIVE = texts.ACCESS_NOT_ACTIVE()
+FLEET_GONE = texts.ACCESS_FLEET_GONE()
+NO_WRITE_TOKEN = texts.ACCESS_NO_WRITE_TOKEN(scope=FLEET_WRITE_SCOPE)
+WRITE_BUSY = texts.ACCESS_WRITE_BUSY()
 
 
 class FleetManageError(Exception):
@@ -44,15 +49,13 @@ class WriteState:
 
 
 def not_boss_message(operation, boss_label="") -> str:
-    boss = boss_label or "another character"
-    return (
-        f"{operation.fc_character_name} is not the fleet boss any more (current boss: {boss}). "
-        "Fleet changes are disabled."
-    )
+    if boss_label:
+        return texts.ACCESS_NOT_BOSS(name=operation.fc_character_name, boss=boss_label)
+    return texts.ACCESS_NOT_BOSS_UNKNOWN(name=operation.fc_character_name)
 
 
 def job_wait_message(job) -> str:
-    return f"Wait until “{job.get('label') or 'the running job'}” has finished."
+    return texts.JOB_WAIT(label=job.get("label") or texts.THE_RUNNING_JOB())
 
 
 def has_esi_fleet(operation) -> bool:
@@ -164,4 +167,4 @@ def require_writable(operation, user, *, job_id=None) -> None:
     """Raise FleetManageError (409) with the reason when ``user`` cannot change the fleet now."""
     state = write_state(operation, user, job_id=job_id)
     if not state.allowed:
-        raise FleetManageError(state.reason or "You cannot change this fleet.", 409 if state.reason else 404)
+        raise FleetManageError(state.reason or texts.ACCESS_CANNOT_CHANGE(), 409 if state.reason else 404)

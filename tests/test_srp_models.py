@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """FleetOps SRP models, their factories and how the SRP sweep is wired into the Celery tasks."""
 
 from datetime import datetime, timedelta, timezone as dt_timezone

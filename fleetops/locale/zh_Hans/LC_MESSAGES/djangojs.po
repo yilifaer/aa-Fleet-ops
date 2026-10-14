@@ -1,0 +1,496 @@
+# Simplified Chinese translation of AA FleetOps.
+# Copyright (C) 2026 yilifaer and AA FleetOps contributors
+# This file is distributed under the same license as the AA FleetOps package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: AA FleetOps\n"
+"Report-Msgid-Bugs-To: https://github.com/yilifaer/aa-fleetops/issues\n"
+"Language: zh_Hans\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+#: static/fleetops/fleet_actions.js
+msgid "Only one member can take a commander position. Choose a single member."
+msgstr "指挥官位置只能容纳一名成员。请只选择一名成员。"
+
+#: static/fleetops/fleet_actions.js
+msgid "%(label)s (now)"
+msgstr "%(label)s（当前）"
+
+#: static/fleetops/fleet_actions.js
+msgid "Taken by %(name)s"
+msgstr "已被 %(name)s 占用"
+
+#: static/fleetops/fleet_actions.js
+msgid "another member"
+msgstr "另一名成员"
+
+#: static/fleetops/fleet_actions.js
+msgid "Fleet"
+msgstr "舰队"
+
+#: static/fleetops/fleet_actions.js
+msgid "Fleet commander"
+msgstr "舰队指挥官"
+
+#: static/fleetops/fleet_actions.js
+msgid "Wing commander"
+msgstr "联队指挥官"
+
+#: static/fleetops/fleet_actions.js
+msgid "Wing %(id)s"
+msgstr "联队 %(id)s"
+
+#: static/fleetops/fleet_actions.js
+msgid "Member"
+msgstr "队员"
+
+#: static/fleetops/fleet_actions.js
+msgid "Commander"
+msgstr "指挥官"
+
+#: static/fleetops/fleet_actions.js
+msgid "Squad %(id)s"
+msgstr "中队 %(id)s"
+
+#: static/fleetops/fleet_actions.js
+msgid "The wings and squads are not known yet. Try again after the next refresh."
+msgstr "联队和中队尚未读取到。请在下次刷新之后重试。"
+
+#: static/fleetops/fleet_actions.js
+msgid "Move %(name)s to…"
+msgstr "把 %(name)s 移到…"
+
+#: static/fleetops/fleet_actions.js
+msgid "member"
+msgstr "成员"
+
+#: static/fleetops/fleet_actions.js
+msgid "Move %(count)s member to…"
+msgid_plural "Move %(count)s members to…"
+msgstr[0] "把 %(count)s 名成员移到…"
+
+#: static/fleetops/fleet_actions.js
+msgid "%(count)s selected"
+msgstr "已选择 %(count)s 个"
+
+#: static/fleetops/fleet_kick.js
+msgid "Kick %(count)s capsule pilot"
+msgid_plural "Kick %(count)s capsule pilots"
+msgstr[0] "踢出 %(count)s 名胶囊飞行员"
+
+#: static/fleetops/fleet_kick.js
+msgid "Kick %(count)s member outside %(system)s"
+msgid_plural "Kick %(count)s members outside %(system)s"
+msgstr[0] "踢出 %(system)s 之外的 %(count)s 名成员"
+
+#: static/fleetops/fleet_kick.js
+msgid "Kick %(count)s"
+msgstr "踢出 %(count)s 人"
+
+#: static/fleetops/fleet_kick.js
+msgid "Members in this system stay in the fleet"
+msgstr "这个星系里的成员留在舰队中"
+
+#: static/fleetops/fleet_kick.js
+msgid "%(name)s (%(count)s) — FC's system, the default"
+msgstr "%(name)s（%(count)s）—— FC 所在星系，默认"
+
+#: static/fleetops/fleet_kick.js
+msgid "Untick the members to spare."
+msgstr "取消勾选要保留的成员。"
+
+#: static/fleetops/fleet_kick.js
+msgid "No capsule pilots to kick."
+msgstr "没有可踢出的胶囊飞行员。"
+
+#: static/fleetops/fleet_kick.js
+msgid "Nobody is outside this system."
+msgstr "没有人在这个星系之外。"
+
+#: static/fleetops/fleet_kick.js
+msgid "Reading the fleet…"
+msgstr "正在读取舰队…"
+
+#: static/fleetops/fleet_kick.js
+msgid "The fleet could not be read. Close this window and try again."
+msgstr "无法读取舰队。请关闭此窗口后重试。"
+
+#: static/fleetops/fleet_kick.js
+msgid "Kick capsule pilots"
+msgstr "踢出胶囊飞行员"
+
+#: static/fleetops/fleet_kick.js
+msgid "Kick members outside a system"
+msgstr "踢出星系外的成员"
+
+#: static/fleetops/fleet_kick.js
+msgid "Kick these capsule pilots from the fleet? %(names)s"
+msgstr "把这些胶囊飞行员踢出舰队？%(names)s"
+
+#: static/fleetops/fleet_kick.js
+msgid "Kicking…"
+msgstr "正在踢出…"
+
+#: static/fleetops/fleet_live.js
+msgid "Your session has expired — reload the page."
+msgstr "你的登录会话已过期 —— 请重新加载页面。"
+
+#: static/fleetops/fleet_live.js
+msgid "Still waiting for ESI — the result will show after the next refresh."
+msgstr "仍在等待 ESI —— 结果会在下次刷新后显示。"
+
+#: static/fleetops/fleet_live.js
+msgid "The request did not reach the server. Check your connection and try again."
+msgstr "请求没有到达服务器。请检查网络连接后重试。"
+
+#: static/fleetops/fleet_live.js
+msgid "%(count)s s ago"
+msgstr "%(count)s 秒前"
+
+#: static/fleetops/fleet_live.js
+msgid "%(count)s min ago"
+msgstr "%(count)s 分钟前"
+
+#: static/fleetops/fleet_live.js
+msgid "%(count)s h ago"
+msgstr "%(count)s 小时前"
+
+#: static/fleetops/fleet_live.js
+msgid "No connection to the server — trying again in %(seconds)s s."
+msgstr "与服务器断开连接 —— %(seconds)s 秒后重试。"
+
+#: static/fleetops/fleet_live.js
+msgid "Reload"
+msgstr "重新加载"
+
+#: static/fleetops/fleet_live.js
+msgid "Session expired — reload page"
+msgstr "会话已过期 —— 请重新加载页面"
+
+#: static/fleetops/fleet_live.js
+msgid "This was refused. Your session may have expired — reload the page."
+msgstr "请求被拒绝。你的会话可能已过期 —— 请重新加载页面。"
+
+#: static/fleetops/fleet_live.js
+msgid "The server answered with HTTP %(status)s. Try again in a moment."
+msgstr "服务器返回了 HTTP %(status)s。请稍后重试。"
+
+#: static/fleetops/fleet_live.js
+msgid "Close"
+msgstr "关闭"
+
+#: static/fleetops/fleet_tools.js
+msgid "Invite %(count)s"
+msgstr "邀请 %(count)s 人"
+
+#: static/fleetops/fleet_tools.js
+msgid "Invite"
+msgstr "邀请"
+
+#: static/fleetops/fleet_tools.js
+msgid "Remove %(name)s"
+msgstr "移除 %(name)s"
+
+#: static/fleetops/fleet_tools.js
+msgid "Selected (%(count)s)"
+msgstr "已选（%(count)s）"
+
+#: static/fleetops/fleet_tools.js
+msgid "In fleet"
+msgstr "已在舰队中"
+
+#: static/fleetops/fleet_tools.js
+msgid "Invitation pending"
+msgstr "邀请待接受"
+
+#: static/fleetops/fleet_tools.js
+msgid "Yours"
+msgstr "你的"
+
+#: static/fleetops/fleet_tools.js
+msgid "main: %(name)s"
+msgstr "大号：%(name)s"
+
+#: static/fleetops/fleet_tools.js
+msgid "My characters"
+msgstr "我的角色"
+
+#: static/fleetops/fleet_tools.js
+msgid "You have no characters in Alliance Auth."
+msgstr "你在 Alliance Auth 里没有角色。"
+
+#: static/fleetops/fleet_tools.js
+msgid "Characters matching “%(query)s”"
+msgstr "匹配“%(query)s”的角色"
+
+#: static/fleetops/fleet_tools.js
+msgid "No character matches “%(query)s”."
+msgstr "没有匹配“%(query)s”的角色。"
+
+#: static/fleetops/fleet_tools.js
+msgid "Showing the first %(count)s. Type more of the name to narrow the search."
+msgstr "显示前 %(count)s 个。输入更多的名称可以缩小搜索范围。"
+
+#: static/fleetops/fleet_tools.js
+msgid "Type at least %(count)s letters, or clear the search to list your own characters."
+msgstr "请至少输入 %(count)s 个字母，或清空搜索框以列出你自己的角色。"
+
+#: static/fleetops/fleet_tools.js
+msgid "Searching…"
+msgstr "正在搜索…"
+
+#: static/fleetops/fleet_tools.js
+msgid "The search failed. Reload the page if this keeps happening."
+msgstr "搜索失败。如果持续出现，请重新加载页面。"
+
+#: static/fleetops/fleet_tools.js
+msgid "Any squad with free positions"
+msgstr "任意有空位的中队"
+
+#: static/fleetops/fleet_tools.js
+msgid "Wing"
+msgstr "联队"
+
+#: static/fleetops/fleet_tools.js
+msgid "%(name)s (%(count)s)"
+msgstr "%(name)s（%(count)s）"
+
+#: static/fleetops/fleet_tools.js
+msgid "Squad"
+msgstr "中队"
+
+#: static/fleetops/fleet_tools.js
+msgid "Invite at most %(count)s characters at a time."
+msgstr "一次最多邀请 %(count)s 个角色。"
+
+#: static/fleetops/fleet_tools.js
+msgid "Character %(id)s"
+msgstr "角色 %(id)s"
+
+#: static/fleetops/fleet_tools.js
+msgid "Choose the characters to invite."
+msgstr "请选择要邀请的角色。"
+
+#: static/fleetops/fleet_tools.js
+msgid "%(first)s and %(second)s"
+msgstr "%(first)s 和 %(second)s"
+
+#: static/fleetops/fleet_tools.js static/fleetops/structure_layout.js
+msgid "%(count)s wing"
+msgid_plural "%(count)s wings"
+msgstr[0] "%(count)s 个联队"
+
+#: static/fleetops/fleet_tools.js static/fleetops/structure_layout.js
+msgid "%(count)s squad"
+msgid_plural "%(count)s squads"
+msgstr[0] "%(count)s 个中队"
+
+#: static/fleetops/fleet_tools.js
+msgid "%(count)s empty wing"
+msgid_plural "%(count)s empty wings"
+msgstr[0] "%(count)s 个空联队"
+
+#: static/fleetops/fleet_tools.js
+msgid "%(count)s empty squad"
+msgid_plural "%(count)s empty squads"
+msgstr[0] "%(count)s 个空中队"
+
+#: static/fleetops/fleet_tools.js
+msgid "Renames %(items)s."
+msgstr "重命名 %(items)s。"
+
+#: static/fleetops/fleet_tools.js
+msgid "Creates %(items)s."
+msgstr "创建 %(items)s。"
+
+#: static/fleetops/fleet_tools.js
+msgid "Deletes %(items)s."
+msgstr "删除 %(items)s。"
+
+#: static/fleetops/fleet_tools.js
+msgid "Keeps %(items)s with members."
+msgstr "保留有成员的 %(items)s。"
+
+#: static/fleetops/fleet_tools.js
+msgid "Leaves %(items)s beyond the template as they are."
+msgstr "不改动超出模板的 %(items)s。"
+
+#: static/fleetops/fleet_tools.js
+msgid "Choose a template."
+msgstr "请选择模板。"
+
+#: static/fleetops/fleet_tools.js
+msgid "The fleet already has these names: nothing to change."
+msgstr "舰队已经是这些名称：无需修改。"
+
+#: static/fleetops/fleet_tools.js
+msgid "Counted from the fleet as shown; the change reads the fleet from ESI first."
+msgstr "按页面显示的舰队统计；执行修改时会先从 ESI 读取舰队。"
+
+#: static/fleetops/fleet_tools.js
+msgid "The fleet structure is not known yet; the change reads it from ESI first."
+msgstr "舰队结构尚未读取；执行修改时会先从 ESI 读取。"
+
+#: static/fleetops/fleet_tools.js
+msgid "What changes"
+msgstr "将发生的变更"
+
+#: static/fleetops/fleetops.js
+msgid "%(hours)s h %(minutes)s min"
+msgstr "%(hours)s 小时 %(minutes)s 分钟"
+
+#: static/fleetops/fleetops.js
+msgid "%(minutes)s min"
+msgstr "%(minutes)s 分钟"
+
+#: static/fleetops/fleetops.js static/fleetops/start_fleet.js
+msgid "in %(duration)s"
+msgstr "%(duration)s 后"
+
+#: static/fleetops/fleetops.js
+msgid "now"
+msgstr "现在"
+
+#: static/fleetops/fleetops.js
+msgid "%(duration)s ago"
+msgstr "%(duration)s 前"
+
+#: static/fleetops/fleetops.js
+msgctxt "fleet position"
+msgid "Fleet Commander"
+msgstr "舰队指挥官"
+
+#: static/fleetops/fleetops.js
+msgctxt "fleet position"
+msgid "Wing Commander"
+msgstr "联队指挥官"
+
+#: static/fleetops/fleetops.js
+msgctxt "fleet position"
+msgid "Squad Commander"
+msgstr "中队指挥官"
+
+#: static/fleetops/fleetops.js
+msgctxt "fleet position"
+msgid "Squad Member"
+msgstr "中队队员"
+
+#: static/fleetops/fleetops.js
+msgid "Select a character to detect its current ESI fleet."
+msgstr "选择一个角色，以检测它当前所在的 ESI 舰队。"
+
+#: static/fleetops/fleetops.js
+msgid "Checking fleet…"
+msgstr "正在检查舰队…"
+
+#: static/fleetops/fleetops.js
+msgid "Fleet detection request failed."
+msgstr "舰队检测请求失败。"
+
+#: static/fleetops/fleetops.js
+msgid "Fleet %(fleet_id)s — role: %(role)s — Fleet Boss"
+msgstr "舰队 %(fleet_id)s —— 职位：%(role)s —— 舰队 Boss"
+
+#: static/fleetops/fleetops.js
+msgid "Fleet %(fleet_id)s — %(message)s"
+msgstr "舰队 %(fleet_id)s —— %(message)s"
+
+#: static/fleetops/srp.js
+msgid "Copied"
+msgstr "已复制"
+
+#: static/fleetops/srp.js
+msgid "Copy failed"
+msgstr "复制失败"
+
+#: static/fleetops/srp.js
+msgid "Reason required: the amount differs from the suggested amount."
+msgstr "必须填写原因：金额与建议金额不同。"
+
+#: static/fleetops/srp.js
+msgid "Reason required: say why the amount changes."
+msgstr "必须填写原因：说明金额为什么修改。"
+
+#: static/fleetops/start_fleet.js
+msgid "Not needed for a pre ping."
+msgstr "预 Ping 不需要。"
+
+#: static/fleetops/start_fleet.js
+msgid "This time has already passed."
+msgstr "这个时间已经过去了。"
+
+#: static/fleetops/start_fleet.js
+msgid "Missing: %(fields)s"
+msgstr "缺少：%(fields)s"
+
+#: static/fleetops/start_fleet.js
+msgid "Check the highlighted fields."
+msgstr "请检查高亮的字段。"
+
+#: static/fleetops/start_fleet.js
+msgid "Ping %(length)s / %(limit)s"
+msgstr "Ping %(length)s / %(limit)s"
+
+#: static/fleetops/start_fleet.js
+msgid "MOTD %(length)s characters"
+msgstr "MOTD %(length)s 个字符"
+
+#: static/fleetops/start_fleet.js
+msgid "Complete the form to render a preview."
+msgstr "填完表单后才会生成预览。"
+
+#: static/fleetops/start_fleet.js
+msgid "A preset named \"%(name)s\" exists. Overwrite?"
+msgstr "已存在名为“%(name)s”的预设。要覆盖吗？"
+
+#: static/fleetops/start_fleet.js
+msgid "Preset not saved."
+msgstr "预设未保存。"
+
+#: static/fleetops/start_fleet.js
+msgid "The preset could not be saved."
+msgstr "无法保存预设。"
+
+#: static/fleetops/structure_layout.js
+msgid "Line %(line)s: a wing name is empty."
+msgstr "第 %(line)s 行：联队名称为空。"
+
+#: static/fleetops/structure_layout.js
+msgid "Line %(line)s: a squad name is empty."
+msgstr "第 %(line)s 行：中队名称为空。"
+
+#: static/fleetops/structure_layout.js
+msgid "Line %(line)s: wing name \"%(name)s\" is longer than %(max)s characters."
+msgstr "第 %(line)s 行：联队名称“%(name)s”超过 %(max)s 个字符。"
+
+#: static/fleetops/structure_layout.js
+msgid "Line %(line)s: squad name \"%(name)s\" is longer than %(max)s characters."
+msgstr "第 %(line)s 行：中队名称“%(name)s”超过 %(max)s 个字符。"
+
+#: static/fleetops/structure_layout.js
+msgid "Line %(line)s: EVE allows at most %(max)s wings."
+msgstr "第 %(line)s 行：EVE 最多允许 %(max)s 个联队。"
+
+#: static/fleetops/structure_layout.js
+msgid "Line %(line)s: wing \"%(wing)s\" needs at least one squad, for example \"%(wing)s: Squad 1\"."
+msgstr "第 %(line)s 行：联队“%(wing)s”至少需要一个中队，例如“%(wing)s: 中队 1”。"
+
+#: static/fleetops/structure_layout.js
+msgid "Line %(line)s: use one \":\" per line, between the wing name and its squads."
+msgstr "第 %(line)s 行：每行使用一个“:”，放在联队名称和它的中队之间。"
+
+#: static/fleetops/structure_layout.js
+msgid "Line %(line)s: wing \"%(wing)s\" has %(count)s squads; EVE allows at most %(max)s per wing."
+msgstr "第 %(line)s 行：联队“%(wing)s”有 %(count)s 个中队；EVE 每个联队最多允许 %(max)s 个。"
+
+#: static/fleetops/structure_layout.js
+msgid "Add at least one wing, for example \"Main: Alpha, Bravo\"."
+msgstr "请至少添加一个联队，例如“Main: Alpha, Bravo”。"
+
+#: static/fleetops/structure_layout.js
+msgid "%(wings)s with %(squads)s: %(layout)s"
+msgstr "%(wings)s，%(squads)s：%(layout)s"

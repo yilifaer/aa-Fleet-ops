@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Fleet structure, move and invite calls of the ESI provider against the in-memory fleet."""
 
 from types import SimpleNamespace

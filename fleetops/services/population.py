@@ -1,8 +1,14 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Who counts as a member in the statistics.
 
 The population is every Alliance Auth user with a main character whose account is active and whose main is not
 in Doomheim (a biomassed character). When Member alliance IDs are configured the main must also be in one of
 those alliances. Alts never count as members; a member's corporation is the corporation of the current main.
+
+The month-based statistics pass ``registered_before`` (the end of the month, 00:00 UTC of the next month's 1st):
+a user who registered at or after it was not part of that month and is left out.
 """
 
 from __future__ import annotations
@@ -11,6 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from allianceauth.authentication.models import UserProfile
+from django.utils.translation import gettext
 
 from fleetops.services.history import configured_alliance_ids
 
@@ -71,8 +78,11 @@ def _identity(row) -> MemberIdentity:
     )
 
 
-def member_profiles(*, corporation_id: int | None = None, settings_obj=None):
-    """Profiles of the members, optionally of one corporation (the corporation of the current main)."""
+def member_profiles(*, corporation_id: int | None = None, registered_before: datetime | None = None, settings_obj=None):
+    """Profiles of the members, optionally of one corporation (the corporation of the current main).
+
+    ``registered_before`` leaves out users who registered at or after that instant.
+    """
     profiles = (
         UserProfile.objects.exclude(main_character=None)
         .filter(user__is_active=True)
@@ -83,22 +93,40 @@ def member_profiles(*, corporation_id: int | None = None, settings_obj=None):
         profiles = profiles.filter(main_character__alliance_id__in=alliance_ids)
     if corporation_id is not None:
         profiles = profiles.filter(main_character__corporation_id=corporation_id)
+    if registered_before is not None:
+        profiles = profiles.filter(user__date_joined__lt=registered_before)
     return profiles
 
 
-def members(*, corporation_id: int | None = None, settings_obj=None) -> list[MemberIdentity]:
+def registered_by(who, end: datetime) -> bool:
+    """Whether a user (or a member identity, or a registration time) registered before ``end``.
+
+    The rule of the month-based statistics: a user who registered at or after the end of a month is not part
+    of it.
+    """
+    joined = getattr(who, "date_joined", None) or getattr(who, "registered_at", who)
+    return joined < end
+
+
+def members(
+    *, corporation_id: int | None = None, registered_before: datetime | None = None, settings_obj=None
+) -> list[MemberIdentity]:
     """Every member with the details of the main; one query."""
     rows = (
-        member_profiles(corporation_id=corporation_id, settings_obj=settings_obj)
+        member_profiles(corporation_id=corporation_id, registered_before=registered_before, settings_obj=settings_obj)
         .order_by("main_character__character_name", "user_id")
         .values_list(*_FIELDS)
     )
     return [_identity(row) for row in rows]
 
 
-def member_user_ids_subquery(*, corporation_id: int | None = None, settings_obj=None):
+def member_user_ids_subquery(
+    *, corporation_id: int | None = None, registered_before: datetime | None = None, settings_obj=None
+):
     """The members' user IDs as a subquery, so large id lists never become SQL parameters."""
-    return member_profiles(corporation_id=corporation_id, settings_obj=settings_obj).values("user_id")
+    return member_profiles(
+        corporation_id=corporation_id, registered_before=registered_before, settings_obj=settings_obj
+    ).values("user_id")
 
 
 def identity_of(user) -> MemberIdentity | None:
@@ -124,10 +152,13 @@ def scope_alliances(settings_obj=None) -> tuple[bool, list[tuple[int, str]]]:
     for alliance_id, name in rows:
         if name:
             names.setdefault(alliance_id, name)
-    alliances = [(alliance_id, names.get(alliance_id) or f"Alliance {alliance_id}") for alliance_id in alliance_ids]
+    alliances = [
+        (alliance_id, names.get(alliance_id) or gettext("Alliance %(id)s") % {"id": alliance_id})
+        for alliance_id in alliance_ids
+    ]
     alliances.sort(key=lambda item: (item[1].lower(), item[0]))
     return True, alliances
 
 
-def corporation_main_count(corporation_id: int) -> int:
-    return member_profiles(corporation_id=corporation_id).count()
+def corporation_main_count(corporation_id: int, *, registered_before: datetime | None = None) -> int:
+    return member_profiles(corporation_id=corporation_id, registered_before=registered_before).count()

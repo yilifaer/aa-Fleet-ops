@@ -1,9 +1,13 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Field validators shared by models, forms and message rendering."""
 
 import re
 from urllib.parse import urlsplit
 
 from django.core.exceptions import ValidationError
+from django.utils.translation import gettext_lazy as _
 
 # Voice links offered to fleet members. Anything else (javascript:, data:, file:) is refused so a
 # stored link can never run script when somebody clicks it.
@@ -33,12 +37,12 @@ def validate_voice_url(value):
         return
     if voice_url_scheme(value) not in VOICE_URL_SCHEMES:
         raise ValidationError(
-            "Enter a voice link starting with %(schemes)s.",
+            _("Enter a voice link starting with %(schemes)s."),
             code="invalid",
             params={"schemes": ", ".join(f"{scheme}://" for scheme in VOICE_URL_SCHEMES)},
         )
     if any(ch.isspace() or ord(ch) < 32 for ch in value):
-        raise ValidationError("A voice link cannot contain spaces; write a space as %20.", code="whitespace")
+        raise ValidationError(_("A voice link cannot contain spaces; write a space as %20."), code="whitespace")
     # The public join page shows the link to everybody who has it.
     if _has_userinfo(value):
-        raise ValidationError("Remove the personal user name and password from the voice link.", code="userinfo")
+        raise ValidationError(_("Remove the personal user name and password from the voice link."), code="userinfo")

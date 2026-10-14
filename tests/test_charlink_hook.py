@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """aa-charlink integration: the hook, and the imports CharLink validates and offers to pilots.
 
 aa-charlink is not installed here (it needs Python 3.11 or newer and Alliance Auth below 6), so its
@@ -56,7 +59,7 @@ def charlink_stand_in():
         def validate_import(self):
             assert isinstance(self.app_label, str)
             assert re.match(r"^[a-zA-Z0-9]+$", self.unique_id)
-            assert isinstance(self.field_label, str)
+            assert isinstance(str(self.field_label), str)
             assert callable(self.add_character)
             assert isinstance(self.scopes, list) and all(isinstance(scope, str) for scope in self.scopes)
             assert callable(self.check_permissions)

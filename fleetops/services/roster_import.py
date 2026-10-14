@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Manual PAP from a fleet roster pasted out of the game client.
 
 The text is read by ``roster_paste``; this module looks the names up, previews what an
@@ -15,13 +18,16 @@ from django.core import signing
 from django.db import transaction
 from django.db.models import Q
 from django.db.models.functions import Lower
+from django.utils.translation import gettext, ngettext
 
+from fleetops import texts
 from fleetops.models import AttendanceRecord, FleetOperation, ReviewStatus
 from fleetops.providers import esi as esi_provider
 from fleetops.providers.esi import FleetESIError
 from fleetops.services import attendance, pap
 from fleetops.services.audit import audit
 from fleetops.services.roster_paste import RosterLine, clean_name, name_error, parse_roster
+from fleetops.texts import translate_stored
 
 __all__ = [
     "ImportResult",
@@ -53,12 +59,14 @@ IMPORTABLE = (ADD, CAPPED, HAS_PAP)
 
 PREVIEW_SALT = "fleetops.roster"
 PREVIEW_MAX_AGE = 30 * 60
-PREVIEW_EXPIRED = "The preview is older than 30 minutes or was changed. Paste the roster again."
+# Stored messages (English). The reasons of an import go into its audit entry; the preview shows them in the
+# language of the viewer.
+PREVIEW_EXPIRED = texts.ROSTER_EXPIRED()
 
-NOT_IN_AUTH_REASON = "Not in Alliance Auth"
-NOT_FOUND_REASON = "No EVE character with this name"
-ESI_ERROR_REASON = "Could not be checked (ESI error)"
-HAS_PAP_REASON = "Already has PAP in this fleet"
+NOT_IN_AUTH_REASON = texts.ROSTER_NOT_IN_AUTH()
+NOT_FOUND_REASON = texts.ROSTER_NOT_FOUND()
+ESI_ERROR_REASON = texts.ROSTER_ESI_ERROR()
+HAS_PAP_REASON = texts.ROSTER_HAS_PAP()
 
 
 @dataclass
@@ -214,9 +222,19 @@ def _pap_holders(operation) -> dict[int, tuple[int | None, str]]:
 
 
 def _limit_reason(limit, keeping):
-    noun = "character" if limit == 1 else "characters"
-    reason = f"Over the limit of {limit} PAP {noun} per player"
-    return f"{reason} ({', '.join(keeping)} first)" if keeping else reason
+    """Why a character is over the PAP limit of its player; only the preview shows this."""
+    names = ", ".join(keeping)
+    if keeping:
+        return ngettext(
+            "Over the limit of %(limit)s PAP character per player (%(names)s first)",
+            "Over the limit of %(limit)s PAP characters per player (%(names)s first)",
+            limit,
+        ) % {"limit": limit, "names": names}
+    return ngettext(
+        "Over the limit of %(limit)s PAP character per player",
+        "Over the limit of %(limit)s PAP characters per player",
+        limit,
+    ) % {"limit": limit}
 
 
 def build_import_preview(operation, lines, *, actor) -> list[PreviewRow]:
@@ -247,15 +265,15 @@ def build_import_preview(operation, lines, *, actor) -> list[PreviewRow]:
         )
         rows.append(row)
         if found.status == ERROR:
-            row.reason = ESI_ERROR_REASON
+            row.reason = translate_stored(ESI_ERROR_REASON)
         elif found.status == NOT_FOUND:
-            row.reason = NOT_FOUND_REASON
+            row.reason = translate_stored(NOT_FOUND_REASON)
         elif found.status == NOT_IN_AUTH:
-            row.reason = NOT_IN_AUTH_REASON
+            row.reason = translate_stored(NOT_IN_AUTH_REASON)
         elif found.character_id in listed:
-            row.status, row.reason = INVALID, "The same character is listed twice"
+            row.status, row.reason = INVALID, gettext("The same character is listed twice")
         elif found.character_id in holders:
-            row.status, row.reason = HAS_PAP, HAS_PAP_REASON
+            row.status, row.reason = HAS_PAP, translate_stored(HAS_PAP_REASON)
         else:
             row.status, row.checked = ADD, True
             candidates[found.user_id].append((len(rows), row))
@@ -342,14 +360,14 @@ def import_rows(operation, rows, *, actor, attendance_value, duplicate_action, n
         current = FleetOperation.objects.select_for_update().get(pk=operation.pk)
         operation.status, operation.ended_at = current.status, current.ended_at
         if operation.status not in attendance.RECORDABLE_STATUSES:
-            raise ValueError("Manual attendance can only be added to Active or Closed fleets.")
+            raise ValueError(texts.PAP_ONLY_ACTIVE_OR_CLOSED())
         holders = _pap_holders(operation)
         done = set()
         for row in rows:
             character_id = row["character_id"]
             reason = ""
             if character_id in done:
-                reason = "Listed twice"
+                reason = texts.ROSTER_LISTED_TWICE()
             elif character_id not in owned:
                 reason = NOT_IN_AUTH_REASON
             elif character_id in holders and row.get("status") != HAS_PAP:

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Pages and helpers the PAP rules add: configuration sections, approvals, links, kicks and presets."""
 
 from unittest import mock

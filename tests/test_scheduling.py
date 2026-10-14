@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Pre pings: scheduling a fleet, its page, editing, cancelling and starting it later."""
 
 import uuid
@@ -17,6 +20,7 @@ from fleetops.services.messages import RenderedMessages
 from fleetops.services.scheduling import cancel_scheduled_fleet, schedule_fleet, start_scheduled_fleet
 
 from . import factories as f
+from .static_files import static_source
 from .test_operations_tracking import FLEET_ID, FakeESIMixin, set_scopes
 
 UTC = dt_timezone.utc
@@ -646,7 +650,8 @@ class EditScheduledFleetTests(SchedulingTestBase):
 
         page = self.client.get(reverse("fleetops:edit_scheduled_fleet", args=[operation.uuid]))
 
-        self.assertContains(page, "form.addEventListener('submit', () => { submitButton.disabled = true; });")
+        self.assertContains(page, "fleetops/start_fleet.js")
+        self.assertIn("form.addEventListener('submit', () => { submitButton.disabled = true; });", static_source("start_fleet.js"))
 
     def test_channel_rules_apply_to_the_edit(self):
         quiet = f.ping_channel("Quiet")

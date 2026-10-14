@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Monthly targets and the statuses derived from them.
 
 A target row applies from its month (EVE time) until the next row. Statuses follow one colour rule for
@@ -12,6 +15,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from django.db.models import Q
+from django.utils.translation import gettext_lazy, pgettext_lazy
 
 from fleetops.models import StatisticsTarget
 from fleetops.services.periods import MonthRef
@@ -31,19 +35,20 @@ BELOW_SO_FAR = "below_so_far"
 NONE = "none"
 
 STATUS_LABELS = {
-    MET: "Target met",
-    MISSED: "Below target",
-    IN_PROGRESS: "Not reached yet",
-    NO_MEMBERS: "No members",
-    OK: "OK",
-    BELOW: "Below minimum",
-    BELOW_SO_FAR: "Below minimum so far",
+    MET: gettext_lazy("Target met"),
+    MISSED: gettext_lazy("Below target"),
+    IN_PROGRESS: gettext_lazy("Not reached yet"),
+    NO_MEMBERS: gettext_lazy("No members"),
+    OK: pgettext_lazy("member status", "OK"),
+    BELOW: gettext_lazy("Below minimum"),
+    BELOW_SO_FAR: gettext_lazy("Below minimum so far"),
 }
 
 
 def status_label(status: str) -> str:
-    """Words for a status key; empty for ``none`` and unknown keys."""
-    return STATUS_LABELS.get(status, "")
+    """Words for a status key in the active language; empty for ``none`` and unknown keys."""
+    label = STATUS_LABELS.get(status)
+    return "" if label is None else str(label)
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Fleet management groundwork: who may change a fleet, expected changes, refreshes, jobs and the write lock."""
 
 import time
@@ -819,7 +822,7 @@ class WriteLockTests(FleetTestCase):
 
 
 class KickLockTests(FleetTestCase):
-    """1c's kicks share the write lock and the job runner with the other fleet changes."""
+    """Kicks share the write lock and the job runner with the other fleet changes."""
 
     def setUp(self):
         super().setUp()

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Result types shared by the statistics services, pages and exports.
 
 They are plain dataclasses without behaviour so that the corporation, member and export code can be written

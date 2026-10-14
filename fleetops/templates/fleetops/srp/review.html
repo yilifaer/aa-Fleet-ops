@@ -1,39 +1,39 @@
 {% extends "fleetops/base.html" %}
-{% load static fleetops_srp fleetops_messages %}
+{% load i18n static fleetops_srp fleetops_messages %}
 {% block fleetops_content %}
 <div class="mb-3">
-  <h2 class="mb-1">SRP Review</h2>
-  <div class="text-muted">Claims by the EVE month of the loss{% if not srp_enabled %} &middot; FleetOps SRP is not enabled, members cannot submit new claims.{% endif %}</div>
+  <h2 class="mb-1">{% translate "SRP Review" %}</h2>
+  <div class="text-muted">{% translate "Claims by the EVE month of the loss" %}{% if not srp_enabled %} &middot; {% translate "FleetOps SRP is not enabled, members cannot submit new claims." %}{% endif %}</div>
 </div>
 {% include "fleetops/month_selector.html" %}
 <div class="small text-muted mb-3">
-  {% if month_filter_active %}Showing the losses of {{ month_ref.label }}. <a href="?{{ all_months_query }}">Show all months</a>{% else %}Showing the losses of all months. Pick a month above to narrow the list.{% endif %}
+  {% if month_filter_active %}{% blocktranslate trimmed with label=month_ref.label query=all_months_query %}Showing the losses of {{ label }}. <a href="?{{ query }}">Show all months</a>{% endblocktranslate %}{% else %}{% translate "Showing the losses of all months. Pick a month above to narrow the list." %}{% endif %}
 </div>
 
 <form method="get" class="card card-body mb-3 fleetops-srp-filters">
   {% if month_filter_active %}<input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="month" value="{{ month }}">{% endif %}
   <div class="row g-2 align-items-end">
-    <div class="col-sm-6 col-lg-4"><label class="form-label mb-1" for="{{ filter_form.status.id_for_label }}">Status</label>{{ filter_form.status }}</div>
-    <div class="col-sm-6 col-lg-4"><label class="form-label mb-1" for="{{ filter_form.scope.id_for_label }}">Where</label>{{ filter_form.scope }}</div>
-    <div class="col-sm-6 col-lg-4"><label class="form-label mb-1" for="{{ filter_form.flag.id_for_label }}">Flag</label>{{ filter_form.flag }}</div>
-    <div class="col-sm-6 col-lg-4"><label class="form-label mb-1" for="{{ filter_form.corporation.id_for_label }}">Corporation</label>{{ filter_form.corporation }}</div>
+    <div class="col-sm-6 col-lg-4"><label class="form-label mb-1" for="{{ filter_form.status.id_for_label }}">{% translate "Status" %}</label>{{ filter_form.status }}</div>
+    <div class="col-sm-6 col-lg-4"><label class="form-label mb-1" for="{{ filter_form.scope.id_for_label }}">{% translate "Where" %}</label>{{ filter_form.scope }}</div>
+    <div class="col-sm-6 col-lg-4"><label class="form-label mb-1" for="{{ filter_form.flag.id_for_label }}">{% translate "Flag" %}</label>{{ filter_form.flag }}</div>
+    <div class="col-sm-6 col-lg-4"><label class="form-label mb-1" for="{{ filter_form.corporation.id_for_label }}">{% translate "Corporation" context "FleetOps" %}</label>{{ filter_form.corporation }}</div>
     <div class="col-sm-6 col-lg-4"><label class="form-label mb-1" for="{{ filter_form.fc.id_for_label }}">FC</label>{{ filter_form.fc }}</div>
-    <div class="col-sm-6 col-lg-4"><label class="form-label mb-1" for="{{ filter_form.q.id_for_label }}">Search</label>{{ filter_form.q }}</div>
+    <div class="col-sm-6 col-lg-4"><label class="form-label mb-1" for="{{ filter_form.q.id_for_label }}">{% translate "Search" %}</label>{{ filter_form.q }}</div>
   </div>
   <div class="mt-2 d-flex flex-wrap gap-2">
-    <button type="submit" class="btn btn-primary">Filter</button>
-    <a class="btn btn-outline-secondary" href="{% url 'fleetops:srp_review' %}">Reset</a>
+    <button type="submit" class="btn btn-primary">{% translate "Filter" context "FleetOps" %}</button>
+    <a class="btn btn-outline-secondary" href="{% url 'fleetops:srp_review' %}">{% translate "Reset" %}</a>
   </div>
 </form>
 
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
   <div class="small text-muted">
-    <span class="fleetops-srp-legend fleetops-srp-over-limit">Over a limit</span>
-    <span class="fleetops-srp-legend fleetops-srp-warning">Needs a look</span>
+    <span class="fleetops-srp-legend fleetops-srp-over-limit">{% translate "Over a limit" %}</span>
+    <span class="fleetops-srp-legend fleetops-srp-warning">{% translate "Needs a look" %}</span>
   </div>
-  <form method="post" action="{% url 'fleetops:srp_review_recalculate' %}" class="fleetops-srp-form" data-srp-once data-srp-confirm="Recalculate every pending claim with the current payout table, caps and limits?">
+  <form method="post" action="{% url 'fleetops:srp_review_recalculate' %}" class="fleetops-srp-form" data-srp-once data-srp-confirm="{% translate 'Recalculate every pending claim with the current payout table, caps and limits?' %}">
     {% csrf_token %}<input type="hidden" name="next" value="{{ next_url }}">
-    <button type="submit" class="btn btn-sm btn-outline-secondary">Recalculate all pending with current rules</button>
+    <button type="submit" class="btn btn-sm btn-outline-secondary">{% translate "Recalculate all pending with current rules" %}</button>
   </form>
 </div>
 
@@ -43,8 +43,8 @@
   <div class="card mb-3">
     <div class="card-body p-0">{% include "fleetops/srp/_claims_table.html" %}</div>
     <div class="card-footer d-flex flex-wrap align-items-center gap-3">
-      <button type="submit" class="btn btn-success" data-srp-bulk-button disabled>Approve selected at the suggested amount</button>
-      <span class="small text-muted"><span data-srp-selected-count>0</span> selected. Only claims without warnings are approved; the others are listed afterwards.</span>
+      <button type="submit" class="btn btn-success" data-srp-bulk-button disabled>{% translate "Approve selected at the suggested amount" %}</button>
+      <span class="small text-muted">{% blocktranslate trimmed %}<span data-srp-selected-count>0</span> selected. Only claims without warnings are approved; the others are listed afterwards.{% endblocktranslate %}</span>
     </div>
   </div>
 </form>

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """FC lead review of manual fleets, PAP-link fleets and manual PAP.
 
 Approvers are the holders of ``fleetops.manage_fleets`` (the FC lead bundle). Their own entries are
@@ -18,7 +21,7 @@ def initial_review_status(user) -> str:
 
 
 def initial_review_fields(user, now=None) -> dict:
-    """Review fields of a new fleet or attendance row created by ``user``."""
+    """Review fields of a new fleet or PAP row created by ``user``."""
     if is_approver(user):
         return {
             "review_status": ReviewStatus.APPROVED,

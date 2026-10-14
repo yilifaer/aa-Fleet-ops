@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """CSV and XLSX writers for statistics exports.
 
 Both writers take a :class:`Table` and return a download response. The CSV is
@@ -22,6 +25,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from django.http import HttpResponse, StreamingHttpResponse
 from django.utils.http import content_disposition_header
 from django.utils.text import slugify
+from django.utils.translation import gettext, pgettext
 
 UTC = timezone.utc
 MAX_EXPORT_ROWS = 200_000
@@ -87,7 +91,7 @@ def export_filename(dataset: str, *parts) -> str:
 
 
 def truncation_note() -> str:
-    return f"Export truncated at {MAX_EXPORT_ROWS} rows. Choose a shorter period."
+    return gettext("Export truncated at %(rows)s rows. Choose a shorter period.") % {"rows": MAX_EXPORT_ROWS}
 
 
 def export_response(table: Table, fmt: str, filename: str):
@@ -131,7 +135,7 @@ def cell_value(value, kind: str = "text"):
     if value is None:
         return None
     if isinstance(value, bool) or (kind == "bool" and not isinstance(value, str)):
-        return "Yes" if value else "No"
+        return pgettext("FleetOps", "Yes") if value else pgettext("FleetOps", "No")
     if isinstance(value, datetime):
         return format_datetime(value)
     if isinstance(value, date):
@@ -276,20 +280,21 @@ _STYLES = (
 BOLD_STYLE = 1
 COLUMN_WIDTH = 18
 ABOUT_SHEET = "About"
-# Excel refuses a data sheet called "History"; "About" is taken by the second sheet.
+# Excel refuses a data sheet called "History"; the About sheet is the second sheet, so its name is taken.
 _RESERVED_SHEET_NAMES = {"about", "history"}
 _ABOUT_WIDTHS = (28, 80)
 
 
 def build_xlsx(table: Table) -> bytes:
     data_sheet = sheet_name(table.name)
-    if data_sheet.casefold() in _RESERVED_SHEET_NAMES:
+    about_sheet = about_sheet_name()
+    if data_sheet.casefold() in _RESERVED_SHEET_NAMES | {about_sheet.casefold()}:
         data_sheet = f"{data_sheet} data"
     buffer = BytesIO()
     with ZipFile(buffer, "w", ZIP_DEFLATED) as archive:
         archive.writestr("[Content_Types].xml", _CONTENT_TYPES)
         archive.writestr("_rels/.rels", _ROOT_RELS)
-        archive.writestr("xl/workbook.xml", _workbook_xml(data_sheet))
+        archive.writestr("xl/workbook.xml", _workbook_xml(data_sheet, about_sheet))
         archive.writestr("xl/_rels/workbook.xml.rels", _WORKBOOK_RELS)
         archive.writestr("xl/styles.xml", _STYLES)
         with archive.open("xl/worksheets/sheet1.xml", "w", force_zip64=True) as stream:
@@ -303,7 +308,12 @@ def sheet_name(name) -> str:
     """Excel sheet name: at most 31 characters, none of ``[]:*?/\\``, no edge apostrophes."""
     text = _SHEET_NAME_ILLEGAL.sub(" ", _INVALID_CHARS.sub("", str(name or "")))
     text = " ".join(text.split())[:MAX_SHEET_NAME].strip().strip("'").strip()
-    return text or "Export"
+    return text or gettext("Export")
+
+
+def about_sheet_name() -> str:
+    """The name of the second sheet, in the language of whoever downloads the file."""
+    return sheet_name(gettext("About"))
 
 
 def column_letter(index: int) -> str:
@@ -326,13 +336,13 @@ def xlsx_text(value: str) -> str:
     return text
 
 
-def _workbook_xml(data_sheet):
+def _workbook_xml(data_sheet, about_sheet=ABOUT_SHEET):
     return (
         _XML_DECLARATION + f'<workbook xmlns="{_MAIN_NS}" xmlns:r="{_REL_NS}">'
         '<bookViews><workbookView activeTab="0"/></bookViews>'
         "<sheets>"
         f'<sheet name="{_attr(data_sheet)}" sheetId="1" r:id="rId1"/>'
-        f'<sheet name="{ABOUT_SHEET}" sheetId="2" r:id="rId2"/>'
+        f'<sheet name="{_attr(about_sheet)}" sheetId="2" r:id="rId2"/>'
         "</sheets></workbook>"
     )
 
@@ -401,7 +411,7 @@ def _data_sheet_chunks(table: Table) -> Iterator[str]:
 def _about_sheet_chunks(table: Table, data_sheet: str) -> Iterator[str]:
     widths = [(index + 1, index + 1, width) for index, width in enumerate(_ABOUT_WIDTHS)]
     yield _sheet_start(widths, frozen_header=False)
-    about = list(table.about) or [("Dataset", data_sheet)]
+    about = list(table.about) or [(gettext("Dataset"), data_sheet)]
     for number, (label, value) in enumerate(about, start=1):
         yield (
             f'<row r="{number}">'

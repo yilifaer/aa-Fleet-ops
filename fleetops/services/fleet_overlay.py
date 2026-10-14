@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Changes FleetOps made to a fleet that ESI may not show yet.
 
 ESI answers the fleet routes from its own cache for 5 seconds, so a read right after a change can
@@ -16,6 +19,7 @@ squad_id}``.
 import time
 
 from django.core.cache import cache
+from django.utils.translation import gettext, pgettext_lazy
 
 from fleetops.services.fleet_rules import NO_UNIT, normalize_wings
 
@@ -35,8 +39,9 @@ MEMBER_KINDS = ("member_moved",)
 INVITE_KINDS = ("invited",)
 KINDS = STRUCTURE_KINDS + MEMBER_KINDS + INVITE_KINDS
 
-NEW_WING_NAME = "Wing"
-NEW_SQUAD_NAME = "Squad"
+# What a new wing or squad is called until ESI shows its name.
+NEW_WING_NAME = pgettext_lazy("name of a new wing", "Wing")
+NEW_SQUAD_NAME = pgettext_lazy("name of a new squad", "Squad")
 # Fields of a tracked member used by the fleet view and the change checks.
 MEMBER_FIELDS = (
     "character_id",
@@ -119,7 +124,7 @@ def _apply_structure(wings, change) -> None:
     by_id = {wing["id"]: wing for wing in wings}
     if kind == "wing_created":
         if change["wing_id"] not in by_id:
-            name = change.get("name") or NEW_WING_NAME
+            name = change.get("name") or str(NEW_WING_NAME)
             wings.append({"id": change["wing_id"], "name": name, "squads": [], "pending": True})
         elif change.get("name"):
             by_id[change["wing_id"]].update(name=change["name"], pending=True)
@@ -135,7 +140,7 @@ def _apply_structure(wings, change) -> None:
             return
         squad = next((squad for squad in wing["squads"] if squad["id"] == change["squad_id"]), None)
         if squad is None:
-            name = change.get("name") or NEW_SQUAD_NAME
+            name = change.get("name") or str(NEW_SQUAD_NAME)
             wing["squads"].append({"id": change["squad_id"], "name": name, "pending": True})
         elif change.get("name"):
             squad.update(name=change["name"], pending=True)
@@ -203,7 +208,7 @@ def pending_invitations(operation_id, active_ids) -> list[dict]:
     invitations = [
         {
             "character_id": character_id,
-            "name": change.get("name") or f"Character {character_id}",
+            "name": change.get("name") or gettext("Character %(id)s") % {"id": character_id},
             "role": change.get("role") or "squad_member",
             "wing_id": change.get("wing_id"),
             "squad_id": change.get("squad_id"),

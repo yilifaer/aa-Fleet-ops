@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 FLEET_READ_SCOPE = "esi-fleets.read_fleet.v1"
 FLEET_WRITE_SCOPE = "esi-fleets.write_fleet.v1"
 FLEET_SCOPES = [FLEET_READ_SCOPE, FLEET_WRITE_SCOPE]

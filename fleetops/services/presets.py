@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Fleet Start presets: Fleet Start values an FC saves under a name and loads again later.
 
 A preset keeps the Fleet Start field names with their form values (ids for configuration items)
@@ -9,7 +12,9 @@ kept; the FC character only when the FC asks for it.
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
+from django.utils.translation import gettext, gettext_lazy
 
+from fleetops import texts
 from fleetops.models import FleetStartPreset
 from fleetops.services.identity import get_owned_character
 
@@ -20,14 +25,14 @@ DOCTRINE = "doctrine_choice"
 CUSTOM_DOCTRINE = "custom_doctrine"
 # What a warning calls an item that is gone.
 ITEM_NAMES = {
-    "fleet_type": "Fleet type",
-    "comms": "Comms preset",
-    "logi_channel": "Logi channel",
-    "boost_channel": "Boost channel",
-    "ping_channel": "Ping channel",
-    "ping_template": "Ping template",
-    "motd_template": "MOTD template",
-    "ping_mentions": "Ping target",
+    "fleet_type": gettext_lazy("Fleet type"),
+    "comms": gettext_lazy("Comms preset"),
+    "logi_channel": gettext_lazy("Logi channel"),
+    "boost_channel": gettext_lazy("Boost channel"),
+    "ping_channel": gettext_lazy("Ping channel"),
+    "ping_template": gettext_lazy("Ping template"),
+    "motd_template": gettext_lazy("MOTD template"),
+    "ping_mentions": gettext_lazy("Ping target"),
 }
 
 
@@ -133,7 +138,7 @@ def save_preset(user, name, data, *, overwrite=False, remember_fc=False, make_de
     """
     name = (name or "").strip()
     if not name:
-        raise ValueError("A preset needs a name.")
+        raise ValueError(texts.PRESET_NAME_REQUIRED())
     form = _start_form_class(form_class)(user=user)
     values = values_from_data(form, data)
     character = _owned_character(user, data.get(FC_CHARACTER)) if remember_fc else None
@@ -186,7 +191,7 @@ def load_preset(preset, form_class, user):
 
 def _gone(name, field, label, warnings):
     item = ITEM_NAMES.get(name) or str(field.label or name)
-    warnings.append(f"{item} '{label}' is no longer available.")
+    warnings.append(gettext("%(item)s '%(label)s' is no longer available.") % {"item": item, "label": label})
 
 
 def _model_choice(field, name, value, labels, warnings):
@@ -232,15 +237,18 @@ def _load_doctrine(form, stored, labels, initial, warnings):
     name = labels.get(DOCTRINE) or value
     initial[DOCTRINE] = ""
     initial[CUSTOM_DOCTRINE] = name
-    warnings.append(f"Doctrine '{name}' is no longer available; it was entered as a custom doctrine.")
+    warnings.append(
+        gettext("Doctrine '%(name)s' is no longer available; it was entered as a custom doctrine.")
+        % {"name": name}
+    )
 
 
 def _load_fc_character(preset, user, labels, initial, warnings):
     if not preset.fc_character_id:
         return
     if get_owned_character(user, preset.fc_character_id) is None:
-        name = labels.get(FC_CHARACTER) or f"character {preset.fc_character_id}"
-        warnings.append(f"FC character '{name}' is no longer one of your characters.")
+        name = labels.get(FC_CHARACTER) or gettext("character %(id)s") % {"id": preset.fc_character_id}
+        warnings.append(gettext("FC character '%(name)s' is no longer one of your characters.") % {"name": name})
         return
     initial[FC_CHARACTER] = str(preset.fc_character_id)
 

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The SRP exports: who may download which file, what the files hold and the audit entry of a download."""
 
 from datetime import date
@@ -8,10 +11,12 @@ from django.db import connection
 from django.http import Http404
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
+from django.utils import translation
 
 from fleetops.models import AuditLog, SrpClaim
 from fleetops.services import export_datasets as datasets
 from fleetops.services import exports
+from fleetops import texts
 from fleetops.srp import summaries
 from fleetops.views_srp_review import day_bounds
 
@@ -23,6 +28,11 @@ M = data.M
 Status = SrpClaim.Status
 SRP_SLUGS = ("srp-claims", "srp-members", "srp-corporations", "srp-fcs")
 PARAMS = {"year": 2026, "month": 3}
+
+
+def translation_of(text):
+    with translation.override("zh-hans"):
+        return texts.translate_stored(text)
 
 
 def rows_by_title(table):
@@ -219,6 +229,25 @@ class ClaimsFileTests(ExportTestCase):
         row = next(row for row in rows_by_title(self.table()[0]) if row["Claim"] == self.a3.reference)
 
         self.assertIn("from the future", row["Warnings"].lower())
+
+    def test_a_reason_the_system_wrote_is_in_the_language_of_the_viewer_and_a_typed_one_is_not_changed(self):
+        system = texts.SRP_REJECTED_LIMIT_USED_UP(limit=texts.SRP_LIMIT_PERSONAL(), cap="100m ISK")
+        SrpClaim.objects.filter(pk=self.a2.pk).update(decision_reason=system)
+        SrpClaim.objects.filter(pk=self.a4.pk).update(decision_reason="Wrong ship: see the killmail")
+
+        def reasons(language):
+            with translation.override(language):
+                table, *_ = self.table()
+                position = [column.key for column in table.columns].index("reason")
+                names = [column.key for column in table.columns].index("claim")
+                return {row[names]: row[position] for row in table.rows}
+
+        english, chinese = reasons("en"), reasons("zh-hans")
+        self.assertEqual(english[self.a2.reference], system)
+        self.assertEqual(chinese[self.a2.reference], translation_of(system))
+        self.assertNotEqual(chinese[self.a2.reference], system)
+        self.assertEqual(english[self.a4.reference], "Wrong ship: see the killmail")
+        self.assertEqual(chinese[self.a4.reference], "Wrong ship: see the killmail")
 
     def test_filters(self):
         paid = rows_by_title(self.table(status="paid")[0])

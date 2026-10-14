@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Regenerate & push MOTD on a running fleet, and the fleet page's Ping / MOTD display."""
 
 from unittest import mock
@@ -181,7 +184,7 @@ class RegenerateServiceTests(RegenerateTestBase):
         attendance_only = f.create_operation(self.fc, send_ping=False, motd_text="Old")
         manual = f.create_operation(self.fc, status=Status.CLOSED, is_manual=True, send_ping=False)
         for operation, text in (
-            (attendance_only, "Attendance-only mode: MOTD update intentionally skipped."),
+            (attendance_only, "PAP-only mode: MOTD update intentionally skipped."),
             (manual, "Manual fleet: MOTD update intentionally skipped."),
         ):
             with self.subTest(operation=text):

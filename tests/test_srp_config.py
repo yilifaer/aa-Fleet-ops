@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """The FleetOps SRP configuration: the settings page, the payout table and the corporation limits."""
 
 from decimal import Decimal

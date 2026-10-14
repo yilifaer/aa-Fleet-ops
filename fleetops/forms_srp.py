@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Forms of the SRP pages, and the ISK input that the configuration forms share."""
 
 import re
@@ -5,11 +8,15 @@ import uuid
 from decimal import Decimal
 
 from django import forms
+from django.utils.text import format_lazy
+from django.utils.translation import gettext_lazy as _
+from django.utils.translation import pgettext_lazy
 
 from fleetops.constants import MAX_ISK
 from fleetops.forms import _style
 from fleetops.srp.killmails import parse_killmail_reference
 from fleetops.srp.types import SrpError
+from fleetops.texts import translate_stored
 
 # What members may paste: an in-game link, a killboard link or an ID with its hash.
 KILLMAIL_INPUT_LENGTH = 2000
@@ -19,9 +26,9 @@ NOTE_LENGTH = 255
 # Claims ticked in one list.
 MAX_SELECTED_CLAIMS = 200
 
-ISK_EXAMPLES = "250m, 1.2b or 250,000,000"
-ISK_INVALID = f"Enter an amount in ISK, for example {ISK_EXAMPLES}."
-ISK_DECIMAL_HINT = "Write decimals with a point and thousands with commas, for example 1.5m or 1,500,000."
+ISK_EXAMPLES = _("250m, 1.2b or 250,000,000")
+ISK_INVALID = format_lazy(_("Enter an amount in ISK, for example {examples}."), examples=ISK_EXAMPLES)
+ISK_DECIMAL_HINT = _("Write decimals with a point and thousands with commas, for example 1.5m or 1,500,000.")
 _ISK_TEXT_LENGTH = 40
 _SUFFIXES = {"": 1, "k": 10**3, "m": 10**6, "b": 10**9}
 _SPACES = str.maketrans({" ": " ", " ": " ", " ": " "})
@@ -44,7 +51,7 @@ def parse_isk(text) -> int:
     if len(text) > _ISK_TEXT_LENGTH:
         raise ValueError(ISK_INVALID)
     if text.startswith("-"):
-        raise ValueError("Enter a positive amount of ISK.")
+        raise ValueError(_("Enter a positive amount of ISK."))
     text = re.sub(r"\s*isk$", "", text)
     match = _NUMBER_AND_SUFFIX.fullmatch(text)
     if match is None:
@@ -54,7 +61,7 @@ def parse_isk(text) -> int:
         raise ValueError(ISK_DECIMAL_HINT if "," in number else ISK_INVALID)
     value = Decimal(number.replace(",", "").replace(" ", "")) * _SUFFIXES[suffix]
     if value != value.to_integral_value():
-        raise ValueError("ISK amounts must be whole numbers.")
+        raise ValueError(_("ISK amounts must be whole numbers."))
     return int(value)
 
 
@@ -68,15 +75,15 @@ class IskField(forms.Field):
     widget = forms.TextInput
     default_error_messages = {
         "invalid": ISK_INVALID,
-        "min_value": "The amount must be at least %(limit)s ISK.",
-        "max_value": "The amount must be at most %(limit)s ISK.",
+        "min_value": _("The amount must be at least %(limit)s ISK."),
+        "max_value": _("The amount must be at most %(limit)s ISK."),
     }
 
     def __init__(self, *, min_value=1, max_value=MAX_ISK, **kwargs):
         self.min_value = min_value
         self.max_value = max_value
         super().__init__(**kwargs)
-        self.widget.attrs.setdefault("placeholder", "e.g. 250m")
+        self.widget.attrs.setdefault("placeholder", _("e.g. 250m"))
         self.widget.attrs.setdefault("autocomplete", "off")
         self.widget.attrs.setdefault("maxlength", str(_ISK_TEXT_LENGTH))
 
@@ -133,7 +140,7 @@ class ClaimIdsField(forms.MultipleChoiceField):
         values = super().clean(value)
         if len(values) > MAX_SELECTED_CLAIMS:
             raise forms.ValidationError(
-                f"Select at most {MAX_SELECTED_CLAIMS} claims at a time.", code="too_many"
+                _("Select at most %(max)s claims at a time.") % {"max": MAX_SELECTED_CLAIMS}, code="too_many"
             )
         # A repeated box counts once; the order of the list is kept.
         return list(dict.fromkeys(uuid.UUID(str(item)) for item in values))
@@ -146,7 +153,11 @@ class ClaimSelectionForm(forms.Form):
     approved amount in the payments list. The services refuse a claim whose amount is another one by then.
     """
 
-    claim = ClaimIdsField(required=True, error_messages={"required": "Select at least one claim."})
+    claim = ClaimIdsField(
+        label=_("Claim"),
+        required=True,
+        error_messages={"required": _("Select at least one claim.")},
+    )
 
     def shown_amounts(self) -> dict:
         """``{uuid: amount}`` of the ticked claims that posted a readable amount; others are left out."""
@@ -162,17 +173,17 @@ class ClaimInputForm(forms.Form):
     """What a member pastes to start a claim."""
 
     killmail = forms.CharField(
-        label="Killmail",
+        label=_("Killmail"),
         max_length=KILLMAIL_INPUT_LENGTH,
         strip=True,
         widget=forms.Textarea(
             attrs={
                 "rows": 2,
-                "placeholder": "In-game killmail link, zKillboard link, or killmail ID and hash",
+                "placeholder": _("In-game killmail link, zKillboard link, or killmail ID and hash"),
                 "autocomplete": "off",
             }
         ),
-        help_text="Paste the in-game killmail link (works immediately) or a zKillboard link.",
+        help_text=_("Paste the in-game killmail link (works immediately) or a zKillboard link."),
     )
 
     def __init__(self, *args, **kwargs):
@@ -185,7 +196,7 @@ class ClaimInputForm(forms.Form):
         try:
             self.reference = parse_killmail_reference(text)
         except SrpError as exc:
-            raise forms.ValidationError(exc.message, code=exc.code) from None
+            raise forms.ValidationError(translate_stored(exc.message), code=exc.code) from None
         return text
 
 
@@ -194,12 +205,12 @@ class SubmitClaimForm(forms.Form):
 
     token = forms.CharField(max_length=1000, widget=forms.HiddenInput())
     comment = forms.CharField(
-        label="Comment",
+        label=pgettext_lazy("FleetOps", "Comment"),
         required=False,
         max_length=COMMENT_LENGTH,
         strip=True,
         widget=forms.Textarea(attrs={"rows": 2}),
-        help_text="Optional. Anything the reviewer should know.",
+        help_text=_("Optional. Anything the reviewer should know."),
     )
 
     def __init__(self, *args, **kwargs):
@@ -211,7 +222,11 @@ class WithdrawForm(forms.Form):
     """Withdraw a pending claim; the reason is optional."""
 
     reason = forms.CharField(
-        label="Reason", required=False, max_length=REASON_LENGTH, strip=True, widget=forms.Textarea(attrs={"rows": 2})
+        label=_("Reason"),
+        required=False,
+        max_length=REASON_LENGTH,
+        strip=True,
+        widget=forms.Textarea(attrs={"rows": 2}),
     )
 
     def __init__(self, *args, **kwargs):
@@ -223,7 +238,7 @@ class ReasonForm(forms.Form):
     """A decision that needs its reason: reject, revoke an approval, undo a payment, reopen."""
 
     reason = forms.CharField(
-        label="Reason",
+        label=_("Reason"),
         max_length=REASON_LENGTH,
         strip=True,
         widget=forms.Textarea(attrs={"rows": 2}),
@@ -249,26 +264,28 @@ class ApproveForm(forms.Form):
 
     mode = forms.ChoiceField(
         choices=[
-            (SUGGESTED, "Approve suggested"),
-            (WITHIN_LIMIT, "Approve within limit"),
-            (AMOUNT, "Approve amount"),
+            (SUGGESTED, _("Approve suggested")),
+            (WITHIN_LIMIT, _("Approve within limit")),
+            (AMOUNT, _("Approve amount")),
         ],
         widget=forms.HiddenInput(),
     )
-    amount = IskField(required=False, label="Amount")
+    amount = IskField(required=False, label=_("Amount"))
     reason = forms.CharField(
-        label="Reason",
+        label=_("Reason"),
         required=False,
         max_length=REASON_LENGTH,
         strip=True,
         widget=forms.Textarea(attrs={"rows": 2}),
         help_text=(
-            "Required when the amount differs from the suggested amount, when you change an approved amount "
-            "and when you approve over a monthly limit."
+            _(
+                "Required when the amount differs from the suggested amount, when you change an approved amount "
+                "and when you approve over a monthly limit."
+            )
         ),
     )
-    confirm_above_policy = forms.BooleanField(label="Pay more than the policy amount", required=False)
-    confirm_over_limit = forms.BooleanField(label="Approve over the monthly limit", required=False)
+    confirm_above_policy = forms.BooleanField(label=_("Pay more than the policy amount"), required=False)
+    confirm_over_limit = forms.BooleanField(label=_("Approve over the monthly limit"), required=False)
     shown_status = forms.ChoiceField(required=False, choices=SHOWN_STATUSES, widget=forms.HiddenInput())
     shown_suggested = forms.IntegerField(required=False, min_value=0, max_value=MAX_ISK, widget=forms.HiddenInput())
     shown_limited = forms.IntegerField(required=False, min_value=0, max_value=MAX_ISK, widget=forms.HiddenInput())
@@ -280,7 +297,7 @@ class ApproveForm(forms.Form):
     def clean(self):
         data = super().clean()
         if data.get("mode") == self.AMOUNT and data.get("amount") is None and "amount" not in self.errors:
-            self.add_error("amount", "Enter the amount to approve.")
+            self.add_error("amount", _("Enter the amount to approve."))
         return data
 
     def amount_for(self, claim) -> int:
@@ -312,7 +329,7 @@ class PaidForm(forms.Form):
     when the approved amount is another one by then.
     """
 
-    note = forms.CharField(label="Payment note", required=False, max_length=NOTE_LENGTH, strip=True)
+    note = forms.CharField(label=_("Payment note"), required=False, max_length=NOTE_LENGTH, strip=True)
     shown_amount = forms.IntegerField(required=False, min_value=0, max_value=MAX_ISK, widget=forms.HiddenInput())
 
     def __init__(self, *args, **kwargs):
@@ -327,14 +344,14 @@ class ReclassifyForm(forms.Form):
     OUT_OF_FLEET = "out_of_fleet"
 
     scope = forms.ChoiceField(
-        choices=[(IN_FLEET, "In fleet"), (OUT_OF_FLEET, "Out of fleet")], label="Loss happened"
+        choices=[(IN_FLEET, _("In fleet")), (OUT_OF_FLEET, _("Out of fleet"))], label=_("Loss happened")
     )
     link = forms.CharField(
-        label="Fleet SRP link code", required=False, max_length=32, strip=True,
-        help_text="The code of the fleet's SRP link; needed for an in-fleet loss.",
+        label=_("Fleet SRP link code"), required=False, max_length=32, strip=True,
+        help_text=_("The code of the fleet's SRP link; needed for an in-fleet loss."),
     )
     reason = forms.CharField(
-        label="Reason", max_length=REASON_LENGTH, strip=True, widget=forms.Textarea(attrs={"rows": 2})
+        label=_("Reason"), max_length=REASON_LENGTH, strip=True, widget=forms.Textarea(attrs={"rows": 2})
     )
 
     def __init__(self, *args, **kwargs):
@@ -344,7 +361,7 @@ class ReclassifyForm(forms.Form):
     def clean(self):
         data = super().clean()
         if data.get("scope") == self.IN_FLEET and not data.get("link"):
-            self.add_error("link", "Choose the fleet's SRP link for an in-fleet loss.")
+            self.add_error("link", _("Choose the fleet's SRP link for an in-fleet loss."))
         return data
 
 
@@ -352,7 +369,7 @@ class NoteForm(forms.Form):
     """An internal note on a claim; the claimant never sees it."""
 
     text = forms.CharField(
-        label="Internal note", max_length=REASON_LENGTH, strip=True, widget=forms.Textarea(attrs={"rows": 2})
+        label=_("Internal note"), max_length=REASON_LENGTH, strip=True, widget=forms.Textarea(attrs={"rows": 2})
     )
 
     def __init__(self, *args, **kwargs):
@@ -368,37 +385,61 @@ class ReviewFilterForm(forms.Form):
     """
 
     ANY_STATUS = "all"
-    STATUSES = [("pending", "Pending"), ("approved", "Approved"), ("paid", "Paid"), ("rejected", "Rejected"),
-                ("withdrawn", "Withdrawn")]
-    SCOPES = [("in_fleet", "In fleet"), ("out_of_fleet", "Out of fleet")]
-    FLAGS = [("over_limit", "Over limit"), ("fleet_check", "Fleet check"), ("estimate", "Estimated value"),
-             ("external", "Also claimed elsewhere")]
+    STATUSES = [
+        ("pending", pgettext_lazy("FleetOps", "Pending")),
+        ("approved", pgettext_lazy("FleetOps", "Approved")),
+        ("paid", _("Paid")),
+        ("rejected", pgettext_lazy("FleetOps", "Rejected")),
+        ("withdrawn", _("Withdrawn")),
+    ]
+    SCOPES = [("in_fleet", _("In fleet")), ("out_of_fleet", _("Out of fleet"))]
+    FLAGS = [
+        ("over_limit", _("Over limit")),
+        ("fleet_check", _("Fleet check")),
+        ("estimate", _("Estimated value")),
+        ("external", _("Also claimed elsewhere")),
+    ]
 
-    status = forms.ChoiceField(required=False, choices=[(ANY_STATUS, "Any status"), *STATUSES])
-    scope = forms.ChoiceField(required=False, choices=[("", "Any scope"), *SCOPES])
-    flag = forms.ChoiceField(required=False, choices=[("", "Any flag"), *FLAGS])
-    corporation = forms.TypedChoiceField(required=False, coerce=int, empty_value=None, choices=[("", "Any corporation")])
-    fc = forms.TypedChoiceField(required=False, coerce=int, empty_value=None, choices=[("", "Any FC")])
+    status = forms.ChoiceField(label=_("Status"), required=False, choices=[(ANY_STATUS, _("Any status")), *STATUSES])
+    scope = forms.ChoiceField(label=_("Scope"), required=False, choices=[("", _("Any scope")), *SCOPES])
+    flag = forms.ChoiceField(label=_("Flag"), required=False, choices=[("", _("Any flag")), *FLAGS])
+    corporation = forms.TypedChoiceField(
+        label=pgettext_lazy("FleetOps", "Corporation"),
+        required=False,
+        coerce=int,
+        empty_value=None,
+        choices=[("", _("Any corporation"))],
+    )
+    fc = forms.TypedChoiceField(
+        label=_("FC"),
+        required=False,
+        coerce=int,
+        empty_value=None,
+        choices=[("", _("Any FC"))],
+    )
     q = forms.CharField(
         required=False,
         max_length=100,
         strip=True,
-        label="Search",
-        widget=forms.TextInput(attrs={"placeholder": "Pilot, ship or SRP-123"}),
+        label=_("Search"),
+        widget=forms.TextInput(attrs={"placeholder": _("Pilot, ship or SRP-123")}),
     )
 
     def __init__(self, *args, corporations=(), fcs=(), **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["corporation"].choices = [("", "Any corporation"), *((str(pk), name) for pk, name in corporations)]
-        self.fields["fc"].choices = [("", "Any FC"), *((str(pk), name) for pk, name in fcs)]
+        self.fields["corporation"].choices = [
+            ("", _("Any corporation")),
+            *((str(pk), name) for pk, name in corporations),
+        ]
+        self.fields["fc"].choices = [("", _("Any FC")), *((str(pk), name) for pk, name in fcs)]
         _style(self.fields)
 
 
 class PaymentFilterForm(forms.Form):
     """The payment dates of the payments list (EVE dates); invalid dates are ignored by the view."""
 
-    paid_from = forms.DateField(required=False, label="Paid from", widget=forms.DateInput(attrs={"type": "date"}))
-    paid_to = forms.DateField(required=False, label="Paid to", widget=forms.DateInput(attrs={"type": "date"}))
+    paid_from = forms.DateField(required=False, label=_("Paid from"), widget=forms.DateInput(attrs={"type": "date"}))
+    paid_to = forms.DateField(required=False, label=_("Paid to"), widget=forms.DateInput(attrs={"type": "date"}))
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

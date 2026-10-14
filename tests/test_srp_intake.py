@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Tests for SRP killmail intake: pasted references, zKillboard, ESI killmails and loss values.
 
 No request leaves the test run: zKillboard is reached through a patched ``requests.get`` and
@@ -25,6 +28,7 @@ from esi.exceptions import (
 )
 from requests.structures import CaseInsensitiveDict
 
+import fleetops
 from fleetops.models import MAX_DATABASE_ID
 from fleetops.providers import esi as esi_provider, esi_killmails, zkillboard
 from fleetops.providers.esi import FleetESIError
@@ -383,6 +387,12 @@ class ZkillboardTestCase(SimpleTestCase):
 
 
 class ZkillboardUserAgentTests(SimpleTestCase):
+    def setUp(self):
+        # The contact tests read the header without the project address.
+        patcher = mock.patch.object(zkillboard, "__url__", "")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_contact_email(self):
         self.assertEqual(
             zkillboard.user_agent(),
@@ -392,6 +402,10 @@ class ZkillboardUserAgentTests(SimpleTestCase):
     @override_settings(ESI_USER_CONTACT_EMAIL=None, SITE_URL="https://auth.example.org")
     def test_site_url_without_contact_email(self):
         self.assertIn("(https://auth.example.org)", zkillboard.user_agent())
+
+    def test_the_package_url_is_the_project_url(self):
+        with mock.patch.object(zkillboard, "__url__", fleetops.__url__):
+            self.assertIn(f"(+{fleetops.__url__}; fleetops-tests@example.com)", zkillboard.user_agent())
 
     def test_project_url(self):
         with mock.patch.object(zkillboard, "__url__", "https://github.com/example/aa-fleetops"):
