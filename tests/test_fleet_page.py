@@ -140,7 +140,8 @@ class FleetRouteTests(FleetTabTestCase):
                 response = fc.post(self.url(name, self.own_active, **kwargs), self.post_data(name, data), **JSON)
                 self.assertIn("no-store", response["Cache-Control"])
                 body = response.json()
-                self.assertEqual(set(body), {"ok", "message", "level", "data", "state"})
+                # A failed action also carries the next step ("hint").
+                self.assertEqual(set(body) - {"hint"}, {"ok", "message", "level", "data", "state"})
                 self.assertEqual(body["state"]["status"], "active")
                 self.assertIn("tree_html", body["state"])
                 if name in services:
@@ -339,7 +340,7 @@ class FleetTabPageTests(FleetTabTestCase):
         self.assertNotContains(response, 'id="fleet-root"')
         self.assertNotContains(response, 'data-bs-target="#fleet"')
         self.assertNotContains(response, 'id="fleet-reload-hint"')
-        self.assertContains(response, 'class="nav-link active" data-bs-toggle="tab" data-bs-target="#members"')
+        self.assertContains(response, 'class="nav-link active" data-bs-toggle="tab" data-bs-target="#attendance"')
         self.assertContains(response, 'id="composition-hidden"')
         self.assertNotContains(response, "location.reload")
 
@@ -356,7 +357,7 @@ class FleetTabPageTests(FleetTabTestCase):
             with self.subTest(user=user.username):
                 response = self.page(user, self.own_closed)
                 self.assertContains(response, 'data-bs-target="#fleet" id="fleet-tab">Composition</button>')
-                self.assertContains(response, 'class="nav-link active" data-bs-toggle="tab" data-bs-target="#members"')
+                self.assertContains(response, 'class="nav-link active" data-bs-toggle="tab" data-bs-target="#attendance"')
                 self.assertContains(response, 'data-status="closed"')
                 self.assertContains(response, 'id="fleet-composition"')
                 self.assertContains(response, "Last known ships of everyone tracked in this fleet.")
@@ -380,7 +381,7 @@ class FleetTabPageTests(FleetTabTestCase):
             with self.subTest(operation=operation.pk):
                 response = self.page(self.fc, operation)
                 self.assertNotContains(response, 'data-bs-target="#fleet"')
-                self.assertContains(response, 'class="nav-link active" data-bs-toggle="tab" data-bs-target="#members"')
+                self.assertContains(response, 'class="nav-link active" data-bs-toggle="tab" data-bs-target="#attendance"')
 
     def test_active_fleets_without_a_fleet_tab_reload_for_their_managers(self):
         link_only = f.create_operation(self.fc, link_only=True)

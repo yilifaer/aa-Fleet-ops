@@ -264,7 +264,7 @@ class ControlCardTests(FleetStateTestCase):
         self.assertIn(">Kick 1 Capsule</button>", state["controls_html"])
         self.assertNotIn("disabled>Kick", state["controls_html"])
         self.assertIn('data-kick-names="Line Pilot"', state["controls_html"])
-        self.assertTrue(state["controls_html"].startswith('<div class="card mb-3 border-warning" id="fleet-control">'))
+        self.assertTrue(state["controls_html"].startswith('<div class="card fo-card-warn mb-3" id="fleet-control">'))
 
     def test_the_card_unblocks_when_a_job_has_finished(self):
         fc = self.client_for(self.fc)

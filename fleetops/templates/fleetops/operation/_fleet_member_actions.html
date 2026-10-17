@@ -1,7 +1,12 @@
 {% load i18n %}
 {% if fleet_can_write %}
+{# Move and Kick show while the row is hovered or focused, and always on a touch screen; the "…" menu below keeps every action for the keyboard. #}
+<span class="fo-row-actions">
+  <button type="button" class="fo-icon-btn fleet-quick-move" data-fleet-move-open title="{% blocktranslate trimmed with name=member.name %}Move {{ name }}{% endblocktranslate %}" aria-label="{% blocktranslate trimmed with name=member.name %}Move {{ name }}{% endblocktranslate %}"><i class="fa-solid fa-right-left" aria-hidden="true"></i></button>
+  {% if not member.protected %}<form method="post" action="{% url 'fleetops:kick_member' operation.uuid member.character_id %}" class="d-inline" data-fleet-action data-confirm="{% blocktranslate trimmed with name=member.name %}Kick {{ name }} from the fleet? This cannot be undone.{% endblocktranslate %}">{% csrf_token %}<button class="fo-icon-btn is-danger fleet-quick-kick" title="{% blocktranslate trimmed with name=member.name %}Kick {{ name }}{% endblocktranslate %}" aria-label="{% blocktranslate trimmed with name=member.name %}Kick {{ name }}{% endblocktranslate %}"><i class="fa-solid fa-user-xmark" aria-hidden="true"></i></button></form>{% endif %}
+</span>
 <span class="dropdown fleet-member-menu">
-  <button class="btn btn-sm btn-link p-0" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="{% translate 'Actions' %}"><i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i><span class="visually-hidden">{% blocktranslate trimmed with name=member.name %}Actions for {{ name }}{% endblocktranslate %}</span></button>
+  <button class="fo-icon-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="{% translate 'Actions' %}"><i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i><span class="visually-hidden">{% blocktranslate trimmed with name=member.name %}Actions for {{ name }}{% endblocktranslate %}</span></button>
   <ul class="dropdown-menu dropdown-menu-end">
     <li><button type="button" class="dropdown-item" data-fleet-move-open>{% translate "Move to…" %}</button></li>
     {% if member.squad_id and member.squad_id > 0 and member.wing_id and member.wing_id > 0 %}

@@ -1,5 +1,5 @@
-{% load i18n %}<div class="card mb-3 border-warning" id="fleet-control">
-  <div class="card-header d-flex justify-content-between align-items-center"><strong>{% translate "Fleet Control" %}</strong><span class="badge bg-warning text-dark">{% blocktranslate trimmed count counter=pod_count %}{{ counter }} capsule{% plural %}{{ counter }} capsules{% endblocktranslate %}</span></div>
+{% load i18n fleetops_ui %}{% blocktranslate trimmed asvar capsule_text count counter=pod_count %}{{ counter }} capsule{% plural %}{{ counter }} capsules{% endblocktranslate %}<div class="card fo-card-warn mb-3" id="fleet-control">
+  <div class="card-header d-flex justify-content-between align-items-center"><strong>{% translate "Fleet Control" %}</strong>{% if pod_count %}{% pill "warn" capsule_text %}{% else %}<span class="fo-count">{{ capsule_text }}</span>{% endif %}</div>
   <div class="card-body">
     {% if kick_token_missing %}<div class="alert alert-warning py-2" id="kick-token-missing">{% blocktranslate trimmed with reason=kick_disabled_reason %}{{ reason }}, so nobody can be kicked. Authorize the FC character again with Authorize / Refresh Fleet ESI on Start Fleet.{% endblocktranslate %}</div>{% elif not kick_token_ok %}<div class="alert alert-warning py-2" id="kick-blocked">{% blocktranslate trimmed with reason=kick_disabled_reason %}{{ reason }} Nobody can be kicked now.{% endblocktranslate %}</div>{% endif %}
     <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
@@ -10,7 +10,7 @@
       <div class="d-flex gap-2 flex-wrap">
         <form method="post" action="{% url 'fleetops:kick_capsules' operation.uuid %}" class="kick-list-trigger" data-kick-mode="capsules" data-kick-names="{% for pod in kick_pods %}{{ pod.character_name }}{% if not forloop.last %}, {% endif %}{% endfor %}">
           {% csrf_token %}
-          <button class="btn btn-warning"{% if not kick_token_ok %} title="{{ kick_disabled_reason }}"{% endif %} {% if not pod_count or not kick_token_ok %}disabled{% endif %}>{% blocktranslate trimmed count counter=pod_count %}Kick {{ counter }} Capsule{% plural %}Kick {{ counter }} Capsules{% endblocktranslate %}</button>
+          <button class="btn btn-outline-danger"{% if not kick_token_ok %} title="{{ kick_disabled_reason }}"{% endif %} {% if not pod_count or not kick_token_ok %}disabled{% endif %}>{% blocktranslate trimmed count counter=pod_count %}Kick {{ counter }} Capsule{% plural %}Kick {{ counter }} Capsules{% endblocktranslate %}</button>
         </form>
         <button type="button" class="btn btn-outline-danger kick-list-open" data-kick-mode="system" id="kick-outside-system"{% if not kick_token_ok %} disabled title="{{ kick_disabled_reason }}"{% endif %}>{% translate "Kick outside system…" %}</button>
       </div>

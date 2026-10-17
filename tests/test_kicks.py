@@ -253,7 +253,7 @@ class MemberListTests(KickTestCase):
         self.assertTrue(page.context["kick_token_ok"])
         self.assertNotContains(page, NO_WRITE_TOKEN)
         # Members without an Alliance Auth account keep their badge.
-        self.assertContains(page, "Podded Pilot <span class=\"badge bg-secondary\">Not in Alliance Auth</span>", html=False)
+        self.assertContains(page, "Podded Pilot <span class=\"fo-pill fo-pill-neutral\">Not in Alliance Auth</span>", html=False)
 
     def test_buttons_are_disabled_without_a_write_token(self):
         self.token.scopes.set(self.token.scopes.filter(name=FLEET_READ_SCOPE))

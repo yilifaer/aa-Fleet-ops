@@ -67,7 +67,9 @@ def links_context(request, operation):
         # Own ids, so they never clash with the other forms of the fleet page.
         "pap_link_form": PapLinkForm(auto_id="pap_link_%s") if can_create else None,
         # Closed before the upgrade: registrations could not give PAP there.
-        "pap_link_unavailable": LEGACY_FLEET if operation.status in CREATE_STATUSES and not can_create else "",
+        "pap_link_unavailable": (
+            translate_stored(LEGACY_FLEET) if operation.status in CREATE_STATUSES and not can_create else ""
+        ),
     }
 
 

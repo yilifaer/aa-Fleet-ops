@@ -458,6 +458,50 @@ button.fo-live { cursor: pointer; }
 /* end 6.A */
 
 /* 6.B fleet page */
+/* The command bar: the type and the status on the left, the buttons on the right. A manager of an open fleet keeps it
+   under the navbar (is-sticky); on a phone it scrolls away, because three rows of controls would cover the page. */
+.fleetops .fleet-command-bar { justify-content: space-between; align-items: flex-start; }
+.fleetops .fleet-command-main { flex: 1 1 20rem; min-width: 0; }
+.fleetops .fleet-command-main h2 { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; }
+.fleetops .fleet-command-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; }
+.fleetops .fleet-command-actions { flex: 0 0 auto; }
+/* Alliance Auth's page area starts where its one-line navbar ends, so the bar sticks at the top of that area, or lower
+   when a long menu makes the navbar wrap; operation_detail.html measures the difference into --fleet-bar-top. */
+.fleetops .fo-commandbar.is-sticky { top: var(--fleet-bar-top, 0px); }
+@media (max-width: 767.98px) {
+  .fleetops .fo-commandbar.is-sticky { position: static; }
+  .fleetops .fleet-command-actions { width: 100%; }
+  .fleetops .fleet-command-actions > :is(.btn, form) { flex: 1 1 auto; }
+  .fleetops .fleet-command-actions form .btn { width: 100%; }
+}
+/* The figures under the bar: a count or a short text (the form-up place, the time of the last read). */
+.fleetops .fleet-metrics .fo-metric-sm { gap: 2px; }
+.fleetops .fleet-metric-text { font-size: 1.0625rem; font-weight: 600; overflow-wrap: anywhere; }
+/* The live indicator shows the words of its state only. */
+.fleetops .fo-live .fo-live-text { display: none; }
+.fleetops .fo-live[data-state="live"] [data-live-text="live"],
+.fleetops .fo-live[data-state="paused"] [data-live-text="paused"],
+.fleetops .fo-live[data-state="stale"] [data-live-text="stale"],
+.fleetops .fo-live[data-state="error"] [data-live-text="error"] { display: inline; }
+.fleetops .fo-live[data-state="paused"] .fo-live-dot { background: var(--fo-text-2); animation: none; }
+/* The fleet tree */
+.fleetops .fleet-tree-tools { display: flex; align-items: center; gap: var(--fo-space-1); }
+.fleetops .fleet-tree-tools .fo-icon-btn { font-size: .875rem; }
+.fleetops .fleet-member .fo-row-actions { margin-left: auto; align-items: center; }
+.fleetops .fleet-member-menu { display: inline-flex; align-items: center; }
+.fleetops .fleet-select-cell { flex: 0 0 auto; }
+.fleetops .fo-icon-btn[aria-disabled="true"] { color: var(--fo-text-disabled); cursor: default; }
+.fleetops .fleet-actions .fo-icon-btn { font-size: .875rem; }
+/* Composition: a bar per row, the share on a neutral track, the function colour only in its dot */
+.fleetops .fleet-section-title { font-size: .9375rem; font-weight: 600; margin: var(--fo-space-4) 0 var(--fo-space-2); }
+.fleetops .fleet-section-title:first-child { margin-top: 0; }
+.fleetops .fleet-bar-label { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .15rem .4rem; min-width: 0; overflow-wrap: anywhere; }
+.fleetops .fo-bars .fleet-classify { grid-column: 1 / -1; }
+.fleetops .fo-bars .fleet-function-badge { font-weight: 500; }
+.fleetops .fo-bars li.fleet-function-row { padding: var(--fo-space-1) var(--fo-space-2); }
+.fleetops .fleet-invite-chip { align-items: center; }
+.fleetops .fleet-pap-link-cell { min-width: 18rem; }
+.fleetops .fleet-srp-link code { background: var(--fo-surface-2); border-radius: var(--fo-radius-sm); padding: .15rem .5rem; }
 /* end 6.B */
 
 /* 6.C fleet records, PAP, approvals and incentives */
