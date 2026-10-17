@@ -967,6 +967,10 @@ class ConfirmModalTests(SimpleTestCase):
     """The dialog that FleetOps.confirm fills: the ids are the contract."""
 
     def setUp(self):
+        # The texts are translated; another test may have left a different language active.
+        english = translation.override("en")
+        english.__enter__()
+        self.addCleanup(english.__exit__, None, None, None)
         self.html = render_to_string("fleetops/partials/confirm_modal.html")
 
     def test_the_ids_of_the_contract(self):
@@ -993,6 +997,11 @@ class ConfirmModalTests(SimpleTestCase):
 
 
 class DiscordPreviewPartialTests(SimpleTestCase):
+    def setUp(self):
+        english = translation.override("en")
+        english.__enter__()
+        self.addCleanup(english.__exit__, None, None, None)
+
     def render(self, prefix):
         return render_to_string("fleetops/partials/discord_preview.html", {"prefix": prefix})
 
