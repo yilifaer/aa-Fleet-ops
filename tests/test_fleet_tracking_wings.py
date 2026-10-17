@@ -212,7 +212,7 @@ class PositionEventTests(WingsTrackingTestCase):
         )
 
         page = self.page()
-        for text in ("<code>Main → Logi</code>", "<code>Alpha → Logi</code>", "<code>Logi → No squad</code>",
+        for text in ("<code>Main → Logi</code>", "<code>Main / Alpha → Logi / Logi</code>", "<code>Logi / Logi → No squad</code>",
                      "<code>Logi → Fleet Command</code>", "<code>Squad Member → Wing Commander</code>",
                      "<code>Wing Commander → Fleet Commander</code>"):
             self.assertIn(text, page)

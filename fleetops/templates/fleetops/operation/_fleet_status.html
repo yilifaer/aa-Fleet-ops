@@ -1,10 +1,22 @@
-{% load i18n tz fleetops_i18n %}
+{% load i18n tz fleetops_i18n fleetops_ui %}
 {% timezone "UTC" %}{% now "H:i:s" as eve_now_text %}{% endtimezone %}
+{% translate "Stale data" as stale_label %}
+{% translate 'Tracking has not read the fleet for a while.' as stale_title %}
 <div class="d-flex flex-wrap align-items-center gap-3 mb-2 small" id="fleet-status-bar">
+  {% if fleet_live %}
+  {# The state of the connection to the server: live, paused (the viewer switched the live refresh off), stale or no connection. fleet_live.js sets data-state; the words of all four are here so they follow the language of the page. #}
+  <button type="button" class="fo-live" id="fleet-live-state" data-state="{% if fleet_stale %}stale{% else %}live{% endif %}">
+    <span class="fo-live-dot" aria-hidden="true"></span>
+    <span class="fo-live-text" data-live-text="live">{% translate "Live" %}</span>
+    <span class="fo-live-text" data-live-text="paused">{% translate "Paused — click to resume" %}</span>
+    <span class="fo-live-text" data-live-text="stale">{{ stale_label }}</span>
+    <span class="fo-live-text" data-live-text="error">{% translate "No connection — click to retry" %}</span>
+  </button>
+  {% endif %}
   <span>{% blocktranslate trimmed with clock=eve_now_text %}EVE time <strong id="fleet-eve-clock">{{ clock }}</strong>{% endblocktranslate %}</span>
   <span>{% translate "Last ESI read" %} <span id="fleet-last-read" data-time="{{ last_esi_update_iso|default_if_none:'' }}">{% if operation.last_esi_update %}{{ operation.last_esi_update|utc|date:"H:i:s" }}{% else %}—{% endif %}</span> <span class="text-muted" id="fleet-last-read-age"></span></span>
   <span class="text-muted">{% translate "Page updated" %} <span id="fleet-updated-at">{% timezone "UTC" %}{% now "H:i:s" %}{% endtimezone %}</span></span>
-  <span class="badge bg-warning text-dark{% if not fleet_stale %} d-none{% endif %}" id="fleet-stale" title="{% translate 'Tracking has not read the fleet for a while.' %}">{% translate "Stale data" %}</span>
+  {% if fleet_stale %}{% pill "warn" stale_label id="fleet-stale" title=stale_title %}{% else %}{% pill "warn" stale_label id="fleet-stale" title=stale_title class="d-none" %}{% endif %}
   <span class="text-warning d-none" id="fleet-poll-problem" role="status"></span>
   {% if fleet_can_manage and fleet_live %}
   <form method="post" action="{% url 'fleetops:fleet_refresh' operation.uuid %}" class="d-inline" data-fleet-action id="fleet-refresh-form">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary" id="fleet-refresh" title="{% translate 'Read the fleet from ESI now' %}"><i class="fa-solid fa-rotate" aria-hidden="true"></i> {% translate "Refresh" %}</button></form>
@@ -18,7 +30,8 @@
 {% if fleet_job %}
 <div class="mb-2" id="fleet-job" data-job-state="{{ fleet_job.state }}">
   <div class="small"><strong>{{ fleet_job.label|stored_text }}</strong> ·{% if fleet_job.state == 'queued' %}{% translate "waiting for the background worker" %}{% else %}{% if fleet_job.failed %}{% blocktranslate trimmed with done=fleet_job.done total=fleet_job.total failed=fleet_job.failed %}{{ done }} of {{ total }} done, {{ failed }} failed{% endblocktranslate %}{% else %}{% blocktranslate trimmed with done=fleet_job.done total=fleet_job.total %}{{ done }} of {{ total }} done{% endblocktranslate %}{% endif %}{% if fleet_job.state == 'done' %} · {% translate "finished" %}{% elif fleet_job.state == 'failed' %} · {% translate "stopped" %}{% endif %}{% endif %}</div>
-  <div class="progress" role="progressbar" aria-label="{{ fleet_job.label|stored_text }}" aria-valuemin="0" aria-valuemax="{{ fleet_job.total }}" aria-valuenow="{{ fleet_job.done }}"><div class="progress-bar{% if fleet_job.state == 'running' or fleet_job.state == 'queued' %} progress-bar-striped progress-bar-animated{% elif fleet_job.state == 'failed' %} bg-warning{% endif %}" style="width: {% widthratio fleet_job.done fleet_job.total 100 %}%"></div></div>
+  <div class="progress" role="progressbar" aria-label="{{ fleet_job.label|stored_text }}" aria-valuemin="0" aria-valuemax="{{ fleet_job.total }}" aria-valuenow="{{ fleet_job.done }}"><div class="progress-bar{% if fleet_job.state == 'running' or fleet_job.state == 'queued' %} progress-bar-striped progress-bar-animated{% endif %}{% if fleet_job.failed or fleet_job.state == 'failed' %} is-failed{% endif %}" style="width: {% widthratio fleet_job.done fleet_job.total 100 %}%"></div></div>
+  {% if fleet_job.failed or fleet_job.state == 'failed' %}<div class="small mt-1" id="fleet-job-hint">{% translate "See Operation Actions for each failure." %}</div>{% endif %}
   {% if fleet_job.messages %}<ul class="small text-muted mb-0 mt-1" id="fleet-job-messages">{% for message in fleet_job.messages %}<li{% if not message.ok %} class="text-danger"{% endif %}>{{ message.text|stored_text }}</li>{% endfor %}</ul>{% endif %}
 </div>
 {% endif %}

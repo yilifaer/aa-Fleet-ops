@@ -237,7 +237,7 @@ class TreeHtmlTests(FleetViewTestCase):
         self.assertIn(f"Fleet {self.operation.esi_fleet_id}</strong> · Boss Boss Main", html)
         self.assertIn('<span id="fleet-member-count" title="Members in the fleet; EVE allows 256">2 / 256</span>', html)
         self.assertIn('title="Fleet boss"', html)
-        self.assertIn('<span class="badge fleet-position" title="Fleet Commander">FC</span>', html)
+        self.assertIn('<span class="fleet-position" title="Fleet Commander">FC</span>', html)
         self.assertIn('title="This character has no Alliance Auth account.">Not in Alliance Auth</span>', html)
         self.assertIn(f'href="https://evewho.com/character/{outsider.character_id}"', html)
         self.assertIn(f"https://images.evetech.net/types/{GUARDIAN}/icon?size=32", html)
@@ -358,8 +358,8 @@ class PositionNameTests(FleetViewTestCase):
             (event(Event.WING_CHANGE, str(MAIN), str(LOGI)), ("Main", "Logi")),
             (event(Event.WING_CHANGE, str(MAIN), "-1"), ("Main", "Fleet Command")),
             (event(Event.WING_CHANGE, "99", str(MAIN)), ("Wing 99", "Main")),
-            (event(Event.SQUAD_CHANGE, str(ALPHA), str(LOGI_SQUAD)), ("Alpha", "Logi")),
-            (event(Event.SQUAD_CHANGE, str(ALPHA), "-1"), ("Alpha", "No squad")),
+            (event(Event.SQUAD_CHANGE, str(ALPHA), str(LOGI_SQUAD)), ("Main / Alpha", "Logi / Logi")),
+            (event(Event.SQUAD_CHANGE, str(ALPHA), "-1"), ("Main / Alpha", "No squad")),
             (event(Event.SQUAD_CHANGE, "", "5"), ("—", "Squad 5")),
             (event(Event.ROLE_CHANGE, "squad_member", "wing_commander"), ("Squad Member", "Wing Commander")),
             (event(Event.SHIP_CHANGE, "Guardian", "Capsule"), ("Guardian", "Capsule")),

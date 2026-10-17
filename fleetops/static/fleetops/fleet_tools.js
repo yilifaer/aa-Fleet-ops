@@ -178,7 +178,20 @@
     }
 
     function status(text, warn) {
+      results.removeAttribute('aria-busy');
       results.replaceChildren(element('div', `list-group-item small ${warn ? 'text-danger' : 'text-muted'}`, text));
+    }
+
+    // Grey rows while the candidates load; the words are for screen readers.
+    function loading() {
+      const rows = [0, 1, 2].map(() => {
+        const row = element('div', 'list-group-item');
+        row.append(element('span', 'fo-skeleton'));
+        return row;
+      });
+      const note = element('div', 'visually-hidden', gettext('Searching…'));
+      results.setAttribute('aria-busy', 'true');
+      results.replaceChildren(note, ...rows);
     }
 
     function updateButton() {
@@ -188,14 +201,18 @@
 
     function renderChosen() {
       const items = Array.from(selected, ([id, name]) => {
-        const chip = element('span', 'badge text-bg-primary me-1 mb-1 fleet-invite-chip');
+        const chip = element('span', 'fo-pill fo-pill-info me-1 mb-1 fleet-invite-chip');
         chip.dataset.characterId = id;
         chip.append(element('span', '', name));
-        const remove = element('button', 'btn-close btn-close-white ms-1 align-middle');
+        const remove = element('button', 'fo-icon-btn');
         remove.type = 'button';
-        remove.style.fontSize = '0.6em';
         remove.dataset.remove = id;
-        remove.setAttribute('aria-label', interpolate(gettext('Remove %(name)s'), { name }, true));
+        const removeName = interpolate(gettext('Remove %(name)s'), { name }, true);
+        remove.setAttribute('aria-label', removeName);
+        remove.title = removeName;
+        const cross = element('i', 'fa-solid fa-xmark');
+        cross.setAttribute('aria-hidden', 'true');
+        remove.append(cross);
         chip.append(remove);
         const input = element('input');
         input.type = 'hidden';
@@ -224,12 +241,12 @@
       const title = element('div');
       title.append(element('strong', '', candidate.name));
       if (candidate.in_fleet) {
-        title.append(' ', element('span', 'badge text-bg-secondary', gettext('In fleet')));
+        title.append(' ', element('span', 'fo-pill fo-pill-neutral', gettext('In fleet')));
       } else if (candidate.invited) {
-        title.append(' ', element('span', 'badge text-bg-info', gettext('Invitation pending')));
+        title.append(' ', element('span', 'fo-pill fo-pill-warn', gettext('Invitation pending')));
       }
       if (candidate.is_mine) {
-        title.append(' ', element('span', 'badge text-bg-light border', gettext('Yours')));
+        title.append(' ', element('span', 'fo-pill fo-pill-info', gettext('Yours')));
       }
       const details = [candidate.corporation, candidate.alliance].filter(Boolean);
       if (candidate.main_name && candidate.main_name !== candidate.name) {
@@ -249,6 +266,7 @@
           ? interpolate(gettext('Characters matching “%(query)s”'), { query }, true)
           : interpolate(gettext('No character matches “%(query)s”.'), { query }, true);
       }
+      results.removeAttribute('aria-busy');
       results.replaceChildren(note(heading), ...rows);
       if (query && rows.length >= SEARCH_LIMIT) {
         results.append(note(interpolate(gettext('Showing the first %(count)s. Type more of the name to narrow the search.'), { count: SEARCH_LIMIT }, true)));
@@ -276,7 +294,7 @@
       if (query) {
         url.searchParams.set('q', query);
       }
-      status(gettext('Searching…'));
+      loading();
       fetch(url.toString(), {
         headers: { Accept: 'application/json' },
         credentials: 'same-origin',

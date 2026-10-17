@@ -3,7 +3,7 @@
 <div class="d-none align-items-center gap-2 mb-2" id="fleet-bulk-bar">
   <span id="fleet-bulk-count">{% blocktranslate trimmed with count=0 %}{{ count }} selected{% endblocktranslate %}</span>
   <button type="button" class="btn btn-sm btn-outline-primary" id="fleet-bulk-move" data-fleet-move-open data-needs-write><i class="fa-solid fa-right-left" aria-hidden="true"></i> {% translate "Move to…" %}</button>
-  <button type="button" class="btn btn-sm btn-link" id="fleet-bulk-clear">{% translate "Clear" %}</button>
+  <button type="button" class="fo-icon-btn" id="fleet-bulk-clear">{% translate "Clear" %}</button>
 </div>
 <form method="post" action="{% url 'fleetops:fleet_members_move' operation.uuid %}" class="d-none" id="fleet-move-form" data-fleet-action>{% csrf_token %}<input type="hidden" name="role" value=""><input type="hidden" name="wing_id" value=""><input type="hidden" name="squad_id" value=""><button type="submit" tabindex="-1">{% translate "Move" %}</button></form>
 <div class="modal fade" id="fleet-move-modal" tabindex="-1" aria-labelledby="fleet-move-title" aria-hidden="true">
@@ -13,7 +13,7 @@
       <p class="small text-muted" id="fleet-move-hint">{% translate "Several members can only be moved into squads; commander positions take one member." %}</p>
       <div id="fleet-move-targets"></div>
     </div>
-    <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% translate "Cancel" %}</button></div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{% translate "Cancel" %}</button></div>
   </div></div>
 </div>
 {% endif %}

@@ -1,21 +1,25 @@
-{% load i18n fleetops_messages %}
+{% load i18n fleetops_messages fleetops_ui %}
 {% if show_pap_links %}
 {% translate "Revoke this PAP link? Pilots can no longer register with it." as revoke_confirm %}
-{% translate "Copied" as copied_label %}
+{% translate "PAP-link fleet" as link_only_label %}
+{% translate "Open" context "link state" as open_label %}
+{% translate "Revoked" as revoked_label %}
+{% translate "Expired" as expired_label %}
+{% translate "Closed" context "link state" as closed_label %}
 <div class="card mb-3" id="pap-links">
-  <div class="card-header d-flex justify-content-between align-items-center"><strong>{% translate "PAP Links" %}</strong>{% if operation.link_only %}<span class="badge bg-info text-dark">{% translate "PAP-link fleet" %}</span>{% endif %}</div>
+  <div class="card-header d-flex justify-content-between align-items-center"><strong>{% translate "PAP Links" %}</strong>{% if operation.link_only %}{% pill "info" link_only_label %}{% endif %}</div>
   <div class="card-body">
     {% if operation.link_only %}<div class="small text-muted mb-2">{% translate "This fleet has no ESI fleet: pilots get PAP only by registering through a PAP link." %}</div>{% endif %}
     {% if pap_links %}
     <div class="table-responsive"><table class="table table-sm align-middle">
       <thead><tr><th>{% translate "Link" %}</th><th>{% translate "Created by" %}</th><th>{% translate "Status" %}</th><th>{% translate "Online" %}</th><th>{% translate "Registered" %}</th><th></th></tr></thead>
       <tbody>{% for link in pap_links %}<tr>
-        <td style="min-width: 18rem"><div class="input-group input-group-sm"><input class="form-control" readonly value="{{ link.url }}" id="pap-link-url-{{ link.pk }}" aria-label="{% translate 'PAP link' %}"><button type="button" class="btn btn-outline-secondary copy-pap-link" data-target="pap-link-url-{{ link.pk }}">{% translate "Copy" %}</button></div></td>
+        <td class="fleet-pap-link-cell"><div class="input-group input-group-sm"><input class="form-control" readonly value="{{ link.url }}" id="pap-link-url-{{ link.pk }}" aria-label="{% translate 'PAP link' %}"><button type="button" class="btn btn-outline-secondary copy-btn" data-copy="#pap-link-url-{{ link.pk }}">{% translate "Copy" %}</button></div></td>
         <td>{% if link.created_by %}{{ link.created_by.profile.main_character.character_name|default:link.created_by.username }}{% else %}—{% endif %}<div class="small text-muted">{{ link.created_at|eve_time }} EVE</div></td>
-        <td>{% if link.state == "open" %}<span class="badge bg-success">{% translate "Open" context "link state" %}</span> <span class="small">{% blocktranslate trimmed with expires=link.expires_at|eve_time %}until {{ expires }} EVE{% endblocktranslate %}</span>{% elif link.state == "revoked" %}<span class="badge bg-secondary">{% translate "Revoked" %}</span> <span class="small">{{ link.revoked_at|eve_time }} EVE</span>{% elif link.state == "expired" %}<span class="badge bg-secondary">{% translate "Expired" %}</span> <span class="small">{{ link.expires_at|eve_time }} EVE</span>{% else %}<span class="badge bg-secondary">{% translate "Closed" context "link state" %}</span>{% endif %}</td>
+        <td>{% if link.state == "open" %}{% pill "ok" open_label %} <span class="small">{% blocktranslate trimmed with expires=link.expires_at|eve_time %}until {{ expires }} EVE{% endblocktranslate %}</span>{% elif link.state == "revoked" %}{% pill "neutral" revoked_label %} <span class="small">{{ link.revoked_at|eve_time }} EVE</span>{% elif link.state == "expired" %}{% pill "neutral" expired_label %} <span class="small">{{ link.expires_at|eve_time }} EVE</span>{% else %}{% pill "neutral" closed_label %}{% endif %}</td>
         <td>{% if link.require_online %}{% translate "Required" %}{% else %}{% translate "Not required" %}{% endif %}</td>
         <td>{{ link.registration_count }}</td>
-        <td>{% if link.state == "open" %}<form method="post" action="{% url 'fleetops:revoke_pap_link' link.pk %}" onsubmit="return confirm('{{ revoke_confirm|escapejs }}');">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">{% translate "Revoke" %}</button></form>{% endif %}</td>
+        <td>{% if link.state == "open" %}<form method="post" action="{% url 'fleetops:revoke_pap_link' link.pk %}" data-fo-confirm="{{ revoke_confirm }}" data-fo-confirm-label="{% translate 'Revoke' %}">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">{% translate "Revoke" %}</button></form>{% endif %}</td>
       </tr>{% endfor %}</tbody>
     </table></div>
     {% else %}<div class="text-muted mb-2">{% translate "No PAP links yet." %}</div>{% endif %}
@@ -31,11 +35,4 @@
     {% endif %}
   </div>
 </div>
-<script>
-document.querySelectorAll('.copy-pap-link').forEach(button=>button.addEventListener('click',()=>{
-  const input=document.getElementById(button.dataset.target);
-  if(navigator.clipboard){ navigator.clipboard.writeText(input.value); } else { input.select(); document.execCommand('copy'); }
-  button.textContent='{{ copied_label|escapejs }}';
-}));
-</script>
 {% endif %}

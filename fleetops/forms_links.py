@@ -9,7 +9,7 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 from django.utils.translation import pgettext_lazy
 
-from fleetops.forms import _style
+from fleetops.forms_common import style_fields
 from fleetops.models import FleetOpsSettings, FleetType
 from fleetops.providers.doctrines import get_doctrines
 from fleetops.services.identity import owned_characters
@@ -32,7 +32,7 @@ class PapLinkForm(forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["minutes"].initial = FleetOpsSettings.get_solo().pap_link_minutes
-        _style(self.fields)
+        style_fields(self.fields)
 
 
 def _character_choices(user):
@@ -75,7 +75,7 @@ class LinkOnlyFleetForm(forms.Form):
             for doctrine in get_doctrines(user)
         ]
         self.fields["link_minutes"].initial = FleetOpsSettings.get_solo().pap_link_minutes
-        _style(self.fields)
+        style_fields(self.fields)
 
     def clean(self):
         data = super().clean()

@@ -18,7 +18,7 @@ from fleetops.services.fleet_rules import (
     FLEET_COMMAND,
     normalize_wings,
     position_labels,
-    squad_index,
+    squad_path_label,
     wing_index,
 )
 from fleetops.texts import FLEET_ROLE_LABELS, translate_stored
@@ -73,8 +73,9 @@ def member_position(member, operation):
 def fleet_event_change(event, operation):
     """``(old, new)`` of a member event as people read them.
 
-    Wing and squad changes show the names of the latest wings snapshot ("Wing <id>" for wings
-    that are gone; -1 is the fleet command position), role changes the position names.
+    Wing changes show the names of the latest wings snapshot ("Wing <id>" for wings that are gone; -1 is
+    the fleet command position), squad changes "Wing / Squad" ("Squad <id>" for squads that are gone, so
+    two squads with the same name in different wings can be told apart), role changes the position names.
     """
     values = (event.old_value, event.new_value)
     if event.event_type == Event.ROLE_CHANGE:
@@ -93,10 +94,7 @@ def fleet_event_change(event, operation):
                 FLEET_COMMAND if number == -1 else (wing and wing["name"]) or _("Wing %(id)s") % {"id": number}
             )
         else:
-            found = squad_index(wings).get(number)
-            labels.append(
-                _("No squad") if number == -1 else (found and found[1]["name"]) or _("Squad %(id)s") % {"id": number}
-            )
+            labels.append(_("No squad") if number == -1 else squad_path_label(number, wings))
     return tuple(labels)
 
 

@@ -235,6 +235,19 @@ def squad_label(squad_id, wings=()) -> str:
     return (found and found[1]["name"]) or gettext("Squad %(id)s") % {"id": squad_id}
 
 
+def squad_path_label(squad_id, wings=()) -> str:
+    """"Wing / Squad" for a squad, so two squads with the same name in different wings can be told apart.
+
+    A squad that is not in the wings snapshot reads "Squad <id>"; a wing or squad without a name is called
+    by its ID, as in ``wing_label`` and ``squad_label``. The " / " is a separator and is not translated.
+    """
+    found = squad_index(wings).get(_unit(squad_id))
+    if found is None:
+        return gettext("Squad %(id)s") % {"id": squad_id}
+    wing, squad = found
+    return f"{wing['name'] or wing_label(wing['id'], wings)} / {squad['name'] or squad_label(squad['id'], wings)}"
+
+
 def stored_wing_label(wing_id, wings=()) -> str:
     """``wing_label`` in English, for text that is stored."""
     with texts.stored_language():

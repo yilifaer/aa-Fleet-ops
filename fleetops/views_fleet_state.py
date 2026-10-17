@@ -24,7 +24,7 @@ from fleetops.views_fleet_common import (
     manage_operation_or_404,
 )
 
-# The Fleet tab opens first while the fleet runs; otherwise the Members tab does.
+# The Fleet tab opens first while the fleet runs and the viewer may see it; everybody else starts on PAP.
 DEFAULT_TAB_STATUSES = (FleetOperation.Status.ACTIVE, FleetOperation.Status.ENDING)
 NOT_ACTIVE = gettext_lazy("The fleet is not active any more.")
 LAST_REFRESH_FAILED = gettext_lazy("The last refresh failed a moment ago; try again in a few seconds.")
@@ -40,10 +40,13 @@ def fleet_context(request, operation):
     viewers of all fleets; everybody who can open the page sees the composition once it closed.
     """
     if not can_view_fleet_tab(request.user, operation):
-        return {"show_fleet_tab": False, "fleet_tab_default": False}
+        return {"show_fleet_tab": False, "fleet_tab_default": False, "default_tab": "attendance"}
+    fleet_first = operation.status in DEFAULT_TAB_STATUSES
     return {
         "show_fleet_tab": True,
-        "fleet_tab_default": operation.status in DEFAULT_TAB_STATUSES,
+        "fleet_tab_default": fleet_first,
+        # The tab the page opens on when the address names none: the live fleet while it runs, PAP otherwise.
+        "default_tab": "fleet" if fleet_first else "attendance",
         **fleet_panel(operation, request.user),
     }
 

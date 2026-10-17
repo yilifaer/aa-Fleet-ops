@@ -96,10 +96,12 @@
   margin-top: 0;
 }
 
+/* The EVE images carry the frame of .fo-render (1 px line, backdrop); here they are small, so the corners are too. */
 .fleet-portrait,
 .fleet-ship-icon {
-  border-radius: 2px;
+  border-radius: 4px;
   vertical-align: middle;
+  object-fit: cover;
 }
 
 .fleet-member-name {
@@ -231,12 +233,20 @@
   margin-bottom: 0.35rem;
 }
 
-.fleet-classify-cell .form-select {
+.fleet-classify .form-select {
   min-width: 8rem;
 }
 
-#fleet-flash .alert {
-  margin-bottom: 0.5rem;
+/* Touch screens: a row is a 44 px target, and so is a composition row that filters the tree. */
+@media (pointer: coarse) {
+  .fleet-member {
+    min-height: 44px;
+  }
+
+  .fleet-function-row[role="button"] {
+    min-height: 44px;
+    align-content: center;
+  }
 }
 
 @media (max-width: 991.98px) {
