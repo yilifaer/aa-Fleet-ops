@@ -20,7 +20,7 @@ from unittest import mock
 from django.conf import settings
 from django.contrib.auth.models import Permission
 from django.db import models
-from django.test import TestCase
+from django.test import TestCase, tag
 from django.urls import reverse
 from django.utils import timezone, translation
 
@@ -431,6 +431,7 @@ class ChinesePageMixin:
                 self.assertEqual(self.strays(f'<div class="fleetops">{message}</div>'), [], message)
 
 
+@tag("catalog")
 class ChineseSiteTests(PageWorld, ChinesePageMixin, TestCase):
     @classmethod
     def setUpTestData(cls):
@@ -609,6 +610,7 @@ class ChineseSiteTests(PageWorld, ChinesePageMixin, TestCase):
         self.assertTrue(b"".join(en.streaming_content).decode("utf-8-sig").splitlines()[0].startswith("Corporation,"))
 
 
+@tag("catalog")
 class ChineseFlowTests(PageWorld, ChinesePageMixin, TestCase):
     """Messages that a request leaves for the next page, and form errors."""
 
