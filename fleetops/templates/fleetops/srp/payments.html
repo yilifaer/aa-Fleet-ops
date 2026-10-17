@@ -12,9 +12,9 @@
 
 {% blocktranslate trimmed asvar to_pay_claims_text count counter=to_pay_count %}{{ counter }} claim{% plural %}{{ counter }} claims{% endblocktranslate %}
 {% blocktranslate trimmed asvar to_pay_players_text count counter=pay_rows|length %}{{ counter }} player{% plural %}{{ counter }} players{% endblocktranslate %}
-<div class="row g-3 mb-3">
-  <div class="col-sm-6 col-xl-3"><div class="stat-card"><span>{% translate "To pay" %}</span><strong>{{ to_pay_total|isk }}</strong><small class="text-muted">{% blocktranslate trimmed with claims=to_pay_claims_text players=to_pay_players_text %}{{ claims }} for {{ players }}{% endblocktranslate %}</small></div></div>
-  <div class="col-sm-6 col-xl-3"><div class="stat-card"><span>{% translate "Paid in the dates below" %}</span><strong>{{ paid_total|isk }}</strong><small class="text-muted">{% blocktranslate trimmed count counter=paid_count %}{{ counter }} claim{% plural %}{{ counter }} claims{% endblocktranslate %}</small></div></div>
+<div class="row g-3 mb-3 fo-srp-stats">
+  <div class="col-6 col-xl-3"><div class="stat-card"><span>{% translate "To pay" %}</span><strong>{{ to_pay_total|isk }}</strong><small class="text-muted">{% blocktranslate trimmed with claims=to_pay_claims_text players=to_pay_players_text %}{{ claims }} for {{ players }}{% endblocktranslate %}</small></div></div>
+  <div class="col-6 col-xl-3"><div class="stat-card"><span>{% translate "Paid in the dates below" %}</span><strong>{{ paid_total|isk }}</strong><small class="text-muted">{% blocktranslate trimmed count counter=paid_count %}{{ counter }} claim{% plural %}{{ counter }} claims{% endblocktranslate %}</small></div></div>
 </div>
 
 {% if pay_rows %}
@@ -24,25 +24,25 @@
   <div class="card mb-3" data-srp-group>
     <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
       <div class="d-flex align-items-center gap-2">
-        <input type="checkbox" class="form-check-input mt-0" data-srp-select-group aria-label="{% blocktranslate trimmed with name=row.main_character_name %}Select all claims of {{ name }}{% endblocktranslate %}">
+        <label class="fo-check-cell"><input type="checkbox" class="form-check-input mt-0" data-srp-select-group aria-label="{% blocktranslate trimmed with name=row.main_character_name %}Select all claims of {{ name }}{% endblocktranslate %}"></label>
         <strong>{{ row.main_character_name }}</strong>
         <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.main_character_name }}" hidden>{% translate "Copy name" %}</button>
       </div>
       <div class="d-flex align-items-center gap-2">
-        <span class="fs-5 fw-semibold">{{ row.total|isk }}</span>
+        <span class="fo-pay-total">{{ row.total|isk }}</span>
         <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.total|isk_plain }}" hidden>{% translate "Copy amount" %}</button>
       </div>
     </div>
     <div class="table-responsive">
-      <table class="table table-sm align-middle mb-0">
+      <table class="table table-sm align-middle mb-0 fo-table-pin">
         <thead><tr><th scope="col" class="fleetops-srp-check"></th><th scope="col">{% translate "Claim" %}</th><th scope="col">{% translate "Loss (EVE)" %}</th><th scope="col">{% translate "Ship" %}</th><th scope="col">{% translate "Fleet" %}</th><th scope="col" class="text-end">{% translate "Amount" %}</th><th scope="col"></th></tr></thead>
         <tbody>
           {% for claim in row.claims %}
           <tr>
-            <td class="fleetops-srp-check">{% if claim.reviewable %}<input type="checkbox" class="form-check-input" name="claim" value="{{ claim.uuid }}" data-srp-select data-srp-amount="{{ claim.approved_amount }}" aria-label="{% blocktranslate trimmed with reference=claim.reference %}Select {{ reference }}{% endblocktranslate %}"><input type="hidden" name="shown-{{ claim.uuid }}" value="{{ claim.approved_amount }}">{% else %}<span class="text-muted" title="{% translate 'Your own claim: another SRP manager has to pay it.' %}">{% translate "own" %}</span>{% endif %}</td>
+            <td class="fleetops-srp-check">{% if claim.reviewable %}<label class="fo-check-cell"><input type="checkbox" class="form-check-input" name="claim" value="{{ claim.uuid }}" data-srp-select data-srp-amount="{{ claim.approved_amount }}" aria-label="{% blocktranslate trimmed with reference=claim.reference %}Select {{ reference }}{% endblocktranslate %}"></label><input type="hidden" name="shown-{{ claim.uuid }}" value="{{ claim.approved_amount }}">{% else %}<span class="text-muted" title="{% translate 'Your own claim: another SRP manager has to pay it.' %}">{% translate "own" %}</span>{% endif %}</td>
             <td><a href="{% url 'fleetops:srp_claim' claim.uuid %}">{{ claim.reference }}</a></td>
             <td class="text-nowrap">{{ claim.killmail_time|eve_time }}</td>
-            <td>{{ claim.ship_type_name|default:claim.ship_type_id }}</td>
+            <td><span class="fleetops-srp-ship-cell"><img class="fo-render" src="{% ship_render_url claim.ship_type_id 32 %}" width="32" height="32" alt="" loading="lazy"><span>{{ claim.ship_type_name|default:claim.ship_type_id }}</span></span></td>
             <td>{% if claim.scope == "in_fleet" %}<span class="small">{{ claim.fleet_label|default:_("In fleet") }}</span>{% else %}<span class="text-muted">{% translate "Out of fleet" %}</span>{% endif %}</td>
             <td class="text-end text-nowrap">{{ claim.approved_amount|isk }}</td>
             <td class="text-end"><button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ claim.approved_amount|isk_plain }}" hidden>{% translate "Copy" %}</button></td>
@@ -55,14 +55,14 @@
   {% endfor %}
   <div class="card fleetops-srp-paybar mb-4">
     <div class="card-body d-flex flex-wrap align-items-end gap-3">
-      <div><div class="small text-muted">{% translate "Selected" %}</div><div class="fs-5 fw-semibold">{% blocktranslate trimmed %}<span data-srp-selected-count>0</span> claims &middot; <span data-srp-selected-total>0 ISK</span>{% endblocktranslate %}</div></div>
+      <div><div class="small text-muted">{% translate "Selected" %}</div><div class="fo-pay-total">{% blocktranslate trimmed %}<span data-srp-selected-count>0</span> claims &middot; <span data-srp-selected-total>0 ISK</span>{% endblocktranslate %}</div></div>
       <div class="flex-grow-1"><label class="form-label mb-1" for="id_note">{% blocktranslate trimmed %}Payment note <span class="text-muted">(optional)</span>{% endblocktranslate %}</label><input type="text" class="form-control" name="note" id="id_note" maxlength="255" autocomplete="off"></div>
-      <button type="submit" class="btn btn-success" data-srp-bulk-button disabled>{% translate "Mark selected paid" %}</button>
+      <button type="submit" class="btn btn-primary" data-srp-bulk-button disabled>{% translate "Mark selected paid" %}</button>
     </div>
   </div>
 </form>
 {% else %}
-<div class="alert alert-secondary">{% if month_filter_active %}{% blocktranslate trimmed with label=month_ref.label %}Nothing waits for payment for the losses of {{ label }}.{% endblocktranslate %}{% else %}{% translate "Nothing waits for payment." %}{% endif %}</div>
+<div class="card mb-3"><div class="card-body">{% if month_filter_active %}{% blocktranslate trimmed with label=month_ref.label asvar empty_text %}Nothing waits for payment for the losses of {{ label }}.{% endblocktranslate %}{% else %}{% translate "Nothing waits for payment." as empty_text %}{% endif %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-circle-check" %}</div></div>
 {% endif %}
 
 <div class="card mb-3">
@@ -77,7 +77,7 @@
     </form>
   </div>
   <div class="table-responsive">
-    <table class="table table-sm align-middle mb-0">
+    <table class="table table-sm align-middle mb-0 fo-table-pin">
       <thead><tr><th scope="col">{% translate "Paid (EVE)" %}</th><th scope="col">{% translate "Pilot" %}</th><th scope="col">{% translate "Claim" %}</th><th scope="col">{% translate "Ship" %}</th><th scope="col" class="text-end">{% translate "Amount" %}</th><th scope="col">{% translate "Paid by" %}</th><th scope="col">{% translate "Note" %}</th></tr></thead>
       <tbody>
         {% for claim in paid_claims %}
@@ -91,7 +91,7 @@
           <td>{{ claim.payment_note }}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="7" class="text-muted p-4">{% translate "No claim was paid in these dates." %}</td></tr>
+        <tr><td colspan="7">{% translate "No claim was paid in these dates." as empty_text %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-coins" %}</td></tr>
         {% endfor %}
       </tbody>
     </table>

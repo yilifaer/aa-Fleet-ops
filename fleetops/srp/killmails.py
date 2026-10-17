@@ -199,8 +199,13 @@ def _read_and_store(killmail_id: int, killmail_hash: str) -> SrpKillmail:
     try:
         payload = get_killmail(killmail_id, killmail_hash)
     except FleetESIError as exc:
-        code = "not_found" if exc.code == "KILLMAIL_NOT_FOUND" else "esi_unavailable"
-        raise SrpError(code, str(exc)) from exc
+        if exc.code == "KILLMAIL_NOT_FOUND":
+            raise SrpError("not_found", str(exc)) from exc
+        message = str(exc)
+        # ESI failed for a reason that passes: say what to do next, unless the message already does.
+        if "try again" not in message.lower():
+            message = f"{message} {texts.SRP_TRY_AGAIN()}"
+        raise SrpError("esi_unavailable", message) from exc
     if killmail_fields(payload)["killmail_id"] != killmail_id:
         raise SrpError("invalid_killmail", texts.SRP_INCOMPLETE_KILLMAIL())
     return store_killmail(payload, killmail_hash)

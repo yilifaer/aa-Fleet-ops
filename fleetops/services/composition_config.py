@@ -91,18 +91,30 @@ def find_target(kind, name):
     return found or known
 
 
+def ship_group_choices() -> list[tuple[int, str]]:
+    """``[(group_id, "Name (id)")]`` for the bridge setting: the published ship groups of the SDE, else the
+    built-in list, sorted by name."""
+    groups = sde.ship_groups() or sorted(KNOWN_SHIP_GROUPS.items(), key=lambda row: (row[1].casefold(), row[0]))
+    return [(group_id, f"{name} ({group_id})") for group_id, name in groups]
+
+
+def group_id_names(value) -> list[tuple[int, str]]:
+    """``[(group_id, name)]`` for a stored id list, in its order; an unreadable list gives []."""
+    try:
+        ids = parse_id_list(value)
+    except FleetRuleError:
+        return []
+    names = group_names(ids)
+    return [(group_id, names.get(group_id) or default_label(GROUP, group_id)) for group_id in ids]
+
+
 def describe_group_ids(value) -> str:
     """Ship group ids as people read them: "Titan (30), Dreadnought (485), Group 99999 (99999)".
 
     ``value`` is a stored id list such as ``FleetOpsSettings.bridge_excluded_group_ids``; an
     unreadable one gives "".
     """
-    try:
-        ids = parse_id_list(value)
-    except FleetRuleError:
-        return ""
-    names = group_names(ids)
-    return ", ".join(f"{names.get(group_id) or default_label(GROUP, group_id)} ({group_id})" for group_id in ids)
+    return ", ".join(f"{name} ({group_id})" for group_id, name in group_id_names(value))
 
 
 def rule_text(rule) -> str:

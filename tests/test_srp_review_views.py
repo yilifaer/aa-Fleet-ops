@@ -263,7 +263,8 @@ class ReviewQueueTests(ManagerPagesTestCase):
         response = self.client.get(route("srp_review"))
 
         self.assertContains(response, f'action="{route("srp_review_recalculate")}"')
-        self.assertContains(response, "data-srp-confirm=")
+        self.assertContains(response, 'data-fo-confirm="Recalculate every pending claim')
+        self.assertNotContains(response, "data-srp-confirm=")
 
     def test_queue_costs_the_same_number_of_queries_for_5_and_50_claims(self):
         now = timezone.now()
@@ -649,14 +650,21 @@ class ClaimActionTests(ManagerPagesTestCase):
                 self.assertTrue(any(fragment in line for line in messages_of(response)), messages_of(response))
 
     def test_a_decision_without_its_reason_is_not_made(self):
-        for action, function in (("reject", "reject_claim"), ("revoke", "revoke_approval"), ("unpaid", "undo_payment"), ("reopen", "reopen_claim")):
+        # FB13.7: every decision answers with its own sentence and not with Django's "This field is required."
+        for action, function, sentence in (
+            ("reject", "reject_claim", "Give a reason for the rejection."),
+            ("revoke", "revoke_approval", "Give a reason for revoking the approval."),
+            ("unpaid", "undo_payment", "Give a reason for undoing the payment."),
+            ("reopen", "reopen_claim", "Give a reason for reopening the claim."),
+        ):
             with self.subTest(action=action):
                 mocked = self.service(function)
 
                 response = self.act(action, {"reason": "  "})
 
                 self.assertEqual(response.status_code, 200)
-                self.assertContains(response, "This field is required.")
+                self.assertContains(response, sentence)
+                self.assertNotContains(response, "This field is required.")
                 mocked.assert_not_called()
 
     # --- paid
@@ -670,7 +678,13 @@ class ClaimActionTests(ManagerPagesTestCase):
         args, kwargs = paid.call_args
         self.assertEqual([item.pk for item in args[0]], [claim.pk])
         self.assertEqual(kwargs, {"actor": self.manager, "note": "Sent 12:05", "expected_amounts": None})
-        self.assertIn(f"{claim.reference} marked paid.", messages_of(response))
+        # A single payment is announced as a notice with a way back (D11), not as a message of Alliance Auth.
+        self.assertEqual(messages_of(response), [])
+        (notice,) = self.client.session["fleetops_notices"]
+        self.assertEqual(notice["text"], f"{claim.reference} marked paid.")
+        self.assertEqual(notice["level"], "success")
+        self.assertEqual(notice["action_label"], "Undo payment…")
+        self.assertEqual(notice["action_url"], f"{self.page(claim)}#undo-payment")
 
     def test_mark_paid_hands_over_the_amount_the_payer_was_shown(self):
         claim = f.srp_claim(self.member, status=APPROVED, time=self.loss_time)
@@ -957,8 +971,10 @@ class DecisionFormsTests(ManagerPagesTestCase):
 
         response = self.get(claim)
 
-        self.assertContains(response, "There is no automatic amount for this claim. Enter the amount to pay.")
+        self.assertContains(response, "There is no automatic amount for this claim. Enter the amount to pay and a reason.")
         self.assertNotContains(response, "Approve suggested")
+        # With no policy amount there is nothing to go "above": the box is not offered.
+        self.assertNotContains(response, "Pay more than the policy amount")
 
     def test_approved_claim_offers_a_new_amount_revoking_and_paying(self):
         claim = f.srp_claim(self.member, status=APPROVED, time=self.loss_time, amount=80_000_000, approved_amount=60_000_000)

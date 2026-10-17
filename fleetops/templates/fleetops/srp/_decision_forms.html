@@ -17,10 +17,10 @@
   {{ form.non_field_errors }}
   {% if claim.status == "pending" %}
   <div class="d-flex flex-wrap gap-2 mb-2">
-    {% if claim.suggested_amount %}<button type="submit" name="mode" value="suggested" class="btn btn-success">{% blocktranslate trimmed with amount=claim.suggested_amount|isk_short %}Approve suggested ({{ amount }}){% endblocktranslate %}</button>{% endif %}
-    {% if claim.over_limit and claim.limited_amount %}<button type="submit" name="mode" value="within_limit" class="btn btn-warning">{% blocktranslate trimmed with amount=claim.limited_amount|isk_short %}Approve within limit ({{ amount }}){% endblocktranslate %}</button>{% endif %}
+    {% if claim.suggested_amount %}<button type="submit" name="mode" value="suggested" class="btn btn-primary">{% blocktranslate trimmed with amount=claim.suggested_amount|isk_short %}Approve suggested ({{ amount }}){% endblocktranslate %}</button>{% endif %}
+    {% if claim.over_limit and claim.limited_amount %}<button type="submit" name="mode" value="within_limit" class="btn btn-outline-primary">{% blocktranslate trimmed with amount=claim.limited_amount|isk_short %}Approve within limit ({{ amount }}){% endblocktranslate %}</button>{% endif %}
   </div>
-  {% if not claim.suggested_amount %}<div class="small text-muted mb-2">{% translate "There is no automatic amount for this claim. Enter the amount to pay." %}</div>{% endif %}
+  {% if not claim.suggested_amount %}<div class="small text-muted mb-2">{% translate "There is no automatic amount for this claim. Enter the amount to pay and a reason." %}</div>{% endif %}
   {% endif %}
   <div class="mb-2">
     <label class="form-label" for="{{ form.amount.id_for_label }}">{% translate "Amount" %}</label>
@@ -33,22 +33,22 @@
     <div class="form-text" data-srp-reason-hint>{% if claim.status == "approved" %}{% translate "Required: say why the amount changes." %}{% else %}{% translate "Required when the amount differs from the suggested amount or goes over a monthly limit." %}{% endif %}</div>
     {{ form.reason.errors }}
   </div>
-  <div class="form-check">
+  {% if claim.suggested_amount or claim.payout_basis != "none" %}<div class="form-check">
     {{ form.confirm_above_policy }}
     <label class="form-check-label" for="{{ form.confirm_above_policy.id_for_label }}">{{ form.confirm_above_policy.label }}</label>
-  </div>
+  </div>{% endif %}
   <div class="form-check mb-2">
     {{ form.confirm_over_limit }}
     <label class="form-check-label" for="{{ form.confirm_over_limit.id_for_label }}">{{ form.confirm_over_limit.label }}</label>
     <div class="form-text">{% translate "Ticking a box needs a reason." %}{% if srp_settings.over_limit_action == "reject" %} {% translate "While limits reject automatically, an amount over the monthly limit is refused." %}{% endif %}</div>
   </div>
-  <button type="submit" name="mode" value="amount" class="btn btn-primary">{% if claim.status == "approved" %}{% translate "Change amount" %}{% else %}{% translate "Approve this amount" %}{% endif %}</button>
+  <button type="submit" name="mode" value="amount" class="btn {% if claim.status == "pending" and claim.suggested_amount %}btn-outline-primary{% else %}btn-primary{% endif %}">{% if claim.status == "approved" %}{% translate "Change amount" %}{% else %}{% translate "Approve this amount" %}{% endif %}</button>
 </form>
 {% endwith %}
 {% endif %}
 
 {% for item in reason_actions %}
-<form method="post" action="{% url 'fleetops:srp_claim_action' claim.uuid item.action %}" class="fleetops-srp-form mb-4" data-srp-once>
+<form method="post" action="{% url 'fleetops:srp_claim_action' claim.uuid item.action %}" class="fleetops-srp-form mb-4" data-srp-once{% if item.action == "unpaid" %} id="undo-payment"{% endif %}>
   {% csrf_token %}
   <h3 class="h6">{{ item.title }}</h3>
   <div class="mb-2">
@@ -57,7 +57,7 @@
     <div class="form-text">{{ item.help }}</div>
     {{ item.form.reason.errors }}
   </div>
-  <button type="submit" class="btn {{ item.css }}">{{ item.button }}</button>
+  <button type="submit" class="btn {{ item.css }}"{% if item.confirm %} data-fo-confirm="{{ item.confirm }}" data-fo-confirm-label="{{ item.button }}"{% endif %}>{{ item.button }}</button>
 </form>
 {% endfor %}
 
@@ -73,7 +73,7 @@
     {{ form.note }}
     {{ form.note.errors }}
   </div>
-  <button type="submit" class="btn btn-success">{% translate "Mark paid" %}</button>
+  <button type="submit" class="btn btn-primary">{% translate "Mark paid" %}</button>
 </form>
 {% endwith %}
 {% endif %}

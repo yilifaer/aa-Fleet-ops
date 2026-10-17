@@ -41,9 +41,16 @@ from fleetops.providers.doctrines import get_doctrines
 from fleetops.providers.esi import FleetESIError
 from fleetops.providers.srp import get_registered_srp_providers
 from fleetops.services import sde as sde_service
+from fleetops.services.fleet_rules import (
+    DEFAULT_BRIDGE_EXCLUDED_GROUP_IDS,
+    FleetRuleError,
+    format_id_list,
+    parse_id_list,
+)
 from fleetops.services.links import extract_ingame_channel_id, extract_link_text, strip_url_userinfo
 from fleetops.services.names import entity_names
 from fleetops.services.periods import current_year_month
+from fleetops.texts import translate_stored
 
 logger = get_extension_logger(__name__)
 
@@ -55,6 +62,9 @@ SRP_PROVIDER_ALIASES = {"aa_srp": "aasrp"}
 _SRP_PROVIDER_ORDER = ("fleetops", "aasrp", "allianceauth_builtin")
 # How a provider's state reads next to its name, unless the provider has its own words.
 SRP_PROVIDER_STATES = (_("installed"), _("not installed"))
+
+# The stored list is a comma-separated CharField of this length.
+BRIDGE_LIST_MAX_LENGTH = 500
 
 _ROLE_MENTION_RE = re.compile(r"<@&(\d+)>")
 
@@ -120,7 +130,7 @@ class FleetOpsSettingsForm(forms.ModelForm):
         (
             _("Fleet tab"),
             _("The live fleet view and its composition."),
-            ["fleet_live_refresh_seconds", "bridge_excluded_group_ids"],
+            ["fleet_live_refresh_seconds", "bridge_groups", "bridge_other_ids", "bridge_restore_default"],
         ),
     ]
 
@@ -128,6 +138,32 @@ class FleetOpsSettingsForm(forms.ModelForm):
         label=_("SRP provider"),
         help_text=_("The SRP app that gets an SRP link when a fleet starts and SRP auto create is on."),
     )
+    # The ship groups whose mass is not bridgeable: the stored comma list is edited as ticked groups, a field for
+    # IDs the list does not offer, and a button back to the default (see clean()).
+    bridge_groups = forms.TypedMultipleChoiceField(
+        label=_("Ship groups without bridge"),
+        required=False,
+        coerce=int,
+        widget=forms.CheckboxSelectMultiple,
+        help_text=_("Ship groups that cannot take a jump bridge. Their mass is not counted as bridgeable."),
+    )
+    bridge_other_ids = forms.CharField(
+        label=_("Other ship group IDs"),
+        required=False,
+        max_length=500,
+        help_text=_("Ship group IDs that are not in the list above, separated by commas."),
+    )
+    bridge_restore_default = forms.BooleanField(
+        label=_("Use the default list (11 groups)"),
+        required=False,
+        help_text=_(
+            "Titan, Dreadnought, Freighter, Carrier, Supercarrier, Rorqual, Jump Freighter, Industrial Command "
+            "Ship, Force Auxiliary, Lancer Dreadnought and Command Carrier. Ticking this replaces the selection."
+        ),
+    )
+    BRIDGE_FIELDS = ("bridge_groups", "bridge_other_ids", "bridge_restore_default")
+    # The group IDs the page asks to store; None leaves the stored list as it is (see clean()).
+    bridge_ids = None
 
     class Meta:
         model = FleetOpsSettings
@@ -150,7 +186,6 @@ class FleetOpsSettingsForm(forms.ModelForm):
             "srp_auto_create",
             "srp_provider",
             "fleet_live_refresh_seconds",
-            "bridge_excluded_group_ids",
             "motd_warning_length",
         ]
         widgets = {
@@ -169,20 +204,76 @@ class FleetOpsSettingsForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.warnings = []
         self.fields["srp_provider"].choices = srp_provider_choices(self.instance.srp_provider)
-        bridge = self.fields.get("bridge_excluded_group_ids")
-        if bridge is not None:
-            # Imported here: the fleet services import the models this module's forms are built on.
-            from fleetops.services.composition_config import describe_group_ids
-
-            current = describe_group_ids(self.instance.bridge_excluded_group_ids)
-            if current:
-                bridge.help_text = _("%(help)s Now: %(current)s.") % {"help": bridge.help_text, "current": current}
+        self._set_up_bridge_groups()
         for name, field in self.fields.items():
-            if isinstance(field.widget, forms.Select):
+            if isinstance(field.widget, forms.CheckboxSelectMultiple):
+                field.widget.attrs["class"] = "form-check-input"
+            elif isinstance(field.widget, forms.Select):
                 field.widget.attrs["class"] = "form-select"
             elif not isinstance(field.widget, forms.CheckboxInput):
                 field.widget.attrs["class"] = "form-control"
+
+    def _set_up_bridge_groups(self):
+        """Offer the ship groups of the SDE (or the built-in list) and keep every stored ID reachable."""
+        # Imported here: the fleet services import the models this module's forms are built on.
+        from fleetops.services.composition_config import group_id_names, ship_group_choices
+
+        choices = ship_group_choices()
+        self.fields["bridge_groups"].choices = [(group_id, label) for group_id, label in choices]
+        offered = {group_id for group_id, _label in choices}
+        try:
+            stored = parse_id_list(self.instance.bridge_excluded_group_ids)
+        except FleetRuleError:
+            stored = []
+        self.initial["bridge_groups"] = [group_id for group_id in stored if group_id in offered]
+        self.initial["bridge_other_ids"] = ", ".join(str(group_id) for group_id in stored if group_id not in offered)
+        # The page prints the groups that are in force, each linked to its page on EVE Ref.
+        self.bridge_now = group_id_names(self.instance.bridge_excluded_group_ids)
+
+    def clean(self):
+        cleaned = super().clean()
+        # A submission without any of the three fields (a script, an older form) leaves the list as it is; a
+        # browser always sends the text field, so an empty selection there does mean "no group".
+        self.bridge_ids = None
+        if not any(name in self.data for name in self.BRIDGE_FIELDS):
+            return cleaned
+        if cleaned.get("bridge_restore_default"):
+            self.bridge_ids = parse_id_list(DEFAULT_BRIDGE_EXCLUDED_GROUP_IDS)
+            return cleaned
+        offered = {group_id for group_id, _label in self.fields["bridge_groups"].choices}
+        try:
+            other = parse_id_list(cleaned.get("bridge_other_ids"))
+        except FleetRuleError as exc:
+            self.add_error("bridge_other_ids", translate_stored(str(exc)))
+            return cleaned
+        ids = list(cleaned.get("bridge_groups") or [])
+        ids += [group_id for group_id in other if group_id not in ids]
+        unknown = [group_id for group_id in other if group_id not in offered]
+        if unknown and sde_service.ship_groups() is not None:
+            # With the SDE every ID can be checked, and nothing is dropped without saying so.
+            self.add_error(
+                "bridge_other_ids",
+                _("Not ship groups: %(ids)s.") % {"ids": ", ".join(str(group_id) for group_id in unknown)},
+            )
+        elif unknown:
+            self.warnings.append(
+                _(
+                    "The ship group IDs %(ids)s were saved, but could not be checked without "
+                    "django-eveonline-sde."
+                )
+                % {"ids": ", ".join(str(group_id) for group_id in unknown)}
+            )
+        if len(format_id_list(ids)) > BRIDGE_LIST_MAX_LENGTH:
+            self.add_error("bridge_groups", _("That is too many ship groups; the list may hold at most 500 characters."))
+        self.bridge_ids = ids
+        return cleaned
+
+    def _post_clean(self):
+        super()._post_clean()
+        if self.bridge_ids is not None:
+            self.instance.bridge_excluded_group_ids = format_id_list(self.bridge_ids)
 
     def field_groups(self):
         """``(title, description, bound fields)`` for each group of the settings page."""
@@ -676,7 +767,7 @@ class SrpPayoutRuleForm(forms.ModelForm):
         fields = ["label", "scope", "amount", "is_active", "notes"]
         labels = {"amount": _("Amount (ISK)")}
         help_texts = {
-            "label": _("Optional name shown in the list."),
+            "label": _("Optional name, shown in the payout table and in a claim's calculation."),
             "amount": _("Paid as it is, before the per-loss cap and the monthly limits."),
             "notes": _("Optional remark for the other SRP managers."),
         }
@@ -740,6 +831,16 @@ class SrpPayoutRuleForm(forms.ModelForm):
             self.instance.doctrine_external_id = external_id
             self.instance.doctrine_name = name
         return cleaned
+
+    def _post_clean(self):
+        super()._post_clean()
+        # A ship that could not be found is already reported at its field; the model's "choose a ship type, a
+        # doctrine, or both" would only say the same thing again.
+        if self.has_error("ship") and NON_FIELD_ERRORS in self._errors:
+            found = self._errors.pop(NON_FIELD_ERRORS).as_data()
+            for error in found:
+                if error.code != "no_target":
+                    self.add_error(None, error)
 
 
 class SrpCorporationLimitForm(forms.ModelForm):

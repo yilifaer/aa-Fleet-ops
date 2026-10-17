@@ -1,0 +1,2 @@
+{% comment %}An empty SRP list: an icon, one sentence and the main action the viewer may take. Context: text, icon (a Font Awesome name), href and label (the action; both or neither).{% endcomment %}
+<div class="fo-empty"><i class="fa-solid {{ icon|default:'fa-inbox' }}" aria-hidden="true"></i><span>{{ text }}</span>{% if href and label %}<a class="btn btn-outline-secondary" href="{{ href }}">{{ label }}</a>{% endif %}</div>

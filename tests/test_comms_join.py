@@ -256,7 +256,7 @@ class CommsConfigurationTests(TestCase):
 
         url = "https://auth.example.org" + join_path(self.preset)
         self.assertContains(response, f'value="{url}" readonly')
-        self.assertContains(response, "data-fleetops-copy")
+        self.assertContains(response, "data-fo-copy=")
 
     def test_list_has_no_join_link_for_presets_that_cannot_be_joined(self):
         disabled = CommsPreset.objects.create(name="Old Comms", voice_url=VOICE_URL, is_active=False)

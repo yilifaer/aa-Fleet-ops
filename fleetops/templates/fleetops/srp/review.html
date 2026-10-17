@@ -31,7 +31,7 @@
     <span class="fleetops-srp-legend fleetops-srp-over-limit">{% translate "Over a limit" %}</span>
     <span class="fleetops-srp-legend fleetops-srp-warning">{% translate "Needs a look" %}</span>
   </div>
-  <form method="post" action="{% url 'fleetops:srp_review_recalculate' %}" class="fleetops-srp-form" data-srp-once data-srp-confirm="{% translate 'Recalculate every pending claim with the current payout table, caps and limits?' %}">
+  <form method="post" action="{% url 'fleetops:srp_review_recalculate' %}" class="fleetops-srp-form" data-srp-once data-fo-confirm="{% translate 'Recalculate every pending claim with the current payout table, caps and limits?' %}" data-fo-confirm-danger="false" data-fo-confirm-label="{% translate 'Recalculate' %}">
     {% csrf_token %}<input type="hidden" name="next" value="{{ next_url }}">
     <button type="submit" class="btn btn-sm btn-outline-secondary">{% translate "Recalculate all pending with current rules" %}</button>
   </form>
@@ -42,10 +42,10 @@
   {% csrf_token %}<input type="hidden" name="next" value="{{ next_url }}">
   <div class="card mb-3">
     <div class="card-body p-0">{% include "fleetops/srp/_claims_table.html" %}</div>
-    <div class="card-footer d-flex flex-wrap align-items-center gap-3">
-      <button type="submit" class="btn btn-success" data-srp-bulk-button disabled>{% translate "Approve selected at the suggested amount" %}</button>
-      <span class="small text-muted">{% blocktranslate trimmed %}<span data-srp-selected-count>0</span> selected. Only claims without warnings are approved; the others are listed afterwards.{% endblocktranslate %}</span>
-    </div>
+  </div>
+  <div class="fo-actionbar" id="srp-bulk-bar">
+    <button type="submit" class="btn btn-primary" data-srp-bulk-button disabled>{% translate "Approve selected at the suggested amount" %}</button>
+    <span class="small text-muted">{% blocktranslate trimmed %}<span data-srp-selected-count>0</span> selected. Only claims without warnings are approved; the others are listed afterwards.{% endblocktranslate %}</span>
   </div>
 </form>
 {% else %}

@@ -231,6 +231,38 @@ def find_item_group(name, category_id=SHIP_CATEGORY_ID, *, strict=False):
     return _find("ItemGroup", name, [("category", "category_id", category_id)], ["published", "pk"], strict)
 
 
+SHIP_GROUPS_CACHE_KEY = "fleetops:sde:ship-groups"
+
+
+def ship_groups() -> list[tuple[int, str]] | None:
+    """``[(group_id, English name)]`` of the published ship groups (category 6), sorted by name.
+
+    None without django-eveonline-sde, when it cannot be read or when it holds no ship group, so the caller
+    can fall back to the built-in list. Cached for a day: the groups change with game patches only.
+    """
+    if not sde_installed():
+        return None
+    cached = cache.get(SHIP_GROUPS_CACHE_KEY)
+    if cached:
+        return [(int(group_id), str(name)) for group_id, name in cached]
+    try:
+        with translation.override("en"):
+            model = apps.get_model("eve_sde", "ItemGroup")
+            columns = _columns(model)
+            rows = model.objects.filter(category_id=SHIP_CATEGORY_ID)
+            if "published" in columns:
+                rows = rows.filter(published=True)
+            found = [(int(pk), str(name or "")) for pk, name in rows.values_list("pk", _name_column(columns))]
+    except Exception as exc:
+        _report("Reading ship groups", exc)
+        return None
+    if not found:
+        return None
+    found.sort(key=lambda row: (row[1].casefold(), row[0]))
+    cache.set(SHIP_GROUPS_CACHE_KEY, found, SDE_CACHE_SECONDS)
+    return found
+
+
 def find_solar_system(name):
     """``(solar_system_id, English name)`` of the solar system called ``name`` (exact, any case), or None."""
     return _find("SolarSystem", name, [], ["pk"])

@@ -11,12 +11,12 @@
 {% include "fleetops/month_selector.html" %}
 {% if srp_settings.member_instructions %}<div class="alert alert-secondary">{{ srp_settings.member_instructions|linebreaksbr }}</div>{% endif %}
 
-<div class="row g-3 mb-3">
-  <div class="col-sm-6 col-xl"><div class="stat-card"><span>{% translate "Claims" %}</span><strong>{{ totals.claims }}</strong><small class="text-muted">{% blocktranslate trimmed with pending=totals.pending %}{{ pending }} waiting for a decision{% endblocktranslate %}</small></div></div>
-  <div class="col-sm-6 col-xl"><div class="stat-card"><span>{% translate "Requested" %}</span><strong>{{ totals.requested|isk_short|default:"0 ISK" }}</strong><small class="text-muted">{% translate "Suggested amounts of your claims" %}</small></div></div>
-  <div class="col-sm-6 col-xl"><div class="stat-card"><span>{% translate "Approved" context "FleetOps" %}</span><strong>{{ totals.approved|isk_short|default:"0 ISK" }}</strong><small class="text-muted">{% blocktranslate trimmed count counter=totals.approved_count %}{{ counter }} claim{% plural %}{{ counter }} claims{% endblocktranslate %}</small></div></div>
-  <div class="col-sm-6 col-xl"><div class="stat-card"><span>{% translate "Paid" %}</span><strong>{{ totals.paid|isk_short|default:"0 ISK" }}</strong><small class="text-muted">{% blocktranslate trimmed count counter=totals.paid_count %}{{ counter }} claim{% plural %}{{ counter }} claims{% endblocktranslate %}</small></div></div>
-  <div class="col-sm-6 col-xl"><div class="stat-card"><span>{% translate "Still to be paid" %}</span><strong>{{ totals.outstanding|isk_short|default:"0 ISK" }}</strong><small class="text-muted">{% translate "Approved, not paid yet" %}</small></div></div>
+<div class="row g-3 mb-3 fo-srp-stats">
+  <div class="col-6 col-md-4 col-xl"><div class="stat-card"><span>{% translate "Claims" %}</span><strong>{{ totals.claims }}</strong><small class="text-muted">{% blocktranslate trimmed with pending=totals.pending %}{{ pending }} waiting for a decision{% endblocktranslate %}</small></div></div>
+  <div class="col-6 col-md-4 col-xl"><div class="stat-card"><span>{% translate "Requested" %}</span><strong>{{ totals.requested|isk_short|default:"0 ISK" }}</strong><small class="text-muted">{% translate "Suggested amounts of your claims" %}</small></div></div>
+  <div class="col-6 col-md-4 col-xl"><div class="stat-card"><span>{% translate "Approved" context "FleetOps" %}</span><strong>{{ totals.approved|isk_short|default:"0 ISK" }}</strong><small class="text-muted">{% blocktranslate trimmed count counter=totals.approved_count %}{{ counter }} claim{% plural %}{{ counter }} claims{% endblocktranslate %}</small></div></div>
+  <div class="col-6 col-md-4 col-xl"><div class="stat-card"><span>{% translate "Paid" %}</span><strong>{{ totals.paid|isk_short|default:"0 ISK" }}</strong><small class="text-muted">{% blocktranslate trimmed count counter=totals.paid_count %}{{ counter }} claim{% plural %}{{ counter }} claims{% endblocktranslate %}</small></div></div>
+  <div class="col-6 col-md-4 col-xl"><div class="stat-card"><span>{% translate "Still to be paid" %}</span><strong>{{ totals.outstanding|isk_short|default:"0 ISK" }}</strong><small class="text-muted">{% translate "Approved, not paid yet" %}</small></div></div>
 </div>
 
 <div class="card mb-3">
@@ -33,10 +33,10 @@
         {% for link in recent_links %}
         <div class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2">
           <div>{{ link.operation.fleet_type }} <span class="text-muted">&middot; {% blocktranslate trimmed with fc=link.fc_main_character_name|default:link.operation.fc_character_name %}FC {{ fc }}{% endblocktranslate %}</span><div class="small text-muted">{{ link.operation.started_at|eve_time }} EVE</div></div>
-          <a class="btn btn-sm btn-primary" href="{% url 'fleetops:srp_link' link.code %}">{% translate "Request SRP" %}</a>
+          <a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:srp_link' link.code %}">{% translate "Request SRP" %}</a>
         </div>
         {% empty %}
-        <div class="list-group-item text-muted">{% translate "No fleet of yours has an open SRP link. Use the SRP link the FC posted, or the form for a loss outside a fleet." %}</div>
+        <div class="list-group-item text-muted"><i class="fa-solid fa-link-slash me-2" aria-hidden="true"></i>{% translate "No fleet of yours has an open SRP link. Use the SRP link the FC posted, or the form for a loss outside a fleet." %}</div>
         {% endfor %}
       </div>
     </div>
@@ -46,10 +46,11 @@
     <div class="card h-100">
       <div class="card-header"><strong>{% translate "Out-of-fleet loss" %}</strong></div>
       <div class="card-body">
-        <form method="post" action="{% url 'fleetops:srp_check' %}" class="fleetops-srp-form" data-srp-once>
+        <form method="post" action="{% url 'fleetops:srp_check' %}" class="fleetops-srp-form" id="srp-claim-form" data-srp-once data-srp-check>
           {% csrf_token %}
           {{ claim_form.as_div }}
-          <button type="submit" class="btn btn-primary mt-2">{% translate "Check loss" %}</button>
+          <button type="submit" class="btn btn-primary mt-2" data-srp-check-button data-srp-checking="{% translate 'Checking…' %}">{% translate "Check loss" %}</button>
+          <div class="mt-3" data-srp-result hidden aria-live="polite"></div>
         </form>
       </div>
     </div>
@@ -61,7 +62,7 @@
 
 <div class="card mb-3">
   <div class="card-header"><strong>{% translate "My claims" %}</strong> <span class="text-muted">&middot; {% blocktranslate trimmed with label=month_ref.label %}losses of {{ label }}{% endblocktranslate %}</span></div>
-  <div class="card-body p-0">{% include "fleetops/srp/_claims_table.html" with mine=True %}</div>
+  <div class="card-body p-0">{% if srp_settings.out_of_fleet_enabled %}{% include "fleetops/srp/_claims_table.html" with mine=True form_anchor="#srp-claim-form" %}{% else %}{% include "fleetops/srp/_claims_table.html" with mine=True %}{% endif %}</div>
 </div>
 <script src="{% static 'fleetops/srp.js' %}?v={{ fleetops_version }}" defer></script>
 {% endif %}

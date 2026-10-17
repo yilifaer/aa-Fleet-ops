@@ -1,0 +1,12 @@
+{% load i18n fleetops_srp fleetops_messages %}{% comment %}One loss of a pilot as a card: the render, the ship, the claim, the amount, the time and the status. Context: claim.{% endcomment %}
+<div class="fo-loss-card" data-claim="{{ claim.uuid }}">
+  <img class="fo-render" src="{% ship_render_url claim.ship_type_id 64 %}" width="64" height="64" alt="" loading="lazy">
+  <div class="fo-loss-body">
+    <div class="fw-semibold">{{ claim.ship_type_name|default:claim.ship_type_id }}</div>
+    <a class="stretched-link small" href="{% url 'fleetops:srp_claim' claim.uuid %}">{{ claim.reference }}</a>
+    <div class="fo-loss-amount fo-num">{% if claim.status == "approved" or claim.status == "paid" %}{{ claim.approved_amount|isk }}{% elif claim.status == "rejected" or claim.status == "withdrawn" %}<span class="text-muted">&ndash;</span>{% else %}{{ claim.limited_amount|isk }}{% endif %}</div>
+    <div class="small text-muted">{{ claim.killmail_time|eve_time }} EVE{% if claim.solar_system_name %} &middot; {{ claim.solar_system_name }}{% endif %}</div>
+    <div class="small text-muted">{% if claim.scope == "in_fleet" %}{{ claim.fleet_label|default:_("In fleet") }}{% else %}{% translate "Out of fleet" %}{% endif %}</div>
+  </div>
+  {{ claim|srp_status_badge }}
+</div>

@@ -6,7 +6,7 @@
   <h2>{% if object %}{% translate "Edit" %}{% else %}{% translate "Add" context "FleetOps" %}{% endif %} {{ config.title }}</h2>
 </div>
 {% if edit_include %}<div class="row g-3"><div class="col-lg-8">{% endif %}
-<div class="card"><div class="card-body">
+<div class="card{% if not edit_include %} fo-form-card{% endif %}"><div class="card-body">
 <form method="post">
   {% csrf_token %}
   {% include "fleetops/partials/form_errors.html" with errors=form.non_field_errors %}

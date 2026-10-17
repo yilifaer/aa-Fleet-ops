@@ -1252,6 +1252,8 @@ FLEET_ROLE_LABELS = {
 # --- end lane D ---
 
 # --- 0.2.0b2 lane E: SRP and administration ---
+# The loss check could not read the killmail from ESI (not a "not found"): the next step for the pilot.
+SRP_TRY_AGAIN = StoredText(gettext_noop("Try again in a minute."))
 # --- end lane E ---
 
 # --- 0.2.0b2 lane F: group pings ---

@@ -263,19 +263,49 @@ class SummaryAccessTests(AccessBase):
         self.assertTrue(result["own_fc"])
         self.assertFalse(result["alliance"] or result["corporations"] or result["fcs"])
         self.assertIsNone(result["own_corporation"])
-        self.assertFalse(access.summary_access(self.other_fc)["own_fc"])
+
+    def test_every_fc_has_a_page_for_their_fleets_before_one_has_a_link(self):
+        # An FC whose fleets are PAP only has no SRP link yet; the page and the "My fleets" tab exist anyway.
+        self.assertTrue(access.summary_access(self.other_fc)["own_fc"])
+        self.assertTrue(access.leads_fleets(self.other_fc))
+
+    def test_a_member_who_led_a_fleet_keeps_their_page_after_losing_the_fc_permission(self):
+        former_fc = f.create_user("former-fc", perms=f.SRP_MEMBER_PERMS)
+        self.assertFalse(access.summary_access(former_fc)["own_fc"])
+        f.fleet_link(f.create_operation(former_fc))
+
+        self.assertTrue(access.summary_access(former_fc)["own_fc"])
 
     def test_a_member_has_no_summary(self):
         self.assertEqual(
             access.summary_access(self.requester),
-            {"alliance": False, "corporations": False, "fcs": False, "own_corporation": None, "own_fc": False},
+            {
+                "alliance": False,
+                "corporations": False,
+                "fcs": False,
+                "own_corporation": None,
+                "own_fc": False,
+                "manager": False,
+            },
         )
 
     def test_anonymous_has_no_summary(self):
         self.assertEqual(
             access.summary_access(AnonymousUser()),
-            {"alliance": False, "corporations": False, "fcs": False, "own_corporation": None, "own_fc": False},
+            {
+                "alliance": False,
+                "corporations": False,
+                "fcs": False,
+                "own_corporation": None,
+                "own_fc": False,
+                "manager": False,
+            },
         )
+
+    def test_only_managers_are_marked_as_deciding(self):
+        self.assertTrue(access.summary_access(self.manager)["manager"])
+        self.assertFalse(access.summary_access(self.stats_all)["manager"])
+        self.assertFalse(access.summary_access(self.fc)["manager"])
 
     def test_summary_checks_for_single_objects(self):
         self.assertTrue(access.can_view_alliance_summary(self.manager))
@@ -307,14 +337,25 @@ class NavTests(AccessBase):
     def test_anonymous_sees_no_menu(self):
         self.assertEqual(
             access.srp_nav(AnonymousUser()),
-            {"enabled": False, "request": False, "review": False, "pending_count": 0, "summary": False, "visible": False},
+            {
+                "enabled": False,
+                "request": False,
+                "review": False,
+                "pending_count": 0,
+                "summary": False,
+                "own_fleets": False,
+                "visible": False,
+            },
         )
 
-    def test_a_member_without_srp_permissions_costs_no_query(self):
+    def test_a_member_without_srp_permissions_costs_only_the_group_lookup(self):
+        # The lookup of the groups a user leads is made by every page anyway and kept on the user for the request.
         self.plain.has_perm("fleetops.basic_access")
 
-        with self.assertNumQueries(0):
+        with self.assertNumQueries(1):
             result = access.srp_nav(self.plain)
+        with self.assertNumQueries(0):
+            access.srp_nav(self.plain)
 
         self.assertFalse(result["visible"])
 
@@ -323,7 +364,15 @@ class NavTests(AccessBase):
 
         self.assertEqual(
             result,
-            {"enabled": True, "request": True, "review": False, "pending_count": 0, "summary": False, "visible": True},
+            {
+                "enabled": True,
+                "request": True,
+                "review": False,
+                "pending_count": 0,
+                "summary": False,
+                "own_fleets": False,
+                "visible": True,
+            },
         )
 
     def test_my_srp_is_hidden_while_srp_is_disabled(self):
@@ -345,16 +394,16 @@ class NavTests(AccessBase):
         self.assertTrue(result["summary"])
         self.assertTrue(result["visible"])
 
-    def test_requesters_cost_one_query(self):
+    def test_requesters_cost_the_settings_and_the_group_lookup(self):
         self.requester.has_perm("fleetops.basic_access")
 
-        with self.assertNumQueries(1):
+        with self.assertNumQueries(2):
             access.srp_nav(self.requester)
 
-    def test_managers_cost_two_queries(self):
+    def test_managers_cost_one_more_query_for_the_pending_count(self):
         self.manager.has_perm("fleetops.basic_access")
 
-        with self.assertNumQueries(2):
+        with self.assertNumQueries(3):
             access.srp_nav(self.manager)
 
     def test_pending_count_is_one_count_of_claims_the_manager_can_decide(self):
@@ -379,7 +428,7 @@ class NavTests(AccessBase):
         self.assertTrue(self.nav(self.stats_all)["summary"])
         self.assertTrue(self.nav(self.corp_viewer)["summary"])
         self.assertTrue(self.nav(self.fc)["summary"])
-        self.assertFalse(self.nav(self.other_fc)["summary"])
+        self.assertTrue(self.nav(self.other_fc)["summary"])
         self.assertFalse(self.nav(self.requester)["summary"])
 
     def test_view_corp_stats_without_a_corporation_has_no_summary(self):
@@ -395,11 +444,20 @@ class NavTests(AccessBase):
         self.assertFalse(result["request"])
         self.assertTrue(result["visible"])
 
-    def test_an_fc_without_fleet_links_costs_one_more_query_and_sees_no_summary(self):
+    def test_an_fc_without_fleet_links_still_has_my_fleets_and_costs_no_extra_query(self):
+        # FB13.1: an FC whose fleets are PAP only has no SRP link, and "My fleets" is offered all the same.
         self.other_fc.has_perm("fleetops.basic_access")
 
-        with self.assertNumQueries(2):
+        with self.assertNumQueries(1):
             result = access.srp_nav(self.other_fc)
 
-        self.assertFalse(result["summary"])
+        self.assertTrue(result["summary"])
+        self.assertTrue(result["own_fleets"])
         self.assertTrue(result["request"])
+        self.assertTrue(result["visible"])
+
+    def test_a_member_without_the_fc_permission_has_no_my_fleets_entry(self):
+        result = self.nav(self.requester)
+
+        self.assertFalse(result["own_fleets"])
+        self.assertFalse(result["summary"])

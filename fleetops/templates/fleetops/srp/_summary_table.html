@@ -1,11 +1,11 @@
-{% load i18n fleetops_srp fleetops_stats fleetops_messages %}{# The tables of an SRP summary. "kind" picks one: totals, split, status, ships, corporations, fcs, members, fleets, claims. #}
+{% load i18n fleetops_srp fleetops_stats fleetops_messages fleetops_ui %}{# The tables of an SRP summary. "kind" picks one: totals, split, status, ships, corporations, fcs, members, fleets, claims. #}
 {% if kind == "totals" %}
-<div class="row g-3 mb-3">
-  <div class="col-xl col-md-4 col-sm-6"><div class="stat-card"><span>{% translate "Claims" %}</span><strong>{{ totals.claims }}</strong><small class="text-muted">{% blocktranslate trimmed with pending=totals.pending approved=totals.approved_count rejected=totals.rejected %}{{ pending }} pending &middot; {{ approved }} approved &middot; {{ rejected }} rejected{% endblocktranslate %}</small></div></div>
-  <div class="col-xl col-md-4 col-sm-6"><div class="stat-card"><span>{% translate "Requested" %}</span><strong>{{ totals.requested|isk_short }}</strong><small class="text-muted">{{ totals.requested|isk }}</small></div></div>
-  <div class="col-xl col-md-4 col-sm-6"><div class="stat-card"><span>{% translate "Approved" context "FleetOps" %}</span><strong>{{ totals.approved|isk_short }}</strong><small class="text-muted">{% blocktranslate trimmed count counter=totals.approved_count with amount=totals.approved|isk %}{{ amount }} in {{ counter }} claim{% plural %}{{ amount }} in {{ counter }} claims{% endblocktranslate %}</small></div></div>
-  <div class="col-xl col-md-4 col-sm-6"><div class="stat-card"><span>{% translate "Paid" %}</span><strong>{{ totals.paid|isk_short }}</strong><small class="text-muted">{% blocktranslate trimmed count counter=totals.paid_count with amount=totals.paid|isk %}{{ amount }} in {{ counter }} claim{% plural %}{{ amount }} in {{ counter }} claims{% endblocktranslate %}</small></div></div>
-  <div class="col-xl col-md-4 col-sm-6"><div class="stat-card"><span>{% translate "Outstanding" %}</span><strong>{{ totals.outstanding|isk_short }}</strong><small class="text-muted">{% translate "Approved, not paid yet" %}</small></div></div>
+<div class="row g-3 mb-3 fo-srp-stats">
+  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>{% translate "Claims" %}</span><strong>{{ totals.claims }}</strong><small class="text-muted">{% blocktranslate trimmed with pending=totals.pending approved=totals.approved_count rejected=totals.rejected %}{{ pending }} pending &middot; {{ approved }} approved &middot; {{ rejected }} rejected{% endblocktranslate %}</small></div></div>
+  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>{% translate "Requested" %}</span><strong>{{ totals.requested|isk_short }}</strong><small class="text-muted">{{ totals.requested|isk }}</small></div></div>
+  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>{% translate "Approved" context "FleetOps" %}</span><strong>{{ totals.approved|isk_short }}</strong><small class="text-muted">{% blocktranslate trimmed count counter=totals.approved_count with amount=totals.approved|isk %}{{ amount }} in {{ counter }} claim{% plural %}{{ amount }} in {{ counter }} claims{% endblocktranslate %}</small></div></div>
+  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>{% translate "Paid" %}</span><strong>{{ totals.paid|isk_short }}</strong><small class="text-muted">{% blocktranslate trimmed count counter=totals.paid_count with amount=totals.paid|isk %}{{ amount }} in {{ counter }} claim{% plural %}{{ amount }} in {{ counter }} claims{% endblocktranslate %}</small></div></div>
+  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>{% translate "Outstanding" %}</span><strong>{{ totals.outstanding|isk_short }}</strong><small class="text-muted">{% translate "Approved, not paid yet" %}</small></div></div>
 </div>
 
 {% elif kind == "split" %}
@@ -33,14 +33,14 @@
   <thead><tr><th>{% translate "Ship" %}</th><th class="text-end">{% translate "Losses" %}</th><th class="text-end">{% translate "Approved" context "FleetOps" %}</th></tr></thead>
   <tbody>
   {% for ship in summary.top_ships %}
-    <tr><td><img src="{% ship_render_url ship.ship_type_id 32 %}" width="32" height="32" alt="" class="me-2" loading="lazy">{{ ship.ship_type_name|default:ship.ship_type_id }}</td><td class="text-end">{{ ship.losses }}</td><td class="text-end">{{ ship.approved|isk }}</td></tr>
-  {% empty %}<tr><td colspan="3" class="text-muted p-3">{% translate "No claims this month." %}</td></tr>{% endfor %}
+    <tr><td><img src="{% ship_render_url ship.ship_type_id 32 %}" width="32" height="32" alt="" class="fo-render me-2" loading="lazy">{{ ship.ship_type_name|default:ship.ship_type_id }}</td><td class="text-end">{{ ship.losses }}</td><td class="text-end">{{ ship.approved|isk }}</td></tr>
+  {% empty %}<tr><td colspan="3">{% translate "No claims this month." as empty_text %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-ship" %}</td></tr>{% endfor %}
   </tbody>
 </table></div></div>
 
 {% elif kind == "corporations" %}
 <div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2"><strong>{% translate "Corporations" context "FleetOps" %}</strong>{% if can_export %}<div class="btn-group btn-group-sm fleetops-export" role="group" aria-label="{% translate 'Export corporations' %}"><a class="btn btn-outline-secondary" href="{% export_url 'srp-corporations' 'xlsx' %}">Excel</a><a class="btn btn-outline-secondary" href="{% export_url 'srp-corporations' 'csv' %}">CSV</a></div>{% endif %}</div>
-<div class="table-responsive"><table class="table table-hover align-middle mb-0">
+<div class="table-responsive"><table class="table table-hover align-middle mb-0 fo-table-pin">
   <thead><tr><th>{% translate "Corporation" context "FleetOps" %}</th><th class="text-end">{% translate "Claims" %}</th><th class="text-end">{% translate "Requested" %}</th><th class="text-end">{% translate "Approved" context "FleetOps" %}</th><th class="text-end">{% translate "Paid" %}</th><th class="text-end">{% translate "Outstanding" %}</th><th class="text-end">{% translate "Monthly cap" %}</th><th class="text-end">{% translate "Remaining" %}</th></tr></thead>
   <tbody>
   {% for row in corporation_rows %}
@@ -54,13 +54,13 @@
       <td class="text-end">{% if row.cap is None %}<span class="text-muted">{% translate "No limit" %}</span>{% else %}{{ row.cap|isk }}{% endif %}</td>
       <td class="text-end">{% if row.remaining is None %}<span class="text-muted">&mdash;</span>{% elif row.remaining == 0 %}<span class="text-danger">0 ISK</span>{% else %}{{ row.remaining|isk }}{% endif %}</td>
     </tr>
-  {% empty %}<tr><td colspan="8" class="text-muted p-3">{% translate "No claims this month." %}</td></tr>{% endfor %}
+  {% empty %}<tr><td colspan="8">{% translate "No claims this month." as empty_text %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-ship" %}</td></tr>{% endfor %}
   </tbody>
 </table></div></div>
 
 {% elif kind == "fcs" %}
 <div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2"><strong>{% translate "FCs" %}</strong>{% if can_export %}<div class="btn-group btn-group-sm fleetops-export" role="group" aria-label="{% translate 'Export FCs' %}"><a class="btn btn-outline-secondary" href="{% export_url 'srp-fcs' 'xlsx' %}">Excel</a><a class="btn btn-outline-secondary" href="{% export_url 'srp-fcs' 'csv' %}">CSV</a></div>{% endif %}</div>
-<div class="table-responsive"><table class="table table-hover align-middle mb-0">
+<div class="table-responsive"><table class="table table-hover align-middle mb-0 fo-table-pin">
   <thead><tr><th>FC</th><th class="text-end">{% translate "Fleets" %}</th><th class="text-end">{% translate "Claims" %}</th><th class="text-end">{% translate "Requested" %}</th><th class="text-end">{% translate "Approved" context "FleetOps" %}</th><th class="text-end">{% translate "Paid" %}</th><th class="text-end">{% translate "Outstanding" %}</th></tr></thead>
   <tbody>
   {% for row in fc_rows %}
@@ -73,13 +73,13 @@
       <td class="text-end">{{ row.totals.paid|isk }}</td>
       <td class="text-end">{{ row.totals.outstanding|isk }}</td>
     </tr>
-  {% empty %}<tr><td colspan="7" class="text-muted p-3">{% translate "No claims from fleets this month." %}</td></tr>{% endfor %}
+  {% empty %}<tr><td colspan="7">{% translate "No claims from fleets this month." as empty_text %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-ship" %}</td></tr>{% endfor %}
   </tbody>
 </table></div></div>
 
 {% elif kind == "members" %}
 <div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2"><strong>{% translate "Members" %}</strong>{% if can_export %}<div class="btn-group btn-group-sm fleetops-export" role="group" aria-label="{% translate 'Export members' %}"><a class="btn btn-outline-secondary" href="{% export_url 'srp-members' 'xlsx' export_corporation %}">Excel</a><a class="btn btn-outline-secondary" href="{% export_url 'srp-members' 'csv' export_corporation %}">CSV</a></div>{% endif %}</div>
-<div class="table-responsive"><table class="table table-hover align-middle mb-0">
+<div class="table-responsive"><table class="table table-hover align-middle mb-0 fo-table-pin">
   <thead><tr><th>{% translate "Main character" context "FleetOps" %}</th><th>{% translate "Corporation" context "FleetOps" %}</th><th class="text-end">{% translate "Claims" %}</th><th class="text-end">{% translate "Requested" %}</th><th class="text-end">{% translate "Approved" context "FleetOps" %}</th><th class="text-end">{% translate "Paid" %}</th><th class="text-end">{% translate "Outstanding" %}</th></tr></thead>
   <tbody>
   {% for row in member_rows %}
@@ -92,32 +92,32 @@
       <td class="text-end">{{ row.totals.paid|isk }}</td>
       <td class="text-end">{{ row.totals.outstanding|isk }}</td>
     </tr>
-  {% empty %}<tr><td colspan="7" class="text-muted p-3">{% translate "No claims this month." %}</td></tr>{% endfor %}
+  {% empty %}<tr><td colspan="7">{% translate "No claims this month." as empty_text %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-ship" %}</td></tr>{% endfor %}
   </tbody>
 </table></div></div>
 
 {% elif kind == "fleets" %}
 <div class="card mb-3"><div class="card-header"><strong>{% translate "Fleets" %}</strong></div>
-<div class="table-responsive"><table class="table table-hover align-middle mb-0">
+<div class="table-responsive"><table class="table table-hover align-middle mb-0 fo-table-pin">
   <thead><tr><th>{% translate "Fleet" %}</th><th>{% translate "SRP link" %}</th><th class="text-end">{% translate "Claims" %}</th><th class="text-end">{% translate "Requested" %}</th><th class="text-end">{% translate "Approved" context "FleetOps" %}</th><th class="text-end">{% translate "Paid" %}</th><th class="text-end">{% translate "Outstanding" %}</th></tr></thead>
   <tbody>
   {% for row in fleet_rows %}
     <tr>
       <td>{% if row.operation_uuid %}<a class="fw-semibold text-decoration-none" href="{% url 'fleetops:operation_detail' row.operation_uuid %}">{{ row.fleet_label|default:_("Fleet") }}</a>{% else %}<span class="fw-semibold">{{ row.fleet_label|default:_("Fleet") }}</span>{% endif %}</td>
-      <td>{% if row.link_code %}{% if row.is_open %}<span class="badge text-bg-success">{% translate "Open" context "link state" %}</span>{% else %}<span class="badge text-bg-secondary">{% translate "Closed" context "link state" %}</span>{% endif %}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+      <td>{% if row.link_code %}{% translate "Open" context "link state" as link_open_label %}{% translate "Closed" context "link state" as link_closed_label %}{% if row.is_open %}{% pill "ok" link_open_label %}{% else %}{% pill "neutral" link_closed_label %}{% endif %}{% else %}<span class="text-muted">-</span>{% endif %}</td>
       <td class="text-end">{{ row.totals.claims }}</td>
       <td class="text-end">{{ row.totals.requested|isk }}</td>
       <td class="text-end">{{ row.totals.approved|isk }}</td>
       <td class="text-end">{{ row.totals.paid|isk }}</td>
       <td class="text-end">{{ row.totals.outstanding|isk }}</td>
     </tr>
-  {% empty %}<tr><td colspan="7" class="text-muted p-3">{% translate "No claims from these fleets this month." %}</td></tr>{% endfor %}
+  {% empty %}<tr><td colspan="7">{% translate "No claims from these fleets this month." as empty_text %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-ship" %}</td></tr>{% endfor %}
   </tbody>
 </table></div></div>
 
 {% elif kind == "claims" %}
 <div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2"><strong>{% translate "Claims" %}</strong>{% if can_export %}<div class="btn-group btn-group-sm fleetops-export" role="group" aria-label="{% translate 'Export claims' %}"><a class="btn btn-outline-secondary" href="{% export_url 'srp-claims' 'xlsx' export_corporation %}">Excel</a><a class="btn btn-outline-secondary" href="{% export_url 'srp-claims' 'csv' export_corporation %}">CSV</a></div>{% endif %}</div>
-<div class="table-responsive"><table class="table table-hover align-middle mb-0">
+<div class="table-responsive"><table class="table table-hover align-middle mb-0 fo-table-pin">
   <thead><tr><th>{% translate "Claim" %}</th><th>{% translate "Loss (EVE)" %}</th><th>{% translate "Pilot" %}</th><th>{% translate "Ship" %}</th><th>{% translate "Fleet" %}</th><th class="text-end">{% translate "Suggested" %}</th><th class="text-end">{% translate "Approved" context "FleetOps" %}</th><th>{% translate "Status" %}</th></tr></thead>
   <tbody>
   {% for claim in claims %}
@@ -131,7 +131,7 @@
       <td class="text-end">{% if claim.approved_amount is not None %}{{ claim.approved_amount|isk }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
       <td>{{ claim|srp_status_badge }}</td>
     </tr>
-  {% empty %}<tr><td colspan="8" class="text-muted p-3">{% translate "No claims this month." %}</td></tr>{% endfor %}
+  {% empty %}<tr><td colspan="8">{% translate "No claims this month." as empty_text %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-ship" %}</td></tr>{% endfor %}
   </tbody>
 </table></div>
 {% if claims|length >= claims_limit %}<div class="card-footer small text-muted">{% blocktranslate trimmed with limit=claims_limit %}Showing the latest {{ limit }} claims; the export has all of them.{% endblocktranslate %}</div>{% endif %}

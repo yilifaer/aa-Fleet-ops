@@ -360,23 +360,34 @@ class TemplateFilterTests(TestCase):
         self.assertEqual(render("{{ v|isk|default:'n/a' }}", v=None), "n/a")
 
     def test_status_badges(self):
+        # One tone, one meaning: a pending claim is amber, an approved one waits for its payment (information),
+        # a paid one is green, a rejected one red and a withdrawn one neutral.
         expected = {
-            "pending": ("text-bg-warning", "Pending"),
-            "approved": ("text-bg-primary", "Approved"),
-            "paid": ("text-bg-success", "Paid"),
-            "rejected": ("text-bg-danger", "Rejected"),
-            "withdrawn": ("text-bg-secondary", "Withdrawn"),
+            "pending": ("fo-pill-warn", "Pending"),
+            "approved": ("fo-pill-info", "Approved"),
+            "paid": ("fo-pill-ok", "Paid"),
+            "rejected": ("fo-pill-bad", "Rejected"),
+            "withdrawn": ("fo-pill-neutral", "Withdrawn"),
         }
         for status, (css, label) in expected.items():
             with self.subTest(status=status):
-                self.assertEqual(render("{{ s|srp_status_badge }}", s=status), f'<span class="badge {css}">{label}</span>')
+                self.assertEqual(
+                    render("{{ s|srp_status_badge }}", s=status), f'<span class="fo-pill {css}">{label}</span>'
+                )
                 self.assertEqual(render("{{ s|srp_status_label }}", s=status), label)
 
     def test_status_badge_of_a_claim_and_of_an_unknown_status(self):
         claim = SrpClaim(status="paid")
 
         self.assertIn("Paid", render("{{ c|srp_status_badge }}", c=claim))
-        self.assertEqual(render("{{ s|srp_status_badge }}", s="odd"), '<span class="badge text-bg-secondary">odd</span>')
+        self.assertEqual(render("{{ s|srp_status_badge }}", s="odd"), '<span class="fo-pill fo-pill-neutral">odd</span>')
+
+    def test_no_badge_uses_a_bootstrap_colour(self):
+        warning = ClaimWarning("value_estimate", "warning")
+        html = render("{{ s|srp_status_badge }}{{ w|srp_warning_badge }}", s="pending", w=warning)
+
+        for forbidden in ("badge", "text-bg-", "bg-"):
+            self.assertNotIn(forbidden, html)
 
     def test_warning_badge_from_stored_json(self):
         warning = {"code": "over_limit", "level": "danger", "params": {"kind": "personal", "requested": 5, "remaining": 1}}
@@ -385,13 +396,13 @@ class TemplateFilterTests(TestCase):
 
         self.assertEqual(
             html,
-            '<span class="badge fleetops-srp-warning text-bg-danger">'
+            '<span class="fo-pill fo-pill-bad fo-pill-wrap fleetops-srp-warning">'
             "Over the monthly personal limit: 5 ISK requested, 1 ISK left.</span>",
         )
         self.assertEqual(render("{{ w|srp_warning_text }}", w=warning), "Over the monthly personal limit: 5 ISK requested, 1 ISK left.")
 
     def test_warning_levels_have_their_own_colour(self):
-        for level, css in (("danger", "text-bg-danger"), ("warning", "text-bg-warning"), ("info", "text-bg-info")):
+        for level, css in (("danger", "fo-pill-bad"), ("warning", "fo-pill-warn"), ("info", "fo-pill-info")):
             with self.subTest(level=level):
                 self.assertIn(css, render("{{ w|srp_warning_badge }}", w=ClaimWarning("value_estimate", level)))
 
@@ -478,8 +489,8 @@ class TemplateFilterTests(TestCase):
         none = f.srp_claim(pilot)
 
         self.assertIn("within 20 s of joining", render("{{ c|srp_check_text }}", c=near))
-        self.assertIn("text-bg-warning", render("{{ c|srp_check_badge }}", c=near))
-        self.assertIn("text-bg-success", render("{{ c|srp_check_badge }}", c=clean))
+        self.assertIn("fo-pill-warn", render("{{ c|srp_check_badge }}", c=near))
+        self.assertIn("fo-pill-ok", render("{{ c|srp_check_badge }}", c=clean))
         self.assertEqual(render("{{ c|srp_check_text }}{{ c|srp_check_badge }}", c=none), "")
 
     def test_row_classes(self):

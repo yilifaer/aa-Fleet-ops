@@ -4,6 +4,7 @@
 """FleetOps SRP: the member pages for starting a claim, the fleet SRP link and the claim page."""
 
 from datetime import timedelta
+from functools import partial
 
 from django.contrib import messages
 from django.core.paginator import Paginator
@@ -45,11 +46,11 @@ OUT_OF_FLEET_OFF = gettext_lazy("Only losses in FleetOps fleets are covered.")
 # recheck) is just a button.
 DECISION_FORMS = {
     "approve": ApproveForm,
-    "reject": ReasonForm,
-    "revoke": ReasonForm,
+    "reject": partial(ReasonForm, what="reason for the rejection"),
+    "revoke": partial(ReasonForm, what="reason for revoking the approval"),
     "paid": PaidForm,
-    "unpaid": ReasonForm,
-    "reopen": ReasonForm,
+    "unpaid": partial(ReasonForm, what="reason for undoing the payment"),
+    "reopen": partial(ReasonForm, what="reason for reopening the claim"),
     "reclassify": ReclassifyForm,
     "note": NoteForm,
 }
@@ -66,7 +67,7 @@ REASON_ACTIONS = {
     "reject": (
         gettext_lazy("Reject claim"),
         gettext_lazy("Reject"),
-        "btn-danger",
+        "btn-outline-danger",
         gettext_lazy("The pilot sees the reason."),
     ),
     "revoke": (
@@ -89,6 +90,13 @@ REASON_ACTIONS = {
         "btn-outline-primary",
         gettext_lazy("The claim is calculated again with the current rules and waits for a decision."),
     ),
+}
+# The questions the dialog asks before these decisions are sent (the required reason is not the confirmation).
+# Reopening a claim is not asked: it only puts the claim back in the queue.
+REASON_CONFIRMATIONS = {
+    "reject": gettext_lazy("Reject this claim? The pilot sees the reason."),
+    "revoke": gettext_lazy("Revoke the approval?"),
+    "unpaid": gettext_lazy("Undo the payment? The claim goes back to approved."),
 }
 # Fleets a claim can be moved into: open links of fleets that started shortly before the loss.
 LINK_CANDIDATE_WINDOW = timedelta(hours=24)
@@ -431,7 +439,15 @@ def claim_page_context(request, claim, *, bound=None, settings_obj=None):
                     "forms": forms,
                     "limit_reason": translate_stored(within_limit_reason(claim)),
                     "reason_actions": [
-                        {"action": action, "title": title, "button": button, "css": css, "help": text, "form": forms[action]}
+                        {
+                            "action": action,
+                            "title": title,
+                            "button": button,
+                            "css": css,
+                            "help": text,
+                            "form": forms[action],
+                            "confirm": REASON_CONFIRMATIONS.get(action, ""),
+                        }
                         for action, (title, button, css, text) in REASON_ACTIONS.items()
                         if action in actions
                     ],

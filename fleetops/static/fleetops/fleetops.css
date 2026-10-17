@@ -467,6 +467,57 @@ button.fo-live { cursor: pointer; }
 /* end 6.D */
 
 /* 6.E SRP and administration */
+/* The claims tables use the body size of the theme (the earlier 14 px is below the 15 to 16 px of body text) */
+.fleetops .fleetops-srp-claims { font-size: .9375rem; }
+/* The figure of a claim or of a payment: a little larger than the text around it */
+.fo-claim-amount { font-size: 1.5rem; font-weight: 500; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.fo-pay-total { font-size: 1.25rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.fleetops-srp-ship-cell { display: inline-flex; align-items: center; gap: var(--fo-space-2); }
+.fleetops-srp-ship-cell > img { flex: 0 0 auto; width: 32px; height: 32px; object-fit: cover; }
+/* Loss cards (My SRP on a phone): the status pill sits in the corner, the whole card opens the claim */
+.fo-loss-card { align-items: start; }
+.fo-loss-card:hover { background: var(--fo-hover); }
+.fo-loss-card > img { width: 64px; height: 64px; object-fit: cover; }
+.fo-loss-body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fo-loss-body > :first-child { padding-inline-end: 6.5rem; overflow-wrap: anywhere; }
+.fo-loss-amount { font-size: 1.125rem; font-weight: 600; }
+/* The loss check is under way: grey blocks hold the place of the answer */
+.fo-srp-skeleton-render { width: 64px; height: 64px; margin: 0; }
+.fo-srp-skeleton-wide { width: 70%; }
+.fo-srp-skeleton-mid { width: 50%; }
+.fo-srp-skeleton-short { width: 35%; }
+/* Steps of a claim: what is still to come is quieter and its dot is dashed */
+.fo-step.is-todo { color: var(--fo-text-2); }
+.fo-step.is-bad > .fw-semibold { color: var(--fo-bad); }
+.fo-step .fo-time-rel { display: block; margin-inline-start: 0; }
+.fleetops-srp-check { width: 2.75rem; }
+/* The year select of the month selector is 42 px wide in Materia, below the touch size; block 6.D has the same rule, one of the two goes at integration */
+.fleetops-period-selector .input-group > .form-select { min-width: 5.5rem; }
+/* A claim link on the red tint of an over-limit row: the theme link colour is below 4.5:1 there (Materia), so the text colour is used and the underline marks the link */
+.fleetops .table > tbody > tr.fleetops-srp-over-limit a:not(.btn) { color: var(--fo-text-1); text-decoration: underline; text-underline-offset: .15em; }
+/* The figures of the SRP summaries: the label is the title, the number is the thing to read */
+.fo-srp-stats .stat-card { gap: var(--fo-space-1); }
+.fo-srp-stats .stat-card > span { font-size: .9375rem; font-weight: 600; color: var(--fo-text-1); }
+.fo-srp-stats .stat-card > strong { font-size: 1.625rem; font-weight: 500; line-height: 1.15; }
+/* The monthly limits become a list of labelled lines on a phone instead of a table that has to scroll */
+@media (max-width: 575.98px) {
+  .fleetops .fleetops-srp-limits thead { display: none; }
+  .fleetops .fleetops-srp-limits tr { display: block; padding: var(--fo-space-2) 0; border-bottom: 1px solid var(--fo-divider); }
+  .fleetops .fleetops-srp-limits tr:last-child { border-bottom: 0; }
+  .fleetops .fleetops-srp-limits :is(th, td) { display: flex; justify-content: space-between; gap: var(--fo-space-3); padding: .15rem var(--fo-space-3); border: 0; text-align: end; }
+  .fleetops .fleetops-srp-limits td::before { content: attr(data-label); flex: 0 0 auto; text-align: start; color: var(--fo-text-2); }
+  .fleetops .fleetops-srp-limits th[scope="row"] { display: block; text-align: start; font-weight: 600; }
+}
+/* Administration: cards of the index and the lists */
+.fo-admin-kicker { display: block; margin-bottom: var(--fo-space-1); font-size: .75rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--fo-text-2); }
+.fo-admin-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--fo-space-2); }
+.fo-admin-head > i { color: var(--fo-text-2); font-size: 1.25rem; }
+.fo-admin-actions { display: flex; flex-wrap: wrap; gap: var(--fo-space-2); }
+.fo-admin-table > tbody > tr > td { overflow-wrap: anywhere; }
+.fo-copy-field { min-width: 16rem; }
+.fo-form-card { max-width: 52rem; }
+.fo-bridge-now a { white-space: nowrap; }
+.fo-checklist .form-check { margin-bottom: 0; }
 /* end 6.E */
 
 /* 6.F pings and groups */

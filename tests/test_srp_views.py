@@ -373,7 +373,7 @@ class CheckLossTests(SrpPagesTestCase):
 
         self.assertContains(response, "Over the monthly personal limit: 100,000,000 ISK requested, 60,000,000 ISK left.")
         self.assertContains(response, "Held down by the personal monthly limit.")
-        self.assertContains(response, "text-bg-danger")
+        self.assertContains(response, "fo-pill-bad")
 
     def test_blockers_are_listed_and_there_is_no_submit_button(self):
         self.prepare.return_value = make_preview(self.member, blockers=["Capsule losses are not covered."])
@@ -525,7 +525,7 @@ class FleetLinkPageTests(SrpPagesTestCase):
         response = self.client.post(route("srp_link", self.link.code), {"killmail": "https://zkillboard.com/kill/654321/"})
 
         self.assertContains(response, "within 45 s of joining")
-        self.assertContains(response, "text-bg-warning")
+        self.assertContains(response, "fo-pill-warn")
 
     def test_a_presence_problem_is_listed_once_in_the_preview(self):
         preview = make_preview(
@@ -700,7 +700,7 @@ class ClaimPageTests(SrpPagesTestCase):
             html = response.content.decode().split("<strong>History</strong>", 1)[1]
             return {
                 row.split("</strong>", 1)[0].split("<strong>")[-1]: row
-                for row in html.split('<li class="list-group-item">')[1:]
+                for row in html.split("<li>")[1:]
             }
 
         for user in (self.stats, self.fc, corp_viewer):
@@ -748,7 +748,7 @@ class ClaimPageTests(SrpPagesTestCase):
             with self.subTest(user=user.username):
                 html = self.get(user, claim).content.decode()
                 header = html.split("</h2>", 1)[1].split("Decision", 1)[0].split('<div class="row g-3', 1)[0]
-                self.assertIn('Requested</div><div class="fs-4 fw-semibold">30,000,000 ISK</div>', header)
+                self.assertIn('Requested</div><div class="fo-claim-amount">30,000,000 ISK</div>', header)
                 self.assertIn("Within limits:", header)
                 self.assertIn("0 ISK", header.split("Within limits:", 1)[1])
 
@@ -758,7 +758,7 @@ class ClaimPageTests(SrpPagesTestCase):
         html = self.get(claim=claim).content.decode()
 
         header = html.split("</h2>", 1)[1].split('<div class="row g-3', 1)[0]
-        self.assertIn('Requested</div><div class="fs-4 fw-semibold">30,000,000 ISK</div>', header)
+        self.assertIn('Requested</div><div class="fo-claim-amount">30,000,000 ISK</div>', header)
         self.assertNotIn("Within limits:", header)
 
     def test_the_monthly_usage_is_shown_to_the_claimant_and_the_stats_roles_but_not_to_the_fc(self):

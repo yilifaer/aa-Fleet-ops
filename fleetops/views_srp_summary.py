@@ -42,11 +42,6 @@ def _corporation_name(corporation_id):
     return name or str(corporation_id)
 
 
-def _leads_fleets(user) -> bool:
-    """FCs always have their own page, even before a fleet of theirs has an SRP link; so does anyone who led one."""
-    return access.led_fleets(user) or any(user.has_perm(name) for name in access.FC_PERMISSIONS)
-
-
 def _display_name(user) -> str:
     main = getattr(getattr(user, "profile", None), "main_character", None)
     return (main.character_name if main is not None else "") or user.get_username()
@@ -140,7 +135,7 @@ def fc_summary(request, user_id=None):
         # The same answer whether the user exists or not.
         return not_found(request, OWN_FLEETS_SUMMARY_REASON)
     if user_id is None or not everything:
-        if not (everything or _leads_fleets(request.user)):
+        if not (everything or access.leads_fleets(request.user)):
             return denied(request, OWN_FLEETS_SUMMARY_REASON)
         fc_user, own = request.user, True
     else:

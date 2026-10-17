@@ -1,0 +1,17 @@
+{% load i18n %}{% comment %}The notice of the SRP configuration pages: pending claims keep the settings they were calculated with. Context: outdated_claims (how many), can_recalculate_claims, next_url.{% endcomment %}
+{% if outdated_claims %}
+<div class="alert alert-warning" id="srp-outdated-claims">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <div>
+      <strong>{% blocktranslate trimmed count counter=outdated_claims %}{{ counter }} pending claim was calculated with earlier SRP settings.{% plural %}{{ counter }} pending claims were calculated with earlier SRP settings.{% endblocktranslate %}</strong>
+      <div>{% if can_recalculate_claims %}{% translate "Recalculate them to apply the current payout table, caps and limits. Claims that are already decided are not changed." %}{% else %}{% translate "An SRP manager can recalculate them on the review page." %}{% endif %}</div>
+    </div>
+    {% if can_recalculate_claims %}
+    <form method="post" action="{% url 'fleetops:srp_review_recalculate' %}" data-fo-confirm="{% translate 'Recalculate every pending claim with the current payout table, caps and limits?' %}" data-fo-confirm-danger="false" data-fo-confirm-label="{% translate 'Recalculate' %}">
+      {% csrf_token %}<input type="hidden" name="next" value="{{ next_url }}">
+      <button type="submit" class="btn btn-outline-primary" id="srp-recalculate-outdated">{% translate "Recalculate all pending with current rules" %}</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

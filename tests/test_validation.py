@@ -466,10 +466,11 @@ class ConfigurationListRenderingTests(TestCase):
         response = self.client.get(reverse("fleetops:configuration_list", args=["fleet-types"]))
 
         content = response.content.decode()
-        for cell in ("<td>1.00</td>", "<td>0.00</td>", "<td>1</td>", "<td>0</td>"):
+        # Figures are right aligned; a number is never turned into a Yes or a No.
+        for cell in ('<td class="text-end">1.00</td>', '<td class="text-end">0.00</td>', '<td class="text-end">1</td>', '<td class="text-end">0</td>'):
             self.assertIn(cell, content)
-        self.assertEqual(content.count('<span class="badge bg-success">Yes</span>'), 1)
-        self.assertEqual(content.count('<span class="badge bg-secondary">No</span>'), 1)
+        self.assertEqual(content.count('<span class="fo-pill fo-pill-ok">Yes</span>'), 1)
+        self.assertEqual(content.count('<span class="fo-pill fo-pill-neutral">No</span>'), 1)
         self.assertIn('<td><span class="text-muted">—</span></td>', content)
 
 
