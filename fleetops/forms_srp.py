@@ -235,7 +235,12 @@ class WithdrawForm(forms.Form):
 
 
 class ReasonForm(forms.Form):
-    """A decision that needs its reason: reject, revoke an approval, undo a payment, reopen."""
+    """A decision that needs its reason: reject, revoke an approval, undo a payment, reopen.
+
+    ``what`` names the reason (a key of ``claims.REASON_MESSAGES``, such as "reason for the rejection"), so an
+    empty or too long reason is answered with the sentence of that decision and not with Django's "This field
+    is required."
+    """
 
     reason = forms.CharField(
         label=_("Reason"),
@@ -244,9 +249,14 @@ class ReasonForm(forms.Form):
         widget=forms.Textarea(attrs={"rows": 2}),
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, what="reason", **kwargs):
         super().__init__(*args, **kwargs)
         _style(self.fields)
+        from fleetops.srp.claims import MAX_REASON_LENGTH, REASON_MESSAGES
+
+        needed, too_long = REASON_MESSAGES[what]
+        self.fields["reason"].error_messages["required"] = translate_stored(needed())
+        self.fields["reason"].error_messages["max_length"] = translate_stored(too_long(max=MAX_REASON_LENGTH))
 
 
 class ApproveForm(forms.Form):

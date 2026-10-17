@@ -12,6 +12,7 @@ from django.core.paginator import Paginator
 from django.db.models import Count, Q, Sum
 from django.http import Http404
 from django.shortcuts import redirect
+from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
@@ -26,6 +27,7 @@ from fleetops.srp import policy as rules
 from fleetops.srp.access import MANAGE_SRP
 from fleetops.srp.types import SrpError, SrpPayRow, SrpStateError
 from fleetops.texts import translate_stored
+from fleetops.ui_notices import push_notice
 from fleetops.views import _period_render_context, _year_month
 from fleetops.views_srp import (
     DECISION_FORMS,
@@ -186,6 +188,13 @@ def review_queue(request):
     rows = list(page.object_list)
     for claim in rows:
         claim.reviewable = access.can_review(request.user, claim, settings_obj=settings_obj)
+    # The queue is narrowed when it is not the default list of pending claims (the empty state then says so).
+    filters = form.cleaned_data
+    filters_active = (
+        (filters.get("status") or SrpClaim.Status.PENDING) != SrpClaim.Status.PENDING
+        or any(filters.get(name) for name in REVIEW_FILTERS if name != "status")
+        or bounds is not None
+    )
     return srp_render(
         request,
         "fleetops/srp/review.html",
@@ -198,6 +207,7 @@ def review_queue(request):
             page=page,
             claims=rows,
             month_filter_active=bounds is not None,
+            filters_active=filters_active,
             all_months_query=without_period(request),
             next_url=request.get_full_path(),
             selectable=any(claim.reviewable and claim.status == SrpClaim.Status.PENDING for claim in rows),
@@ -396,7 +406,18 @@ def claim_action(request, claim_uuid, action):
         if form is None:
             return back(request, claim_redirect(claim))
         return claim_response(request, claim, bound={action: form}, settings_obj=settings_obj)
-    messages.success(request, message)
+    if action == "paid":
+        # Marking a claim paid can be taken back by the same people who made it: the notice says so and links to
+        # the form (every other decision asks for its reason when it is made, so it has no undo of its own).
+        push_notice(
+            request,
+            message,
+            "success",
+            _("Undo payment…"),
+            reverse("fleetops:srp_claim", kwargs={"claim_uuid": claim.uuid}) + "#undo-payment",
+        )
+    else:
+        messages.success(request, message)
     return back(request, claim_redirect(claim))
 
 

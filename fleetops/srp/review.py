@@ -134,7 +134,11 @@ def _approve_locked(
     remaining, kind = _tightest(states)
     over_by = amount - remaining if remaining is not None and amount > remaining else 0
 
-    if amount > locked.suggested_amount and not confirm_above_policy:
+    # With no automatic amount (no payout rule, no percentage) there is no policy to go above: the reviewer
+    # types the amount and a reason, and the "above policy" box would only be a second question.
+    no_automatic_amount = locked.suggested_amount == 0 and locked.payout_basis == SrpClaim.PayoutBasis.NONE
+    needs_confirmation = amount > locked.suggested_amount and not no_automatic_amount
+    if needs_confirmation and not confirm_above_policy:
         raise SrpLimitError(
             "confirm_above_policy",
             texts.SRP_ABOVE_POLICY(
@@ -179,7 +183,8 @@ def _approve_locked(
             "previous_amount": previous["approved_amount"],
             "suggested_amount": locked.suggested_amount,
             "limited_amount": locked.limited_amount,
-            "above_policy_confirmed": amount > locked.suggested_amount,
+            "above_policy_confirmed": needs_confirmation,
+            **({"no_automatic_amount": True} if amount > locked.suggested_amount and no_automatic_amount else {}),
             "over_limit_by": over_by,
         },
         old=previous,

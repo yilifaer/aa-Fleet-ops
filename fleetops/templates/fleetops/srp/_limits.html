@@ -7,15 +7,15 @@
       {% for limit in limits %}
       <tr{% if limit.applies and limit.cap is not None and limit.remaining == 0 %} class="fleetops-srp-over-limit"{% endif %}>
         <th scope="row" class="fw-normal">{{ limit.kind|srp_limit_label|capfirst }}{% if not limit.applies %}<div class="small text-muted">{% translate "In-fleet losses do not count toward this limit." %}</div>{% endif %}</th>
-        <td class="text-end">{% if limit.cap is None %}<span class="text-muted">{% translate "No limit" %}</span>{% else %}{{ limit.cap|isk }}{% endif %}</td>
-        <td class="text-end">{{ limit.used|isk }}</td>
-        <td class="text-end">{{ limit.pending|isk }}</td>
-        <td class="text-end">{% if limit.cap is None or not limit.applies %}<span class="text-muted">&ndash;</span>{% else %}<strong>{{ limit.remaining|isk }}</strong>{% endif %}</td>
+        <td class="text-end" data-label="{% translate 'Cap' %}">{% if limit.cap is None %}<span class="text-muted">{% translate "No limit" %}</span>{% else %}{{ limit.cap|isk }}{% endif %}</td>
+        <td class="text-end" data-label="{% translate 'Approved and paid' %}">{{ limit.used|isk }}</td>
+        <td class="text-end" data-label="{% translate 'In review' %}">{{ limit.pending|isk }}</td>
+        <td class="text-end" data-label="{% translate 'Left' %}">{% if limit.cap is None or not limit.applies %}<span class="text-muted">&ndash;</span>{% else %}<strong>{{ limit.remaining|isk }}</strong>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 {% else %}
-<div class="text-muted">{% translate "No monthly limit applies." %}</div>
+<div class="text-muted p-3">{% translate "No monthly limit applies." %}</div>
 {% endif %}

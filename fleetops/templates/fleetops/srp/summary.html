@@ -1,10 +1,10 @@
 {% extends "fleetops/base.html" %}
-{% load i18n fleetops_srp fleetops_stats %}
+{% load i18n fleetops_srp fleetops_stats fleetops_ui %}
 {% block fleetops_content %}
 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
   <div>
     <h2 class="mb-1">{% if tab == "alliance" %}{% translate "SRP Summary" %}{% elif tab == "corporation" %}{% translate "SRP Summary" %} &middot; {{ corporation_name|default:corporation_id }}{% else %}{% blocktranslate trimmed with fc=fc_name %}SRP Summary &middot; Fleets of {{ fc }}{% endblocktranslate %}{% endif %}</h2>
-    <div class="text-muted">{% blocktranslate trimmed with label=month_ref.label %}Claims count in the EVE month of the loss &middot; {{ label }} (EVE time){% endblocktranslate %}{% if tab == "alliance" %} &middot; {% translate "read only" %}{% endif %}</div>
+    <div class="text-muted">{% blocktranslate trimmed with label=month_ref.label %}Claims count in the EVE month of the loss &middot; {{ label }} (EVE time){% endblocktranslate %}{% if tab == "alliance" %} &middot; {% if summary_access.manager %}{% url 'fleetops:srp_review' as review_url %}{% blocktranslate trimmed %}Decisions are made on the <a href="{{ review_url }}">Review</a> page.{% endblocktranslate %}{% else %}{% translate "read only" as read_only_label %}{% pill "neutral" read_only_label id="srp-read-only" %}{% endif %}{% endif %}</div>
   </div>
 </div>
 

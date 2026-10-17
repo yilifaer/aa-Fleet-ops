@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 
 from django import template
-from django.utils.html import format_html
 from django.utils.translation import pgettext
 
 from fleetops.models import SrpClaim, SrpClaimEvent
@@ -15,23 +14,13 @@ from fleetops.srp.types import (
     PolicySnapshot,
     warnings_from_json,
 )
+from fleetops.ui import SRP_LEVEL_TONES, SRP_STATUS_TONES, TONE_NEUTRAL, TONE_WARN, pill_html, tone_for
 
 register = template.Library()
 
-# Colour is never the only signal: every badge shows its words as text too.
-STATUS_BADGE_CLASSES = {
-    SrpClaim.Status.PENDING: "text-bg-warning",
-    SrpClaim.Status.APPROVED: "text-bg-primary",
-    SrpClaim.Status.PAID: "text-bg-success",
-    SrpClaim.Status.REJECTED: "text-bg-danger",
-    SrpClaim.Status.WITHDRAWN: "text-bg-secondary",
-}
-LEVEL_BADGE_CLASSES = {
-    display.LEVEL_DANGER: "text-bg-danger",
-    display.LEVEL_WARNING: "text-bg-warning",
-    display.LEVEL_INFO: "text-bg-info",
-    display.LEVEL_OK: "text-bg-success",
-}
+# Colour is never the only signal: every pill shows its words as text too. The tone of a status or of a warning
+# level is one of the maps of ``fleetops.ui`` (a pending claim is amber, an approved one waits for its payment
+# and is information, a paid one is green, a rejected one red).
 STATUS_LABELS = dict(SrpClaim.Status.choices)
 
 # What the history says of a person who is neither the viewer nor visible by name: by the kind of step.
@@ -75,13 +64,9 @@ def srp_status_label(status):
 
 @register.filter
 def srp_status_badge(status):
-    """A badge with the words of a claim status (a status key or a claim)."""
+    """A pill with the words of a claim status (a status key or a claim)."""
     status = getattr(status, "status", status)
-    return format_html(
-        '<span class="badge {}">{}</span>',
-        STATUS_BADGE_CLASSES.get(status, "text-bg-secondary"),
-        srp_status_label(status),
-    )
+    return pill_html(tone_for(SRP_STATUS_TONES, status, TONE_NEUTRAL), srp_status_label(status))
 
 
 def _warning(value) -> ClaimWarning | None:
@@ -120,14 +105,13 @@ def srp_warning_text(warning):
 
 @register.filter
 def srp_warning_badge(warning):
-    """A badge with the sentence of a warning, coloured by its level."""
+    """A pill with the sentence of a warning, toned by its level."""
     warning = _warning(warning)
     if warning is None:
         return ""
-    return format_html(
-        '<span class="badge fleetops-srp-warning {}">{}</span>',
-        LEVEL_BADGE_CLASSES.get(warning.level, "text-bg-warning"),
-        warning.text,
+    # A warning is a sentence: the pill wraps instead of running out of its box.
+    return pill_html(
+        tone_for(SRP_LEVEL_TONES, warning.level, TONE_WARN), warning.text, class_="fo-pill-wrap fleetops-srp-warning"
     )
 
 
@@ -156,15 +140,24 @@ def srp_check_text(claim):
 
 @register.filter
 def srp_check_badge(claim):
-    """A badge with the fleet check of a claim, coloured by how serious the check is."""
+    """A pill with the fleet check of a claim, toned by how serious the check is."""
     code = getattr(claim, "fleet_check", "")
     if not code:
         return ""
-    return format_html(
-        '<span class="badge {}">{}</span>',
-        LEVEL_BADGE_CLASSES.get(display.presence_level(code), "text-bg-warning"),
+    return pill_html(
+        tone_for(SRP_LEVEL_TONES, display.presence_level(code), TONE_WARN),
         display.presence_text(code, getattr(claim, "fleet_check_params", None)),
+        class_="fo-pill-wrap",
     )
+
+
+@register.filter
+def srp_presence_badge(presence):
+    """A pill with the fleet check of a loss that is being checked (a ``PresenceResult``), toned by its level."""
+    text = getattr(presence, "text", "")
+    if not text:
+        return ""
+    return pill_html(tone_for(SRP_LEVEL_TONES, getattr(presence, "level", ""), TONE_WARN), text, class_="fo-pill-wrap")
 
 
 @register.filter
@@ -179,6 +172,53 @@ def srp_row_class(claim):
     if code and display.presence_level(code) != display.LEVEL_OK:
         return ROW_WARNING
     return ""
+
+
+# --- The steps of a claim -----------------------------------------------------------------------------------
+
+
+@register.simple_tag
+def srp_steps(claim):
+    """The progress of a claim as steps for the timeline: submitted, checked, decided and (while it can still be
+    paid) paid.
+
+    Each step is a dict with ``key``, ``label``, ``state`` and ``time``. A state is ``done``, ``current`` (the
+    next thing that has to happen), ``bad`` (the claim was rejected) or ``todo``. A rejected or withdrawn claim
+    has no payment step. The times are the ones the claim stores; a withdrawn claim keeps the time it was last
+    saved, which is the withdrawal.
+    """
+    status = getattr(claim, "status", "")
+    calculation = Calculation.from_json(getattr(claim, "calculation", None))
+    checked = getattr(claim, "fleet_checked_at", None) or calculation.computed_at
+    decided_label = {
+        SrpClaim.Status.APPROVED: STATUS_LABELS[SrpClaim.Status.APPROVED],
+        SrpClaim.Status.PAID: STATUS_LABELS[SrpClaim.Status.APPROVED],
+        SrpClaim.Status.REJECTED: STATUS_LABELS[SrpClaim.Status.REJECTED],
+        SrpClaim.Status.WITHDRAWN: STATUS_LABELS[SrpClaim.Status.WITHDRAWN],
+    }.get(status, pgettext("claim step", "Decision"))
+    decided_state = {
+        SrpClaim.Status.PENDING: "current",
+        SrpClaim.Status.REJECTED: "bad",
+    }.get(status, "done")
+    decided_time = (
+        getattr(claim, "updated_at", None) if status == SrpClaim.Status.WITHDRAWN else getattr(claim, "decided_at", None)
+    )
+    steps = [
+        {"key": "submitted", "label": pgettext("claim step", "Submitted"), "state": "done", "time": claim.submitted_at},
+        {"key": "checked", "label": pgettext("claim step", "Checked"), "state": "done", "time": checked},
+        {"key": "decided", "label": decided_label, "state": decided_state, "time": decided_time},
+    ]
+    if status not in (SrpClaim.Status.REJECTED, SrpClaim.Status.WITHDRAWN):
+        paid_state = {SrpClaim.Status.APPROVED: "current", SrpClaim.Status.PAID: "done"}.get(status, "todo")
+        steps.append(
+            {
+                "key": "paid",
+                "label": STATUS_LABELS[SrpClaim.Status.PAID],
+                "state": paid_state,
+                "time": getattr(claim, "paid_at", None),
+            }
+        )
+    return steps
 
 
 # --- Stored calculation and policy ------------------------------------------------------------------------

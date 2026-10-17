@@ -11,6 +11,7 @@
   <a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:configuration_list' 'srp-corporation-limits' %}">{% translate "Corporation Limits" %}</a>
   <a class="btn btn-sm btn-outline-secondary" href="{% url 'fleetops:configuration_settings' %}">{% translate "General settings (SRP provider, automatic SRP link)" %}</a>
 </div>
+{% include "fleetops/configuration/_outdated_claims.html" %}
 {% if provider_elsewhere %}
 <div class="alert alert-warning" id="srp-provider-notice">{% blocktranslate trimmed with provider=fleetops_settings.srp_provider %}The SRP provider in the general settings is “{{ provider }}”, so fleets get no FleetOps SRP link at their start. Choose Automatic or FleetOps SRP there.{% endblocktranslate %}</div>
 {% elif not fleetops_settings.srp_auto_create %}

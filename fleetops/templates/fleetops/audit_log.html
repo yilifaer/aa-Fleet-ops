@@ -1,1 +1,31 @@
-{% extends "fleetops/base.html" %}{% load i18n fleetops_i18n fleetops_messages %}{% block fleetops_content %}{% translate "System" context "automatic actor" as system_actor %}<h2>{% translate "Audit Log" context "FleetOps" %}</h2><div class="card mt-3"><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>{% translate "When (EVE)" %}</th><th>{% translate "Who" %}</th><th>{% translate "Action" context "FleetOps" %}</th><th>{% translate "Object" %}</th><th>{% translate "Reason" %}</th></tr></thead><tbody>{% for row in rows %}<tr><td>{{ row.created_at|eve_time:"%Y-%m-%d %H:%M:%S" }}</td><td>{{ row.actor|default:system_actor }}</td><td>{{ row.action }}</td><td>{{ row.object_type }} #{{ row.object_id }}</td><td>{{ row.reason|stored_text }}</td></tr>{% empty %}<tr><td colspan="5" class="text-muted p-4">{% translate "No audit entries." %}</td></tr>{% endfor %}</tbody></table></div>{% if page.paginator.num_pages > 1 %}<div class="card-footer d-flex justify-content-between align-items-center"><span>{% blocktranslate trimmed count counter=page.paginator.count with number=page.number pages=page.paginator.num_pages %}Page {{ number }} of {{ pages }} · {{ counter }} entry{% plural %}Page {{ number }} of {{ pages }} · {{ counter }} entries{% endblocktranslate %}</span><div class="btn-group">{% if page.has_previous %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=1 %}">{% translate "First" %}</a><a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.previous_page_number %}">{% translate "Previous" %}</a>{% endif %}{% if page.has_next %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.next_page_number %}">{% translate "Next" %}</a><a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.paginator.num_pages %}">{% translate "Last" %}</a>{% endif %}</div></div>{% endif %}</div>{% endblock %}
+{% extends "fleetops/base.html" %}
+{% load i18n fleetops_i18n fleetops_messages fleetops_config %}
+{% block fleetops_content %}
+{% translate "System" context "automatic actor" as system_actor %}
+<h2>{% translate "Audit Log" context "FleetOps" %}</h2>
+<div class="card mt-3">
+  {% if rows %}
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 fo-table-pin">
+      <thead><tr><th scope="col">{% translate "When (EVE)" %}</th><th scope="col">{% translate "Who" %}</th><th scope="col">{% translate "Action" context "FleetOps" %}</th><th scope="col">{% translate "Object" %}</th><th scope="col">{% translate "Reason" %}</th></tr></thead>
+      <tbody>
+        {% for row in rows %}
+        <tr><td class="text-nowrap">{{ row.created_at|eve_time:"%Y-%m-%d %H:%M:%S" }}</td><td>{{ row.actor|default:system_actor }}</td><td>{{ row.action }}</td><td>{{ row|audit_object_label }}</td><td>{{ row.reason|stored_text }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card-body"><div class="fo-empty"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i><span>{% translate "No audit entries." %}</span></div></div>
+  {% endif %}
+  {% if page.paginator.num_pages > 1 %}
+  <div class="card-footer d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span class="small text-muted">{% blocktranslate trimmed count counter=page.paginator.count with number=page.number pages=page.paginator.num_pages %}Page {{ number }} of {{ pages }} · {{ counter }} entry{% plural %}Page {{ number }} of {{ pages }} · {{ counter }} entries{% endblocktranslate %}</span>
+    <div class="d-flex flex-wrap gap-2">
+      {% if page.has_previous %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=1 %}">{% translate "First" %}</a><a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.previous_page_number %}">{% translate "Previous" %}</a>{% endif %}
+      {% if page.has_next %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.next_page_number %}">{% translate "Next" %}</a><a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.paginator.num_pages %}">{% translate "Last" %}</a>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

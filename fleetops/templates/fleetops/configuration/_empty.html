@@ -1,0 +1,2 @@
+{% load i18n %}{% comment %}An empty configuration list: the icon of the section, one sentence and the main action. Context: icon, text, add_url.{% endcomment %}
+<div class="fo-empty"><i class="fa-solid {{ icon|default:'fa-sliders' }}" aria-hidden="true"></i><span>{{ text }}</span>{% if add_url %}<a class="btn btn-outline-primary" href="{{ add_url }}">{% translate "Add" context "FleetOps" %}</a>{% endif %}</div>

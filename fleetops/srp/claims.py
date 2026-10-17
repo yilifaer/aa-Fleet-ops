@@ -346,9 +346,12 @@ def calculation_snapshot(claim) -> dict:
 
 
 def fleet_label(operation) -> str:
-    """``<type> — <FC> — YYYY-MM-DD HH:MM EVE``, kept on the claim when the fleet is deleted."""
+    """``<type> — <FC> — YYYY-MM-DD HH:MM EVE``, kept on the claim when the fleet is deleted.
+
+    The type is named as FleetOps shows it everywhere: its short name when it has one.
+    """
     fc = operation.fc_main_character_name or operation.fc_character_name
-    return f"{operation.fleet_type.name} — {fc} — {format_eve(operation.started_at or operation.created_at)} EVE"
+    return f"{operation.fleet_type} — {fc} — {format_eve(operation.started_at or operation.created_at)} EVE"
 
 
 def fleet_fields(link) -> dict:

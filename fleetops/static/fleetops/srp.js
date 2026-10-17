@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
 // SPDX-License-Identifier: GPL-3.0-only
 
-// FleetOps SRP page helpers: copy buttons, selection totals, the approve form and a guard against double clicks.
+// FleetOps SRP page helpers: copy buttons, selection totals, the approve form, the loading state of the loss check
+// and a guard against double clicks.
 // Every form works without this script; it only makes the pages quicker to use.
 (() => {
   'use strict';
@@ -31,29 +32,15 @@
 
   // --- Copy buttons -----------------------------------------------------------------------------------
 
-  function fallbackCopy(text) {
-    const area = document.createElement('textarea');
-    area.value = text;
-    area.setAttribute('readonly', '');
-    area.style.position = 'fixed';
-    area.style.top = '-1000px';
-    document.body.appendChild(area);
-    area.select();
-    let done = false;
-    try {
-      done = document.execCommand('copy');
-    } catch (error) {
-      done = false;
-    }
-    document.body.removeChild(area);
-    return done;
-  }
-
+  // The shared clipboard helper of the page (fleetops.js) with its fallback; a page without it still copies.
   function copyText(text) {
-    if (navigator.clipboard && window.isSecureContext) {
-      return navigator.clipboard.writeText(text).then(() => true, () => fallbackCopy(text));
+    if (window.FleetOps && typeof window.FleetOps.copyText === 'function') {
+      return window.FleetOps.copyText(text);
     }
-    return Promise.resolve(fallbackCopy(text));
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text).then(() => true, () => false);
+    }
+    return Promise.resolve(false);
   }
 
   function showCopied(button, ok) {
@@ -74,6 +61,17 @@
     if (!button) return;
     event.preventDefault();
     copyText(button.dataset.srpCopy).then((ok) => showCopied(button, ok));
+  });
+
+  // "Request SRP" in the empty list of My SRP takes the pilot to the claim form and puts the cursor in it.
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest('a[href="#srp-claim-form"]');
+    if (!link) return;
+    const form = document.getElementById('srp-claim-form');
+    const field = form && form.querySelector('textarea, input:not([type="hidden"])');
+    if (!field) return;
+    event.preventDefault();
+    field.focus();
   });
 
   // --- Selecting claims -------------------------------------------------------------------------------
@@ -164,14 +162,63 @@
     });
   });
 
-  // --- A guard against double clicks and a confirmation for big actions ---------------------------------------
+  // --- A guard against double clicks and the loading state of the loss check ----------------------------------
+
+  // The check of a loss asks zKillboard and ESI and can take several seconds: the button says so and a grey
+  // placeholder card holds the place of the answer until the page comes back.
+  function skeletonCard() {
+    const card = document.createElement('div');
+    card.className = 'fo-loss-card';
+    card.setAttribute('aria-hidden', 'true');
+    const render = document.createElement('span');
+    render.className = 'fo-skeleton fo-srp-skeleton-render';
+    const lines = document.createElement('div');
+    for (const width of ['fo-srp-skeleton-wide', 'fo-srp-skeleton-mid', 'fo-srp-skeleton-short']) {
+      const line = document.createElement('span');
+      line.className = `fo-skeleton ${width}`;
+      lines.appendChild(line);
+    }
+    card.append(render, lines);
+    return card;
+  }
+
+  function showChecking(form) {
+    // The words come from the page (data-srp-checking), written in the language of the viewer.
+    const button = form.querySelector('[data-srp-check-button]');
+    const words = button ? button.dataset.srpChecking || '' : '';
+    if (button) {
+      if (button.dataset.srpLabel === undefined) button.dataset.srpLabel = button.textContent;
+      if (words) button.textContent = words;
+    }
+    const result = form.querySelector('[data-srp-result]');
+    if (result) {
+      const status = document.createElement('span');
+      status.className = 'visually-hidden';
+      status.textContent = words;
+      result.replaceChildren(status, skeletonCard());
+      result.hidden = false;
+    }
+  }
+
+  function hideChecking(form) {
+    const button = form.querySelector('[data-srp-check-button]');
+    if (button && button.dataset.srpLabel !== undefined) button.textContent = button.dataset.srpLabel;
+    const result = form.querySelector('[data-srp-result]');
+    if (result) {
+      result.replaceChildren();
+      result.hidden = true;
+    }
+  }
 
   function setBusy(form, busy) {
     form.dataset.srpBusy = busy ? '1' : '0';
     form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach((button) => { button.disabled = busy; });
     if (!busy && form.querySelector('[data-srp-select]')) updateSelection(form);
+    if (!busy && form.hasAttribute('data-srp-check')) hideChecking(form);
   }
 
+  // A question the form asks before it is sent (data-fo-confirm) is handled by fleetops.js, which stops the
+  // first submit; this handler only sees the confirmed one.
   document.addEventListener('submit', (event) => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement) || !form.hasAttribute('data-srp-once')) return;
@@ -179,14 +226,10 @@
       event.preventDefault();
       return;
     }
-    const question = form.dataset.srpConfirm;
-    if (question && !window.confirm(question)) {
-      event.preventDefault();
-      return;
-    }
     // Disabled buttons are left out of the form data, so the buttons are disabled after the browser has read it.
     form.dataset.srpBusy = '1';
     window.setTimeout(() => setBusy(form, true), 0);
+    if (form.hasAttribute('data-srp-check')) showChecking(form);
   });
 
   // Coming back to a page from the history leaves the buttons as they were: make them usable again.
