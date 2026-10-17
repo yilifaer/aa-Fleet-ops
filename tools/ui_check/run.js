@@ -634,7 +634,10 @@ async function focusCheck(page, add) {
         path.unshift(n.tagName.toLowerCase() + (n.id ? '#' + n.id : '') + ([...n.classList].slice(0, 2).map((c) => '.' + c).join('')));
         if (n.id) break;
       }
-      const { candidates } = window.__foContrast.backgrounds(el);
+      // An outline outside the control (offset 0 or more) is drawn on what lies behind the control; one inside it
+      // (a negative offset) is drawn on the control itself.
+      const behind = parseFloat(cs.outlineOffset) >= 0 && el.parentElement ? el.parentElement : el;
+      const { candidates } = window.__foContrast.backgrounds(behind);
       const outlineColour = window.__foContrast.rgba(cs.outlineColor);
       const ratios = candidates.map((bg) => window.__foContrast.ratio(window.__foContrast.over(outlineColour, bg), bg));
       return {

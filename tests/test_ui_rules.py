@@ -439,6 +439,21 @@ class PageListTests(SimpleTestCase):
     def test_every_page_belongs_to_a_known_lane(self):
         self.assertTrue({page.lane for page in self.pages} <= set(seed.LANES))
 
+    def test_the_tree_has_everything_the_pages_need(self):
+        for page in self.pages:
+            with self.subTest(page=page.id):
+                self.assertEqual(seed.missing_requirement(page, None), "")
+
+    def test_the_group_pages_and_the_stub_ping_page_are_expected_to_answer(self):
+        by_id = {page.id: page for page in self.pages}
+
+        for name in ("config-groups", "config-group-edit", "config-channel-edit", "start-fleetleader", "start-fcleader",
+                     "send-ping-fleetleader", "send-ping-fcleader", "send-ping-pingleader", "send-ping-fc",
+                     "fleet-group-manager", "fleet-group-readonly", "operations-fleetleader", "dashboard-fleetleader"):
+            with self.subTest(page=name):
+                self.assertEqual(by_id[name].requires, ())
+                self.assertEqual(by_id[name].status, 200)
+
     def test_the_two_error_states_are_scripted_pages(self):
         by_id = {page.id: page for page in self.pages}
 
@@ -524,3 +539,20 @@ class ScriptSyntaxTests(SimpleTestCase):
                 start = 1 if lines[0].startswith("#!") else 0
                 self.assertEqual(lines[start], "// SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors")
                 self.assertEqual(lines[start + 1], "// SPDX-License-Identifier: GPL-3.0-only")
+
+
+class RepositoryFilesTests(SimpleTestCase):
+    def test_the_run_folders_of_the_browser_check_are_not_committed(self):
+        lines = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+
+        for folder in ("tools/ui_check/.work/", "tools/ui_check/.cache/", "tools/ui_check/out/"):
+            with self.subTest(folder=folder):
+                self.assertIn(folder, lines)
+        self.assertFalse((UI_CHECK / ".gitignore").exists())
+
+    def test_the_browser_check_is_not_in_the_source_distribution(self):
+        lines = (ROOT / "MANIFEST.in").read_text(encoding="utf-8").splitlines()
+
+        self.assertIn("recursive-include tools *.py", lines)
+        self.assertIn("prune tools/ui_check", lines)
+        self.assertLess(lines.index("recursive-include tools *.py"), lines.index("prune tools/ui_check"))

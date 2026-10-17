@@ -97,8 +97,9 @@ browser), anything else with an empty answer and a line in the report.
 
 `seed.py` holds the page list (`build_pages`): an id, the role that opens it, the URL (built with `reverse()`), the
 status the page must answer (200, 403 or 404; any other answer is a FAIL), optional states and what the tree must
-have for the page to exist (`requires`). A page that needs something this tree does not have yet (the group
-models, the Send Ping page) is listed as **not in this tree** and skipped, not failed.
+have for the page to exist (`requires`). A page whose `requires` the tree does not meet is listed as **not in this tree**
+and skipped, not failed. Every page of the list answers in this tree (the group pages and the Send Ping placeholder
+included), so nothing is skipped.
 
 The lane of a page follows from its id (design 4.1, rule 6):
 
@@ -136,7 +137,7 @@ Every finding has a level: **FAIL** (the run exits 1), **WARN** (listed for revi
 | Check id | What | Level |
 |---|---|---|
 | `status` | answer is not the expected status, or the page redirected somewhere else | FAIL |
-| `contrast` | WCAG 2.x: text 4.5:1 (3:1 large text) against the composited background, in `.fleetops`, toasts, confirm dialog, open modals, dropdowns, tooltips and the counts in the menu bar. Gradients at every stop and their average; a background image is INFO. Disabled controls are exempt. The solid `.btn-primary` of the theme is a WARN | FAIL / WARN |
+| `contrast` | WCAG 2.x: text 4.5:1 (3:1 large text) against the composited background, in `.fleetops`, toasts, confirm dialog, open modals, dropdowns, tooltips and the counts in the menu bar. Gradients at every stop and their average; a background image is INFO. Disabled controls and their labels are exempt. The solid `.btn-primary` of the theme is a WARN | FAIL / WARN |
 | `overflow` | the page, or the area Alliance Auth scrolls, is wider than the window | FAIL |
 | `clipped` | text with `overflow: hidden` or an ellipsis that does not fit its box | FAIL |
 | `touch` | `.btn`, `.page-link`, `.nav-link`, `.dropdown-item`, `[role=button]`, `summary`, `.fo-icon-btn`, `.fleet-toggle`, checkbox/radio (label box counts), `select` smaller than 44x44 | FAIL at 375, WARN at 768 |
@@ -147,7 +148,7 @@ Every finding has a level: **FAIL** (the run exits 1), **WARN** (listed for revi
 | `numbers` | text with a digit without `font-variant-numeric: tabular-nums` | FAIL |
 | `images` | an image without a 1 px border and a radius | FAIL |
 | `primary` | more than one solid `.btn-primary` in a card, form, modal or action bar | WARN |
-| `focus` | Tab through up to 40 controls of the page: each needs an outline or box shadow; an outline needs 3:1 against the background | FAIL |
+| `focus` | Tab through up to 40 controls of the page: each needs an outline or box shadow; an outline needs 3:1 against what lies behind it (the parent's background for an outline outside the control, the control's own background for one inside it) | FAIL |
 | `motion` | with reduced motion asked for, an animation is running (`document.getAnimations()`), or `.fo-live-dot` still animates | FAIL |
 | `console` | console error or script error (errors about files that were not served from the cache are skipped) | FAIL |
 | `http` | an answer of 400 or more, or a failed request, for a file of the site | FAIL |
@@ -188,4 +189,4 @@ sheet: pick the language and width at the top, a frame is red when the page has 
 - A new check: add it to `checks.js` (layout, DOM) or `contrast.js`; return findings with `check`, `level`, `selector`, `message`.
 - The class and variable lists of rules R1 and R2 are in `rules.json`; `tools/check_ui.py` and the browser check read it.
 
-`tools/ui_check/.work/`, `.cache/` and `out/` are not committed (`tools/ui_check/.gitignore`).
+`tools/ui_check/.work/`, `.cache/` and `out/` are not committed (`.gitignore`), and the folder is not in the source distribution (`MANIFEST.in`).

@@ -11,8 +11,8 @@ Usage (from the root of the checkout, with the Python of the Alliance Auth envir
 
 The database file is deleted and rebuilt on every run. The cache is the Redis of ``tools.ui_check.settings``
 (``FLEETOPS_UI_REDIS``); nothing in it is cleared. Every name and ID in the data is an example value.
-Models that belong to a later step (group access) are used only when the tree has them, and pages that
-need something the tree does not have yet are marked ``skip`` in the output instead of failing.
+A page can name what the tree must have for it to exist (``requires``); such a page is marked ``skip`` in the
+output instead of failing. Every page of the current list is expected to answer.
 """
 
 import argparse
@@ -20,6 +20,7 @@ import fnmatch
 import json
 import os
 import sys
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
@@ -125,7 +126,7 @@ def build_pages():
         Page("incentives", "lead", u("incentive_review")),
         Page("fleet-pending", "lead", u("operation_detail", op("manual_pending"))),
         Page("fleet-rejected", "lead", u("operation_detail", op("manual_rejected"))),
-        Page("fleet-resubmitted", "lead", u("operation_detail", op("manual_resubmitted")), requires=("field:FleetOperation.review_request_note",)),
+        Page("fleet-resubmitted", "lead", u("operation_detail", op("manual_resubmitted"))),
         Page("fleet-active-lead", "lead", u("operation_detail", op("active"))),
         Page("operations-lead", "lead", u("fleet_operations")),
         # corp
@@ -158,28 +159,25 @@ def build_pages():
         # Error states of the forms (FB02): the page is loaded, filled in and sent by script (states.js).
         Page("start-error", "fc", u("start_fleet"), states=("start-error",)),
         Page("config-error", "admin", lambda ctx: reverse("fleetops:configuration_add", args=["srp-rules"]), states=("config-error",)),
-        # Group roles and pages (design 3.8, G21). They exist only in trees that have the group models.
-        Page("config-groups", "admin", lambda ctx: reverse("fleetops:configuration_list", args=["groups"]),
-             requires=("section:groups",)),
+        # Group roles and pages (design 3.8, G21). Send Ping is a placeholder page for now.
+        Page("config-groups", "admin", lambda ctx: reverse("fleetops:configuration_list", args=["groups"])),
         Page("config-group-edit", "admin",
-             lambda ctx: reverse("fleetops:configuration_edit", args=["groups", ctx.group_access_fleets.pk]),
-             requires=("section:groups",)),
+             lambda ctx: reverse("fleetops:configuration_edit", args=["groups", ctx.group_access_fleets.pk])),
         Page("config-channel-edit", "admin",
-             lambda ctx: reverse("fleetops:configuration_edit", args=["ping-channels", ctx.channel_groups.pk]),
-             requires=("field:DiscordWebhook.allowed_groups",)),
-        Page("start-fleetleader", "fleetleader", u("start_fleet"), requires=("model:GroupAccess",)),
-        Page("send-ping-fleetleader", "fleetleader", u("send_ping"), requires=("url:send_ping", "model:GroupAccess")),
-        Page("fleet-group-manager", "fleetleader", u("operation_detail", op("group_fleet")), requires=("model:GroupAccess",)),
-        Page("operations-fleetleader", "fleetleader", u("fleet_operations"), requires=("model:GroupAccess",)),
-        Page("dashboard-fleetleader", "fleetleader2", u("dashboard"), requires=("model:GroupAccess",)),
-        Page("fleet-group-readonly", "fleetleader2", u("operation_detail", op("group_fleet")), requires=("model:GroupAccess",)),
-        Page("start-fcleader", "fcleader", u("start_fleet"), requires=("model:GroupAccess",)),
-        Page("send-ping-fcleader", "fcleader", u("send_ping"), requires=("url:send_ping", "model:GroupAccess")),
-        Page("send-ping-pingleader", "pingleader", u("send_ping"), requires=("url:send_ping", "model:GroupAccess")),
-        Page("send-ping-fc", "fc", u("send_ping"), requires=("url:send_ping",)),
+             lambda ctx: reverse("fleetops:configuration_edit", args=["ping-channels", ctx.channel_groups.pk])),
+        Page("start-fleetleader", "fleetleader", u("start_fleet")),
+        Page("send-ping-fleetleader", "fleetleader", u("send_ping")),
+        Page("fleet-group-manager", "fleetleader", u("operation_detail", op("group_fleet"))),
+        Page("operations-fleetleader", "fleetleader", u("fleet_operations")),
+        Page("dashboard-fleetleader", "fleetleader2", u("dashboard")),
+        Page("fleet-group-readonly", "fleetleader2", u("operation_detail", op("group_fleet"))),
+        Page("start-fcleader", "fcleader", u("start_fleet")),
+        Page("send-ping-fcleader", "fcleader", u("send_ping")),
+        Page("send-ping-pingleader", "pingleader", u("send_ping")),
+        Page("send-ping-fc", "fc", u("send_ping")),
         # Refused and missing pages: the expected status is part of the list, a different answer is a failure.
         Page("denied-start", "pingleader", u("start_fleet"), status=403),
-        Page("denied-send-ping", "member", u("send_ping"), status=403, requires=("url:send_ping",)),
+        Page("denied-send-ping", "member", u("send_ping"), status=403),
         Page("notfound-fleet", "member",
              lambda ctx: reverse("fleetops:operation_detail", args=["6f0c2c4e-3f6a-4d0a-9d52-0a1f2d3c4b5a"]), status=404),
         Page("notfound-preping", "member", u("operation_detail", op("scheduled")), status=404),
@@ -420,9 +418,7 @@ def build_data(login_count):
     ctx.manual_rejected = manual_fleet(
         m.ReviewStatus.REJECTED, reviewed_by=lead, reviewed_at=now, review_note="The roster does not match the screenshot",
     )
-    resubmit = {"review_request_note": "Roster corrected, please check again"} if hasattr(
-        m.FleetOperation, "review_request_note") else {}
-    ctx.manual_resubmitted = manual_fleet(m.ReviewStatus.PENDING, **resubmit)
+    ctx.manual_resubmitted = manual_fleet(m.ReviewStatus.PENDING, review_request_note="Roster corrected, please check again")
     f.add_attendance(ctx.manual_pending, users["member"], source=m.AttendanceRecord.Source.MANUAL,
                      review_status=m.ReviewStatus.PENDING, created_by=fc, notes="Joined late")
     # A pending manual row on a fleet that is already approved.
@@ -517,8 +513,7 @@ def build_data(login_count):
     period.save()
     incentives.rebuild_period(period)
     period.status = m.IncentivePeriod.Status.REVIEW
-    if hasattr(period, "calculated_at"):
-        period.calculated_at = now
+    period.calculated_at = now
     period.save()
 
     # ---- SRP ---------------------------------------------------------------------------------------------
@@ -593,17 +588,13 @@ def prime_eve_links(users, f):
 
 
 def build_group_data(ctx, users, types, alliance_channel, now, f, m, Group, AuthGroup):
-    """Groups, group fleets and pings; skipped when the tree has no group models."""
+    """The group leaders, the groups with their access rows, the group fleet and the two pings without a fleet."""
     ctx.group_access_fleets = ctx.group_access_ping = ctx.channel_groups = ctx.group_fleet = None
-    # The leaders exist in every tree (plain members without the group models), so the pages of a plain member
-    # such as the refused Start Fleet page can be opened in any tree.
     pingleader = f.create_user("pingleader", perms=f.MEMBER_PERMS, main_name="Example Ping Leader")
     fleetleader = f.create_user("fleetleader", perms=f.MEMBER_PERMS, main_name="Example Fleet Leader")
     fleetleader2 = f.create_user("fleetleader2", perms=f.MEMBER_PERMS, main_name="Example Fleet Leader Two")
     fcleader = f.create_user("fcleader", perms=f.FC_PERMS, main_name="Example FC Leader")
     users.update(pingleader=pingleader, fleetleader=fleetleader, fleetleader2=fleetleader2, fcleader=fcleader)
-    if not hasattr(m, "GroupAccess"):
-        return
     fleet_group, _created = Group.objects.get_or_create(name="Example Fleet Group")
     ping_group, _created = Group.objects.get_or_create(name="Example Ping Group")
     leader_group, _created = Group.objects.get_or_create(name="Example Fleet Leaders")
@@ -621,10 +612,9 @@ def build_group_data(ctx, users, types, alliance_channel, now, f, m, Group, Auth
     ctx.group_access_ping = m.GroupAccess.objects.create(group=ping_group, mode="ping", note="Example ping-only group")
 
     ctx.channel_groups = f.ping_channel("Group Pings")
-    if hasattr(ctx.channel_groups, "allowed_groups"):
-        ctx.channel_groups.allowed_groups.set([fleet_group, ping_group])
-        ctx.channel_groups.fcs_allowed = False
-        ctx.channel_groups.save()
+    ctx.channel_groups.allowed_groups.set([fleet_group, ping_group])
+    ctx.channel_groups.fcs_allowed = False
+    ctx.channel_groups.save()
 
     group_fleet = f.create_operation(
         fleetleader, status=m.FleetOperation.Status.ACTIVE, type_obj=group_type, started_at=now - timedelta(minutes=25),
@@ -637,15 +627,14 @@ def build_group_data(ctx, users, types, alliance_channel, now, f, m, Group, Auth
                        solar_system_id=30000142, solar_system_name="Jita")
     ctx.group_fleet = group_fleet
 
-    if hasattr(m, "StandalonePing"):
-        for status, result in (("sent", "Delivered."), ("failed", "The ping channel did not answer.")):
-            m.StandalonePing.objects.create(
-                request_id=__import__("uuid").uuid4(), sender=pingleader, sender_name="Example Ping Leader",
-                group=ping_group, group_name=ping_group.name, channel=ctx.channel_groups,
-                channel_name=ctx.channel_groups.name, additional_message="Example ping text.",
-                text="Example ping text.", display_text="Example ping text.", status=status, result_message=result,
-                http_status=204 if status == "sent" else 502,
-            )
+    for status, result in (("sent", "Delivered."), ("failed", "The ping channel did not answer.")):
+        m.StandalonePing.objects.create(
+            request_id=uuid.uuid4(), sender=pingleader, sender_name="Example Ping Leader",
+            group=ping_group, group_name=ping_group.name, channel=ctx.channel_groups,
+            channel_name=ctx.channel_groups.name, additional_message="Example ping text.",
+            text="Example ping text.", display_text="Example ping text.", status=status, result_message=result,
+            http_status=204 if status == "sent" else 502,
+        )
 
 
 def point_database(path):

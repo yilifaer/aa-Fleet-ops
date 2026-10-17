@@ -3,3 +3,5 @@ recursive-include docs *.md
 recursive-include tools *.py
 # The tests need the test project and helpers that are not shipped, so they stay in the repository.
 prune tests
+# The browser check of the interface is a developer tool; it is not shipped.
+prune tools/ui_check

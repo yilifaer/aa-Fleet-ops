@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-14 13:23+0000\n"
+"POT-Creation-Date: 2026-10-17 10:04+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -17,6 +17,24 @@ msgstr ""
 #, python-format
 msgid "%(name)s: %(refusal)s"
 msgstr "%(name)s：%(refusal)s"
+
+#: admin.py
+msgid "Group access"
+msgstr "小组权限"
+
+#: admin.py
+msgid "Groups: none · Alliance FCs: yes. Change this in FleetOps Administration, Ping Channels."
+msgstr "小组：无 · 联盟 FC：可用。请在 FleetOps 后台设置的 Ping 频道中修改。"
+
+#: admin.py
+#, python-format
+msgid "Groups: %(groups)s · Alliance FCs: yes. Change this in FleetOps Administration, Ping Channels."
+msgstr "小组：%(groups)s · 联盟 FC：可用。请在 FleetOps 后台设置的 Ping 频道中修改。"
+
+#: admin.py
+#, python-format
+msgid "Groups: %(groups)s · Alliance FCs: no. Change this in FleetOps Administration, Ping Channels."
+msgstr "小组：%(groups)s · 联盟 FC：不可用。请在 FleetOps 后台设置的 Ping 频道中修改。"
 
 #: admin.py forms_config.py models.py
 msgid "Webhook URL"
@@ -56,6 +74,10 @@ msgstr "请按 EVE 时间（UTC）输入舰队的日期和时间。"
 msgid "The fleet time must be in the future (EVE time)."
 msgstr "舰队时间必须在未来（EVE 时间）。"
 
+#: forms.py
+msgid "The ping channel of this fleet can no longer be used. Choose another channel."
+msgstr "这支舰队的 Ping 频道已不能再使用。请选择其他频道。"
+
 #: forms.py forms_links.py
 msgid "MAIN"
 msgstr "大号"
@@ -64,8 +86,9 @@ msgstr "大号"
 msgid "ALT"
 msgstr "小号"
 
-#: forms.py forms_links.py models.py services/export_datasets.py
-#: services/presets.py templates/fleetops/corporation_statistics.html
+#: forms.py forms_links.py forms_operation.py models.py
+#: services/export_datasets.py services/presets.py
+#: templates/fleetops/corporation_statistics.html
 msgid "Fleet type"
 msgstr "舰队类型"
 
@@ -82,7 +105,7 @@ msgstr "教义"
 msgid "Custom Doctrine"
 msgstr "自定义教义"
 
-#: forms.py
+#: forms.py forms_operation.py
 msgid "Form Up / Staging"
 msgstr "集结地"
 
@@ -186,168 +209,6 @@ msgstr "立即发送集结 Ping"
 msgid "Post a cancellation notice"
 msgstr "发布取消通知"
 
-#: forms.py forms_pap.py models.py views_config.py
-msgid "PAP multiplier"
-msgstr "PAP 倍率"
-
-#: forms.py
-msgid "Reason for an override"
-msgstr "覆盖原因"
-
-#: forms.py
-msgid "Required when the fleet did not run long enough for the multiplier."
-msgstr "舰队时长不足以获得该倍率时必须填写。"
-
-#: forms.py
-#, python-format
-msgid "%(value)sx (override)"
-msgstr "%(value)s 倍（覆盖）"
-
-#: forms.py
-#, python-format
-msgid "%(message)s Give a reason of at least %(count)s characters to override the duration rule."
-msgstr "%(message)s 请填写至少 %(count)s 个字符的原因，以覆盖时长规则。"
-
-#: forms.py
-#, python-format
-msgid "%(hours)s h %(minutes)02d min"
-msgstr "%(hours)s 小时 %(minutes)02d 分钟"
-
-#: forms.py templates/fleetops/operation/_fleet_member.html
-#, python-format
-msgid "%(minutes)s min"
-msgstr "%(minutes)s 分钟"
-
-#: forms.py
-#, python-format
-msgid "This fleet would last %(duration)s. Check the times, or tick this box if the fleet really ran for more than 6 hours."
-msgstr "这支舰队将持续 %(duration)s。请检查时间；如果舰队确实超过了 6 小时，请勾选此框。"
-
-#: forms.py models.py
-msgid "Doctrine name"
-msgstr "教义名称"
-
-#: forms.py
-msgid "Start Time — EVE time (UTC)"
-msgstr "开始时间 — EVE 时间（UTC）"
-
-#: forms.py
-msgid "End Time — EVE time (UTC)"
-msgstr "结束时间 — EVE 时间（UTC）"
-
-#: forms.py
-msgid "This fleet really ran for more than 6 hours"
-msgstr "这支舰队确实超过了 6 小时"
-
-#: forms.py
-msgid "Multipliers above 1x need a fleet that ran long enough."
-msgstr "高于 1 倍的倍率要求舰队时长足够。"
-
-#: forms.py forms_links.py forms_records.py models.py
-#: templates/fleetops/approvals.html templates/fleetops/operation/_review.html
-#: templates/fleetops/operation/_roles.html
-msgid "Notes"
-msgstr "备注"
-
-#: forms.py templates/fleetops/manual_fleet.html
-#: templates/fleetops/operation_edit.html
-msgid "End Time must be after Start Time."
-msgstr "结束时间必须晚于开始时间。"
-
-#: forms.py services/export_datasets.py
-msgid "Budget (ISK)"
-msgstr "预算（ISK）"
-
-#: forms.py models.py services/export_datasets.py
-msgid "Minimum fleets"
-msgstr "最少舰队数"
-
-#: forms.py
-msgid "Credited fleets an FC needs in this month to receive a payout."
-msgstr "FC 本月要获得奖金所需的计入统计的舰队数。"
-
-#: forms.py models.py
-msgid "Character name"
-msgstr "角色名称"
-
-#: forms.py
-msgid "Looked up in Alliance Auth, then in EVE."
-msgstr "先在 Alliance Auth 中查找，再到 EVE 中查找。"
-
-#: forms.py models.py
-msgid "Character ID"
-msgstr "角色 ID"
-
-#: forms.py
-msgid "Optional; use it when the name cannot be looked up."
-msgstr "可选；名称查不到时使用。"
-
-#: forms.py forms_records.py models.py
-msgid "PAP value"
-msgstr "PAP 数值"
-
-#: forms.py
-msgid "If the character has tracked PAP"
-msgstr "若该角色已有追踪得到的 PAP"
-
-#: forms.py
-#, python-format
-msgid "Character %(id)s is not registered to any Alliance Auth user, so it cannot receive PAP."
-msgstr "角色 %(id)s 没有登记到任何 Alliance Auth 用户，因此无法获得 PAP。"
-
-#: forms.py
-msgid "Enter a character name or a character ID."
-msgstr "请输入角色名称或角色 ID。"
-
-#: forms.py
-#, python-format
-msgid "'%(name)s' cannot be an EVE character name. %(error)s"
-msgstr "“%(name)s”不可能是 EVE 角色名称。%(error)s"
-
-#: forms.py
-#, python-format
-msgid "Character '%(name)s' exists in EVE but is not registered in Alliance Auth, so it cannot receive PAP."
-msgstr "角色“%(name)s”存在于 EVE 中，但没有在 Alliance Auth 中登记，因此无法获得 PAP。"
-
-#: forms.py
-#, python-format
-msgid "Could not look the name up in ESI (%(error)s). Enter the character ID instead."
-msgstr "无法在 ESI 中查询该名称（%(error)s）。请改为输入角色 ID。"
-
-#: forms.py
-#, python-format
-msgid "No EVE character named '%(name)s' was found."
-msgstr "找不到名为“%(name)s”的 EVE 角色。"
-
-#: forms.py
-msgid "Historical Fleet"
-msgstr "历史舰队"
-
-#: forms.py
-msgid "Active and closed fleets are available. Repeat entries or use PAP value > 1 when multiple credits are required."
-msgstr "可选择进行中和已结束的舰队。需要多份 PAP 时，可重复录入，或把 PAP 数值设为大于 1。"
-
-#: forms.py models.py templates/fleetops/operation/_roles.html
-msgid "Role"
-msgstr "特殊角色"
-
-#: forms.py
-msgid "Roles marked FC credit count the fleet as an FC fleet for the pilot's FC points and incentives."
-msgstr "标记为带 FC 积分的角色，会把这支舰队计为该飞行员的 FC 舰队，计入其 FC 积分和 FC 奖金。"
-
-#: forms.py
-msgid "Fleet Member"
-msgstr "舰队成员"
-
-#: forms.py
-#, python-format
-msgid "%(name)s (FC credit)"
-msgstr "%(name)s（带 FC 积分）"
-
-#: forms.py
-msgid "Unknown corp"
-msgstr "未知军团"
-
 #: forms_config.py
 msgid "Automatic (FleetOps SRP when enabled, then aa-srp, then Alliance Auth SRP)"
 msgstr "自动（启用时用 FleetOps SRP，其次 aa-srp，再其次 Alliance Auth SRP）"
@@ -393,6 +254,10 @@ msgstr "军团达标线和成员最低要求在“月度达标线”中设置。
 #: forms_config.py models.py
 msgid "PAP links"
 msgstr "PAP 登记链接"
+
+#: forms_config.py
+msgid "Messages"
+msgstr "消息"
 
 #: forms_config.py
 msgid "Fleet tab"
@@ -506,6 +371,11 @@ msgstr "不在 Discord 上"
 msgid "%(role)s (%(note)s)"
 msgstr "%(role)s（%(note)s）"
 
+#: forms_config.py
+#, python-format
+msgid "%(name)s (not configured)"
+msgstr "%(name)s（未配置）"
+
 #: forms_config.py models.py views_config.py
 msgid "Channel name"
 msgstr "频道名称"
@@ -531,8 +401,16 @@ msgid "Leave empty to allow every active role."
 msgstr "留空表示允许所有已启用的身份组。"
 
 #: forms_config.py
+msgid "Only applies while the channel is assigned to at least one group. FC leads (manage_fleets) can always use it."
+msgstr "只有该频道分配给至少一个小组时才生效。FC 主管（manage_fleets）始终可以使用。"
+
+#: forms_config.py
 msgid "Leave empty to keep the stored URL."
 msgstr "留空表示保留已保存的地址。"
+
+#: forms_config.py
+msgid "Alliance FCs can still use this channel. Untick \"Alliance FCs can use this channel\" to reserve it for the groups."
+msgstr "联盟 FC 仍然可以使用此频道。取消勾选“联盟 FC 也可以使用此频道”即可把它留给这些小组。"
 
 #: forms_config.py models.py views_config.py
 msgid "Role ID"
@@ -798,9 +676,171 @@ msgstr "自定义教义"
 msgid "Form up"
 msgstr "集结地"
 
+#: forms_links.py forms_operation.py forms_records.py models.py
+#: templates/fleetops/approvals.html templates/fleetops/operation/_review.html
+#: templates/fleetops/operation/_roles.html
+msgid "Notes"
+msgstr "备注"
+
 #: forms_links.py
 msgid "PAP link open for (minutes)"
 msgstr "PAP 登记链接开放时长（分钟）"
+
+#: forms_operation.py forms_pap.py models.py views_config.py
+msgid "PAP multiplier"
+msgstr "PAP 倍率"
+
+#: forms_operation.py
+msgid "Reason for an override"
+msgstr "覆盖原因"
+
+#: forms_operation.py
+msgid "Required when the fleet did not run long enough for the multiplier."
+msgstr "舰队时长不足以获得该倍率时必须填写。"
+
+#: forms_operation.py
+#, python-format
+msgid "%(value)sx (override)"
+msgstr "%(value)s 倍（覆盖）"
+
+#: forms_operation.py
+#, python-format
+msgid "%(message)s Give a reason of at least %(count)s characters to override the duration rule."
+msgstr "%(message)s 请填写至少 %(count)s 个字符的原因，以覆盖时长规则。"
+
+#: forms_operation.py
+#, python-format
+msgid "%(hours)s h %(minutes)02d min"
+msgstr "%(hours)s 小时 %(minutes)02d 分钟"
+
+#: forms_operation.py templates/fleetops/operation/_fleet_member.html
+#, python-format
+msgid "%(minutes)s min"
+msgstr "%(minutes)s 分钟"
+
+#: forms_operation.py
+#, python-format
+msgid "This fleet would last %(duration)s. Check the times, or tick this box if the fleet really ran for more than 6 hours."
+msgstr "这支舰队将持续 %(duration)s。请检查时间；如果舰队确实超过了 6 小时，请勾选此框。"
+
+#: forms_operation.py models.py
+msgid "Doctrine name"
+msgstr "教义名称"
+
+#: forms_operation.py
+msgid "Start Time — EVE time (UTC)"
+msgstr "开始时间 — EVE 时间（UTC）"
+
+#: forms_operation.py
+msgid "End Time — EVE time (UTC)"
+msgstr "结束时间 — EVE 时间（UTC）"
+
+#: forms_operation.py
+msgid "This fleet really ran for more than 6 hours"
+msgstr "这支舰队确实超过了 6 小时"
+
+#: forms_operation.py
+msgid "Multipliers above 1x need a fleet that ran long enough."
+msgstr "高于 1 倍的倍率要求舰队时长足够。"
+
+#: forms_operation.py templates/fleetops/manual_fleet.html
+#: templates/fleetops/operation_edit.html
+msgid "End Time must be after Start Time."
+msgstr "结束时间必须晚于开始时间。"
+
+#: forms_operation.py services/export_datasets.py
+msgid "Budget (ISK)"
+msgstr "预算（ISK）"
+
+#: forms_operation.py models.py services/export_datasets.py
+msgid "Minimum fleets"
+msgstr "最少舰队数"
+
+#: forms_operation.py
+msgid "Credited fleets an FC needs in this month to receive a payout."
+msgstr "FC 本月要获得奖金所需的计入统计的舰队数。"
+
+#: forms_operation.py models.py
+msgid "Character name"
+msgstr "角色名称"
+
+#: forms_operation.py
+msgid "Looked up in Alliance Auth, then in EVE."
+msgstr "先在 Alliance Auth 中查找，再到 EVE 中查找。"
+
+#: forms_operation.py models.py
+msgid "Character ID"
+msgstr "角色 ID"
+
+#: forms_operation.py
+msgid "Optional; use it when the name cannot be looked up."
+msgstr "可选；名称查不到时使用。"
+
+#: forms_operation.py forms_records.py models.py
+msgid "PAP value"
+msgstr "PAP 数值"
+
+#: forms_operation.py
+msgid "If the character has tracked PAP"
+msgstr "若该角色已有追踪得到的 PAP"
+
+#: forms_operation.py
+#, python-format
+msgid "Character %(id)s is not registered to any Alliance Auth user, so it cannot receive PAP."
+msgstr "角色 %(id)s 没有登记到任何 Alliance Auth 用户，因此无法获得 PAP。"
+
+#: forms_operation.py
+msgid "Enter a character name or a character ID."
+msgstr "请输入角色名称或角色 ID。"
+
+#: forms_operation.py
+#, python-format
+msgid "'%(name)s' cannot be an EVE character name. %(error)s"
+msgstr "“%(name)s”不可能是 EVE 角色名称。%(error)s"
+
+#: forms_operation.py
+#, python-format
+msgid "Character '%(name)s' exists in EVE but is not registered in Alliance Auth, so it cannot receive PAP."
+msgstr "角色“%(name)s”存在于 EVE 中，但没有在 Alliance Auth 中登记，因此无法获得 PAP。"
+
+#: forms_operation.py
+#, python-format
+msgid "Could not look the name up in ESI (%(error)s). Enter the character ID instead."
+msgstr "无法在 ESI 中查询该名称（%(error)s）。请改为输入角色 ID。"
+
+#: forms_operation.py
+#, python-format
+msgid "No EVE character named '%(name)s' was found."
+msgstr "找不到名为“%(name)s”的 EVE 角色。"
+
+#: forms_operation.py
+msgid "Historical Fleet"
+msgstr "历史舰队"
+
+#: forms_operation.py
+msgid "Active and closed fleets are available. Repeat entries or use PAP value > 1 when multiple credits are required."
+msgstr "可选择进行中和已结束的舰队。需要多份 PAP 时，可重复录入，或把 PAP 数值设为大于 1。"
+
+#: forms_operation.py models.py templates/fleetops/operation/_roles.html
+msgid "Role"
+msgstr "特殊角色"
+
+#: forms_operation.py
+msgid "Roles marked FC credit count the fleet as an FC fleet for the pilot's FC points and incentives."
+msgstr "标记为带 FC 积分的角色，会把这支舰队计为该飞行员的 FC 舰队，计入其 FC 积分和 FC 奖金。"
+
+#: forms_operation.py
+msgid "Fleet Member"
+msgstr "舰队成员"
+
+#: forms_operation.py
+#, python-format
+msgid "%(name)s (FC credit)"
+msgstr "%(name)s（带 FC 积分）"
+
+#: forms_operation.py
+msgid "Unknown corp"
+msgstr "未知军团"
 
 #: forms_pap.py views_config.py
 msgid "Longer than (minutes)"
@@ -1310,6 +1350,14 @@ msgid "While someone who can manage a fleet has its Fleet tab open, read the fle
 msgstr "有舰队管理者打开舰队的“舰队”标签时，按这个间隔（秒）从 ESI 读取舰队。0 表示只按追踪间隔和“刷新”按钮读取。"
 
 #: models.py
+msgid "MOTD warning length"
+msgstr "MOTD 警告长度"
+
+#: models.py
+msgid "Warn in the start preview when the MOTD, tags included, is longer than this many characters. The game's limit is not documented; MOTDs of about 1,700 characters are known to work. 0 = no warning."
+msgstr "开舰队预览中，MOTD（含标签）超过这个字符数时给出警告。游戏的上限没有公开；已知约 1,700 个字符的 MOTD 可以正常使用。0 表示不警告。"
+
+#: models.py
 msgid "FleetOps setting"
 msgstr "FleetOps 设置"
 
@@ -1495,6 +1543,23 @@ msgid "FCs may ping @here in this channel."
 msgstr "FC 可以在此频道 Ping @here。"
 
 #: models.py
+msgid "Alliance FCs can use this channel"
+msgstr "联盟 FC 也可以使用此频道"
+
+#: models.py
+msgid "Untick to reserve the channel for the leaders of the groups below. FC leads (manage_fleets) can always use it. Only applies while the channel is assigned to at least one group."
+msgstr "取消勾选后，此频道只留给下面小组的组长使用。FC 主管（manage_fleets）始终可以使用。只有该频道分配给至少一个小组时才生效。"
+
+#: models.py views_config.py
+msgctxt "FleetOps"
+msgid "Groups"
+msgstr "小组"
+
+#: models.py
+msgid "Leaders of these groups may send pings here."
+msgstr "这些小组的组长可以在此发送 Ping。"
+
+#: models.py views_config.py
 msgid "Ping channels"
 msgstr "Ping 频道"
 
@@ -1522,6 +1587,10 @@ msgstr "Ping"
 #: models.py
 msgid "MOTD"
 msgstr "MOTD"
+
+#: models.py
+msgid "Ping without fleet"
+msgstr "无舰队 Ping"
 
 #: models.py
 msgid "Template type"
@@ -1708,6 +1777,15 @@ msgstr "集结地"
 msgid "Ping channel name"
 msgstr "Ping 频道名称"
 
+#: models.py views_config.py
+msgctxt "FleetOps"
+msgid "Group"
+msgstr "小组"
+
+#: models.py
+msgid "Group name"
+msgstr "小组名称"
+
 #: models.py
 msgid "Ping mention mode"
 msgstr "Ping 提及方式"
@@ -1792,6 +1870,10 @@ msgstr "审核时间"
 #: templates/fleetops/operation/_review.html
 msgid "Review note"
 msgstr "审核备注"
+
+#: models.py
+msgid "Resubmission note"
+msgstr "重新提交备注"
 
 #: models.py
 msgid "Stats mode"
@@ -2424,6 +2506,10 @@ msgstr "预算"
 #: models.py
 msgid "Policy snapshot"
 msgstr "规则快照"
+
+#: models.py
+msgid "Calculated at"
+msgstr "计算时间"
 
 #: models.py
 msgid "Finalized at"
@@ -3144,6 +3230,93 @@ msgstr "SRP 申请事件"
 msgid "SRP claim events"
 msgstr "SRP 申请事件"
 
+#: models.py
+msgid "Ping only"
+msgstr "仅发送 Ping"
+
+#: models.py
+msgid "Pings and fleets with PAP"
+msgstr "发送 Ping 和开带 PAP 的舰队"
+
+#: models.py views_config.py
+msgid "Leaders may"
+msgstr "组长可以"
+
+#: models.py templates/fleetops/all_corporation_statistics.html
+#: templates/fleetops/all_fc_statistics.html
+#: templates/fleetops/statistics/member_detail.html views_config.py
+msgid "Fleet types"
+msgstr "舰队类型"
+
+#: models.py
+msgid "Fleet types the leaders may start. Only used for pings and fleets with PAP."
+msgstr "组长可以开的舰队类型。仅用于“发送 Ping 和开带 PAP 的舰队”。"
+
+#: models.py
+msgid "SRP link for group fleets"
+msgstr "小组舰队创建 SRP 链接"
+
+#: models.py
+msgid "Group fleets get an SRP link like alliance fleets."
+msgstr "小组舰队和联盟舰队一样会创建 SRP 链接。"
+
+#: models.py
+msgid "group access"
+msgstr "小组权限"
+
+#: models.py
+msgid "group accesses"
+msgstr "小组权限"
+
+#: models.py
+msgctxt "FleetOps"
+msgid "Sent"
+msgstr "已发送"
+
+#: models.py
+msgid "Request ID"
+msgstr "请求 ID"
+
+#: models.py
+msgid "Sender"
+msgstr "发送人"
+
+#: models.py
+msgid "Sender name"
+msgstr "发送人名称"
+
+#: models.py templates/fleetops/operation/_fleet_template_modal.html
+msgid "Template"
+msgstr "模板"
+
+#: models.py templates/fleetops/fleet_operations.html
+msgid "Fleet time"
+msgstr "舰队时间"
+
+#: models.py
+msgid "Ping text as read"
+msgstr "Ping 文本（显示版）"
+
+#: models.py
+msgid "Result"
+msgstr "结果"
+
+#: models.py
+msgid "HTTP status"
+msgstr "HTTP 状态"
+
+#: models.py
+msgid "Sent at"
+msgstr "发送时间"
+
+#: models.py
+msgid "ping without fleet"
+msgstr "无舰队 Ping"
+
+#: models.py
+msgid "pings without fleet"
+msgstr "无舰队 Ping"
+
 #: providers/srp.py
 msgid "enabled"
 msgstr "已启用"
@@ -3529,6 +3702,7 @@ msgid "%(name)s points"
 msgstr "%(name)s 积分"
 
 #: services/export_datasets.py templates/fleetops/srp/_summary_table.html
+#: views_config.py
 msgid "FCs"
 msgstr "FC"
 
@@ -3785,34 +3959,9 @@ msgctxt "discord broadcast"
 msgid "role %(id)s"
 msgstr "身份组 %(id)s"
 
-#: services/mentions.py
-msgctxt "discord broadcast"
-msgid "all"
-msgstr "所有人"
-
-#: services/mentions.py
-msgctxt "discord broadcast"
-msgid "online members"
-msgstr "在线成员"
-
-#: services/mentions.py
-msgctxt "discord broadcast"
-msgid "this channel"
-msgstr "本频道"
-
 #: services/messages.py
 msgid "The ping template does not contain {{ ping_mention }}; nobody will be notified."
 msgstr "Ping 模板中没有 {{ ping_mention }}，因此不会通知任何人。"
-
-#: services/messages.py
-msgctxt "discord broadcast"
-msgid "Now"
-msgstr "现在"
-
-#: services/messages.py
-msgctxt "discord broadcast"
-msgid "None / Custom"
-msgstr "无 / 自定义"
 
 #: services/messages.py texts.py
 #, python-format
@@ -3831,16 +3980,6 @@ msgstr "没有设置 SITE_URL，因此消息中的语音和教义链接不完整
 #: services/messages.py
 msgid "SITE_URL is not set, so the SRP link in the messages is incomplete."
 msgstr "没有设置 SITE_URL，因此消息中的 SRP 链接不完整。"
-
-#: services/messages.py
-#, python-format
-msgctxt "discord broadcast"
-msgid ""
-"**Cancelled:** %(fleet_type)s at %(fleet_time)s (%(formup)s)\n"
-"-# FleetOps notice from %(sender)s at %(sent_at)s EVE"
-msgstr ""
-"**已取消：** %(fleet_type)s，%(fleet_time)s（%(formup)s）\n"
-"-# FleetOps 通知，来自 %(sender)s，%(sent_at)s EVE"
 
 #: services/multipliers.py
 #, python-format
@@ -4311,12 +4450,6 @@ msgid "Target"
 msgstr "达标线"
 
 #: templates/fleetops/all_corporation_statistics.html
-#: templates/fleetops/all_fc_statistics.html
-#: templates/fleetops/statistics/member_detail.html
-msgid "Fleet types"
-msgstr "舰队类型"
-
-#: templates/fleetops/all_corporation_statistics.html
 msgid "PAP earned in corporations without members in scope"
 msgstr "在没有范围内成员的军团中获得的 PAP"
 
@@ -4654,6 +4787,10 @@ msgstr "总览"
 msgid "Start Fleet"
 msgstr "开舰队"
 
+#: templates/fleetops/base.html templates/fleetops/send_ping.html
+msgid "Send Ping"
+msgstr "发送 Ping"
+
 #: templates/fleetops/base.html templates/fleetops/manual_fleet.html
 msgid "Add Manual Fleet"
 msgstr "添加补录舰队"
@@ -4670,6 +4807,23 @@ msgstr "我的历史"
 #: templates/fleetops/operation/_attendance_table.html
 msgid "Manual PAP"
 msgstr "补录 PAP"
+
+#: templates/fleetops/base.html
+msgid "Fleets and PAP rows waiting for approval."
+msgstr "等待审批的舰队和 PAP 行。"
+
+#: templates/fleetops/base.html templates/fleetops/dashboard.html
+#: templates/fleetops/my_statistics.html
+#, python-format
+msgid "%(counter)s fleet"
+msgid_plural "%(counter)s fleets"
+msgstr[0] "%(counter)s 场舰队"
+
+#: templates/fleetops/base.html
+#, python-format
+msgid "%(counter)s PAP row"
+msgid_plural "%(counter)s PAP rows"
+msgstr[0] "%(counter)s 行 PAP"
 
 #: templates/fleetops/base.html templates/fleetops/my_statistics.html
 #: templates/fleetops/statistics/_tabs.html
@@ -4800,7 +4954,9 @@ msgstr "保存"
 #: templates/fleetops/operation/_fleet_invite_modal.html
 #: templates/fleetops/operation/_fleet_template_modal.html
 #: templates/fleetops/operation/_members.html
-#: templates/fleetops/operation_edit.html templates/fleetops/srp/preview.html
+#: templates/fleetops/operation_edit.html
+#: templates/fleetops/partials/confirm_modal.html
+#: templates/fleetops/srp/preview.html
 msgid "Cancel"
 msgstr "取消"
 
@@ -5102,12 +5258,6 @@ msgstr "常用舰船"
 msgid "Tracked fleets"
 msgstr "追踪到的舰队"
 
-#: templates/fleetops/dashboard.html templates/fleetops/my_statistics.html
-#, python-format
-msgid "%(counter)s fleet"
-msgid_plural "%(counter)s fleets"
-msgstr[0] "%(counter)s 场舰队"
-
 #: templates/fleetops/dashboard.html
 msgid "No tracked ship history yet."
 msgstr "还没有追踪到的舰船记录。"
@@ -5184,6 +5334,14 @@ msgstr "FC 积分"
 #, python-format
 msgid "%(num)s / %(points)s pts"
 msgstr "%(num)s / %(points)s 积分"
+
+#: templates/fleetops/denied.html
+msgid "Permission"
+msgstr "权限"
+
+#: templates/fleetops/denied.html
+msgid "Back to the dashboard"
+msgstr "返回总览"
 
 #: templates/fleetops/fc_statistics_detail.html
 #, python-format
@@ -5286,10 +5444,6 @@ msgstr "已追踪"
 #: templates/fleetops/fleet_operations.html
 msgid "ESI Fleet"
 msgstr "ESI 舰队"
-
-#: templates/fleetops/fleet_operations.html
-msgid "Fleet time"
-msgstr "舰队时间"
 
 #: templates/fleetops/fleet_operations.html
 #: templates/fleetops/scheduled_fleet.html
@@ -5843,6 +5997,7 @@ msgstr "踢出成员"
 #: templates/fleetops/operation/_fleet_invite_modal.html
 #: templates/fleetops/operation/_fleet_template_modal.html
 #: templates/fleetops/operation/_members.html
+#: templates/fleetops/partials/confirm_modal.html
 msgid "Close"
 msgstr "关闭"
 
@@ -5935,10 +6090,12 @@ msgid "Fleet management needs JavaScript; this view is read-only."
 msgstr "舰队管理需要 JavaScript；此视图为只读。"
 
 #: templates/fleetops/operation/_fleet.html
+#: templates/fleetops/partials/confirm_modal.html
 msgid "Please confirm"
 msgstr "请确认"
 
 #: templates/fleetops/operation/_fleet.html
+#: templates/fleetops/partials/confirm_modal.html
 msgid "Confirm"
 msgstr "确认"
 
@@ -6292,10 +6449,6 @@ msgstr "已停止"
 #: templates/fleetops/operation/_fleet_template_modal.html
 msgid "Apply a structure template"
 msgstr "应用结构模板"
-
-#: templates/fleetops/operation/_fleet_template_modal.html
-msgid "Template"
-msgstr "模板"
 
 #: templates/fleetops/operation/_fleet_template_modal.html
 msgid "Also delete empty wings and squads that are not in the template"
@@ -7054,6 +7207,24 @@ msgstr "（已关闭；请重新加载页面）"
 msgid "(closes in %(minutes)s min %(seconds)s s)"
 msgstr "（%(minutes)s 分 %(seconds)s 秒后关闭）"
 
+#: templates/fleetops/partials/discord_preview.html
+#: templates/fleetops/roster_import.html
+msgid "Preview"
+msgstr "预览"
+
+#: templates/fleetops/partials/discord_preview.html
+msgid "Look"
+msgstr "效果"
+
+#: templates/fleetops/partials/discord_preview.html
+msgid "Raw text"
+msgstr "原文"
+
+#: templates/fleetops/partials/discord_preview.html
+#: templates/fleetops/start_fleet.html
+msgid "Complete the form to render a preview."
+msgstr "填完表单后才会生成预览。"
+
 #: templates/fleetops/partials/live_pap_status.html
 msgid "PAP in running fleets"
 msgstr "进行中舰队的 PAP"
@@ -7162,10 +7333,6 @@ msgid "Imported PAP counts once an FC lead approves it."
 msgstr "导入的 PAP 在 FC 主管审批通过后才会计入。"
 
 #: templates/fleetops/roster_import.html
-msgid "Preview"
-msgstr "预览"
-
-#: templates/fleetops/roster_import.html
 #, python-format
 msgid "To add: %(num)s"
 msgstr "待添加：%(num)s"
@@ -7240,7 +7407,7 @@ msgstr "超出限制"
 msgid "Has PAP"
 msgstr "已有 PAP"
 
-#: templates/fleetops/roster_import.html
+#: templates/fleetops/roster_import.html views_errors.py
 msgid "Not found"
 msgstr "未找到"
 
@@ -7363,6 +7530,14 @@ msgstr "没有 MOTD 文本。"
 #: templates/fleetops/scheduled_fleet.html
 msgid "The MOTD is set in game when the fleet starts."
 msgstr "舰队开队时会在游戏中设置 MOTD。"
+
+#: templates/fleetops/send_ping.html
+msgid "Posts a Discord ping without a fleet. Nothing is tracked and no PAP is given."
+msgstr "发送一条不带舰队的 Discord Ping。不会追踪任何内容，也不会给 PAP。"
+
+#: templates/fleetops/send_ping.html
+msgid "Sending pings without a fleet is not available yet."
+msgstr "暂时还不能发送无舰队 Ping。"
 
 #: templates/fleetops/srp/_calculation.html
 msgid "Not available yet"
@@ -8275,10 +8450,6 @@ msgstr "附加信息"
 #: templates/fleetops/start_fleet.html
 msgid "Ping Preview"
 msgstr "Ping 预览"
-
-#: templates/fleetops/start_fleet.html
-msgid "Complete the form to render a preview."
-msgstr "填完表单后才会生成预览。"
 
 #: templates/fleetops/start_fleet.html
 msgid "MOTD Preview"
@@ -10469,6 +10640,44 @@ msgid "ESI returned an incomplete killmail. Try again later."
 msgstr "ESI 返回的 KM 不完整。请稍后重试。"
 
 #: texts.py
+#, python-format
+msgid "You may not post to the ping channel %(name)s."
+msgstr "你不能在 Ping 频道 %(name)s 中发布内容。"
+
+#: texts.py
+#, python-format
+msgid "You no longer lead the group %(group)s in FleetOps."
+msgstr "你在 FleetOps 中已不再是小组 %(group)s 的组长。"
+
+#: texts.py
+#, python-format
+msgid "%(name)s is not a ping channel of the group %(group)s."
+msgstr "%(name)s 不是小组 %(group)s 的 Ping 频道。"
+
+#: texts.py
+#, python-format
+msgid "The leaders of %(group)s may only send pings."
+msgstr "小组 %(group)s 的组长只能发送 Ping。"
+
+#: texts.py
+#, python-format
+msgid "Fleet type %(type)s is not allowed for the group %(group)s."
+msgstr "小组 %(group)s 不能使用舰队类型 %(type)s。"
+
+#: texts.py
+msgid "Choose the group this fleet belongs to."
+msgstr "请选择这支舰队所属的小组。"
+
+#: texts.py
+msgid "Group fleets cannot be pre pinged. Send the fleet time with Send Ping and start the fleet when it is due."
+msgstr "小组舰队不能预 Ping。请用“发送 Ping”发布舰队时间，到点再开舰队。"
+
+#: texts.py
+#, python-format
+msgid "Group fleets of %(group)s get no SRP link."
+msgstr "小组 %(group)s 的舰队不创建 SRP 链接。"
+
+#: texts.py
 msgid "Fleet detection"
 msgstr "舰队检测"
 
@@ -10955,6 +11164,18 @@ msgid "Fixed SRP amounts per ship type and/or fleet doctrine. The most specific 
 msgstr "按船型和/或舰队教义设定的固定 SRP 金额。最具体的已启用规则优先；没有规则的舰船按价值 × 比例赔付。"
 
 #: views_config.py
+msgid "Alliance Auth groups whose leaders may send pings to their channels or run fleets with PAP. Leaders are the group leaders set in Alliance Auth."
+msgstr "其组长可以向各自频道发送 Ping，或开带 PAP 舰队的 Alliance Auth 小组。组长就是在 Alliance Auth 中设置的组长。"
+
+#: views_config.py
+msgid "Leaders (from Alliance Auth)"
+msgstr "组长（来自 Alliance Auth）"
+
+#: views_config.py
+msgid "SRP"
+msgstr "SRP"
+
+#: views_config.py
 msgid "SRP Corporation Limits"
 msgstr "SRP 军团限额"
 
@@ -11063,6 +11284,102 @@ msgstr "请选择成员留在舰队里的星系。"
 #: views_controls.py
 msgid "Nobody was kicked: no members were selected."
 msgstr "没有踢出任何人：没有选择成员。"
+
+#: views_errors.py
+msgid "Your account has no access to FleetOps. Ask an administrator for the FleetOps member permission."
+msgstr "你的账号没有 FleetOps 访问权限。请向管理员申请 FleetOps 成员权限。"
+
+#: views_errors.py
+msgid "Only FCs can start fleets."
+msgstr "只有 FC 可以开舰队。"
+
+#: views_errors.py
+msgid "Only FCs can manage fleets."
+msgstr "只有 FC 可以管理舰队。"
+
+#: views_errors.py
+msgid "Only fleet managers can see all fleets."
+msgstr "只有舰队管理者可以查看所有舰队。"
+
+#: views_errors.py
+msgid "Only FCs with the manual fleet permission can add manual fleets."
+msgstr "只有拥有补录舰队权限的 FC 才能补录舰队。"
+
+#: views_errors.py
+msgid "Only FC leads can open this page."
+msgstr "只有 FC 主管可以打开此页面。"
+
+#: views_errors.py
+msgid "Only corporation statistics managers can open this page."
+msgstr "只有军团统计管理者可以打开此页面。"
+
+#: views_errors.py
+msgid "Only alliance statistics managers can open this page."
+msgstr "只有联盟统计管理者可以打开此页面。"
+
+#: views_errors.py
+msgid "Only PAP managers can open this page."
+msgstr "只有 PAP 管理者可以打开此页面。"
+
+#: views_errors.py
+msgid "Only FC incentive managers can open this page."
+msgstr "只有 FC 奖金管理者可以打开此页面。"
+
+#: views_errors.py
+msgid "Only FleetOps administrators can open the administration."
+msgstr "只有 FleetOps 管理员可以打开后台设置。"
+
+#: views_errors.py
+msgid "Only auditors can open the audit log."
+msgstr "只有审计人员可以打开操作日志。"
+
+#: views_errors.py
+msgid "Your account cannot request SRP."
+msgstr "你的账号不能申请 SRP。"
+
+#: views_errors.py
+msgid "Only SRP managers can open this page."
+msgstr "只有 SRP 管理员可以打开此页面。"
+
+#: views_errors.py
+msgid "Only FCs and leaders of groups that run fleets can start fleets."
+msgstr "只有 FC 和能开舰队的小组的组长可以开舰队。"
+
+#: views_errors.py
+msgid "Only FCs and group leaders can send pings."
+msgstr "只有 FC 和组长可以发送 Ping。"
+
+#: views_errors.py
+msgid "Only FCs who manage fleets can open this page."
+msgstr "只有能管理舰队的 FC 可以打开此页面。"
+
+#: views_errors.py
+msgid "This page does not exist, or you cannot open it."
+msgstr "此页面不存在，或你无权打开。"
+
+#: views_errors.py
+msgid "You can only open the statistics of your own corporation."
+msgstr "你只能打开自己军团的统计。"
+
+#: views_errors.py
+msgid "You can only open members of your own corporation."
+msgstr "你只能打开自己军团的成员。"
+
+#: views_errors.py
+msgid "You can only open the summary of your own fleets."
+msgstr "你只能打开自己舰队的汇总。"
+
+#: views_errors.py
+msgid "The leaderboard is only open to statistics managers."
+msgstr "排行榜只对统计管理者开放。"
+
+#: views_errors.py
+msgid "Your account cannot download this export."
+msgstr "你的账号不能下载此导出。"
+
+#: views_errors.py
+msgid "Not allowed"
+msgstr "无权访问"
 
 #: views_fleet_actions.py
 msgid "MOTD regenerated and pushed to the fleet."

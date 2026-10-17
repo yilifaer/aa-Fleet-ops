@@ -179,7 +179,7 @@ msgstr "请求被拒绝。你的会话可能已过期 —— 请重新加载页�
 msgid "The server answered with HTTP %(status)s. Try again in a moment."
 msgstr "服务器返回了 HTTP %(status)s。请稍后重试。"
 
-#: static/fleetops/fleet_live.js
+#: static/fleetops/fleet_live.js static/fleetops/fleetops.js
 msgid "Close"
 msgstr "关闭"
 
@@ -349,7 +349,7 @@ msgstr "%(minutes)s 分钟"
 
 #: static/fleetops/fleetops.js static/fleetops/start_fleet.js
 msgid "in %(duration)s"
-msgstr "%(duration)s 后"
+msgstr "%(duration)s后"
 
 #: static/fleetops/fleetops.js
 msgid "now"
@@ -357,7 +357,7 @@ msgstr "现在"
 
 #: static/fleetops/fleetops.js
 msgid "%(duration)s ago"
-msgstr "%(duration)s 前"
+msgstr "%(duration)s前"
 
 #: static/fleetops/fleetops.js
 msgctxt "fleet position"
@@ -399,11 +399,11 @@ msgstr "舰队 %(fleet_id)s —— 职位：%(role)s —— 舰队 Boss"
 msgid "Fleet %(fleet_id)s — %(message)s"
 msgstr "舰队 %(fleet_id)s —— %(message)s"
 
-#: static/fleetops/srp.js
+#: static/fleetops/fleetops.js static/fleetops/srp.js
 msgid "Copied"
 msgstr "已复制"
 
-#: static/fleetops/srp.js
+#: static/fleetops/fleetops.js static/fleetops/srp.js
 msgid "Copy failed"
 msgstr "复制失败"
 

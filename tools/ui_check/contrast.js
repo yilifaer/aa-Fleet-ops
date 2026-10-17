@@ -116,6 +116,12 @@
   const NAV_SELECTOR = '#nav-left .badge, #nav-left .fo-count, #nav-left .fo-pill, #nav-left .fo-eve-clock';
   const EXEMPT = ':disabled, [aria-disabled="true"], .disabled, fieldset:disabled, .fo-ingame, .fo-discord, [data-ui-check-skip]';
 
+  // The label of a disabled control is as inactive as the control (WCAG 1.4.3 has no ratio for it).
+  function labelOfDisabledControl(el) {
+    const label = el.closest('label');
+    return Boolean(label && label.control && label.control.disabled);
+  }
+
   function visible(el) {
     if (typeof el.checkVisibility === 'function') {
       if (!el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
@@ -165,7 +171,7 @@
       if (!sample && !placeholder) continue;
       if (el.closest('script, style, noscript, template, option')) continue;
       if (!visible(el) || el.closest('.visually-hidden, .visually-hidden-focusable, [aria-hidden="true"], [hidden]')) continue;
-      if (el.closest(EXEMPT)) {
+      if (el.closest(EXEMPT) || labelOfDisabledControl(el)) {
         exempt += 1;
         continue;
       }
