@@ -94,6 +94,8 @@
 /* ===== 2. Base inside .fleetops ===== */
 /* Numbers line up everywhere: every number in FleetOps, in a table or not. The in-game look is the exception. */
 .fleetops, #fo-toasts, .fo-toasts, #fo-confirm { font-variant-numeric: tabular-nums; }
+/* Browsers reset the font of buttons and fields, and that reset includes the number style. */
+.fleetops :is(button, input, select, textarea), #fo-toasts button, .fo-toasts button, #fo-confirm :is(button, input) { font-variant-numeric: inherit; }
 .fleetops .fo-ingame { font-variant-numeric: normal; }
 /* Type scale: page title 28 px (24 px on phones), card and dialog titles 17 px, help text 14 px. The body keeps
    the size of the Alliance Auth theme. */
@@ -101,12 +103,17 @@
 @media (max-width: 575.98px) { .fleetops h2 { font-size: 1.5rem; } }
 .fleetops :is(.card-header, .card-title, .modal-title), #fo-confirm .modal-title { font-size: 1.0625rem; font-weight: 600; }
 .fleetops .form-text { font-size: .875rem; }
+/* Placeholders keep the field's own text colour at reduced strength: readable on the field's fill in every theme
+   (the themes' own grey is 2.9:1 on Materia and 3.5:1 on Darkly). */
+.fleetops :is(.form-control, .form-select)::placeholder { color: inherit; opacity: .72; }
 
 /* Focus ring: a mix of the theme's primary colour and the text colour, visible on dark themes as well */
 .fleetops :focus-visible, #fo-toasts :focus-visible, .fo-toasts :focus-visible, #fo-confirm :focus-visible {
   outline: 2px solid var(--fo-focus); outline-offset: 2px;
 }
-.fleetops :is(.table-responsive, .dropdown-menu, .fo-row-actions, .list-group, .fo-checklist) :focus-visible { outline-offset: -2px; }
+/* Inside scrolling or clipping containers the ring is drawn inside plain rows and links; a control with a fill of
+   its own (button, field, check box) keeps the ring outside, where it meets the page and not its own fill. */
+.fleetops :is(.table-responsive, .dropdown-menu, .fo-row-actions, .list-group, .fo-checklist) :focus-visible:not(.btn, .form-control, .form-select, .form-check-input) { outline-offset: -2px; }
 /* Reduced motion: no transitions and no animations, pulses and spinners stand still */
 @media (prefers-reduced-motion: reduce) {
   .fleetops *, .fleetops *::before, .fleetops *::after,
@@ -257,9 +264,22 @@ button.fo-live { cursor: pointer; }
 .fo-icon-btn.is-danger { color: var(--fo-bad); }
 @media (pointer: coarse) {
   .fleetops :is(.btn, .page-link, .nav-link, .dropdown-item, .fo-icon-btn, .fo-seg > *, .fleet-toggle), .fo-toast .fo-icon-btn, #fo-confirm .btn { min-height: 44px; }
-  .fleetops :is(.btn-sm, .fo-icon-btn, .fleet-toggle), .fo-toast .fo-icon-btn { min-width: 44px; }
+  .fleetops :is(.btn, .btn-sm, .fo-icon-btn, .fleet-toggle), .fo-toast .fo-icon-btn { min-width: 44px; }
+  /* Fields, check rows and disclosure rows reach 44 px too: a row's label is the target, the box sits in its middle. */
+  .fleetops :is(.form-select, .form-control:not(textarea, [type=file], [type=range], [type=color])) { min-height: 44px; }
   .fleetops .form-check-input { width: 1.4em; height: 1.4em; }
+  .fleetops .form-check:not(.form-switch) { padding-left: 1.9em; }
+  .fleetops .form-check:not(.form-switch) .form-check-input { margin-left: -1.9em; }
+  .fleetops .form-switch { padding-left: 3.3em; }
+  .fleetops .form-switch .form-check-input { width: 2.8em; margin-left: -3.3em; }
+  .fleetops .form-check .form-check-input { margin-top: calc((44px - 1.4em) / 2); }
+  .fleetops .form-check-label { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; }
+  :where(.fleetops) summary { min-height: 44px; }
+  :where(.fleetops) summary:not(.card-header, .fo-seg > summary) { padding-block: .6rem; }
 }
+/* A checkbox or radio alone in a table cell (a row selector without a visible label): wrap it in this label. */
+.fo-check-cell { display: inline-flex; align-items: center; justify-content: center; margin: 0; cursor: pointer; }
+@media (pointer: coarse) { .fo-check-cell { min-width: 44px; min-height: 44px; } }
 /* Row actions of the fleet tree: shown on hover or focus, always on touch screens */
 .fo-row-actions { display: inline-flex; gap: 2px; visibility: hidden; }
 .fleet-member:hover .fo-row-actions, .fleet-member:focus-within .fo-row-actions { visibility: visible; }

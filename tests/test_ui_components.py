@@ -601,6 +601,8 @@ class StyleSheetTests(SimpleTestCase):
 
     def test_numbers_are_tabular_everywhere_but_in_the_game_look(self):
         self.assertIn(".fleetops, #fo-toasts, .fo-toasts, #fo-confirm { font-variant-numeric: tabular-nums; }", self.css)
+        # Buttons and fields reset the number style of their font; they take it from the page again.
+        self.assertIn(".fleetops :is(button, input, select, textarea), #fo-toasts button, .fo-toasts button, #fo-confirm :is(button, input) { font-variant-numeric: inherit; }", self.css)
         self.assertIn(".fleetops .fo-ingame { font-variant-numeric: normal; }", self.css)
 
     def test_the_focus_ring_uses_its_token(self):
@@ -658,6 +660,22 @@ class StyleSheetTests(SimpleTestCase):
         block = self.css[self.css.index("@media (pointer: coarse)") :]
         self.assertIn("min-height: 44px", block)
         self.assertIn("min-width: 44px", block)
+
+    def test_fields_check_rows_and_summaries_reach_44_pixels_on_touch_screens(self):
+        block = self.css[self.css.index("@media (pointer: coarse)") :]
+        self.assertRegex(block, r"\.fleetops :is\(\.form-select, \.form-control:not\([^)]*textarea[^)]*\)\) \{ min-height: 44px; \}")
+        self.assertRegex(block, r"\.fleetops \.form-check-label \{[^}]*min-height: 44px; min-width: 44px;")
+        self.assertRegex(block, r":where\(\.fleetops\) summary \{ min-height: 44px; \}")
+        # A switch keeps its two-to-one shape next to the larger check boxes.
+        self.assertRegex(block, r"\.fleetops \.form-switch \.form-check-input \{ width: 2\.8em;")
+        self.assertRegex(block, r"\.fo-check-cell \{ min-width: 44px; min-height: 44px; \}")
+
+    def test_placeholders_use_the_text_colour_of_the_field(self):
+        self.assertRegex(self.css, r"\.fleetops :is\(\.form-control, \.form-select\)::placeholder \{ color: inherit; opacity: \.72; \}")
+
+    def test_the_focus_ring_stays_outside_controls_that_have_a_fill(self):
+        self.assertIn("outline: 2px solid var(--fo-focus); outline-offset: 2px;", self.css)
+        self.assertIn(":focus-visible:not(.btn, .form-control, .form-select, .form-check-input) { outline-offset: -2px; }", self.css)
 
     def test_the_old_metric_cards_keep_a_thin_edge_in_theme_colours(self):
         self.assertIn(".fleetops-metric-1 { border-top-color: var(--fo-type-1); }", self.css)
