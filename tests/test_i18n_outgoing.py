@@ -27,6 +27,8 @@ from fleetops.services.scheduling import cancel_scheduled_fleet
 from fleetops.texts import registered
 
 from . import factories as f
+from .link_fakes import character_link
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 from .test_messages import FLEET_TIME, SENT, MessageTestBase, fittings_reverse, make_template
 from .test_operations_tracking import StartFleetTestBase, frozen_now
 from .test_scheduling import SchedulingTestBase
@@ -39,7 +41,10 @@ MISSING_MENTION = "The ping template does not contain {{ ping_mention }}; nobody
 PING_TOO_LONG = (
     "The ping is %(length)s characters; Discord accepts at most %(limit)s. Shorten the additional information."
 )
-MOTD_TOO_LONG = "The MOTD is %(length)s characters; the game may cut a MOTD longer than %(limit)s."
+MOTD_TOO_LONG = (
+    "The MOTD is %(length)s characters long with its tags (%(visible)s visible); "
+    "the game may cut a MOTD longer than %(limit)s."
+)
 
 # The one phrase of a ping that still has a translation: the fleet page shows a role without a name to the viewer
 # in their own language, so "discord broadcast" / "role %(id)s" stays in the catalog.
@@ -49,7 +54,7 @@ WARNINGS = {
     "zh-hans": {
         MISSING_MENTION: "通知模板不含 {{ ping_mention }}，不会提醒任何人。",
         PING_TOO_LONG: "通知有 %(length)s 个字符，Discord 最多接受 %(limit)s 个。请缩短附加信息。",
-        MOTD_TOO_LONG: "MOTD 有 %(length)s 个字符，游戏可能会截断超过 %(limit)s 个字符的 MOTD。",
+        MOTD_TOO_LONG: "MOTD 含标签共 %(length)s 个字符（可见 %(visible)s 个），游戏可能会截断超过 %(limit)s 个字符的 MOTD。",
     }
 }
 
@@ -216,7 +221,12 @@ class MessageTextTests(FakeCatalogs, MessageTestBase):
         motds = {self.render_in(site, viewer, operation).motd for site, viewer in COMBINATIONS}
 
         self.assertEqual(len(motds), 1)
-        self.assertTrue(motds.pop().startswith('<font color="#bfffffff"><b>StratOp</b><br>FC: Boss Alt<br>Form Up: Jita IV-4'))
+        self.assertTrue(
+            motds.pop().startswith(
+                '<font color="#bfffffff"><b>StratOp</b><br>FC: '
+                f'{character_link(operation.fc_character_id, "Boss Alt")}<br>Form Up: Jita IV-4'
+            )
+        )
 
     def test_a_role_without_a_name_is_shown_in_english(self):
         operation = self.full_operation(ping_mention_mode=Mode.ROLES, ping_roles=[{"id": "111", "name": ""}])
@@ -262,7 +272,8 @@ class MessageTextTests(FakeCatalogs, MessageTestBase):
                 self.assertEqual(
                     chinese.warnings[0], f"通知有 {chinese.ping_length} 个字符，Discord 最多接受 2000 个。请缩短附加信息。"
                 )
-                self.assertIn("个字符，游戏可能会截断超过 1000 个字符的 MOTD。", chinese.warnings[1])
+                self.assertIn("个字符（可见 ", chinese.warnings[1])
+                self.assertIn("游戏可能会截断超过 2000 个字符的 MOTD。", chinese.warnings[1])
                 self.assertTrue(english.warnings[1].startswith("The MOTD is "))
                 self.assertEqual(len(english.warnings), len(chinese.warnings))
 

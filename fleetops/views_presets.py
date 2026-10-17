@@ -18,7 +18,7 @@ from fleetops.services.presets import FC_CHARACTER, PresetConflict, save_preset
 from fleetops.views import _render
 
 # Labels of the stored values a preset list row shows, in this order.
-SUMMARY_FIELDS = ("fleet_type", "doctrine_choice", "comms", "ping_channel")
+SUMMARY_FIELDS = ("fleet_group", "fleet_type", "doctrine_choice", "comms", "ping_channel")
 
 
 def _own_preset(request, pk):
@@ -32,7 +32,8 @@ def _summary(preset):
     labels = values.get("labels") or {}
     parts = [str(labels[name]) for name in SUMMARY_FIELDS if labels.get(name)]
     if not labels.get("doctrine_choice") and fields.get("custom_doctrine"):
-        parts.insert(1 if labels.get("fleet_type") else 0, str(fields["custom_doctrine"]))
+        before = sum(1 for name in ("fleet_group", "fleet_type") if labels.get(name))
+        parts.insert(before, str(fields["custom_doctrine"]))
     if preset.fc_character_id:
         parts.append(_("FC %(name)s") % {"name": labels.get(FC_CHARACTER) or preset.fc_character_id})
     return " · ".join(parts)

@@ -22,6 +22,7 @@ from fleetops.services.messages import RenderedMessages, render_messages, render
 from fleetops.templatetags.fleetops_messages import eve_time, ping_display
 
 from . import factories as f
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 
 UTC = dt_timezone.utc
 WEBHOOK_TOKEN = "interface-webhook-token"

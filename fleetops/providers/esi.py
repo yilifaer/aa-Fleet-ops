@@ -60,6 +60,7 @@ from fleetops.texts import (
     SQUAD_DELETE_FAILED,
     SQUAD_NO_ID,
     SQUAD_RENAME_FAILED,
+    SYSTEM_NAMES_LOOKUP_FAILED,
     WING_CREATE_FAILED,
     WING_DELETE_FAILED,
     WING_NO_ID,
@@ -97,6 +98,7 @@ esi = ESIClientProvider(
         "GetCharactersCharacterIdLocation",
         "GetCharactersCharacterIdShip",
         "PostUniverseIds",
+        "GetCharactersCharacterId",
         *KILLMAIL_OPERATIONS,
     ],
 )
@@ -296,7 +298,7 @@ def as_dict(value: Any) -> dict:
         "solar_system_id", "role_name", "takes_fleet_warp", "is_free_move", "join_time",
         "is_registered", "is_voice_enabled", "motd", "id", "name", "category", "corporation_id",
         "alliance_id", "faction_id", "online", "station_id", "structure_id", "ship_name", "ship_item_id",
-        "squads",
+        "squads", "bloodline_id",
     ):
         if hasattr(value, key):
             result[key] = getattr(value, key)
@@ -409,6 +411,20 @@ def detect_character_fleet(user, character_id: int, fresh: bool = False) -> Flee
         wing_id=payload.get("wing_id"),
         fleet_boss_id=int(boss_id) if boss_id else None,
     )
+
+
+def character_bloodline(character_id: int) -> int | None:
+    """The bloodline ID of a character from ESI's public character information; None when it cannot be read.
+
+    No token is involved. Every failure is logged without detail beyond the status and request id.
+    """
+    try:
+        payload = as_dict(_read(esi.client.Character.GetCharactersCharacterId(character_id=int(character_id))))
+    except Exception as exc:
+        _log_esi_failure("Could not read a character's bloodline", exc, level=logging.INFO)
+        return None
+    bloodline = payload.get("bloodline_id")
+    return int(bloodline) if bloodline else None
 
 
 def get_fleet_info(user, character_id: int, fleet_id: int) -> dict:
@@ -810,6 +826,15 @@ def universe_type_ids(names) -> dict[str, tuple[int, str]]:
     Used to turn the ship name of a payout rule into its type ID. Any failed call raises FleetESIError.
     """
     return _universe_lookup(names, "inventory_types", "TYPE_IDS_ERROR", ITEM_NAMES_LOOKUP_FAILED)
+
+
+def universe_system_ids(names) -> dict[str, tuple[int, str]]:
+    """Solar system IDs of exact system names, in the same shape as ``universe_ids``.
+
+    Used for the clickable form-up place of the MOTD when the SDE is not installed. Any failed call raises
+    FleetESIError.
+    """
+    return _universe_lookup(names, "systems", "SYSTEM_IDS_ERROR", SYSTEM_NAMES_LOOKUP_FAILED)
 
 
 # Alias for name entry and the roster import.

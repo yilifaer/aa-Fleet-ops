@@ -48,9 +48,6 @@ DEFAULT_STANDALONE_PING_TEMPLATE = """{% if ping_mention %}{{ ping_mention }}
 SCHEDULE_CANCELLED_TEMPLATE = """**Cancelled:** {{ fleet_type }} at {{ fleet_time_eve }} ({{ formup }})
 -# FleetOps notice from {{ sender }} at {{ sent_at }} EVE"""
 
-# Longer MOTDs only get a warning; the in-game limit is not documented.
-MOTD_SOFT_LIMIT = 1000
-
 # Seconds a ping channel is left alone after a ping without a fleet was posted to it.
 PING_COOLDOWN_SECONDS = 60
 

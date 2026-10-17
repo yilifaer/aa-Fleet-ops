@@ -25,6 +25,7 @@ DOCTRINE = "doctrine_choice"
 CUSTOM_DOCTRINE = "custom_doctrine"
 # What a warning calls an item that is gone.
 ITEM_NAMES = {
+    "fleet_group": gettext_lazy("Fleet for"),
     "fleet_type": gettext_lazy("Fleet type"),
     "comms": gettext_lazy("Comms preset"),
     "logi_channel": gettext_lazy("Logi channel"),

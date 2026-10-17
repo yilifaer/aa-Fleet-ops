@@ -18,11 +18,10 @@ from fleetops.constants import (
     DEFAULT_MOTD_TEMPLATE,
     DEFAULT_PING_TEMPLATE,
     DEFAULT_STANDALONE_PING_TEMPLATE,
-    MOTD_SOFT_LIMIT,
 )
 from fleetops.models import FleetOpsSettings, MessageTemplate
 from fleetops.providers.doctrines import doctrine_url
-from fleetops.services import links
+from fleetops.services import eve_links, links
 from fleetops.services.mentions import (
     DISCORD_MESSAGE_LIMIT,
     discord_length,
@@ -101,23 +100,34 @@ def _srp_url(operation) -> str:
     return ""
 
 
-def _escaped(text) -> str:
-    # Link text and plain fallback: only &, < and > are escaped, so a name such as O'Brien reads as it was typed.
-    return html.escape(str(text or ""), quote=False)
+def _link_values(fc_name: str, fc_character_id, formup: str, *, lookups: bool = True) -> dict:
+    """The MOTD variables that make the FC and the form-up place clickable in the game.
 
-
-def _link_values(fc_name: str, fc_character_id, formup: str) -> dict:
-    """The MOTD variables that make the FC and the form-up place clickable in the game."""
+    The FC links to their character, the form-up text to its solar system when it is the name of one; any
+    failed lookup leaves the plain (escaped) text, so a message never fails because of a link. ``lookups=False``
+    gives the plain text without any lookup (a ping without a fleet has no MOTD).
+    """
+    if not lookups:
+        return {
+            "fc_character_id": str(fc_character_id or ""),
+            "fc_link": eve_links.escaped(fc_name),
+            "formup_system_id": "",
+            "formup_link": eve_links.escaped(formup),
+        }
+    system = eve_links.solar_system(formup)
     return {
         "fc_character_id": str(fc_character_id or ""),
-        "fc_link": _escaped(fc_name),
-        "formup_system_id": "",
-        "formup_link": _escaped(formup),
+        "fc_link": eve_links.character_link(fc_character_id, fc_name),
+        "formup_system_id": str(system[0]) if system else "",
+        "formup_link": eve_links.system_link(formup, system),
     }
 
 
-def _context(operation, selection, mention: str, *, actor, pre_ping, now) -> dict:
-    """The variables of a fleet's messages. Callers run inside ``texts.outgoing_language()``."""
+def _context(operation, selection, mention: str, *, actor, pre_ping, now, lookups: bool = True) -> dict:
+    """The variables of a fleet's messages. Callers run inside ``texts.outgoing_language()``.
+
+    ``lookups`` looks up the clickable FC and form-up place of the MOTD; a ping without a fleet leaves it off.
+    """
     comms = operation.comms
     logi = operation.logi_channel
     boost = operation.boost_channel
@@ -135,7 +145,12 @@ def _context(operation, selection, mention: str, *, actor, pre_ping, now) -> dic
         "doctrine_ships": doctrine_ships,
         "doctrine_fits": doctrine_fits,
         "formup": operation.formup,
-        **_link_values(operation.fc_character_name, getattr(operation, "fc_character_id", ""), operation.formup),
+        **_link_values(
+            operation.fc_character_name,
+            getattr(operation, "fc_character_id", ""),
+            operation.formup,
+            lookups=lookups,
+        ),
         "group": getattr(operation, "group_name", "") or "",
         "comms": comms.name if comms else "",
         "comms_channel": comms.channel_name if comms else "",
@@ -213,7 +228,13 @@ def standalone_context(ping, *, actor, now=None, display=False) -> dict:
         selection = _ping_selection(ping)
         mention = mention_text(selection, display=display)
         return _context(
-            _ping_as_operation(ping, actor), selection, mention, actor=actor, pre_ping=bool(ping.fleet_time), now=now
+            _ping_as_operation(ping, actor),
+            selection,
+            mention,
+            actor=actor,
+            pre_ping=bool(ping.fleet_time),
+            now=now,
+            lookups=False,
         )
 
 
@@ -343,10 +364,16 @@ def render_messages(operation, *, actor=None, pre_ping=False, now=None) -> Rende
     if ping_length > DISCORD_MESSAGE_LIMIT:
         # Only a ping that FleetOps posts must fit; a copy-only ping can still be shortened by hand.
         (blocking if operation.ping_channel_id else warnings).append(ping_too_long_message(ping_length))
-    if len(motd) > MOTD_SOFT_LIMIT:
+    motd_limit = FleetOpsSettings.get_solo().motd_warning_length
+    motd_visible = _visible_length(motd)
+    # The game's limit is not documented: the setting decides when to warn (0 never), counted with the tags.
+    if 0 < motd_limit < len(motd):
         warnings.append(
-            gettext("The MOTD is %(length)s characters; the game may cut a MOTD longer than %(limit)s.")
-            % {"length": len(motd), "limit": MOTD_SOFT_LIMIT}
+            gettext(
+                "The MOTD is %(length)s characters long with its tags (%(visible)s visible); "
+                "the game may cut a MOTD longer than %(limit)s."
+            )
+            % {"length": len(motd), "visible": motd_visible, "limit": motd_limit}
         )
     if _relative_links(values, ping, motd):
         warnings.append(
@@ -363,8 +390,8 @@ def render_messages(operation, *, actor=None, pre_ping=False, now=None) -> Rende
         warnings=warnings,
         ping_length=ping_length,
         motd_length=len(motd),
-        motd_visible_length=_visible_length(motd),
-        motd_limit=FleetOpsSettings.get_solo().motd_warning_length,
+        motd_visible_length=motd_visible,
+        motd_limit=motd_limit,
     )
 
 
@@ -388,6 +415,7 @@ def render_standalone_ping(ping, *, actor, now=None) -> RenderedMessages:
             actor=actor,
             pre_ping=bool(ping.fleet_time),
             now=now,
+            lookups=False,
         )
         record = ping.template or _default_template(MessageTemplate.TemplateType.STANDALONE)
         rendered = _render_ping(record, DEFAULT_STANDALONE_PING_TEMPLATE, values, selection, errors)

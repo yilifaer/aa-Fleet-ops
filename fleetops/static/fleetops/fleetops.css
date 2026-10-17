@@ -455,6 +455,38 @@ button.fo-live { cursor: pointer; }
 
 /* ===== 6. Page blocks ===== */
 /* 6.A start page */
+/* Segmented choices whose labels are sentences (operation mode, fleet for): they share the row and wrap; on
+   phones they stand one under the other. */
+.fleetops .fo-seg.fo-seg-block { display: flex; width: 100%; }
+.fleetops .fo-seg.fo-seg-block > label { flex: 1 1 0; min-width: 0; white-space: normal; text-align: center; }
+@media (max-width: 575.98px) {
+  .fleetops .fo-seg.fo-seg-block { flex-direction: column; }
+  .fleetops .fo-seg.fo-seg-block > label { justify-content: flex-start; text-align: start; }
+}
+.fleetops .fo-seg > input:disabled + label { color: var(--fo-text-disabled) !important; cursor: default; }
+.fleetops .fo-seg > input:disabled + label:hover { background: transparent; }
+/* The page's cards: a quiet header, a thin divider under it */
+.fo-start .card-header { background: transparent; border-bottom-color: var(--fo-divider); }
+.fo-start .form-label, .fo-start :is(.mb-3, [class*="col-sm"]) > label:not([class]) { font-weight: 600; }
+.fo-start details > summary { cursor: pointer; font-weight: 600; }
+.fo-start #preset-select { min-width: 7rem; }
+/* The pill that leads to the blocking problem is a link, and keeps the colours of its tone */
+.fo-start a.fo-pill-bad, .fo-start a.fo-pill-bad:hover { color: var(--fo-bad); }
+.fo-start a.fo-pill-bad:hover { text-decoration: underline; }
+/* A field the keyboard or a script brings into view never ends up under the sticky action bar */
+.fo-start :is(input, select, textarea, label, button, summary, a) { scroll-margin-bottom: 6rem; }
+/* Action bar: the group of the fleet, the counters and the one primary button */
+.fo-start .fo-bar-counters { display: inline-flex; flex-wrap: wrap; gap: 0 var(--fo-space-4); }
+.fo-start .fo-actionbar .btn-primary { min-width: 12rem; }
+@media (max-width: 575.98px) { .fo-start .fo-actionbar .btn-primary { width: 100%; margin-left: 0 !important; } }
+/* Previews: the Discord look and the in-game look */
+.fo-discord > :is(.fo-skeleton, .fo-preview-note), .fo-ingame > .fo-preview-note { grid-column: 1 / -1; }
+.fo-discord-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--fo-space-2); margin-bottom: 2px; }
+.fo-discord-quote { padding-left: var(--fo-space-2); border-left: 4px solid var(--fo-border); }
+.fo-discord code { padding: .05em .3em; border-radius: 3px; background: var(--fo-surface-2); color: var(--fo-text-1); font-size: .875em; }
+.fo-discord a { color: var(--fo-link); }
+.fo-discord strong, .fo-discord em, .fo-discord u, .fo-discord s { font-variant-numeric: inherit; }
+.fo-ingame b { font-weight: 700; }
 /* end 6.A */
 
 /* 6.B fleet page */

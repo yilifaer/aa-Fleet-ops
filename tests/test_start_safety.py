@@ -33,6 +33,8 @@ from fleetops.services import operations as operations_module
 from fleetops.services.operations import end_fleet, retry_motd, retry_ping, retry_srp, start_fleet
 
 from . import factories as f
+from .link_fakes import character_link
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 
 Status = FleetOperation.Status
 ActionStatus = OperationAction.Status
@@ -498,7 +500,7 @@ class StartFleetSafetyTests(TestCase):
 
         operation.refresh_from_db()
         self.assertIn("**FC Name:** Start FC", operation.ping_text)
-        self.assertIn("FC: Start FC", operation.motd_text)
+        self.assertIn(f"FC: {character_link(operation.fc_character_id, 'Start FC')}", operation.motd_text)
         self.assertEqual(ping.status, ActionStatus.SUCCESS)
         self.assertEqual(motd.status, ActionStatus.SUCCESS)
         self.mocks["post"].assert_called_once()

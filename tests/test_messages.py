@@ -16,7 +16,6 @@ from fleetops.constants import (
     DEFAULT_MOTD_TEMPLATE,
     DEFAULT_PING_TEMPLATE,
     DEFAULT_STANDALONE_PING_TEMPLATE,
-    MOTD_SOFT_LIMIT,
     PING_COOLDOWN_SECONDS,
     SCHEDULE_CANCELLED_TEMPLATE,
 )
@@ -37,6 +36,8 @@ from fleetops.services.messages import (
 )
 
 from . import factories as f
+from .link_fakes import FAKE, character_link, system_link
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 
 UTC = dt_timezone.utc
 ZWSP = "​"
@@ -169,7 +170,6 @@ class DefaultTemplateTests(TestCase):
     def test_cancellation_notice_never_mentions_anybody(self):
         self.assertNotIn("ping_mention", SCHEDULE_CANCELLED_TEMPLATE)
         self.assertNotIn("ping_target ", SCHEDULE_CANCELLED_TEMPLATE)
-        self.assertEqual(MOTD_SOFT_LIMIT, 1000)
 
 
 class DefaultPingTests(MessageTestBase):
@@ -340,8 +340,8 @@ class DefaultMotdTests(MessageTestBase):
 
         self.assertEqual(
             motd,
-            '<font color="#bfffffff"><b>StratOp</b><br>FC: Boss Alt<br>Form Up: Jita IV-4'
-            f'<br>Doctrine: <a href="{SITE}{DOCTRINE_PATH}">Moa Fleet</a> (Moa > Moa > Osprey)'
+            f'<font color="#bfffffff"><b>StratOp</b><br>FC: {character_link(operation.fc_character_id, "Boss Alt")}'
+            f'<br>Form Up: Jita IV-4<br>Doctrine: <a href="{SITE}{DOCTRINE_PATH}">Moa Fleet</a> (Moa > Moa > Osprey)'
             f'<br>Comms: <a href="{self.join_url()}">Main Comms</a>'
             f'<br>Logi: <a href="joinChannel:{CHANNEL_ID}">Logi Chat</a>'
             "<br>Boost: Boosts"
@@ -349,9 +349,15 @@ class DefaultMotdTests(MessageTestBase):
         )
 
     def test_minimal_motd(self):
-        motd = self.render(self.operation(), pre_ping=True).motd
+        operation = self.operation()
 
-        self.assertEqual(motd, '<font color="#bfffffff"><b>StratOp</b><br>FC: Boss Alt<br>Form Up: Jita IV-4</font>')
+        motd = self.render(operation, pre_ping=True).motd
+
+        self.assertEqual(
+            motd,
+            f'<font color="#bfffffff"><b>StratOp</b><br>FC: {character_link(operation.fc_character_id, "Boss Alt")}'
+            "<br>Form Up: Jita IV-4</font>",
+        )
 
     def test_doctrine_link_only_for_fittings_doctrines(self):
         operation = self.full_operation(doctrine_source="fittings:fitting.doctrinegroup", doctrine_fits=[])
@@ -377,13 +383,49 @@ class DefaultMotdTests(MessageTestBase):
         self.assertIn("&lt;script>alert(1)&lt;/script>", motd)
 
     def test_the_fc_and_the_form_up_place_are_printed_through_their_links(self):
-        # The built-in MOTD asks for {{ fc_link }} and {{ formup_link }}; until the links are made they read as the names.
+        # The built-in MOTD asks for {{ fc_link }} and {{ formup_link }}.
         self.assertIn("FC: {{ fc_link }}<br>Form Up: {{ formup_link }}", DEFAULT_MOTD_TEMPLATE)
-        custom = make_template("{{ fc_link }}|{{ formup_link }}|{{ fc_character_id }}|{{ formup_system_id }}", MessageTemplate.TemplateType.MOTD)
+        custom = make_template(
+            "{{ fc_link }}|{{ formup_link }}|{{ fc_character_id }}|{{ formup_system_id }}",
+            MessageTemplate.TemplateType.MOTD,
+        )
 
-        operation = self.operation(motd_template=custom)
+        operation = self.operation(motd_template=custom, formup="Jita")
 
-        self.assertEqual(self.render(operation).motd, f"Boss Alt|Jita IV-4|{operation.fc_character_id}|")
+        self.assertEqual(
+            self.render(operation).motd,
+            f"{character_link(operation.fc_character_id, 'Boss Alt')}|{system_link(30000142, 'Jita')}"
+            f"|{operation.fc_character_id}|30000142",
+        )
+
+    def test_the_default_motd_of_a_started_fleet_carries_both_links(self):
+        operation = self.operation(formup="jita")
+
+        motd = self.render(operation).motd
+
+        self.assertIn(f"FC: {character_link(operation.fc_character_id, 'Boss Alt')}<br>", motd)
+        self.assertIn(f"<br>Form Up: {system_link(30000142, 'Jita')}", motd)
+
+    def test_a_place_that_is_no_system_stays_plain_and_costs_no_lookup(self):
+        FAKE.calls.clear()
+        operation = self.operation(formup="Jita (staging) & friends")
+
+        motd = self.render(operation).motd
+
+        self.assertIn("Form Up: Jita (staging) &amp; friends", motd)
+        self.assertNotIn("systems", [kind for kind, _arg in FAKE.calls])
+
+    def test_a_ping_without_a_fleet_looks_nothing_up(self):
+        FAKE.calls.clear()
+        ping = StandalonePing(
+            request_id=uuid.uuid4(), channel_name="STR", sender_name="Boss Main", formup="Jita", additional_message="Go"
+        )
+
+        values = standalone_context(ping, actor=self.fc, now=SENT)
+
+        self.assertEqual((values["fc_link"], values["formup_link"], values["formup_system_id"]), ("Boss Main", "Jita", ""))
+        self.assertEqual(FAKE.calls, [])
+        self.assertEqual(set(values), set(build_context(self.operation(), now=SENT)))
 
     def test_a_name_with_an_apostrophe_reads_as_typed(self):
         operation = self.operation(formup="O'Brien's Keepstar")
@@ -401,7 +443,7 @@ class DefaultMotdTests(MessageTestBase):
 
         self.assertEqual(values["formup"], "Jita & <Amarr>")
         self.assertEqual(values["formup_link"], "Jita &amp; &lt;Amarr&gt;")
-        self.assertEqual(values["fc_link"], "Boss Alt")
+        self.assertEqual(values["fc_link"], character_link(operation.fc_character_id, "Boss Alt"))
 
 
 class ContextTests(MessageTestBase):
@@ -743,15 +785,23 @@ class LengthTests(MessageTestBase):
 
     def test_long_motd_is_a_warning(self):
         motd = make_template("{{ additional_message }}", MessageTemplate.TemplateType.MOTD)
-        for length, warned in ((1000, False), (1001, True)):
+        ping = make_template("{{ fc }}")
+        for length, warned in ((2000, False), (2001, True)):
             with self.subTest(length=length):
-                rendered = self.render(self.operation(motd_template=motd, additional_message="m" * length))
+                rendered = self.render(
+                    self.operation(ping_template=ping, motd_template=motd, additional_message="m" * length)
+                )
 
                 self.assertEqual(rendered.motd_length, length)
                 self.assertEqual(rendered.blocking, [])
                 self.assertEqual(
                     rendered.warnings,
-                    ["The MOTD is 1001 characters; the game may cut a MOTD longer than 1000."] if warned else [],
+                    [
+                        "The MOTD is 2001 characters long with its tags (2001 visible); "
+                        "the game may cut a MOTD longer than 2000."
+                    ]
+                    if warned
+                    else [],
                 )
 
 
