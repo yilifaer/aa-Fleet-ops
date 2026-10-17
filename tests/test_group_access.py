@@ -394,6 +394,27 @@ class GroupFleetHelperTests(GroupFixture):
         GroupAccess.objects.filter(pk=self.fleet_access.pk).delete()
         self.assertFalse(group_access.group_srp_allowed(group_fleet))
 
+    def test_a_deactivated_access_row_stops_srp_like_every_other_group_power(self):
+        group_fleet = f.create_operation(self.leader, group=self.fleet_group, group_name=self.fleet_group.name)
+        GroupAccess.objects.filter(pk=self.fleet_access.pk).update(srp_enabled=True, is_active=False)
+
+        self.assertFalse(group_access.group_srp_allowed(group_fleet))
+        GroupAccess.objects.filter(pk=self.fleet_access.pk).update(is_active=True)
+        self.assertTrue(group_access.group_srp_allowed(group_fleet))
+
+    def test_a_group_fleet_stays_a_group_fleet_after_its_alliance_auth_group_is_deleted(self):
+        group_fleet = f.create_operation(self.leader, group=self.fleet_group, group_name=self.fleet_group.name)
+        GroupAccess.objects.filter(pk=self.fleet_access.pk).update(srp_enabled=True)
+
+        self.fleet_group.delete()
+        group_fleet.refresh_from_db()
+
+        self.assertIsNone(group_fleet.group_id)
+        self.assertEqual(group_fleet.group_name, "Example Fleet Group")
+        self.assertTrue(group_access.is_group_fleet(group_fleet))
+        self.assertFalse(group_access.group_srp_allowed(group_fleet))
+        self.assertFalse(group_access.is_group_fleet(f.create_operation(self.leader)))
+
     def test_leaders_of_lists_direct_leaders_and_leader_group_members(self):
         outsider = f.create_user("outsider", main_name="Pilot C")
         self.leader_group.user_set.add(outsider)

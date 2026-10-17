@@ -686,6 +686,10 @@ msgstr "备注"
 msgid "PAP link open for (minutes)"
 msgstr "PAP 登记链接开放时长（分钟）"
 
+#: forms_operation.py
+msgid "Only FC leads can change the fleet type of a group fleet."
+msgstr "只有 FC 主管可以更改小组舰队的舰队类型。"
+
 #: forms_operation.py forms_pap.py models.py views_config.py
 msgid "PAP multiplier"
 msgstr "PAP 倍率"
@@ -9061,6 +9065,11 @@ msgstr "意外的 ESI 错误（%(error_type)s）。"
 #: texts.py
 msgid "No valid ESI token with the required fleet scopes was found for this character."
 msgstr "没有找到该角色带有所需舰队权限范围的有效 ESI 令牌。"
+
+#: texts.py
+#, python-format
+msgid "The ESI token of the character could not be refreshed (%(error_type)s). Try again in a moment."
+msgstr "无法刷新该角色的 ESI 令牌（%(error_type)s）。请稍后重试。"
 
 #: texts.py
 msgid "Character is currently not in a fleet."

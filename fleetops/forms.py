@@ -46,7 +46,7 @@ from fleetops.models import (
     PingRole,
 )
 from fleetops.providers.doctrines import get_doctrines
-from fleetops.providers.esi import has_scope_token
+from fleetops.providers.esi import fleet_token_flags
 from fleetops.services import group_access
 from fleetops.services.identity import owned_characters
 from fleetops.services.mentions import (
@@ -99,15 +99,17 @@ def start_ping_channels(user):
 
 
 def character_choices(user):
-    """The user's characters for a start, with their fleet token state."""
+    """The user's characters for a start, with their fleet token state (from the database, no EVE SSO call)."""
     choices = []
     if user is None:
         return choices
     main_id = getattr(getattr(user.profile, "main_character", None), "character_id", None)
-    for ownership in owned_characters(user):
-        c = ownership.character
-        read = "R✓" if has_scope_token(user, c.character_id, write=False) else "R✗"
-        write = "W✓" if has_scope_token(user, c.character_id, write=True) else "W✗"
+    characters = [ownership.character for ownership in owned_characters(user)]
+    flags = fleet_token_flags(user, [c.character_id for c in characters])
+    for c in characters:
+        can_read, can_write = flags[c.character_id]
+        read = "R✓" if can_read else "R✗"
+        write = "W✓" if can_write else "W✗"
         marker = _("MAIN") if c.character_id == main_id else _("ALT")
         choices.append((str(c.character_id), f"{c.character_name} — {marker} — {read} {write}"))
     return choices
@@ -332,6 +334,9 @@ class ScheduledFleetForm(FleetSettingsForm):
         self.operation = operation
         self.fields["fleet_date"].required = True
         self.fields["fleet_clock"].required = True
+        # Scheduled fleets are alliance fleets and only their managers edit them (an FC lead may hold no
+        # start_fleet): every active fleet type, and the fleet's own type even after it was switched off.
+        self.fields["fleet_type"].queryset = FleetType.objects.filter(Q(is_active=True) | Q(pk=operation.fleet_type_id))
         # Scheduled fleets are alliance fleets: only the channels FCs may use for them.
         channel = self.fields["ping_channel"]
         channel.queryset = group_access.alliance_channels(user) if user is not None else DiscordWebhook.objects.none()

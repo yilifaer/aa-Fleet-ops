@@ -12,6 +12,7 @@ from kombu.exceptions import OperationalError as QueueError
 from fleetops import texts
 from fleetops.models import (
     AuditLog,
+    DiscordWebhook,
     FleetOperation,
     FleetOpsSettings,
     OperationAction,
@@ -109,9 +110,24 @@ def _keep_skipped(operation, action, message):
     return obj
 
 
+def _current_ping_channel(operation):
+    """The fleet's ping channel as it is stored now, also put on ``operation``; None without one.
+
+    The channel object of a fleet may have been loaded seconds earlier (with the start form, or before the ESI
+    check of a start). An administrator may switch the channel off, reserve it for groups, change its mentions
+    or replace its webhook in that time; a post always uses the row as it is at that moment.
+    """
+    if operation.ping_channel_id is None:
+        return None
+    channel = DiscordWebhook.objects.filter(pk=operation.ping_channel_id).first()
+    # A deleted channel is gone from the record too (the database sets it to none).
+    operation.ping_channel = channel
+    return channel
+
+
 def _ping_channel_problem(operation, action):
     """Record why nothing can be posted to the fleet's ping channel; None when something can."""
-    channel = operation.ping_channel
+    channel = _current_ping_channel(operation)
     if channel is None:
         return set_action(operation, action, None, NO_PING_CHANNEL)
     if not channel.is_active:
@@ -122,15 +138,19 @@ def _ping_channel_problem(operation, action):
 def _post_to_ping_channel(operation, action, text, mentions, *, actor):
     """The one place a fleet's message is posted to Discord.
 
-    Right before the post it checks again that ``actor`` may use the fleet's ping channel for the fleet's group
-    (``group_access.channel_refusal``); a refusal is the step's result and nothing is posted.
+    Right before the post it reads the channel again and checks that ``actor`` may use it for the fleet's
+    group (``group_access.channel_refusal``, which also refuses a channel that was switched off); a refusal
+    is the step's result and nothing is posted. The post goes to the webhook stored now.
     """
-    refusal = group_access.channel_refusal(actor, operation.ping_channel, group_id=operation.group_id)
+    channel = _current_ping_channel(operation)
+    if channel is None:
+        return set_action(operation, action, None, NO_PING_CHANNEL)
+    refusal = group_access.channel_refusal(actor, channel, group_id=operation.group_id)
     if refusal:
         return set_action(operation, action, False, refusal)
     if not text:
         return set_action(operation, action, False, EMPTY_PING)
-    result = send_discord_webhook(operation.ping_channel.webhook_url, text, mentions)
+    result = send_discord_webhook(channel.webhook_url, text, mentions)
     return set_action(operation, action, result.success, result.message)
 
 

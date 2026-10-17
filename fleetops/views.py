@@ -833,7 +833,7 @@ def edit_operation_view(request, operation_uuid):
         return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     old = model_to_dict(operation, fields=EDITED_FIELDS + REVIEW_FIELDS)
     if request.method == "POST":
-        form = OperationEditForm(request.POST, instance=operation)
+        form = OperationEditForm(request.POST, instance=operation, user=request.user)
         if form.is_valid():
             fleet_type_changed = form.cleaned_data["fleet_type"].pk != old.get("fleet_type")
             updated = form.save(commit=False)
@@ -890,7 +890,7 @@ def edit_operation_view(request, operation_uuid):
                 messages.success(request, _("Fleet operation updated."))
             return redirect("fleetops:operation_detail", operation_uuid=updated.uuid)
     else:
-        form = OperationEditForm(instance=operation)
+        form = OperationEditForm(instance=operation, user=request.user)
     return _render(
         request,
         "fleetops/operation_edit.html",

@@ -25,10 +25,12 @@ from fleetops.models import (
     MessageTemplate,
     SpecialRole,
 )
-from fleetops.services import roster_import
+from fleetops.services import group_access, roster_import
 from fleetops.services.roles import participant_rows
 from fleetops.services.roster_paste import clean_name, name_error
 from fleetops.texts import translate_stored
+
+GROUP_FLEET_TYPE_LOCKED = _("Only FC leads can change the fleet type of a group fleet.")
 
 
 def multiplier_choices(values=None):
@@ -232,9 +234,16 @@ class OperationEditForm(forms.ModelForm):
             "additional_message": forms.Textarea(attrs={"rows": 4}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["fleet_type"].queryset = FleetType.objects.all()
+        if group_access.is_group_fleet(self.instance) and not (
+            user is not None and user.has_perm("fleetops.manage_fleets")
+        ):
+            # A group fleet may run with a fleet type that gives no FC points; only FC leads move it to another
+            # type. A disabled field keeps the stored type whatever is posted.
+            self.fields["fleet_type"].disabled = True
+            self.fields["fleet_type"].help_text = GROUP_FLEET_TYPE_LOCKED
         self.fields["comms"].queryset = CommsPreset.objects.all()
         self.fields["logi_channel"].queryset = ChannelPreset.objects.filter(channel_type=ChannelPreset.ChannelType.LOGI)
         self.fields["boost_channel"].queryset = ChannelPreset.objects.filter(channel_type=ChannelPreset.ChannelType.BOOST)

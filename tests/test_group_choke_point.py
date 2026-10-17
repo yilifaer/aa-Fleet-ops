@@ -5,8 +5,11 @@
 use the fleet's ping channel for the fleet's group."""
 
 import re
+import tempfile
+import uuid
 from datetime import timedelta
 from pathlib import Path
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase
@@ -14,8 +17,9 @@ from django.utils import timezone
 
 import fleetops
 from fleetops import texts
-from fleetops.models import FleetOperation, GroupAccess, OperationAction
-from fleetops.services.operations import retry_ping
+from fleetops.models import DiscordWebhook, FleetOperation, GroupAccess, OperationAction
+from fleetops.services import operations
+from fleetops.services.operations import retry_ping, start_fleet
 from fleetops.services.scheduling import (
     _send_pre_ping,
     cancel_scheduled_fleet,
@@ -31,6 +35,17 @@ ActionStatus = OperationAction.Status
 PACKAGE = Path(fleetops.__file__).resolve().parent
 # The modules allowed to post to Discord: the fleet choke point and, later, the pings without a fleet.
 POSTERS = {"services/operations.py", "services/standalone_pings.py"}
+# The modules that may read a ping channel's webhook address or load the Discord provider: the provider, the two
+# posting services, the audit (which hides the address), the Django admin, the channel form and the model.
+WEBHOOK_READERS = POSTERS | {"providers/pings.py", "services/audit.py", "admin.py", "forms_config.py", "models.py"}
+# The address by name (an attribute, a getattr string, a template variable) or the provider module by any import.
+WEBHOOK_ACCESS = re.compile(
+    r"\bwebhook_url\b"
+    r"|\bproviders\.pings\b"
+    r"|\bfrom\s+\S*providers\s+import\b[^\n]*\bpings\b"
+    r"|\bfrom\s+\.+\s*import\b[^\n]*\bpings\b"
+    r"|\bfrom\s+\.pings\b"
+)
 
 
 def fresh(user):
@@ -39,6 +54,18 @@ def fresh(user):
 
 def step(operation, name):
     return OperationAction.objects.get(operation=operation, action=name)
+
+
+def webhook_readers(root):
+    """The modules and templates under ``root`` that name the webhook address or load the Discord provider."""
+    found = set()
+    for path in [*root.rglob("*.py"), *root.rglob("*.html")]:
+        relative = path.relative_to(root).as_posix()
+        if "migrations/" in relative:
+            continue
+        if WEBHOOK_ACCESS.search(path.read_text(encoding="utf-8")):
+            found.add(relative)
+    return found
 
 
 class SourceGuardTests(SimpleTestCase):
@@ -53,6 +80,45 @@ class SourceGuardTests(SimpleTestCase):
         self.assertTrue(users)
         self.assertLessEqual(users, POSTERS)
         self.assertIn("services/operations.py", users)
+
+    def test_only_the_posting_modules_reach_the_webhook_address(self):
+        readers = webhook_readers(PACKAGE)
+
+        self.assertIn("services/operations.py", readers)
+        self.assertLessEqual(readers, WEBHOOK_READERS)
+
+    def test_the_webhook_guard_sees_direct_posts_and_indirect_imports(self):
+        planted = {
+            "services/direct.py": "requests.post(channel.webhook_url, json={'content': text})\n",
+            "services/by_name.py": "url = getattr(channel, 'webhook_url')\n",
+            "services/by_module.py": "send = getattr(import_module('fleetops.providers.pings'), 'send')\n",
+            "providers/relative.py": "from . import doctrines, pings\n",
+            "providers/relative_module.py": "from .pings import _redact\n",
+            "views_example.py": "from fleetops.providers import esi, pings\n",
+            "templates/fleetops/example.html": "{{ channel.webhook_url }}\n",
+            "services/clean.py": "name = channel.name\nfrom fleetops.providers import esi\n",
+            "migrations/0001_initial.py": "webhook_url = models.TextField()\n",
+        }
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for relative, text in planted.items():
+                (root / relative).parent.mkdir(parents=True, exist_ok=True)
+                (root / relative).write_text(text, encoding="utf-8")
+
+            found = webhook_readers(root)
+
+        self.assertEqual(
+            found,
+            {
+                "services/direct.py",
+                "services/by_name.py",
+                "services/by_module.py",
+                "providers/relative.py",
+                "providers/relative_module.py",
+                "views_example.py",
+                "templates/fleetops/example.html",
+            },
+        )
 
     def test_no_background_task_posts_to_discord(self):
         for path in (PACKAGE / "tasks.py", PACKAGE / "srp" / "tasks.py"):
@@ -225,3 +291,78 @@ class ScheduledPostTests(ChokePointTestBase):
         # The fleet still starts; its FC lead can post the ping again.
         self.assertEqual(retry_ping(started, actor=fresh(self.lead)).status, ActionStatus.SUCCESS)
         self.assertEqual(self.discord_post.call_count, 1)
+
+
+class FreshChannelTests(ChokePointTestBase):
+    """The post reads the channel again: a change an administrator saves while a start runs counts for its ping."""
+
+    def setUp(self):
+        super().setUp()
+        f.builtin_default_templates()
+        self.shared = f.group_channel("Shared Pings", groups=[self.group], fcs_allowed=True)
+        self.alliance_type = f.fleet_type("StratOp", "1.00")
+        self.esi.put_in_fleet(self.fc_char)
+        self.esi.members[FLEET_ID] = [f.esi_member(self.fc_char)]
+
+    def start_while(self, change, channel=None, during="detect_fleet_boss"):
+        """Start an alliance fleet in ``channel`` and apply ``change`` between the start check and the post.
+
+        ``change`` runs right after the step ``during`` of the start: by default the ESI check of the fleet boss,
+        which comes after the start check and before the record exists.
+        """
+        original = getattr(operations, during)
+
+        def run_then_change(*args, **kwargs):
+            result = original(*args, **kwargs)
+            change()
+            return result
+
+        cleaned_data = {
+            "operation_mode": "full",
+            "fc_character_id": str(self.fc_char.character_id),
+            "fleet_type": self.alliance_type,
+            "formup": "Jita",
+            "ping_channel": channel or self.shared,
+        }
+        with mock.patch.object(operations, during, side_effect=run_then_change):
+            return start_fleet(user=fresh(self.fc), cleaned_data=cleaned_data, request_id=uuid.uuid4())
+
+    def test_a_channel_reserved_for_its_groups_during_the_start_gets_no_ping(self):
+        started = self.start_while(lambda: DiscordWebhook.objects.filter(pk=self.shared.pk).update(fcs_allowed=False))
+
+        self.assertEqual(started.status, Status.ACTIVE)
+        self.assertRefused(step(started, "discord_ping"), texts.CHANNEL_NOT_ALLOWED(name="Shared Pings"))
+
+    def test_a_channel_switched_off_during_the_start_gets_no_ping(self):
+        started = self.start_while(lambda: DiscordWebhook.objects.filter(pk=self.shared.pk).update(is_active=False))
+
+        self.assertRefused(step(started, "discord_ping"), texts.PING_CHANNEL_DISABLED(name="Shared Pings"))
+
+    def test_a_channel_deleted_during_the_start_gets_no_ping(self):
+        # Deleted once the record exists (its channel is then set to none in the database).
+        started = self.start_while(
+            lambda: DiscordWebhook.objects.filter(pk=self.shared.pk).delete(), during="create_srp_at_start"
+        )
+
+        action = step(started, "discord_ping")
+        self.assertEqual(action.status, ActionStatus.SKIPPED)
+        self.assertEqual(action.error_message, texts.NO_PING_CHANNEL())
+        self.discord_post.assert_not_called()
+
+    def test_a_webhook_replaced_during_the_start_gets_the_ping_at_its_new_address(self):
+        replaced = "https://discord.com/api/webhooks/90000002/example-new-token"
+
+        started = self.start_while(
+            lambda: DiscordWebhook.objects.filter(pk=self.alliance.pk).update(webhook_url=replaced), channel=self.alliance
+        )
+
+        self.assertEqual(step(started, "discord_ping").status, ActionStatus.SUCCESS)
+        self.assertEqual(self.discord_post.call_count, 1)
+        self.assertEqual(self.discord_post.call_args.args[0], replaced)
+
+    def test_a_retry_reads_the_channel_again(self):
+        operation = f.create_operation(self.fc, ping_channel=self.shared, ping_text="Form up", send_ping=True)
+        operation = FleetOperation.objects.select_related("ping_channel").get(pk=operation.pk)
+        DiscordWebhook.objects.filter(pk=self.shared.pk).update(fcs_allowed=False)
+
+        self.assertRefused(retry_ping(operation, actor=fresh(self.fc)), texts.CHANNEL_NOT_ALLOWED(name="Shared Pings"))

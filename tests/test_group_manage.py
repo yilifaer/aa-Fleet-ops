@@ -13,11 +13,12 @@ from django.test import TestCase
 from django.urls import reverse
 
 from fleetops import texts
-from fleetops.forms import ScheduledFleetForm, StartFleetForm
+from fleetops.forms import OperationEditForm, ScheduledFleetForm, StartFleetForm
 from fleetops.models import (
     AuditLog,
     FleetOperation,
     FleetStartPreset,
+    FleetType,
     GroupAccess,
     OperationAction,
     OperationRoleAssignment,
@@ -26,6 +27,7 @@ from fleetops.models import (
 )
 from fleetops.services import fleet_access
 from fleetops.services.operations import create_srp_at_start, retry_srp, start_fleet
+from fleetops.services.periods import format_eve
 from fleetops.services.presets import save_preset
 from fleetops.services.scheduling import schedule_fleet
 from fleetops.srp.links import operation_srp_context
@@ -42,6 +44,19 @@ JSON = {"HTTP_ACCEPT": "application/json"}
 
 def fresh(user):
     return get_user_model().objects.get(pk=user.pk)
+
+
+def credit_co_fc(operation, user):
+    """Credit ``user`` as a co-FC of ``operation`` (a special role with FC credit)."""
+    main = f.main_of(user)
+    return OperationRoleAssignment.objects.create(
+        operation=operation,
+        role=OperationRoleAssignment.Role.BACKSEAT_FC,
+        character_id=main.character_id,
+        character_name=main.character_name,
+        auth_user=user,
+        grants_fc_credit=True,
+    )
 
 
 class GroupFleetBase(FakeESIMixin, TestCase):
@@ -155,6 +170,59 @@ class ManageGroupFleetTests(GroupFleetBase):
         response = self.client_for(self.leader).get(reverse("fleetops:edit_operation", args=[self.operation.uuid]))
 
         self.assertEqual(response.status_code, 200)
+
+    def edit_data(self, **changes):
+        data = {
+            "fleet_type": str(self.operation.fleet_type_id),
+            "doctrine_name": self.operation.doctrine_name,
+            "formup": self.operation.formup,
+            "additional_message": "",
+            "started_at": self.operation.started_at.strftime("%Y-%m-%dT%H:%M"),
+        }
+        data.update(changes)
+        return data
+
+    def test_only_fc_leads_change_the_fleet_type_of_a_group_fleet(self):
+        credit_co_fc(self.operation, self.fc)
+        for user in (self.leader, self.fc):
+            with self.subTest(user=user.username):
+                form = OperationEditForm(instance=self.operation, user=fresh(user))
+                self.assertTrue(form.fields["fleet_type"].disabled)
+
+                response = self.post(
+                    user, "edit_operation", self.operation.uuid, data=self.edit_data(fleet_type=str(self.stratop.pk), formup="Amarr")
+                )
+
+                self.assertEqual(response.status_code, 302)
+                self.operation.refresh_from_db()
+                self.assertEqual(self.operation.formup, "Amarr")
+                self.assertEqual(self.operation.fleet_type, self.activity)
+                self.assertEqual(self.operation.fleet_point_weight_snapshot, self.activity.point_weight)
+                self.operation.formup = "Jita"
+                self.operation.save(update_fields=["formup"])
+
+        self.assertFalse(OperationEditForm(instance=self.operation, user=fresh(self.lead)).fields["fleet_type"].disabled)
+        response = self.post(self.lead, "edit_operation", self.operation.uuid, data=self.edit_data(fleet_type=str(self.stratop.pk)))
+        self.assertEqual(response.status_code, 302)
+        self.operation.refresh_from_db()
+        self.assertEqual(self.operation.fleet_type, self.stratop)
+        self.assertEqual(self.operation.fleet_point_weight_snapshot, self.stratop.point_weight)
+
+    def test_the_fleet_type_stays_locked_after_the_alliance_auth_group_is_deleted(self):
+        credit_co_fc(self.operation, self.fc)
+        self.group.delete()
+        self.operation.refresh_from_db()
+
+        response = self.post(self.fc, "edit_operation", self.operation.uuid, data=self.edit_data(fleet_type=str(self.stratop.pk)))
+
+        self.assertEqual(response.status_code, 302)
+        self.operation.refresh_from_db()
+        self.assertEqual(self.operation.fleet_type, self.activity)
+
+    def test_alliance_fleets_keep_an_editable_fleet_type(self):
+        alliance = f.create_operation(self.fc, type_obj=self.activity)
+
+        self.assertFalse(OperationEditForm(instance=alliance, user=fresh(self.fc)).fields["fleet_type"].disabled)
 
     def test_other_fleets_answer_not_found(self):
         others = {
@@ -313,6 +381,38 @@ class SrpGateTests(GroupFleetBase):
         self.assertTrue(SrpFleetLink.objects.filter(operation=operation).exists())
         card = operation_srp_context(f.create_operation(self.fc), fresh(self.fc))["srp_card"]
         self.assertTrue(card["can_create"])
+
+    def test_a_group_fleet_whose_alliance_auth_group_was_deleted_gets_no_srp_link(self):
+        operation = self.group_fleet()
+        credit_co_fc(operation, self.fc)
+        self.group.delete()
+        operation.refresh_from_db()
+        self.assertIsNone(operation.group_id)
+
+        create_srp_at_start(operation)
+
+        action = OperationAction.objects.get(operation=operation, action="srp_link")
+        self.assertEqual(action.status, ActionStatus.SKIPPED)
+        self.assertEqual(action.error_message, texts.GROUP_NO_SRP(group="Example Fleet Group"))
+        self.assertEqual(retry_srp(operation).error_message, texts.GROUP_NO_SRP(group="Example Fleet Group"))
+        for user in (self.lead, self.fc):
+            with self.subTest(user=user.username):
+                self.assertFalse(operation_srp_context(operation, fresh(user)).get("srp_card", {}).get("can_create"))
+        response = self.client_for(self.lead).post(reverse("fleetops:retry_srp", args=[operation.uuid]))
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(SrpFleetLink.objects.exists())
+
+    def test_a_deactivated_access_row_stops_the_srp_link_of_its_group_fleets(self):
+        GroupAccess.objects.filter(pk=self.access.pk).update(srp_enabled=True, is_active=False)
+        operation = self.group_fleet()
+
+        create_srp_at_start(operation)
+
+        self.assertEqual(
+            OperationAction.objects.get(operation=operation, action="srp_link").status, ActionStatus.SKIPPED
+        )
+        self.assertFalse(operation_srp_context(operation, fresh(self.lead)).get("srp_card", {}).get("can_create"))
+        self.assertFalse(SrpFleetLink.objects.exists())
 
     def test_the_retry_view_refuses_for_the_leader(self):
         operation = self.group_fleet()
@@ -563,6 +663,35 @@ class StartFormChoiceTests(GroupFleetBase):
 
         self.assertEqual(set(form.fields["ping_channel"].queryset), {self.alliance})
         self.assertFalse(form.fields["ping_channel"].required)
+
+    def test_every_editor_of_a_scheduled_fleet_is_offered_the_active_fleet_types(self):
+        retired = f.fleet_type("Retired Type", "1.00")
+        operation = f.create_scheduled_operation(self.fc, ping_channel=self.alliance, type_obj=retired)
+        FleetType.objects.filter(pk=retired.pk).update(is_active=False)
+        # An FC lead without start_fleet edits the scheduled fleets of the FCs.
+        lead = f.create_user("leadonly", perms=f.MEMBER_PERMS + ["fleetops.manage_fleets"], main_name="Pilot E")
+
+        form = ScheduledFleetForm(operation=operation, user=fresh(lead))
+
+        self.assertEqual(set(form.fields["fleet_type"].queryset), {self.activity, self.stratop, retired})
+        self.assertEqual(list(StartFleetForm(user=fresh(lead)).fields["fleet_type"].queryset), [])
+        data = {
+            "fleet_type": str(retired.pk),
+            "formup": "Amarr",
+            "fleet_date": format_eve(operation.scheduled_at, "%Y-%m-%d"),
+            "fleet_clock": format_eve(operation.scheduled_at, "%H:%M"),
+            "ping_channel": str(self.alliance.pk),
+        }
+        # The fleet's own type stays valid although it is no longer active.
+        kept = ScheduledFleetForm(data, operation=operation, user=fresh(self.fc))
+        self.assertTrue(kept.is_valid(), kept.errors)
+        page = reverse("fleetops:edit_scheduled_fleet", args=[operation.uuid])
+        self.assertEqual(self.client_for(lead).get(page).status_code, 200)
+        response = self.client_for(lead).post(page, {**data, "fleet_type": str(self.stratop.pk)})
+        self.assertEqual(response.status_code, 302)
+        operation.refresh_from_db()
+        self.assertEqual((operation.fleet_type, operation.formup), (self.stratop, "Amarr"))
+        self.assertNotIn(retired, ScheduledFleetForm(operation=operation, user=fresh(lead)).fields["fleet_type"].queryset)
 
     def test_a_scheduled_fleet_whose_channel_was_reserved_asks_for_another(self):
         operation = f.create_scheduled_operation(self.fc, ping_channel=self.alliance, type_obj=self.stratop)

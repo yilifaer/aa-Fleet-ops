@@ -276,11 +276,23 @@ def visible_group_ids(user) -> set:
     return leader_access(user).group_ids
 
 
+def is_group_fleet(operation) -> bool:
+    """A fleet started for a group. It stays one after its Alliance Auth group is deleted: the record keeps
+    the group's name while its group becomes empty."""
+    return bool(operation.group_id or operation.group_name)
+
+
 def group_srp_allowed(operation) -> bool:
-    """Alliance fleets: True. Group fleets: the group's "SRP link for group fleets" (False without its row)."""
-    if not operation.group_id:
+    """Alliance fleets: True. Group fleets: the "SRP link for group fleets" switch of the group's active row.
+
+    False without an active row: a deactivated row stops SRP like every other power of the group, and a fleet
+    whose Alliance Auth group was deleted has no row at all. No query for alliance fleets.
+    """
+    if not is_group_fleet(operation):
         return True
-    return GroupAccess.objects.filter(group_id=operation.group_id, srp_enabled=True).exists()
+    if not operation.group_id:
+        return False
+    return GroupAccess.objects.filter(group_id=operation.group_id, is_active=True, srp_enabled=True).exists()
 
 
 def _users_with_access(user_ids) -> set:

@@ -588,6 +588,9 @@ ESI_UNEXPECTED = StoredText(gettext_noop("Unexpected ESI error (%(error_type)s).
 ESI_NO_TOKEN = StoredText(
     gettext_noop("No valid ESI token with the required fleet scopes was found for this character.")
 )
+ESI_TOKEN_REFRESH_FAILED = StoredText(
+    gettext_noop("The ESI token of the character could not be refreshed (%(error_type)s). Try again in a moment.")
+)
 NOT_IN_FLEET = StoredText(gettext_noop("Character is currently not in a fleet."))
 DETECT_FAILED = StoredText(gettext_noop("Could not detect fleet: %(detail)s"), nested=("detail",))
 DETECT_DENIED = StoredText(gettext_noop("ESI denied access to this character's fleet: %(detail)s"), nested=("detail",))
