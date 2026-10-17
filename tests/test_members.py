@@ -14,7 +14,7 @@ from django.test import Client, TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.urls import NoReverseMatch, reverse
 
-from fleetops.models import FleetOperation, ReviewStatus
+from fleetops.models import FleetOperation, ReviewStatus, StatisticsTarget
 from fleetops.services import members as member_stats
 from fleetops.services.members import fill_last_pap, member_rows, scope_corporations, type_columns
 
@@ -64,7 +64,7 @@ def names(rows):
 
 def previous_month_link(page):
     """The href of the "Previous month" link of a page, unescaped; None when the page has none."""
-    found = re.search(r'href="([^"]*)"[^>]*>\u2039 Previous month', html.unescape(page))
+    found = re.search(r'href="([^"]*)"[^>]*aria-label="Previous month: ', html.unescape(page))
     return found.group(1) if found else None
 
 
@@ -93,6 +93,9 @@ class MembersTestCase(TestCase):
             type_obj=self.strat,
         )
         self.op2 = fleet(self.fc, utc(2026, 3, 9, 19), self.alice, (self.bob, 3), type_obj=self.roam)
+        # A target from before the months below: a month without any target is not assessed at all (see
+        # NoTargetTests), so the tests of the statuses start from a minimum of one PAP.
+        f.statistics_target(2025, 12, minimum=1)
 
     def table(self, **kwargs):
         return member_rows(2026, 3, **kwargs)
@@ -235,11 +238,11 @@ class MemberRowsTests(MembersTestCase):
         self.assertEqual(table.rows, [])
         self.assertEqual(table.counts, {"all": 0, "with_pap": 0, "inactive": 0})
 
-    def test_no_target_means_a_minimum_of_one(self):
+    def test_a_target_of_one_lists_the_members_without_pap(self):
         table = self.table(status="inactive")
 
         self.assertEqual(names(table.rows), ["Carol"])
-        self.assertEqual((table.target.minimum, table.target.rule), (1, None))
+        self.assertEqual(table.target.minimum, 1)
 
     def test_month_starts_and_ends_in_eve_time(self):
         fleet(self.fc, utc(2026, 3, 31, 23, 30), (self.carol, 3))
@@ -318,6 +321,36 @@ class InactiveTests(MembersTestCase):
         self.assertEqual(member_rows(2026, 4).target.minimum, 2)
         self.assertEqual(member_rows(2026, 5).target.minimum, 100)
         self.assertEqual(member_rows(2026, 2).target.minimum, 1)
+        # Before the first rule there is no target at all.
+        self.assertEqual((member_rows(2025, 11).target.minimum, member_rows(2025, 11).target.rule), (0, None))
+
+
+class NoTargetTests(MembersTestCase):
+    """A month without an applicable target is not assessed (owner decision 5-5)."""
+
+    def setUp(self):
+        super().setUp()
+        StatisticsTarget.objects.all().delete()
+
+    def test_nobody_is_assessed_or_inactive(self):
+        table = self.table(status="inactive")
+
+        self.assertEqual(table.rows, [])
+        self.assertEqual(table.counts, {"all": 4, "with_pap": 3, "inactive": 0})
+        self.assertEqual((table.target.minimum, table.target.average, table.target.rule), (0, None, None))
+        self.assertEqual({row.status for row in self.table().rows}, {"none"})
+
+    def test_a_running_and_a_future_month_are_not_assessed_either(self):
+        for moment in (utc(2026, 3, 20, 12), utc(2026, 1, 20, 12)):
+            with self.subTest(moment=moment), clock(moment):
+                self.assertEqual({row.status for row in self.table().rows}, {"none"})
+                self.assertEqual(self.table(status="inactive").counts["inactive"], 0)
+
+    def test_the_first_target_applies_from_its_month_only(self):
+        f.statistics_target(2026, 3, minimum=2)
+
+        self.assertEqual(names(self.table(status="inactive").rows), ["Carol", "Dave"])
+        self.assertEqual({row.status for row in member_rows(2026, 2).rows}, {"none"})
 
 
 class SearchAndSortTests(MembersTestCase):
@@ -611,13 +644,19 @@ class MembersPageTests(MembersTestCase):
         self.assertIn("at least 5 PAP", response.content.decode())
 
     def test_without_a_target_the_page_points_admins_to_the_monthly_targets(self):
+        StatisticsTarget.objects.all().delete()
         admin_page = self.page(self.admin).content.decode()
         stats_page = self.page(self.stats).content.decode()
 
-        self.assertIn("No monthly target is set", admin_page)
+        self.assertIn("No target for this month: nobody is assessed or listed as inactive.", admin_page)
         self.assertIn(reverse("fleetops:configuration_list", args=["statistics-targets"]), admin_page)
-        self.assertIn("No monthly target is set", stats_page)
+        self.assertIn("No target for this month: nobody is assessed or listed as inactive.", stats_page)
         self.assertNotIn(reverse("fleetops:configuration_list", args=["statistics-targets"]), stats_page)
+        self.assertNotIn("fo-pill-bad", stats_page)
+        self.assertNotIn("fo-pill-warn", stats_page)
+        self.assertNotIn("fleetops-status-row", stats_page)
+        self.assertEqual(self.page(self.stats).context["counts"]["inactive"], 0)
+        self.assertEqual(self.listed(self.page(self.stats, status="inactive")), [])
 
     def test_minimum_zero_is_explained(self):
         f.statistics_target(2026, 1, minimum=0)
@@ -631,15 +670,15 @@ class MembersPageTests(MembersTestCase):
         with clock(utc(2026, 3, 20, 12)):
             page = self.page(self.stats, status="inactive").content.decode()
 
-        self.assertIn('class="badge text-bg-warning">Below minimum so far</span>', page)
-        self.assertNotIn("text-bg-danger", page)
+        self.assertIn('class="fo-pill fo-pill-warn">Below minimum so far</span>', page)
+        self.assertNotIn("fo-pill-bad", page)
         self.assertIn("fleetops-status-row-progress", page)
 
     def test_a_finished_month_shows_red_below_minimum(self):
         with clock(utc(2026, 4, 2, 12)):
             page = self.page(self.stats, status="inactive").content.decode()
 
-        self.assertIn('class="badge text-bg-danger">Below minimum</span>', page)
+        self.assertIn('class="fo-pill fo-pill-bad">Below minimum</span>', page)
         self.assertNotIn("Below minimum so far</span>", page)
         self.assertIn("fleetops-status-row-missed", page)
 
@@ -647,7 +686,7 @@ class MembersPageTests(MembersTestCase):
         with clock(utc(2026, 3, 20, 12)):
             page = self.page(self.stats, q="bob").content.decode()
 
-        self.assertIn('class="badge text-bg-success">OK</span>', page)
+        self.assertIn('class="fo-pill fo-pill-ok">OK</span>', page)
         self.assertIn("fleetops-status-row-met", page)
 
     def test_invalid_filters_fall_back_to_the_defaults(self):

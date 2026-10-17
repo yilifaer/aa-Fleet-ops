@@ -1,6 +1,7 @@
 {% extends "fleetops/base.html" %}
-{% load i18n fleetops_messages fleetops_stats %}
+{% load i18n fleetops_messages fleetops_stats fleetops_ui %}
 {% block fleetops_content %}
+{% translate "Group fleet" as group_fleet_label %}
 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
   <div>
     <h2 class="mb-1">{{ row.main_character_name }}</h2>
@@ -14,11 +15,11 @@
 </div>
 {% include "fleetops/month_selector.html" %}
 {% if retention_days %}<div class="small text-muted mb-2">{% blocktranslate trimmed with days=retention_days %}PAP older than {{ days }} days is removed, so this month may be incomplete.{% endblocktranslate %}</div>{% endif %}
-<div class="row g-3 mb-3">
+<div class="row g-3 mb-3 fleetops-assessment-row">
   <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>PAP</span><strong>{{ row.pap }}</strong><small class="text-muted">{% translate "All characters, this month" %}</small></div></div>
   <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>{% translate "Fleets" %}</span><strong>{{ row.fleets }}</strong><small class="text-muted">{% translate "Fleets with PAP" %}</small></div></div>
   <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>{% translate "Characters used" %}</span><strong>{{ row.characters }}</strong><small class="text-muted">{% translate "Including alts" %}</small></div></div>
-  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>{% translate "Status" %}</span><strong>{% include "fleetops/statistics/_status_badge.html" with status=row.status %}</strong><small class="text-muted">{% blocktranslate trimmed with minimum=detail.target.minimum %}Minimum {{ minimum }} PAP{% endblocktranslate %}</small></div></div>
+  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>{% translate "Status" %}</span><strong>{% include "fleetops/statistics/_status_badge.html" with status=row.status %}</strong><small class="text-muted">{% if detail.target.rule is None %}{% translate "No target for this month" %}{% else %}{% blocktranslate trimmed with minimum=detail.target.minimum %}Minimum {{ minimum }} PAP{% endblocktranslate %}{% endif %}</small></div></div>
   <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>{% translate "Rank" %}</span>
     {% if detail.alliance_rank %}<strong>{% blocktranslate trimmed with rank=detail.alliance_rank ranked=detail.alliance_ranked %}#{{ rank }} <small class="text-muted fs-6">of {{ ranked }} in the alliance</small>{% endblocktranslate %}</strong>
     <small class="text-muted">{% blocktranslate trimmed with rank=detail.corporation_rank ranked=detail.corporation_ranked corporation=row.corporation_name %}#{{ rank }} of {{ ranked }} in {{ corporation }}{% endblocktranslate %}</small>
@@ -28,28 +29,31 @@
 <div class="row g-3 mb-3">
   <div class="col-xl-5">
     <div class="card h-100"><div class="card-header"><strong>{% translate "Fleet types" %}</strong></div>
-      <div class="card-body">{% for fleet_type, pap in detail.fleet_types %}<div class="d-flex justify-content-between align-items-center border-bottom py-2"><span>{{ fleet_type }}</span><span class="badge bg-secondary fs-6">{{ pap }}</span></div>{% empty %}<div class="text-muted">{% translate "No PAP in this month." %}</div>{% endfor %}</div>
+      <div class="card-body">
+        {% if detail.fleet_types %}<ul class="fo-bars">{% for fleet_type, pap in detail.fleet_types %}<li><span>{{ fleet_type|type_pill }}</span><strong class="fo-num">{{ pap }}</strong><div class="fo-bar-track"><div class="fo-bar-fill" style="width:{% widthratio pap row.pap 100 %}%{% with tone=fleet_type|type_tone %}{% if tone %}; --fo-bar: var(--fo-type-{{ tone }}){% endif %}{% endwith %}"></div></div></li>{% endfor %}</ul>
+        {% else %}<div class="fo-empty"><i class="fa-solid fa-chart-simple" aria-hidden="true"></i><span>{% translate "No PAP in this month." %}</span></div>{% endif %}
+      </div>
     </div>
   </div>
   <div class="col-xl-7">
-    <div class="card h-100"><div class="card-header"><strong>{% translate "Characters used" %}</strong></div>
+    <div class="card h-100"><div class="card-header"><strong>{% translate "Characters used" %}</strong></div>{% translate "Main" as main_label %}
       <div class="table-responsive"><table class="table table-sm table-hover mb-0"><thead><tr><th scope="col">{% translate "Character" %}</th><th scope="col" class="text-end">{% translate "Fleets" %}</th><th scope="col" class="text-end">PAP</th></tr></thead><tbody>
-        {% for character in detail.characters %}<tr><td>{{ character.character_name }}{% if character.character_id == row.main_character_id %} <span class="badge text-bg-secondary">{% translate "Main" %}</span>{% endif %}</td><td class="text-end">{{ character.fleets }}</td><td class="text-end"><strong>{{ character.pap }}</strong></td></tr>{% empty %}<tr><td colspan="3" class="text-muted p-4">{% translate "No characters used in this month." %}</td></tr>{% endfor %}
+        {% for character in detail.characters %}<tr><td>{{ character.character_name }}{% if character.character_id == row.main_character_id %} {% pill "neutral" main_label %}{% endif %}</td><td class="text-end">{{ character.fleets }}</td><td class="text-end"><strong>{{ character.pap }}</strong></td></tr>{% empty %}<tr><td colspan="3"><div class="fo-empty"><i class="fa-regular fa-user" aria-hidden="true"></i><span>{% translate "No characters used in this month." %}</span></div></td></tr>{% endfor %}
       </tbody></table></div>
     </div>
   </div>
 </div>
 <div class="card">
   <div class="card-header"><strong>{% translate "Fleets" %}</strong></div>
-  <div class="table-responsive">
-    <table class="table table-sm table-hover align-middle mb-0">
+  <div class="table-responsive position-relative">
+    <table class="table table-sm table-hover align-middle mb-0 fo-table-pin">
       <thead><tr><th scope="col">{% translate "Start (EVE)" %}</th><th scope="col">{% translate "End (EVE)" %}</th><th scope="col">{% translate "Type" context "fleet type" %}</th><th scope="col">{% translate "Doctrine" context "FleetOps" %}</th><th scope="col">FC</th><th scope="col">{% translate "Character" %}</th><th scope="col">{% translate "Source" %}</th><th scope="col" class="text-end">PAP</th>{% if can_open_fleets %}<th scope="col"><span class="visually-hidden">{% translate "Open" context "open a record" %}</span></th>{% endif %}</tr></thead>
       <tbody>
         {% for fleet in detail.fleets %}
         <tr>
-          <td>{{ fleet.started_at|eve_time }}</td>
-          <td>{% if fleet.ended_at %}{{ fleet.ended_at|eve_time }}{% else %}<span class="text-muted">&mdash;</span>{% endif %}</td>
-          <td>{{ fleet.fleet_type }}</td>
+          <td class="text-nowrap">{{ fleet.started_at|eve_time }}</td>
+          <td class="text-nowrap">{% if fleet.ended_at %}{{ fleet.ended_at|eve_time }}{% else %}<span class="text-muted">&mdash;</span>{% endif %}</td>
+          <td>{{ fleet.fleet_type }}{% if fleet.group_name %} {% pill "neutral" fleet.group_name class="fo-pill-group" icon="users" title=group_fleet_label %}{% endif %}</td>
           <td>{% if fleet.doctrine %}{{ fleet.doctrine }}{% else %}<span class="text-muted">&mdash;</span>{% endif %}</td>
           <td>{{ fleet.fc_name|default:"—" }}</td>
           <td>{{ fleet.character_name }}</td>
@@ -58,7 +62,7 @@
           {% if can_open_fleets %}<td class="text-end"><a href="{% url 'fleetops:operation_detail' fleet.operation_uuid %}">{% translate "Open" context "open a record" %}</a></td>{% endif %}
         </tr>
         {% empty %}
-        <tr><td colspan="9" class="text-muted p-4">{% translate "No PAP in this month." %}</td></tr>
+        <tr><td colspan="9"><div class="fo-empty"><i class="fa-regular fa-calendar" aria-hidden="true"></i><span>{% translate "No PAP in this month." %}</span></div></td></tr>
         {% endfor %}
       </tbody>
     </table>

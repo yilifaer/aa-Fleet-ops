@@ -443,9 +443,9 @@ class MemberDetailPageTests(DetailPageTestCase):
         finished = self.text(self.get(self.stats, self.alice))
         reached = self.text(self.get(self.stats, self.bob))
 
-        self.assertIn('class="badge text-bg-warning">Below minimum so far</span>', running)
-        self.assertIn('class="badge text-bg-danger">Below minimum</span>', finished)
-        self.assertIn('class="badge text-bg-success">OK</span>', reached)
+        self.assertIn('class="fo-pill fo-pill-warn">Below minimum so far</span>', running)
+        self.assertIn('class="fo-pill fo-pill-bad">Below minimum</span>', finished)
+        self.assertIn('class="fo-pill fo-pill-ok">OK</span>', reached)
         self.assertIn("Minimum 6 PAP", finished)
 
     def test_no_minimum_no_status_badge(self):

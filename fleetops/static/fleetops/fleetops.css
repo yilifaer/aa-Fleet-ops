@@ -464,6 +464,46 @@ button.fo-live { cursor: pointer; }
 /* end 6.C */
 
 /* 6.D home and statistics */
+/* Running fleets on the home page: one card per fleet, shown only while a fleet runs. The bar on the left is the
+   theme's success colour (a non-text signal; the card says "Live" in words). */
+.fo-running-title { margin: 0 0 var(--fo-space-2); font-size: 1.0625rem; font-weight: 600; }
+.fo-running-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--fo-space-3); }
+@media (min-width: 768px) { .fo-running-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1200px) { .fo-running-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.fo-running-card { display: flex; flex-direction: column; gap: var(--fo-space-2); min-width: 0; padding: var(--fo-space-4); border-radius: var(--fo-radius); background: var(--fo-surface-1); border-left: 4px solid var(--bs-success); box-shadow: var(--fo-shadow); }
+.fo-running-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fo-space-2); }
+.fo-running-fc { font-size: 1.0625rem; font-weight: 600; overflow-wrap: anywhere; }
+.fo-running-meta { display: flex; flex-wrap: wrap; gap: var(--fo-space-1) var(--fo-space-3); color: var(--fo-text-2); }
+.fo-running-action { margin-top: auto; padding-top: var(--fo-space-1); }
+.fo-running-action .btn { width: 100%; }
+@media (min-width: 768px) { .fo-running-action .btn { width: auto; } }
+.fo-running-more { margin-top: var(--fo-space-2); color: var(--fo-text-2); }
+/* The empty "top ships" message fills the whole grid, not one cell */
+.fleetops-ship-empty { grid-column: 1 / -1; }
+/* Month selector: the neighbours as a segmented control with the month between them. The words next to the
+   arrows only show from 576 px; the arrows keep their full name for screen readers. */
+.fo-period-nav .fo-period-word { display: none; margin-inline: .5rem; }
+@media (min-width: 576px) { .fo-period-nav .fo-period-word { display: inline; } }
+.fo-period-nav .fo-period-current { min-width: 5.5rem; font-variant-numeric: tabular-nums; }
+.fo-period-nav > a { min-width: 2.75rem; }
+/* Materia draws the year select only as wide as its arrow (42 px): give both selects room for a touch */
+.fleetops-period-selector .input-group > .form-select { min-width: 5.5rem; }
+/* Member tables: on phones the name stays in view while the table scrolls sideways, the rank moves into its cell
+   and keeps the colour of the row's status on its left edge. */
+@media (max-width: 767.98px) {
+  .fleetops-member-table .fo-pin-col { position: sticky; left: 0; z-index: 1; background-color: var(--fo-surface-solid); }
+  .fleetops .table > tbody > tr.fleetops-status-row-met > .fo-pin-col { border-left: 4px solid var(--bs-success); }
+  .fleetops .table > tbody > tr.fleetops-status-row-missed > .fo-pin-col { border-left: 4px solid var(--bs-danger); }
+  .fleetops .table > tbody > tr.fleetops-status-row-progress > .fo-pin-col { border-left: 4px solid var(--bs-warning); }
+}
+/* Two small buttons under each other in a table cell (corporation overview) keep the row narrow */
+.fo-row-buttons { display: inline-flex; flex-direction: column; align-items: stretch; gap: var(--fo-space-1); }
+/* A footer cell with a note under its figure ("all counted PAP") gets room for two lines of it */
+.fo-note-cell { min-width: 6.5rem; }
+/* A status pill in the small card of a figure wraps instead of running out of the card */
+.fleetops .stat-card .fo-pill { white-space: normal; }
+/* A figure with a caption in the corner of a card (My FC month) */
+.fleetops .card-body > .fo-metric-value { margin-bottom: var(--fo-space-1); }
 /* end 6.D */
 
 /* 6.E SRP and administration */

@@ -20,8 +20,8 @@
 </div>
 {% endif %}
 {% if stats.target.rule is None %}
-<div class="alert alert-secondary">
-  {% blocktranslate trimmed with minimum=stats.target.minimum %}No monthly target applies to this month, so there is no status and members are listed below a minimum of {{ minimum }} PAP.{% endblocktranslate %}
+<div class="alert alert-secondary" id="no-target-notice">
+  {% translate "No monthly target applies to this month, so corporations and members are not assessed." %}
   {% if perms.fleetops.manage_configuration %}{% url 'fleetops:configuration_list' 'statistics-targets' as targets_url %}{% blocktranslate trimmed with url=targets_url %}<a href="{{ url }}">Set monthly targets</a>.{% endblocktranslate %}{% endif %}
 </div>
 {% endif %}
@@ -35,7 +35,7 @@
 <div class="card">
   <div class="card-header"><strong>{% translate "Fleet type breakdown" %}</strong></div>
   <div class="table-responsive"><table class="table table-hover mb-0 align-middle"><thead><tr><th>{% translate "Fleet type" %}</th><th class="text-end">{% translate "Total PAP" %}</th><th class="text-end">{% translate "Average / main" %}</th></tr></thead><tbody>
-  {% for name,value in stats.breakdown.items %}<tr><td>{{ name }}</td><td class="text-end"><strong>{{ value }}</strong></td><td class="text-end">{% for k,v in stats.breakdown_average.items %}{% if k == name %}{{ v|floatformat:2 }}{% endif %}{% endfor %}</td></tr>{% empty %}<tr><td colspan="3" class="text-muted p-4">{% translate "No PAP in this month." %}</td></tr>{% endfor %}
+  {% for name,value in stats.breakdown.items %}<tr><td>{{ name }}</td><td class="text-end"><strong>{{ value }}</strong></td><td class="text-end">{% for k,v in stats.breakdown_average.items %}{% if k == name %}{{ v|floatformat:2 }}{% endif %}{% endfor %}</td></tr>{% empty %}<tr><td colspan="3"><div class="fo-empty"><i class="fa-solid fa-chart-simple" aria-hidden="true"></i><span>{% translate "No PAP in this month." %}</span></div></td></tr>{% endfor %}
   </tbody></table></div>
 </div>
 <div class="text-muted small mt-3">

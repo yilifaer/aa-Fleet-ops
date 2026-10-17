@@ -1,6 +1,7 @@
 {% extends "fleetops/base.html" %}
-{% load i18n %}
+{% load i18n fleetops_ui %}
 {% block fleetops_content %}
+{% translate "You" as you_label %}
 <div class="mb-3"><h2 class="mb-1">{% translate "PAP Leaderboard" %}</h2><div class="text-muted">{{ month_ref.label }}</div></div>
 {% if show_tabs %}{% include "fleetops/statistics/_tabs.html" %}{% endif %}
 {% include "fleetops/month_selector.html" %}
@@ -29,19 +30,19 @@
         <span class="small text-muted">{% blocktranslate trimmed count counter=board.ranked_count %}{{ counter }} member with PAP{% plural %}{{ counter }} members with PAP{% endblocktranslate %}</span>
       </div>
       <div class="table-responsive">
-        <table class="table table-sm table-hover align-middle mb-0">
+        <table class="table table-sm table-hover align-middle mb-0 fo-table-pin">
           <thead><tr><th scope="col">{% translate "Rank" %}</th><th scope="col">{% translate "Main" %}</th>{% if board.corporation_id is None %}<th scope="col">{% translate "Corporation" context "FleetOps" %}</th>{% endif %}<th scope="col" class="text-end">PAP</th><th scope="col" class="text-end">{% translate "Fleets" %}</th></tr></thead>
           <tbody>
             {% for item in entry.items %}
             <tr{% if item.is_viewer %} class="table-active"{% endif %}>
               <td><span class="fleetops-rank">{{ item.row.rank }}</span></td>
-              <td>{% if item.link %}<a class="fw-semibold text-decoration-none" href="{% url 'fleetops:member_detail' item.row.user_id %}?year={{ year }}&amp;month={{ month }}">{{ item.row.main_character_name }}</a>{% else %}<span class="fw-semibold">{{ item.row.main_character_name }}</span>{% endif %}{% if item.is_viewer %} <span class="badge text-bg-primary">{% translate "You" %}</span>{% endif %}</td>
+              <td>{% if item.link %}<a class="fw-semibold text-decoration-none" href="{% url 'fleetops:member_detail' item.row.user_id %}?year={{ year }}&amp;month={{ month }}">{{ item.row.main_character_name }}</a>{% else %}<span class="fw-semibold">{{ item.row.main_character_name }}</span>{% endif %}{% if item.is_viewer %} {% pill "info" you_label %}{% endif %}</td>
               {% if board.corporation_id is None %}<td title="{{ item.row.corporation_name }}">{% if item.row.corporation_ticker %}[{{ item.row.corporation_ticker }}]{% else %}{{ item.row.corporation_name }}{% endif %}</td>{% endif %}
               <td class="text-end"><strong>{{ item.row.pap }}</strong></td>
               <td class="text-end">{{ item.row.fleets }}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="5" class="text-muted p-4">{% translate "Nobody has PAP in this month yet." %}</td></tr>
+            <tr><td colspan="5"><div class="fo-empty"><i class="fa-solid fa-ranking-star" aria-hidden="true"></i><span>{% translate "Nobody has PAP in this month yet." %}</span></div></td></tr>
             {% endfor %}
           </tbody>
         </table>

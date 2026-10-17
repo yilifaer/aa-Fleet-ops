@@ -1,0 +1,26 @@
+{% load i18n fleetops_messages fleetops_ui %}{% if running_fleets %}{% translate "Group fleet" as group_fleet_label %}
+<section id="fo-running-fleets" class="fo-running mb-3" aria-labelledby="fo-running-title">
+  <h3 class="fo-running-title" id="fo-running-title">{% translate "Running fleets" %}</h3>
+  <div class="fo-running-grid">
+    {% for row in running_fleets|slice:":3" %}{% with op=row.operation %}
+    <article class="fo-running-card" data-operation="{{ op.uuid }}">
+      <div class="fo-running-head">
+        <span class="fo-live" data-state="live"><span class="fo-live-dot" aria-hidden="true"></span>{% translate "Live" %}</span>
+        {{ op.fleet_type|type_pill }}{% if op.group_name %}{% pill "neutral" op.group_name class="fo-pill-group" icon="users" title=group_fleet_label %}{% endif %}
+      </div>
+      <div class="fo-running-fc">{{ op.fc_character_name }}</div>
+      <div class="fo-running-meta">
+        <span>{% blocktranslate trimmed count counter=row.member_count %}{{ counter }} member{% plural %}{{ counter }} members{% endblocktranslate %}</span>
+        <span title="{% translate 'Started at' %} {{ op.started_at|eve_time }} EVE"><i class="fa-regular fa-clock" aria-hidden="true"></i> <span data-since-utc="{{ op.started_at|eve_time:'%Y-%m-%dT%H:%M:%SZ' }}">{{ op.started_at|eve_time }} EVE</span></span>
+        {% if row.show_system and row.fc_system_name %}<span><i class="fa-solid fa-location-dot" aria-hidden="true"></i> {{ row.fc_system_name }}</span>{% endif %}
+      </div>
+      <div class="fo-running-action">
+        {% if row.can_manage %}<a class="btn btn-primary" href="{% url 'fleetops:operation_detail' op.uuid %}#fleet">{% translate "Open command deck" %}</a>
+        {% else %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:operation_detail' op.uuid %}">{% translate "Open" context "open a record" %}</a>{% endif %}
+      </div>
+    </article>
+    {% endwith %}{% endfor %}
+  </div>
+  {% if running_fleets|length > 3 %}<p class="fo-running-more small mb-0">{% blocktranslate trimmed count counter=running_fleets|length|add:"-3" %}and {{ counter }} more running fleet{% plural %}and {{ counter }} more running fleets{% endblocktranslate %} <a href="{% url 'fleetops:fleet_operations' %}?status=active">{% translate "Show all running fleets" %}</a></p>{% endif %}
+</section>
+{% endif %}

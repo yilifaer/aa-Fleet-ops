@@ -12,14 +12,7 @@
     </div>
   </div>
   <div class="col-sm-auto"><button class="btn btn-primary" type="submit">{% translate "View Period" %}</button></div>
-  {% if previous_period or next_period %}
-  <div class="col-sm-auto ms-sm-auto">
-    <div class="btn-group" role="group" aria-label="{% translate 'Neighbouring months' %}">
-      {% if previous_period %}<a class="btn btn-outline-secondary" href="{% querystring year=previous_period.year month=previous_period.month page=None %}" title="{{ previous_period.label }}">&lsaquo; {% translate "Previous month" %}</a>{% endif %}
-      {% if next_period %}<a class="btn btn-outline-secondary" href="{% querystring year=next_period.year month=next_period.month page=None %}" title="{{ next_period.label }}">{% translate "Next month" %} &rsaquo;</a>{% endif %}
-    </div>
-  </div>
-  {% endif %}
+  {% if previous_period or next_period %}<div class="col-sm-auto ms-sm-auto">{% include "fleetops/partials/period_nav.html" %}</div>{% endif %}
 </form>
 {% if month_ref.is_current %}<div class="small text-muted mb-3">{% blocktranslate trimmed with day=month_ref.days_elapsed days=month_ref.days_in_month %}Month in progress &mdash; day {{ day }} of {{ days }} (EVE time){% endblocktranslate %}</div>
 {% elif month_ref.is_future %}<div class="small text-muted mb-3">{% translate "This month has not begun yet (EVE time)." %}</div>

@@ -9,6 +9,7 @@ from decimal import Decimal
 from unittest import mock
 from zoneinfo import ZoneInfo
 
+from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test import TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
@@ -750,13 +751,35 @@ class MyStatisticsAssessmentTests(TestCase):
         self.client.force_login(user)
         return self.client.get(reverse("fleetops:my_statistics"), {"year": 2026, "month": 3, **params})
 
-    def test_default_minimum_is_one_pap(self):
+    def test_a_month_without_a_target_is_not_assessed(self):
         response = self.page(self.dave)
 
-        self.assertEqual(response.context["minimum"], 1)
-        self.assertEqual(response.context["minimum_status"], "ok")
+        self.assertEqual((response.context["minimum"], response.context["minimum_status"]), (0, "none"))
+        self.assertTrue(response.context["no_target"])
         self.assertContains(response, "Monthly minimum")
-        self.assertContains(response, "1 PAP")
+        self.assertContains(response, "No target for this month")
+        self.assertNotContains(response, "Below minimum")
+        self.assertNotContains(response, "fo-pill-bad")
+        self.assertNotContains(response, "fo-pill-warn")
+
+    def test_a_member_who_registered_after_the_month_sees_why_there_is_no_status(self):
+        f.statistics_target(2026, 1, minimum=4)
+        get_user_model().objects.filter(pk=self.dave.pk).update(date_joined=utc(2026, 10, 14, 9))
+
+        response = self.page(self.dave, now=utc(2026, 10, 20, 12), year=2026, month=9)
+
+        self.assertTrue(response.context["registered_later"])
+        self.assertEqual(response.context["minimum_status"], "none")
+        self.assertContains(response, "Not assessed: you registered after this month.")
+        self.assertNotContains(response, "4 PAP")
+
+    def test_a_member_registered_before_the_month_end_is_assessed_as_usual(self):
+        f.statistics_target(2026, 1, minimum=4)
+
+        response = self.page(self.dave)
+
+        self.assertFalse(response.context["registered_later"])
+        self.assertNotContains(response, "Not assessed: you registered after this month.")
 
     def test_reached_minimum_is_green(self):
         f.statistics_target(2026, 1, minimum=4)
@@ -764,7 +787,7 @@ class MyStatisticsAssessmentTests(TestCase):
         response = self.page(self.alice)
 
         self.assertEqual(response.context["minimum_status"], "ok")
-        self.assertContains(response, "text-bg-success")
+        self.assertContains(response, "fo-pill-ok")
         self.assertContains(response, "4 PAP")
 
     def test_the_minimum_itself_is_enough(self):
@@ -780,7 +803,7 @@ class MyStatisticsAssessmentTests(TestCase):
         self.assertEqual(response.context["minimum_status"], "below")
         self.assertContains(response, "Below minimum")
         self.assertNotContains(response, "Below minimum so far")
-        self.assertContains(response, "text-bg-danger")
+        self.assertContains(response, "fo-pill-bad")
         self.assertContains(response, "3 more were needed")
 
     def test_below_the_minimum_in_the_running_month_is_amber(self):
@@ -790,8 +813,8 @@ class MyStatisticsAssessmentTests(TestCase):
 
         self.assertEqual(response.context["minimum_status"], "below_so_far")
         self.assertContains(response, "Below minimum so far")
-        self.assertContains(response, "text-bg-warning")
-        self.assertNotContains(response, "text-bg-danger")
+        self.assertContains(response, "fo-pill-warn")
+        self.assertNotContains(response, "fo-pill-bad")
         self.assertContains(response, "3 more to reach the minimum this month")
 
     def test_reaching_the_minimum_in_the_running_month_is_green(self):
@@ -800,7 +823,7 @@ class MyStatisticsAssessmentTests(TestCase):
         response = self.page(self.alice, now=utc(2026, 3, 20, 12))
 
         self.assertEqual(response.context["minimum_status"], "ok")
-        self.assertNotContains(response, "text-bg-warning")
+        self.assertNotContains(response, "fo-pill-warn")
 
     def test_no_minimum_when_it_is_zero(self):
         f.statistics_target(2026, 1, minimum=0)
