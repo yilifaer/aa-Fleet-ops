@@ -105,6 +105,13 @@ With test characters:
 - [ ] **PAP minimum time**: characters below it get no PAP.
 - [ ] **PAP characters per player** (try 1 and 2): further characters are "Capped (limit)"; the FC character, then
   the main, then the longest time in fleet keep the PAP.
+- [ ] **PAP characters per player of one fleet**: the Start Fleet page (and the PAP-link fleet page) offers the
+  field with the setting as default. As a normal FC a value above the setting, or an empty field, is refused; as an
+  FC lead any value and an empty field work. A preset keeps the value.
+- [ ] While the fleet runs, the control above the PAP preview lowers the limit; the preview changes at once and the
+  PAP at the close follows the latest value. A normal FC cannot raise it above the setting; an FC lead can.
+- [ ] After the close only an FC lead sees the control, asks for a reason, and the PAP is calculated again; the audit
+  log has the old and the new value and the reason (`pap.limit`).
 - [ ] Characters that are not in Alliance Auth are listed as "Not in Alliance Auth" and get no PAP.
 - [ ] A fleet that ended without a choice shows **Multiplier pending**; the FC settles it.
 - [ ] An FC lead overrides a multiplier with a reason; the audit log keeps it.

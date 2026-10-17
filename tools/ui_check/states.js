@@ -71,6 +71,16 @@ const states = {
     return { expect: /Discord accepts at most 2000/, note: 'the server answered with the ping-too-long error' };
   },
 
+  // 5-13: the PAP tab of a running fleet, where the control for the PAP characters per player sits above the preview.
+  async 'pap-tab'({ page }) {
+    await need(page, '[data-bs-target="#attendance"]', 'the PAP tab');
+    await page.click('[data-bs-target="#attendance"]');
+    await page.waitForSelector('#attendance.show.active', { timeout: 5000 });
+    // The pointer would otherwise stay on the tab and the check would measure its hover colour.
+    await page.mouse.move(0, 0);
+    return { expect: /PAP characters per player/, note: 'the PAP tab shows the control for the limit' };
+  },
+
   // FB02: an SRP payout rule with an amount but neither ship nor doctrine; the error belongs to the whole form.
   async 'config-error'({ page }) {
     await need(page, 'input[name=amount]', 'the amount field');

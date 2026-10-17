@@ -61,7 +61,9 @@ and `SrpCorporationLimit`. `AuditLog` records privileged actions with the old an
 and `CharacterAffiliation` cache what ESI said about characters Alliance Auth does not know.
 
 Rules that change over time are copied onto the fleet when it starts (fleet type weight, PAP minimum time,
-PAP character limit), so a later change of a setting never rewrites a fleet that already happened. Usage of the
+PAP character limit), so a later change of a setting never rewrites a fleet that already happened. The character
+limit starts as the FC chose it for that fleet (`services/pap_limit.py`: the setting is the default and the ceiling
+of everybody but FC leads) and can change while the fleet runs, and after it closed by FC leads. Usage of the
 SRP monthly limits is never stored: it is the sum of the approved and paid claims of the month.
 
 ## Fleet lifecycle

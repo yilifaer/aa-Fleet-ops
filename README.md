@@ -49,7 +49,8 @@ Status: beta. The first public pre-release is 0.2.0b1; read the CHANGELOG before
 **PAP**
 
 - PAP is granted when the fleet closes, to characters that reached the **PAP minimum time** or registered
-  through a PAP link, with an optional limit of characters per player. Alts count for their main.
+  through a PAP link, with an optional limit of characters per player that the FC can tighten for a single fleet
+  (FC leads can also loosen it). Alts count for their main.
 - PAP multipliers by fleet duration (for example 2x after 90 minutes and 3x after 180), chosen by the FC when
   ending or set automatically.
 - Manual fleets, manual PAP and pasted rosters wait for approval by an FC lead.

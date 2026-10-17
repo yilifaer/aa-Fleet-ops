@@ -881,6 +881,9 @@ class PermissionMatrixTests(SrpViewTestCase):
 
         return [
             *own_and_other("recalculate_pap", "recalculate_pap", self.own_closed, self.other_closed),
+            # The FC is refused after the close (an error message and a redirect); the FC lead changes the limit.
+            *own_and_other("set_pap_limit", "set_pap_limit", self.own_closed, self.other_closed,
+                           {"pap_character_limit": "1", "reason": "Matrix check"}),
             *own_and_other("set_stats_mode", "set_stats_mode", self.own_closed, self.other_closed,
                            {"mode": "exclude", "note": "Test fleet"}),
             Case("live_pap", "get", r("fleetops:live_pap"), None, dict.fromkeys(ROLES, OK)),

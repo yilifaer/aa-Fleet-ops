@@ -84,6 +84,7 @@ urlpatterns += [
 
 urlpatterns += [
     path("operations/<uuid:operation_uuid>/pap/recalculate/", views_pap.recalculate_pap_view, name="recalculate_pap"),
+    path("operations/<uuid:operation_uuid>/pap/limit/", views_pap.set_pap_limit_view, name="set_pap_limit"),
     path("operations/<uuid:operation_uuid>/statistics-inclusion/", views_pap.set_stats_mode_view, name="set_stats_mode"),
     path("api/me/live-pap/", views_pap.live_pap_partial, name="live_pap"),
     path("approvals/", views_records.approval_queue, name="approval_queue"),

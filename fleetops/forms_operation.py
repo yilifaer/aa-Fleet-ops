@@ -13,6 +13,7 @@ from django.utils import timezone
 from django.utils.translation import gettext
 from django.utils.translation import gettext_lazy as _
 
+from fleetops.constants import OVERRIDE_REASON_MIN_LENGTH
 from fleetops.forms_common import _style, _to_minute
 from fleetops.models import (
     MAX_DATABASE_ID,
@@ -72,7 +73,7 @@ class FleetAttendanceMultiplierForm(forms.Form):
     configured multiplier, with a written reason.
     """
 
-    REASON_MIN_LENGTH = 5
+    REASON_MIN_LENGTH = OVERRIDE_REASON_MIN_LENGTH
 
     attendance_multiplier = forms.TypedChoiceField(label=_("PAP multiplier"), choices=multiplier_choices, coerce=int)
     reason = forms.CharField(

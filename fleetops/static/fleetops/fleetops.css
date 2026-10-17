@@ -541,6 +541,18 @@ button.fo-live { cursor: pointer; }
 .fleetops #multiplier-pending .btn-group { gap: var(--fo-space-2); }
 /* end 6.C */
 
+/* 5-13 PAP characters per player of one fleet: a short number field on the start pages, and the control of the
+   fleet page (the number, the reason of a closed fleet and the button on one row, stacked on a phone) */
+.fleetops .fo-limit-field .form-control { max-width: 10rem; }
+.fleetops .fo-limit-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--fo-space-3); }
+.fleetops .fo-limit-form .fo-limit-reason { flex: 1 1 16rem; min-width: 0; }
+.fleetops .fo-limit-form .fo-limit-reason .form-control { max-width: none; }
+@media (max-width: 575.98px) {
+  .fleetops .fo-limit-form > * { flex: 1 1 100%; }
+  .fleetops .fo-limit-field .form-control { max-width: none; }
+}
+/* end 5-13 */
+
 /* 6.D home and statistics */
 /* Running fleets on the home page: one card per fleet, shown only while a fleet runs. The bar on the left is the
    theme's success colour (a non-text signal; the card says "Live" in words). */

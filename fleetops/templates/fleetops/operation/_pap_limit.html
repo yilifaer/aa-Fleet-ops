@@ -1,0 +1,13 @@
+{% load i18n %}
+{% if pap_limit_mode %}
+{% with form=pap_limit_form %}
+<div class="card mb-3" id="pap-limit-card"><div class="card-body">
+  <form method="post" action="{% url 'fleetops:set_pap_limit' operation.uuid %}" class="fo-limit-form" id="pap-limit-form">{% csrf_token %}
+    <div class="fo-limit-field">{{ form.pap_character_limit.label_tag }}{{ form.pap_character_limit }}</div>
+    {% if pap_limit_mode == 'closed' %}<div class="fo-limit-reason">{{ form.reason.label_tag }}{{ form.reason }}</div>{% endif %}
+    <button class="btn btn-outline-primary text-nowrap">{% if pap_limit_mode == 'closed' %}{% translate "Apply and recalculate PAP" %}{% else %}{% translate "Apply" %}{% endif %}</button>
+  </form>
+  <div class="form-text mt-2">{{ form.pap_character_limit.help_text }} {% if pap_limit_mode == 'closed' %}{% translate "The PAP of this fleet is calculated again with the new value; the old and the new value and the reason are kept in the audit log." %}{% else %}{% translate "PAP is granted with the value the fleet has when it closes." %}{% endif %}</div>
+</div></div>
+{% endwith %}
+{% endif %}

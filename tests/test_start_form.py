@@ -512,6 +512,7 @@ class StartWithChannelTests(StartFormTestBase):
                 "operation_mode": "full",
                 "ping_channel": "Ops",
                 "ping_mention_mode": HERE,
+                "pap_character_limit": None,
                 "from_schedule": False,
                 "handed_over_from": [],
                 # Added once the start steps ran.

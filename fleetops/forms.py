@@ -39,6 +39,7 @@ from fleetops.forms_operation import (  # noqa: F401 - record forms, re-exported
     manageable_attendance_operations,
     multiplier_choices,
 )
+from fleetops.forms_pap_limit import PapLimitChangeForm, PapLimitForm  # noqa: F401 - re-exported
 from fleetops.models import (
     ChannelPreset,
     CommsPreset,
@@ -49,7 +50,7 @@ from fleetops.models import (
 )
 from fleetops.providers.doctrines import get_doctrines
 from fleetops.providers.esi import fleet_token_flags
-from fleetops.services import group_access
+from fleetops.services import group_access, pap_limit
 from fleetops.services.identity import owned_characters
 from fleetops.services.mentions import (
     EVERYONE,
@@ -118,7 +119,7 @@ def character_choices(user):
     return choices
 
 
-class FleetSettingsForm(forms.Form):
+class FleetSettingsForm(PapLimitForm):
     """Fleet, communication and message fields shared by the start and the scheduled fleet forms."""
 
     fleet_type = forms.ModelChoiceField(label=_("Fleet type"), queryset=FleetType.objects.none())
@@ -180,8 +181,7 @@ class FleetSettingsForm(forms.Form):
     def __init__(self, *args, user=None, **kwargs):
         # Labels stand above their fields without a colon.
         kwargs.setdefault("label_suffix", "")
-        super().__init__(*args, **kwargs)
-        self.user = user
+        super().__init__(*args, user=user, **kwargs)
         self.fields["fleet_type"].queryset = start_fleet_types(user)
         self.fields["comms"].queryset = CommsPreset.objects.filter(is_active=True)
         self.fields["logi_channel"].queryset = ChannelPreset.objects.filter(is_active=True, channel_type=ChannelPreset.ChannelType.LOGI)
@@ -468,7 +468,15 @@ class ScheduledFleetForm(FleetSettingsForm):
 
     def __init__(self, *args, operation, user=None, **kwargs):
         if not args and "data" not in kwargs:
-            kwargs.setdefault("initial", {**scheduled_fleet_initial(operation), "edit_token": uuid.uuid4()})
+            kwargs.setdefault(
+                "initial",
+                {
+                    **scheduled_fleet_initial(operation),
+                    # What the fleet was scheduled with, unless this editor may not choose it (any more).
+                    "pap_character_limit": pap_limit.starting_value(user, operation.pap_character_limit),
+                    "edit_token": uuid.uuid4(),
+                },
+            )
         super().__init__(*args, user=user, **kwargs)
         self.operation = operation
         self.fields["fleet_date"].required = True
@@ -490,6 +498,10 @@ class ScheduledFleetForm(FleetSettingsForm):
             # The doctrine is no longer offered; keep its name as a custom doctrine.
             self.initial["doctrine_choice"] = ""
             self.initial["custom_doctrine"] = operation.doctrine_name
+
+    def omitted_limit(self):
+        # An edit that does not carry the field keeps what the fleet was scheduled with.
+        return pap_limit.starting_value(self.user, self.operation.pap_character_limit, self.pap_settings)
 
     def clean(self):
         data = super().clean()

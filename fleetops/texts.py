@@ -1283,3 +1283,35 @@ PING_REQUEST_USED = StoredText(gettext_noop("This form was already sent. Reload 
 # The audit entry of an Alliance Auth group that was deleted while FleetOps used it.
 AUDIT_GROUP_DELETED = StoredText(gettext_noop("The Alliance Auth group was deleted."))
 # --- end lane F ---
+
+# --- 0.2.0b2 PAP characters per player of one fleet (owner decision 5-13) ---
+PAP_LIMIT_ABOVE_SETTING = StoredText(
+    gettext_noop(
+        "PAP characters per player can be at most %(max)s here; "
+        "only FC leads can allow more or remove the limit."
+    ),
+    numbers=("max",),
+)
+PAP_LIMIT_RANGE = StoredText(
+    gettext_noop("PAP characters per player must be a whole number from 1 to %(max)s, or empty for no limit."),
+    numbers=("max",),
+)
+PAP_LIMIT_NOT_RUNNING = StoredText(
+    gettext_noop(
+        "The PAP characters per player can be changed while the fleet runs, "
+        "and by an FC lead after it has closed."
+    )
+)
+PAP_LIMIT_CLOSED_LEADS = StoredText(
+    gettext_noop("Only FC leads can change the PAP characters per player of a closed fleet.")
+)
+PAP_LIMIT_NEEDS_REASON = StoredText(
+    gettext_noop(
+        "Give a reason of at least %(count)s characters to change the PAP characters per player of a closed fleet."
+    ),
+    numbers=("count",),
+)
+PAP_LIMIT_LEGACY = StoredText(
+    gettext_noop("This fleet closed before PAP followed time in fleet, so its PAP does not use this limit.")
+)
+# --- end PAP characters per player ---

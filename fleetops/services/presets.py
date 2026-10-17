@@ -16,6 +16,7 @@ from django.utils.translation import gettext, gettext_lazy
 
 from fleetops import texts
 from fleetops.models import FleetStartPreset
+from fleetops.services import pap_limit
 from fleetops.services.identity import get_owned_character
 
 # Start form fields a preset never keeps: they belong to one start.
@@ -23,6 +24,7 @@ EXCLUDED_FIELDS = frozenset({"request_id", "fleet_timing", "fleet_date", "fleet_
 FC_CHARACTER = "fc_character_id"
 DOCTRINE = "doctrine_choice"
 CUSTOM_DOCTRINE = "custom_doctrine"
+PAP_LIMIT = pap_limit.FIELD
 # What a warning calls an item that is gone.
 ITEM_NAMES = {
     "fleet_group": gettext_lazy("Fleet for"),
@@ -112,10 +114,16 @@ def values_from_data(form, data):
     for name in preset_field_names(form):
         field = form.fields[name]
         raw = field.widget.value_from_datadict(data, {}, form.add_prefix(name))
+        if name == PAP_LIMIT and field.widget.value_omitted_from_data(data, {}, form.add_prefix(name)):
+            # Nothing was chosen: the preset leaves the limit to the setting.
+            continue
         try:
             cleaned_values[name] = field.clean(raw)
         except ValidationError:
             continue
+        # Fields whose choice depends on who the user is are checked like the form checks them.
+        if name == PAP_LIMIT and pap_limit.refusal(form.user, cleaned_values[name]):
+            del cleaned_values[name]
     return _preset_values(form, cleaned_values)
 
 
@@ -186,6 +194,7 @@ def load_preset(preset, form_class, user):
         else:
             initial[name] = value if isinstance(value, str) else ""
     _load_doctrine(form, stored, labels, initial, warnings)
+    _load_pap_limit(form, stored, user, initial, warnings)
     _load_fc_character(preset, user, labels, initial, warnings)
     return initial, warnings
 
@@ -241,6 +250,33 @@ def _load_doctrine(form, stored, labels, initial, warnings):
     warnings.append(
         gettext("Doctrine '%(name)s' is no longer available; it was entered as a custom doctrine.")
         % {"name": name}
+    )
+
+
+def _load_pap_limit(form, stored, user, initial, warnings):
+    """A saved limit the user may not choose (any more) is replaced by the form's default, with a warning."""
+    if PAP_LIMIT not in stored or PAP_LIMIT not in form.fields:
+        return
+    text = str(stored[PAP_LIMIT] or "")
+    if not text:
+        value = None
+    elif text.isascii() and text.isdigit():
+        value = int(text)
+    else:
+        # Not a number: refused below like a number out of range.
+        value = 0
+    if not pap_limit.refusal(user, value):
+        return
+    initial.pop(PAP_LIMIT, None)
+    default = form.fields[PAP_LIMIT].initial
+    warnings.append(
+        gettext(
+            "PAP characters per player (%(value)s) is more than you may choose now; the default %(default)s is used."
+        )
+        % {
+            "value": text or gettext("no limit"),
+            "default": default if default is not None else gettext("no limit"),
+        }
     )
 
 

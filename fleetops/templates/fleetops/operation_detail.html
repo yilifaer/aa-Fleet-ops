@@ -45,6 +45,7 @@
   <div role="tabpanel" class="tab-pane fade{% if default_tab != 'fleet' %} show active{% endif %}" id="attendance">
     {% include "fleetops/operation/_attendance_manual.html" %}
     {% include "fleetops/operation/_multiplier.html" %}
+    {% include "fleetops/operation/_pap_limit.html" %}
     <div id="pap-preview-fragment">{% include "fleetops/operation/_attendance_table.html" %}</div>
   </div>
 

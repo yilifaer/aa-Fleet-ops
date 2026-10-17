@@ -144,11 +144,12 @@ def _answer(result):
     return answer, status
 
 
-def fleet_response(request, operation, result):
+def fleet_response(request, operation, result, *, anchor="fleet"):
     """Answer a fleet action: JSON for the Fleet tab's scripts, a message and the fleet page for forms.
 
     ``result`` is the action's FleetActionResult or the FleetManageError it raised. The JSON
-    answer carries the Fleet tab's new state for viewers who may see the tab.
+    answer carries the Fleet tab's new state for viewers who may see the tab. A form post comes back to the
+    tab ``anchor`` of the fleet page.
     """
     answer, status = _answer(result)
     if wants_json(request):
@@ -159,7 +160,7 @@ def fleet_response(request, operation, result):
     if answer["message"]:
         MESSAGE_LEVELS[answer["level"]](request, answer["message"])
     url = reverse("fleetops:operation_detail", kwargs={"operation_uuid": operation.uuid})
-    return no_store(redirect(f"{url}#fleet"))
+    return no_store(redirect(f"{url}#{anchor}"))
 
 
 def run_fleet_action(request, operation, action, *args, **kwargs):

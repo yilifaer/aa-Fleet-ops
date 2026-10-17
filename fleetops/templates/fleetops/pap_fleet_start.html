@@ -23,6 +23,7 @@
       <div class="mb-3">{{ form.notes.label_tag }}{{ form.notes }}{{ form.notes.errors }}</div>
     </div></div></div>
     <div class="col-lg-6"><div class="card h-100"><div class="card-header"><strong>{% translate "PAP link" %}</strong></div><div class="card-body">
+      <div class="mb-3 fo-limit-field" id="pap-limit-field">{{ form.pap_character_limit.label_tag }}{{ form.pap_character_limit }}<div class="form-text">{{ form.pap_character_limit.help_text }}</div>{{ form.pap_character_limit.errors }}</div>
       <div class="mb-3">{{ form.link_minutes.label_tag }}{{ form.link_minutes }}{{ form.link_minutes.errors }}<div class="form-text">{% translate "You can create more links, or revoke this one, on the fleet page." %}</div></div>
       <div class="form-check">{{ form.require_online }} <label class="form-check-label" for="{{ form.require_online.id_for_label }}">{{ form.require_online.label }}</label><div class="form-text" id="{{ form.require_online.auto_id }}_helptext">{{ form.require_online.help_text }}</div></div>
     </div></div></div>

@@ -57,3 +57,10 @@ CAPSULE_TYPE_IDS = frozenset({670, 33328})
 
 # Largest ISK amount an SRP payout rule, cap or claim can hold.
 MAX_ISK = 10**15
+
+# The fewest characters of the written reason an FC lead gives for an override (a PAP multiplier the duration does
+# not allow, the PAP characters per player of a closed fleet).
+OVERRIDE_REASON_MIN_LENGTH = 5
+
+# The most PAP characters per player a fleet can allow; empty means no limit.
+MAX_PAP_CHARACTER_LIMIT = 1000

@@ -125,6 +125,9 @@ A page with a `states` entry is loaded and then driven by `states.js`; the page 
   ... characters; Discord accepts at most 2000." (no ESI call). In English the text must be on the page afterwards.
 - `config-error` (role `admin`): the SRP payout rule form is sent with an amount but neither ship nor doctrine; the
   model's "Choose a ship type, a doctrine, or both." is a form-level error.
+- `pap-tab` (roles `fc` and `lead`, pages `fleet-active-manager-pap` and `fleet-active-lead-pap`): the PAP tab of the
+  running fleet is opened, so the control for the PAP characters per player above the preview is on the page. In
+  English the text "PAP characters per player" must be on the page afterwards.
 
 States use field names (`name="additional_message"`), not ids or layout. The interaction states of the later harness
 (hover, menus, dialogs, drag) are added to `states.js` by the integration step.

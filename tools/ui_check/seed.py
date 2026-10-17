@@ -109,6 +109,7 @@ def build_pages():
         Page("start", "fc", u("start_fleet")),
         Page("presets", "fc", u("preset_list")),
         Page("fleet-active-manager", "fc", u("operation_detail", op("active"))),
+        Page("fleet-active-manager-pap", "fc", u("operation_detail", op("active")), states=("pap-tab",)),
         Page("fleet-nowrite", "fc_nowrite", u("operation_detail", op("active_nowrite"))),
         Page("scheduled", "fc", u("operation_detail", op("scheduled"))),
         Page("edit-scheduled", "fc", u("edit_scheduled_fleet", op("scheduled"))),
@@ -128,6 +129,8 @@ def build_pages():
         Page("fleet-rejected", "lead", u("operation_detail", op("manual_rejected"))),
         Page("fleet-resubmitted", "lead", u("operation_detail", op("manual_resubmitted"))),
         Page("fleet-active-lead", "lead", u("operation_detail", op("active"))),
+        Page("fleet-active-lead-pap", "lead", u("operation_detail", op("active")), states=("pap-tab",)),
+        Page("fleet-closed-lead", "lead", u("operation_detail", op("closed"))),
         Page("operations-lead", "lead", u("fleet_operations")),
         # corp
         Page("corp-stats", "corp", u("corporation_statistics")),
@@ -277,7 +280,8 @@ def build_data(login_count):
     solo.fleet_live_refresh_seconds = 0
     solo.incentive_enabled = True
     solo.incentive_minimum_fleets = 2
-    solo.attendance_limit = None
+    # The default of the PAP characters per player of a new fleet: normal FCs see it as their ceiling.
+    solo.attendance_limit = 3
     solo.save()
 
     # ---- users ----------------------------------------------------------------------------------------

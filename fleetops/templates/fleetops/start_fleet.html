@@ -99,6 +99,9 @@
       <div class="mb-3">{{ form.doctrine_choice.label_tag }}{{ form.doctrine_choice }}{{ form.doctrine_choice.errors }}</div>
       <div class="mb-3" id="custom-doctrine-wrap">{{ form.custom_doctrine.label_tag }}{{ form.custom_doctrine }}</div>
       <div class="mb-3">{{ form.formup.label_tag }}{{ form.formup }}<div class="form-text">{% translate "Entered by the FC for this fleet; not an admin preset." %}</div>{{ form.formup.errors }}</div>
+      {% if form.pap_character_limit %}
+      <div class="mb-3 fo-limit-field" id="pap-limit-field">{{ form.pap_character_limit.label_tag }}{{ form.pap_character_limit }}<div class="form-text">{{ form.pap_character_limit.help_text }}</div>{{ form.pap_character_limit.errors }}</div>
+      {% endif %}
     </div></div></div>
     <div class="col-lg-6"><div class="card h-100"><div class="card-header"><strong>{% translate "Communication" %}</strong></div><div class="card-body">
       <div class="mb-3">{{ form.comms.label_tag }}{{ form.comms }}</div>

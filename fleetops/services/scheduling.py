@@ -13,6 +13,7 @@ from django.utils import timezone
 from fleetops import texts
 from fleetops.models import AuditLog, FleetOperation, OperationAction
 from fleetops.providers.doctrines import doctrine_fits_snapshot
+from fleetops.services import pap_limit
 from fleetops.services.audit import audit
 from fleetops.services.errors import report_failure
 from fleetops.services.messages import render_cancellation_notice, render_messages
@@ -62,6 +63,7 @@ EDITABLE_FIELDS = (
     "motd_template",
     "additional_message",
     "scheduled_at",
+    "pap_character_limit",
 )
 # Foreign keys among them; the audit lists their primary keys.
 _RELATIONS = {"fleet_type", "comms", "logi_channel", "boost_channel", "ping_channel", "ping_template", "motd_template"}
@@ -117,7 +119,14 @@ def schedule_fleet(*, user, cleaned_data, request_id=None) -> FleetOperation:
     refusal = start_refusal(user, cleaned_data, full_mode=True, pre_ping=True)
     if refusal:
         raise PermissionError(refusal)
-    values = {"created_by": user, **fc_values(user, character), **fleet_values(cleaned_data)}
+    # The limit chosen now is the one the fleet starts with, as long as its starter may still choose it.
+    pap_limit.check_start(user, cleaned_data)
+    values = {
+        "created_by": user,
+        **fc_values(user, character),
+        **fleet_values(cleaned_data),
+        "pap_character_limit": pap_limit.chosen_limit(cleaned_data),
+    }
     try:
         with transaction.atomic():
             operation = FleetOperation.objects.create(
@@ -142,6 +151,7 @@ def schedule_fleet(*, user, cleaned_data, request_id=None) -> FleetOperation:
                     "fleet_type": str(operation.fleet_type),
                     "ping_channel": operation.ping_channel_name,
                     "ping_mention_mode": operation.ping_mention_mode,
+                    "pap_character_limit": operation.pap_character_limit,
                 },
             )
     except IntegrityError:
@@ -185,6 +195,9 @@ def update_scheduled_fleet(operation, *, actor, cleaned_data, send_update: bool,
         already_posted = not cache.add(_edit_post_key(operation, edit_token), True, EDIT_POST_TTL)
         send_update = not already_posted
     values = fleet_values({**cleaned_data, "operation_mode": "full"})
+    if pap_limit.FIELD in cleaned_data:
+        pap_limit.check_start(actor, cleaned_data)
+        values[pap_limit.FIELD] = cleaned_data[pap_limit.FIELD]
     with transaction.atomic():
         current = FleetOperation.objects.select_for_update().get(pk=operation.pk)
         if current.status != Status.SCHEDULED:

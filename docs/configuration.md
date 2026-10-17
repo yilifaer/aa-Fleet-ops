@@ -60,13 +60,13 @@ no longer exists or the FC left it". The fleet page warns while polls fail.
 ### PAP rules
 
 These three settings apply to fleets that start after a change. A running or closed fleet keeps the values it
-started with.
+started with. **PAP characters per player** is only the default: each fleet has its own value (see below).
 
 | Setting | Default | Meaning |
 |---|---|---|
 | PAP multiplier mode | FC chooses when ending | **FC chooses when ending**: End Fleet asks the FC for the multiplier once the fleet passed a tier; a fleet that ends without a choice gets 1x until the FC chooses. **Automatic by fleet duration**: the fleet gets the highest multiplier its duration allows. |
 | PAP minimum time | 0 | Minutes a character must spend in the fleet to receive PAP. 0 means any presence. Up to 1440. |
-| PAP characters per player | empty | Most characters of one Alliance Auth user that receive PAP in one fleet. Empty means no limit. |
+| PAP characters per player | empty | Most characters of one Alliance Auth user that receive PAP in one fleet. Empty means no limit. It is the default of the field of the same name on the Start Fleet page, and the most FCs may choose there. |
 
 Rules behind these settings:
 
@@ -79,6 +79,17 @@ Rules behind these settings:
 - Over **PAP characters per player**, the FC character gets the PAP first, then the player's main, then the
   character with the longest time in fleet (then the one seen first). The others are listed as "Capped
   (limit)".
+- **PAP characters per player of one fleet.** A fleet starts with the value of the Start Fleet field "PAP characters
+  per player" (the setting is the default; empty means no limit). The value is saved in presets, and the PAP-link
+  fleet page and the edit page of a scheduled fleet have the same field; a pre-pinged fleet starts with the value
+  it was scheduled with. While the fleet runs, FCs change it in the control above the PAP preview on the **PAP**
+  tab; the preview follows at once and PAP is granted at the close with the latest value. FCs and group leaders may
+  only lower it: the value must not be higher than the setting when the setting is set (when it is empty, any
+  value). FC leads (`manage_fleets`) may choose any value, including no limit. After the fleet has closed only FC
+  leads can change it, with a written reason of at least 5 characters (the same rule as a multiplier override);
+  the PAP of the fleet is then calculated again, PAP rows whose credit changes get a new time, and the FC points
+  of the month are checked. Every change is audited as `pap.limit` with the old and the new value and the
+  reason. Fleets that were closed before PAP followed time in fleet do not use the limit.
 - Characters that are not in Alliance Auth get no PAP and are listed as "Not in Alliance Auth". **Recalculate
   PAP** on the closed fleet grants it once they were added to Alliance Auth.
 - PAP belongs to the character's owner and counts for the owner's main and the main's corporation, also when

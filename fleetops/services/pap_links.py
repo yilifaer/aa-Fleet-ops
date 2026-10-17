@@ -25,6 +25,7 @@ from fleetops import texts
 from fleetops.models import FleetOperation, FleetOpsSettings, PapLink, PapRegistration
 from fleetops.providers.doctrines import doctrine_fits_snapshot
 from fleetops.providers.esi import FleetESIError, character_location, character_online, character_ship
+from fleetops.services import pap_limit
 from fleetops.services.audit import audit
 from fleetops.services.errors import log_failure
 from fleetops.services.operations import (
@@ -309,6 +310,8 @@ def start_link_only_fleet(user, cleaned_data):
         return existing
     character = owned_fleet_character(user, cleaned_data["fc_character_id"])
     settings = FleetOpsSettings.get_solo()
+    # The form checks the limit; a start that did not come through it is refused here too.
+    pap_limit.check_start(user, cleaned_data, settings)
     fleet_type = cleaned_data["fleet_type"]
     source = cleaned_data.get("doctrine_source") or "none"
     external_id = cleaned_data.get("doctrine_external_id") or ""
@@ -335,7 +338,7 @@ def start_link_only_fleet(user, cleaned_data):
                 link_only=True,
                 attendance_multiplier=1,
                 # The PAP rules of the fleet are the ones in force when it starts.
-                **pap_rule_values(settings),
+                **pap_rule_values(settings, limit=pap_limit.chosen_limit(cleaned_data, settings)),
                 **initial_review_fields(user, now),
             )
             link = create_link(
@@ -359,6 +362,7 @@ def start_link_only_fleet(user, cleaned_data):
                     "fc_character_id": operation.fc_character_id,
                     "fleet_type": str(fleet_type),
                     "operation_mode": "pap_link",
+                    "pap_character_limit": operation.pap_character_limit,
                     "link_only": True,
                     "from_schedule": False,
                     "review_status": operation.review_status,

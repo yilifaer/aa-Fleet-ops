@@ -17,7 +17,7 @@ staff 或 superuser 账号。
 | `fleetops.manage_own_fleet` | Can manage own fleets | 结束、编辑、重试和控制自己担任 FC、或通过特殊角色获得 FC 积分的舰队：重新生成并推送 MOTD、踢人、舰队页的"舰队"标签（联队、中队、移动成员、邀请、结构模板）、PAP 登记链接、把舰队排除出统计、处理待定的 PAP 倍率选择，以及编辑或取消自己预约的舰队。 |
 | `fleetops.view_all_fleets` | Can view all fleet records | 读取全部舰队档案，打开任何舰队记录，包括预约舰队、进行中舰队的成员列表及其"舰队"标签（只读）。不带任何编辑或控制权。 |
 | `fleetops.create_manual_fleet` | Can create manual fleet records | 添加不经 ESI 追踪的补录（历史）舰队记录。 |
-| `fleetops.manage_fleets` | Can manage all fleets | 管理所有舰队，不论 FC 是谁，包括编辑或取消任何预约舰队，以及任何进行中舰队的"舰队"标签。不能开启别的 FC 预约的舰队。同时它也是 PAP 规则里的"FC 主管"权限：通过或拒绝补录舰队、补录 PAP、粘贴名单、PAP 登记链接舰队和被修改过时间的舰队（自己提交的记录直接生效），在时长规则之外设置 PAP 倍率（必须写明理由），强制把舰队计入统计或撤销排除，删除已通过的补录 PAP。 |
+| `fleetops.manage_fleets` | Can manage all fleets | 管理所有舰队，不论 FC 是谁，包括编辑或取消任何预约舰队，以及任何进行中舰队的"舰队"标签。不能开启别的 FC 预约的舰队。同时它也是 PAP 规则里的"FC 主管"权限：通过或拒绝补录舰队、补录 PAP、粘贴名单、PAP 登记链接舰队和被修改过时间的舰队（自己提交的记录直接生效），在时长规则之外设置 PAP 倍率（必须写明理由），给一支舰队设置超过设置值的"每位玩家的 PAP 角色数"或不限，舰队结束之后修改这个值（必须写明理由），强制把舰队计入统计或撤销排除，删除已通过的补录 PAP。 |
 | `fleetops.view_corp_stats` | Can view own corporation statistics | 查看自己所在军团的统计、成员、不活跃成员、成员页、PAP 历史及其导出。 |
 | `fleetops.view_all_stats` | Can view all FleetOps statistics | 查看全联盟统计：所有军团、全部成员和不活跃成员、每个成员页、FC 统计、PAP 历史、排行榜和所有统计导出。只看统计；打开舰队记录需要 `view_all_fleets` 或 `manage_fleets`。 |
 | `fleetops.manage_attendance` | Can manage attendance | 在自己可管理的舰队上补录 PAP（按名字、ID 或粘贴名单），在 FC 主管通过之前删除自己的记录，重新计算 PAP，在时长规则范围内修改已结束舰队的 PAP 倍率。与 `manage_fleets` 同时拥有时对所有舰队生效。 |
@@ -81,7 +81,7 @@ FC 可以只读地查看所有历史舰队和所有进行中舰队的"舰队"标
 - `fleetops.manage_configuration`
 - `fleetops.view_audit_log`
 
-FC 主管管理所有舰队，审批补录记录，覆盖 PAP 倍率，查看全部统计和操作日志，运行 FC 奖金（需先勾选"启用 FC 奖金"），并管理 FleetOps 的设置。
+FC 主管管理所有舰队，审批补录记录，覆盖 PAP 倍率和每位玩家的 PAP 角色数，查看全部统计和操作日志，运行 FC 奖金（需先勾选"启用 FC 奖金"），并管理 FleetOps 的设置。
 如果 FC 主管同时负责 SRP，再加上 `fleetops.request_srp` 和 `fleetops.manage_srp`。
 
 ### SRP 管理员
@@ -210,6 +210,9 @@ FC 把舰队 Boss 交给了别人、舰队读不出来、FC 角色没有带写�
 | 结束舰队时选择 PAP 倍率 | 有权结束该舰队的人。服务器只允许舰队时长已达到的倍率。 |
 | 在时长规则范围内修改已结束舰队的倍率 | 该舰队上的 `manage_attendance`。舰队的 FC（`manage_own_fleet`）始终可以处理待定的选择。 |
 | 设置超出时长规则的倍率 | `manage_fleets`，必须写至少 5 个字符的理由（记为 `attendance.multiplier`，来源为 "override"） |
+| 在"开舰队"页、PAP 登记链接舰队页和预约舰队编辑页为一支舰队选择 **每位玩家的 PAP 角色数** | FC 和小组组长：设置里有数时不能超过它（设置为空时可填任何值）；`manage_fleets`：任何值，包括不限 |
+| 修改进行中舰队的 **每位玩家的 PAP 角色数**（PAP 预览上方的控件） | 能管理该舰队的人，规则相同：不超过设置值，有 `manage_fleets` 则可填任何值（记为 `pap.limit`） |
+| 修改已结束舰队的 **每位玩家的 PAP 角色数**（会重新计算 PAP） | 只有 `manage_fleets`，必须写至少 5 个字符的理由（记为 `pap.limit`）。FC 和小组组长在舰队结束后不能再改。 |
 | 重新计算已结束舰队的 PAP | 该舰队上的 `manage_attendance` |
 | 把舰队排除出统计（"不计入"，必须写理由） | 管理该舰队的人 |
 | 强制计入（"始终计入"）或恢复自动规则 | `manage_fleets` |

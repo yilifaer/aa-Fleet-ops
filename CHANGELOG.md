@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.0b2] - Unreleased
+
+### Changes since the 0.2.0b1 test build
+
+- **PAP characters per player for one fleet.** The setting stays the default, but the FC can now choose the value
+  of a single fleet: on the Start Fleet page (also in presets, on the PAP-link fleet page and when editing a
+  scheduled fleet) and, while the fleet runs, in a control above the PAP preview on the fleet page. FCs and group
+  leaders may only lower it; FC leads may choose any value, including no limit, and are the only ones who can change
+  it after the fleet closed, with a written reason. The PAP of a closed fleet is calculated again then. Every
+  change is audited as `pap.limit`.
+
 ## [0.2.0b1] - Unreleased
 
 The first public pre-release. It covers everything since 0.1.0a5: pre pings and a new ping and MOTD, PAP rules

@@ -22,7 +22,7 @@ from fleetops.providers.doctrines import doctrine_fits_snapshot
 from fleetops.providers.esi import FleetESIError, detect_character_fleet, set_fleet_motd
 from fleetops.providers.pings import send_discord_webhook
 from fleetops.providers.srp import create_srp_link
-from fleetops.services import group_access, incentives
+from fleetops.services import group_access, incentives, pap_limit
 from fleetops.services.audit import audit
 from fleetops.services.counting import evaluate_stats_inclusion
 from fleetops.services.errors import log_failure, report_failure
@@ -323,15 +323,19 @@ def fleet_values(cleaned_data):
     }
 
 
-def pap_rule_values(settings=None) -> dict:
+_SETTING = object()
+
+
+def pap_rule_values(settings=None, *, limit=_SETTING) -> dict:
     """The PAP minimum time and the per-player character limit a fleet keeps from its start on.
 
-    Later changes of the settings never alter the PAP of a fleet that already started.
+    Later changes of the settings never alter the PAP of a fleet that already started. ``limit`` is the limit
+    the FC chose for this fleet (None = no limit); without it the fleet takes the setting.
     """
     settings = settings or FleetOpsSettings.get_solo()
     return {
         "pap_minimum_minutes": settings.pap_minimum_minutes,
-        "pap_character_limit": settings.attendance_limit,
+        "pap_character_limit": pap_limit.setting_limit(settings) if limit is _SETTING else limit,
     }
 
 
@@ -406,10 +410,15 @@ def finish_handovers(handed_over):
 def record_start(operation, actor, *, character, from_schedule, handed_over):
     """The one ``fleet.start`` audit entry of a start, plus one entry per handover it caused.
 
-    A fleet that started from a schedule takes its PAP rules here, when it starts.
+    A fleet that started from a schedule takes its PAP rules here, when it starts; the PAP characters per player
+    stay as they were chosen when the fleet was scheduled, unless the starter may not choose that value any more.
     """
     if from_schedule or operation.pap_minimum_minutes is None:
-        for name, value in pap_rule_values().items():
+        settings = FleetOpsSettings.get_solo()
+        rules = pap_rule_values(settings)
+        if from_schedule:
+            rules["pap_character_limit"] = pap_limit.starting_value(actor, operation.pap_character_limit, settings)
+        for name, value in rules.items():
             setattr(operation, name, value)
         operation.save(update_fields=["pap_minimum_minutes", "pap_character_limit", "updated_at"])
     set_action(operation, "fleet_detection", True)
@@ -428,6 +437,7 @@ def record_start(operation, actor, *, character, from_schedule, handed_over):
             "operation_mode": "full" if operation.send_ping else "attendance_only",
             "ping_channel": operation.ping_channel_name,
             "ping_mention_mode": operation.ping_mention_mode,
+            "pap_character_limit": operation.pap_character_limit,
             "from_schedule": from_schedule,
             "handed_over_from": [record.pk for record, _old_status in handed_over],
         },
@@ -475,6 +485,7 @@ def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None
     refusal = start_refusal(user, cleaned_data, full_mode=full_mode)
     if refusal:
         raise PermissionError(refusal)
+    pap_limit.check_start(user, cleaned_data)
     detection = detect_fleet_boss(user, character)
     values = operation_values(cleaned_data, user=user, character=character)
     try:
@@ -499,7 +510,7 @@ def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None
                 tracking_enabled=True,
                 attendance_multiplier=1,
                 is_manual=False,
-                **pap_rule_values(settings),
+                **pap_rule_values(settings, limit=pap_limit.chosen_limit(cleaned_data, settings)),
                 **values,
             )
             record_start(operation, user, character=character, from_schedule=False, handed_over=handed_over)

@@ -1231,6 +1231,10 @@ def edit_scheduled_fleet(request, operation_uuid):
             send_update=data["send_update"],
             edit_token=data.get("edit_token"),
         )
+    except PermissionError as exc:
+        # The form checks the same rules; this is a post that did not come through it.
+        form.add_error(None, translate_stored(str(exc)))
+        return _start_page(request, form, operation)
     except ValueError as exc:
         messages.info(request, translate_stored(str(exc)))
     else:

@@ -56,6 +56,7 @@
       <tr><th>{% translate "Logi" %}</th><td>{{ operation.logi_channel.channel_value|default:"—" }}</td></tr>
       <tr><th>{% translate "Boost" %}</th><td>{{ operation.boost_channel.channel_value|default:"—" }}</td></tr>
       <tr><th>{% translate "Ping channel" %}</th><td>{{ operation.ping_channel_name|default:_("No Discord message (copy only)") }}</td></tr>
+      <tr><th>{% translate "PAP characters per player" %}</th><td>{% if operation.pap_character_limit %}{{ operation.pap_character_limit }}{% else %}{% translate "No limit" %}{% endif %}</td></tr>
       <tr><th>{% translate "Ping target" %}</th><td>{{ mention_label }}</td></tr>
       <tr><th>{% translate "Templates" %}</th><td>{{ operation.ping_template.name|default:_("Default ping") }} · {{ operation.motd_template.name|default:_("Default MOTD") }}</td></tr>
       {% if operation.additional_message %}<tr><th>{% translate "Additional information" %}</th><td class="text-break">{{ operation.additional_message|linebreaksbr }}</td></tr>{% endif %}
