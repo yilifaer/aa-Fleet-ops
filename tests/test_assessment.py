@@ -9,7 +9,6 @@ from decimal import Decimal
 from django.test import SimpleTestCase, TestCase
 
 from fleetops.services.assessment import (
-    DEFAULT_MEMBER_MINIMUM,
     STATUS_LABELS,
     MonthTarget,
     competition_ranks,
@@ -37,11 +36,10 @@ def target(average=None, minimum=1):
 
 
 class MonthTargetTests(TestCase):
-    def test_no_rows_means_no_target_and_a_minimum_of_one(self):
+    def test_no_rows_means_no_target_and_nothing_to_assess(self):
         result = month_target(2026, 10)
         self.assertIsNone(result.average)
-        self.assertEqual(result.minimum, DEFAULT_MEMBER_MINIMUM)
-        self.assertEqual(DEFAULT_MEMBER_MINIMUM, 1)
+        self.assertEqual(result.minimum, 0)
         self.assertIsNone(result.rule)
 
     def test_an_earlier_row_applies(self):
@@ -59,7 +57,8 @@ class MonthTargetTests(TestCase):
         f.statistics_target(2026, 11, "3.00", minimum=2)
         result = month_target(2026, 10)
         self.assertIsNone(result.average)
-        self.assertEqual(result.minimum, DEFAULT_MEMBER_MINIMUM)
+        self.assertEqual(result.minimum, 0)
+        self.assertIsNone(result.rule)
 
     def test_the_latest_row_up_to_the_month_wins(self):
         f.statistics_target(2026, 1, "1.00", minimum=1)
@@ -81,6 +80,17 @@ class MonthTargetTests(TestCase):
         self.assertEqual(month_target(2026, 1).average, Decimal("2.00"))
         self.assertEqual(month_target(2026, 12).average, Decimal("2.00"))
         self.assertIsNone(month_target(2025, 10).average)
+
+    def test_a_month_before_the_first_row_is_not_assessed(self):
+        f.statistics_target(2026, 6, "2.00", minimum=3)
+        before = month_target(2026, 5)
+
+        self.assertIsNone(before.rule)
+        self.assertEqual((before.average, before.minimum), (None, 0))
+        for ref in (RUNNING, FINISHED):
+            with self.subTest(ref=ref.label):
+                self.assertEqual(member_status(0, before, ref), "none")
+                self.assertEqual(corporation_status(0, 5, before, ref), "none")
 
     def test_a_row_without_target_still_sets_the_minimum(self):
         f.statistics_target(2026, 1, None, minimum=0)
@@ -155,7 +165,7 @@ class MemberStatusTests(SimpleTestCase):
         self.assertEqual(member_status(2, target(minimum=3), FINISHED), "below")
         self.assertEqual(member_status(2, target(minimum=3), RUNNING), "below_so_far")
 
-    def test_zero_pap_is_below_the_default_minimum(self):
+    def test_zero_pap_is_below_a_minimum_of_one(self):
         self.assertEqual(member_status(0, target(), FINISHED), "below")
         self.assertEqual(member_status(0, target(), RUNNING), "below_so_far")
 

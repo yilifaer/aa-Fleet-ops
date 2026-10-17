@@ -57,7 +57,10 @@ def open_workbook(response):
 
 
 def sheet_cells(archive, part="xl/worksheets/sheet1.xml"):
-    """{ref: (value, type, style)} plus the row numbers in document order."""
+    """{ref: (value, type, style)} plus the row numbers in document order.
+
+    An empty cell is written as an element without content and has the value None.
+    """
     root = ElementTree.fromstring(archive.read(part))
     cells, row_numbers = {}, []
     for row in root.find("m:sheetData", NS):
@@ -66,7 +69,8 @@ def sheet_cells(archive, part="xl/worksheets/sheet1.xml"):
             if cell.get("t") == "inlineStr":
                 value = "".join(t.text or "" for t in cell.iter(f"{{{MAIN}}}t"))
             else:
-                value = cell.find("m:v", NS).text
+                found = cell.find("m:v", NS)
+                value = None if found is None else found.text
             cells[cell.get("r")] = (value, cell.get("t"), cell.get("s"))
     return cells, row_numbers
 
@@ -407,14 +411,26 @@ class XlsxExportTests(SimpleTestCase):
             with self.subTest(index=index):
                 self.assertEqual(column_letter(index), letters)
 
-    def test_empty_cells_are_omitted(self):
-        archive = open_workbook(self.export([["Alice", None, ""]]))
+    def test_empty_cells_are_written_so_every_row_keeps_its_columns(self):
+        archive = open_workbook(self.export([["Alice", None, ""], [None, 3, None]]))
         cells, rows = sheet_cells(archive)
 
-        self.assertEqual(rows, [1, 2])
-        self.assertIn("A2", cells)
-        self.assertNotIn("B2", cells)
-        self.assertNotIn("C2", cells)
+        self.assertEqual(rows, [1, 2, 3])
+        # A cell element for every column of every row; the empty ones have no value and no type.
+        self.assertEqual([ref for ref in cells if ref.endswith("2")], ["A2", "B2", "C2"])
+        self.assertEqual(cells["A2"][0], "Alice")
+        self.assertEqual(cells["B2"], (None, None, None))
+        self.assertEqual(cells["C2"], (None, None, None))
+        self.assertEqual(cells["A3"], (None, None, None))
+        self.assertEqual(cells["B3"][0], "3")
+        # The file is well-formed XML in a valid package.
+        self.assertIsNone(archive.testzip())
+
+    def test_a_row_without_a_rank_still_starts_in_column_a(self):
+        archive = open_workbook(self.export([[None, "Pilot A", 5]]))
+        raw = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
+
+        self.assertIn('<row r="2"><c r="A2"/><c r="B2" t="inlineStr">', raw)
 
     def test_datetimes_and_bools(self):
         columns = [Column("start", "Fleet start (EVE)", "datetime"), Column("waived", "Waived", "bool")]
@@ -432,7 +448,8 @@ class XlsxExportTests(SimpleTestCase):
         cells, _rows = sheet_cells(archive)
 
         self.assertEqual(cells["A2"][0], "abcdef\tg\nh")
-        self.assertNotIn("A3", cells)
+        # A text that is empty once the invalid characters are gone is an empty cell.
+        self.assertEqual(cells["A3"], (None, None, None))
 
     def test_carriage_returns_become_line_feeds(self):
         archive = open_workbook(self.export([["one\r\ntwo\rthree", 1, 1]]))
@@ -510,7 +527,7 @@ class XlsxExportTests(SimpleTestCase):
         self.assertEqual(cells["B2"], ("2026-10", "inlineStr", None))
         self.assertEqual(cells["B3"][0], "2026-10-12 08:15")
         self.assertEqual(cells["B4"], ("4.50", None, None))
-        self.assertNotIn("B5", cells)
+        self.assertEqual(cells["B5"], (None, None, None))
         root = ElementTree.fromstring(archive.read("xl/worksheets/sheet2.xml"))
         self.assertIsNone(root.find("m:sheetViews/m:sheetView/m:pane", NS))
 
@@ -526,7 +543,7 @@ class XlsxExportTests(SimpleTestCase):
         cells, _rows = sheet_cells(archive)
 
         self.assertEqual(cells["A2"][0], "Alice")
-        self.assertNotIn("B2", cells)
+        self.assertEqual(cells["B2"], (None, None, None))
         self.assertEqual(cells["C2"][0], "2")
 
     def test_table_without_columns(self):

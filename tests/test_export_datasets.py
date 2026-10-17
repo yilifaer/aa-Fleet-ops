@@ -307,6 +307,13 @@ class CorporationsDatasetTests(DatasetTestCase):
         self.assertEqual(info["Corporations meeting the target"], "1 of 2")
         self.assertEqual(info["Fleets not counted"], "1 excluded; 2 waiting for approval")
         self.assertIn("month the fleet started (EVE time)", info["Counting rule"])
+        notes = [value for label, value in table.about if label == "Note"]
+        self.assertEqual(len(notes), 2)
+        self.assertTrue(notes[0].startswith("Alliance row: the total is every counted PAP of the month"))
+        self.assertIn("the average is the PAP of the current mains divided by the mains.", notes[0])
+        self.assertTrue(notes[1].startswith("Corporation rows: PAP is every PAP flown for the corporation that month"))
+        self.assertIn("including pilots who registered later", notes[1])
+        self.assertIn("Mains and the average count only members registered before the month ended.", notes[1])
         self.assertEqual(table.name, "Corporations")
 
     def test_a_month_without_pap_lists_the_corporations_and_the_total(self):
@@ -528,13 +535,13 @@ class MemberFleetsDatasetTests(DatasetTestCase):
         service.assert_called_once_with(target, year, month, limit=exports.MAX_EXPORT_ROWS)
         self.assertEqual(
             column_titles(table),
-            ["Fleet start (EVE)", "Fleet end (EVE)", "Fleet type", "Doctrine", "FC", "Character", "Source", "PAP"],
+            ["Fleet start (EVE)", "Fleet end (EVE)", "Fleet type", "Group", "Doctrine", "FC", "Character", "Source", "PAP"],
         )
         self.assertEqual(
             list(table.rows),
             [
-                [fleets[0].started_at, fleets[0].ended_at, "StratOp", "Moa > Moa", "Alice", "目标 Pilot", "Automatic", 2],
-                [fleets[1].started_at, None, "Roam", "", "Bob", "Alt", "PAP link", 1],
+                [fleets[0].started_at, fleets[0].ended_at, "StratOp", "", "Moa > Moa", "Alice", "目标 Pilot", "Automatic", 2],
+                [fleets[1].started_at, None, "Roam", "", "", "Bob", "Alt", "PAP link", 1],
             ],
         )
         self.assertEqual(filename, f"fleetops-member-fleets-user-{target.pk}-{year:04d}-{month:02d}")
@@ -663,6 +670,7 @@ class AttendanceDatasetTests(DatasetTestCase):
                 "Fleet start (EVE)",
                 "Fleet end (EVE)",
                 "Fleet type",
+                "Group",
                 "Doctrine",
                 "FC",
                 "Character",
@@ -673,7 +681,7 @@ class AttendanceDatasetTests(DatasetTestCase):
                 "Fleet ID",
             ],
         )
-        self.assertEqual([column.kind for column in table.columns][9], "int")
+        self.assertEqual([column.kind for column in table.columns][10], "int")
 
     def test_personal_rows(self):
         table, rows, filename = self.rows(self.pilot)
@@ -687,6 +695,7 @@ class AttendanceDatasetTests(DatasetTestCase):
                     self.new.started_at,
                     self.new.ended_at,
                     "STR",
+                    "",
                     "Moa > Booster 蛾",
                     "FC 指挥",
                     "Pilot Alt",
@@ -700,6 +709,7 @@ class AttendanceDatasetTests(DatasetTestCase):
                     self.new.started_at,
                     self.new.ended_at,
                     "STR",
+                    "",
                     "Moa > Booster 蛾",
                     "FC 指挥",
                     "测试飞行员",
@@ -713,6 +723,7 @@ class AttendanceDatasetTests(DatasetTestCase):
                     self.old.started_at,
                     self.old.ended_at,
                     "Roam",
+                    "",
                     "Kikis",
                     "FC 指挥",
                     "测试飞行员",
@@ -756,13 +767,13 @@ class AttendanceDatasetTests(DatasetTestCase):
         with override_settings(TIME_ZONE="Asia/Shanghai"):
             _table, rows, _ = self.rows(self.pilot, year=year, month=month)
 
-        self.assertNotIn(str(late.uuid), {row[10] for row in rows})
+        self.assertNotIn(str(late.uuid), {row[11] for row in rows})
 
     def test_the_corporation_history_is_the_snapshot_corporation_of_the_manager(self):
         table, rows, filename = self.rows(self.pilot, scope="corporation")
 
         self.assertEqual(len(rows), 3)
-        self.assertEqual({row[7] for row in rows}, {f.DEFAULT_CORP[1]})
+        self.assertEqual({row[8] for row in rows}, {f.DEFAULT_CORP[1]})
         self.assertEqual(filename, "fleetops-attendance-corporation-all")
         self.assertEqual(about(table)["Scope"], f"Corporation {f.DEFAULT_CORP[1]} (at PAP time)")
 
@@ -773,9 +784,9 @@ class AttendanceDatasetTests(DatasetTestCase):
         main.save()
 
         _table, rows, _ = self.rows(self.pilot, scope="corporation")
-        self.assertEqual({row[7] for row in rows}, set())
+        self.assertEqual({row[8] for row in rows}, set())
         _table, rows, _ = self.rows(self.pilot)
-        self.assertEqual({row[7] for row in rows}, {f.DEFAULT_CORP[1]})
+        self.assertEqual({row[8] for row in rows}, {f.DEFAULT_CORP[1]})
 
     def test_the_alliance_history_is_everybody(self):
         table, rows, filename = self.rows(self.lead, scope="alliance")
@@ -783,7 +794,7 @@ class AttendanceDatasetTests(DatasetTestCase):
         self.assertEqual(len(rows), 4)
         self.assertEqual(filename, "fleetops-attendance-alliance-all")
         self.assertEqual(about(table)["Scope"], "Alliance")
-        self.assertEqual({row[7] for row in rows}, {f.DEFAULT_CORP[1], f.OTHER_CORP[1]})
+        self.assertEqual({row[8] for row in rows}, {f.DEFAULT_CORP[1], f.OTHER_CORP[1]})
 
     def test_fleets_that_do_not_count_are_left_out(self):
         pending = f.closed_operation(self.fc, at(self.month, day=11), review_status="pending")
@@ -795,7 +806,7 @@ class AttendanceDatasetTests(DatasetTestCase):
 
         _table, rows, _ = self.rows(self.pilot)
 
-        self.assertEqual({row[10] for row in rows}, {str(self.new.uuid), str(self.old.uuid)})
+        self.assertEqual({row[11] for row in rows}, {str(self.new.uuid), str(self.old.uuid)})
         self.assertEqual(len(rows), 3)
 
     def test_users_who_left_the_alliance_are_left_out(self):
@@ -805,7 +816,7 @@ class AttendanceDatasetTests(DatasetTestCase):
 
         _table, rows, _ = self.rows(self.lead, scope="alliance")
 
-        self.assertNotIn("Leaver", {row[6] for row in rows})
+        self.assertNotIn("Leaver", {row[7] for row in rows})
 
     def test_pap_older_than_the_retention_window_is_left_out(self):
         f.settings(data_retention_days=365)
@@ -814,7 +825,7 @@ class AttendanceDatasetTests(DatasetTestCase):
 
         _table, rows, _ = self.rows(self.pilot)
 
-        self.assertNotIn(str(ancient.uuid), {row[10] for row in rows})
+        self.assertNotIn(str(ancient.uuid), {row[11] for row in rows})
         self.assertEqual(about(self.rows(self.pilot)[0])["History window"], "The last 365 days")
 
     def test_the_export_is_cut_one_row_past_the_limit(self):
@@ -844,9 +855,9 @@ class AttendanceDatasetTests(DatasetTestCase):
         rows = list(csv.reader(io.StringIO(raw.decode("utf-8-sig"), newline="")))
         self.assertEqual(rows[1][0], self.new.started_at.strftime("%Y-%m-%d %H:%M"))
         self.assertTrue(rows[1][0].endswith("23:30"))
-        self.assertEqual(rows[2][5], "测试飞行员")
-        self.assertEqual(rows[2][3], "Moa > Booster 蛾")
-        self.assertEqual(rows[1][4], "FC 指挥")
+        self.assertEqual(rows[2][6], "测试飞行员")
+        self.assertEqual(rows[2][4], "Moa > Booster 蛾")
+        self.assertEqual(rows[1][5], "FC 指挥")
 
     def test_names_that_look_like_formulas_stay_text(self):
         trickster = f.member("trickster", main_name="=HYPERLINK(\"http://example.invalid\")")
@@ -854,7 +865,7 @@ class AttendanceDatasetTests(DatasetTestCase):
         viewer = self.lead
 
         csv_response = export_for_request(request_for(viewer, scope="alliance"), "attendance", "csv")
-        names = {row[5] for row in csv_rows(csv_response)[1:]}
+        names = {row[6] for row in csv_rows(csv_response)[1:]}
         self.assertIn("'=HYPERLINK(\"http://example.invalid\")", names)
         self.assertNotIn("=HYPERLINK(\"http://example.invalid\")", names)
 
@@ -870,9 +881,9 @@ class AttendanceDatasetTests(DatasetTestCase):
         self.assertEqual(response["Content-Type"], exports.XLSX_CONTENT_TYPE)
         rows = workbook_rows(response)
         self.assertEqual(rows[0][0], "Fleet start (EVE)")
-        self.assertEqual(rows[1][5], "Pilot Alt")
-        self.assertEqual(rows[2][5], "测试飞行员")
-        self.assertEqual(rows[1][9], "2")
+        self.assertEqual(rows[1][6], "Pilot Alt")
+        self.assertEqual(rows[2][6], "测试飞行员")
+        self.assertEqual(rows[1][10], "2")
         info = {row[0]: row[1] for row in workbook_rows(response, "xl/worksheets/sheet2.xml")}
         self.assertEqual(info["Dataset"], "PAP history")
         self.assertEqual(info["Exported by"], "测试飞行员")
@@ -1273,5 +1284,5 @@ class MemberFleetsFileMatchesPageTests(MatchTestCase):
         rows = self.download("member-fleets", user=self.a1.pk)
 
         self.assertEqual(len(rows) - 1, len(fleets))
-        self.assertEqual([int(line[7]) for line in rows[1:]], [fleet.pap for fleet in fleets])
-        self.assertEqual(sum(int(line[7]) for line in rows[1:]), 3)
+        self.assertEqual([int(line[8]) for line in rows[1:]], [fleet.pap for fleet in fleets])
+        self.assertEqual(sum(int(line[8]) for line in rows[1:]), 3)

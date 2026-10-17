@@ -1,7 +1,7 @@
 {% load i18n fleetops_pap tz %}
-<div id="live-pap-status" data-url="{% url 'fleetops:live_pap' %}"{% if live_pap_rows %} data-rows="1"{% endif %}>
+<div id="live-pap-status" data-url="{% url 'fleetops:live_pap' %}"{% if live_pap_rows %} data-rows="1"{% endif %} data-stale-text="{% translate 'Not updated — retrying' %}">
 {% if live_pap_rows %}
-<div class="card mb-3 border-info">
+<div class="card fo-card-info mb-3">
   <div class="card-header"><strong>{% translate "PAP in running fleets" %}</strong> <span class="small text-muted">{% translate "Updates every minute while you are in a fleet." %}</span></div>
   <ul class="list-group list-group-flush">
   {% for row in live_pap_rows %}
@@ -35,18 +35,28 @@
 <script>
 (function(){
   // Refreshes the PAP status every minute while the user has characters in running fleets.
+  // A refresh that fails keeps the rows on screen and adds a quiet "Not updated" line until one succeeds.
   const box=document.getElementById('live-pap-status');
   if(!box||!box.dataset.rows||!window.fetch) return;
+  const stale=()=>{
+    const card=box.querySelector('.card');
+    if(!card||card.querySelector('.live-pap-stale')) return;
+    const note=document.createElement('div');
+    note.className='card-footer small text-muted live-pap-stale';
+    note.setAttribute('role','status');
+    note.textContent=box.dataset.staleText||'';
+    card.appendChild(note);
+  };
   const timer=setInterval(()=>{
     fetch(box.dataset.url,{credentials:'same-origin'}).then(r=>r.ok?r.text():null).then(html=>{
-      if(html===null) return;
+      if(html===null){ stale(); return; }
       const holder=document.createElement('div');
       holder.innerHTML=html;
       const fresh=holder.querySelector('#live-pap-status');
-      if(!fresh) return;
+      if(!fresh){ stale(); return; }
       box.innerHTML=fresh.innerHTML;
       if(!fresh.dataset.rows) clearInterval(timer);
-    }).catch(()=>{});
+    }).catch(stale);
   },60000);
 })();
 </script>

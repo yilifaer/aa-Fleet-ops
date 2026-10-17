@@ -1,10 +1,11 @@
 {% extends "fleetops/base.html" %}
-{% load i18n fleetops_messages %}
+{% load i18n fleetops_messages fleetops_ui %}
 {% block fleetops_content %}
+{% translate "Group fleet" as group_fleet_label %}
 {% if history_scope == "corporation" %}{% include "fleetops/statistics/_tabs.html" with active_tab="history" year=tab_year month=tab_month %}{% endif %}
-<div class="d-flex justify-content-between align-items-end mb-3">
+<div class="d-flex justify-content-between align-items-end flex-wrap gap-2 mb-3">
   <div><h2 class="mb-0">{{ title }}</h2><div class="text-muted">{% blocktranslate trimmed with days=retention_days %}Times are EVE time (UTC). Configured retention: {{ days }} days (minimum 365). PAP of users no longer in configured member alliances is excluded and can be pruned.{% endblocktranslate %}</div></div>
-  <div class="text-end"><div class="text-muted small">{% blocktranslate trimmed count counter=page.paginator.count with label=scope_label %}{{ label }} total · {{ counter }} record{% plural %}{{ label }} total · {{ counter }} records{% endblocktranslate %}</div><div class="fs-3 fw-bold">{{ total }}</div></div>
+  <div class="text-end"><div class="text-muted small">{% blocktranslate trimmed count counter=page.paginator.count with label=scope_label %}{{ label }} total · {{ counter }} record{% plural %}{{ label }} total · {{ counter }} records{% endblocktranslate %}</div><div class="fs-3 fw-bold fo-num">{{ total }}</div></div>
 </div>
 <form method="get" class="row g-2 align-items-end fleetops-period-selector mb-2" id="history-filter">
   <div class="col-sm-auto">
@@ -20,21 +21,16 @@
     </div>
   </div>
   <div class="col-sm-auto"><button class="btn btn-primary" type="submit">{% translate "Show" %}</button></div>
-  <div class="col-sm-auto ms-sm-auto d-flex gap-2 align-items-center">
-    {% if previous_period or next_period %}
-    <div class="btn-group" role="group" aria-label="{% translate 'Neighbouring months' %}">
-      {% if previous_period %}<a class="btn btn-outline-secondary" href="{% querystring year=previous_period.year month=previous_period.month page=None %}" title="{{ previous_period.label }}">&lsaquo; {% translate "Previous month" %}</a>{% endif %}
-      {% if next_period %}<a class="btn btn-outline-secondary" href="{% querystring year=next_period.year month=next_period.month page=None %}" title="{{ next_period.label }}">{% translate "Next month" %} &rsaquo;</a>{% endif %}
-    </div>
-    {% endif %}
+  <div class="col-sm-auto ms-sm-auto d-flex flex-wrap gap-2 align-items-center">
+    {% include "fleetops/partials/period_nav.html" %}
     {% include "fleetops/statistics/_export_buttons.html" with dataset="attendance" %}
   </div>
 </form>
 {% if period_label %}<div class="small text-muted mb-3">{% blocktranslate trimmed with period=period_label %}Showing the fleets that started in {{ period }}.{% endblocktranslate %}{% if month_may_be_incomplete %} {% blocktranslate trimmed with days=retention_days %}PAP older than {{ days }} days is removed, so this month may be incomplete.{% endblocktranslate %}{% endif %}</div>
 {% else %}<div class="small text-muted mb-3">{% translate "Showing everything within the retention period. Choose a month to narrow the list." %}</div>{% endif %}
-<div class="card"><div class="table-responsive"><table class="table table-sm table-hover mb-0 align-middle">
-<thead><tr><th>{% translate "EVE Time" %}</th><th>{% translate "Main" %}</th><th>{% translate "Character" %}</th><th>{% translate "Corporation" context "FleetOps" %}</th><th>{% translate "Fleet" %}</th><th>{% translate "Type" context "fleet type" %}</th><th>{% translate "Source" %}</th><th>PAP</th></tr></thead><tbody>
-{% for r in rows %}<tr><td>{{ r.operation.started_at|eve_time }}</td><td>{{ r.main_character_name|default:"—" }}</td><td>{{ r.character_name }}</td><td>{{ r.corporation_name|default:"—" }}</td><td>{% if can_open_fleets or r.auth_user_id == user.pk %}<a href="{% url 'fleetops:operation_detail' r.operation.uuid %}">{{ r.operation.fc_character_name }}</a>{% else %}{{ r.operation.fc_character_name }}{% endif %}</td><td>{{ r.operation.fleet_type }}</td><td>{{ r.get_source_display }}</td><td><strong>{{ r.attendance_value }}</strong></td></tr>{% empty %}<tr><td colspan="8" class="text-muted p-4">{% if period_label %}{% blocktranslate trimmed with period=period_label %}No PAP records for {{ period }}.{% endblocktranslate %}{% else %}{% translate "No PAP records in the retained period." %}{% endif %}</td></tr>{% endfor %}
+<div class="card"><div class="table-responsive"><table class="table table-sm table-hover mb-0 align-middle fo-table-pin">
+<thead><tr><th>{% translate "EVE Time" %}</th><th>{% translate "Main" %}</th><th>{% translate "Character" %}</th><th>{% translate "Corporation" context "FleetOps" %}</th><th>{% translate "Fleet" %}</th><th>{% translate "Type" context "fleet type" %}</th><th>{% translate "Source" %}</th><th class="text-end">PAP</th></tr></thead><tbody>
+{% for r in rows %}<tr><td class="text-nowrap">{{ r.operation.started_at|eve_time }}</td><td>{{ r.main_character_name|default:"—" }}</td><td>{{ r.character_name }}</td><td>{{ r.corporation_name|default:"—" }}</td><td>{% if can_open_fleets or r.auth_user_id == user.pk %}<a href="{% url 'fleetops:operation_detail' r.operation.uuid %}">{{ r.operation.fc_character_name }}</a>{% else %}{{ r.operation.fc_character_name }}{% endif %}</td><td>{{ r.operation.fleet_type|type_pill }}{% if r.operation.group_name %} {% pill "neutral" r.operation.group_name class="fo-pill-group" icon="users" title=group_fleet_label %}{% endif %}</td><td>{{ r.get_source_display }}</td><td class="text-end"><strong>{{ r.attendance_value }}</strong></td></tr>{% empty %}<tr><td colspan="8"><div class="fo-empty"><i class="fa-regular fa-calendar" aria-hidden="true"></i><span>{% if period_label %}{% blocktranslate trimmed with period=period_label %}No PAP records for {{ period }}.{% endblocktranslate %}{% else %}{% translate "No PAP records in the retained period." %}{% endif %}</span></div></td></tr>{% endfor %}
 </tbody></table></div>
 {% if page.paginator.num_pages > 1 %}<div class="card-footer d-flex justify-content-between align-items-center"><span>{% blocktranslate trimmed count counter=page.paginator.count with number=page.number pages=page.paginator.num_pages %}Page {{ number }} of {{ pages }} · {{ counter }} record{% plural %}Page {{ number }} of {{ pages }} · {{ counter }} records{% endblocktranslate %}</span><div class="btn-group">{% if page.has_previous %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=1 %}">{% translate "First" %}</a><a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.previous_page_number %}">{% translate "Previous" %}</a>{% endif %}{% if page.has_next %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.next_page_number %}">{% translate "Next" %}</a><a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.paginator.num_pages %}">{% translate "Last" %}</a>{% endif %}</div></div>{% endif %}
 </div>

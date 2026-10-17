@@ -19,8 +19,9 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
+from django.db.models import Sum
 from django.http import Http404, HttpRequest
-from django.utils.translation import gettext, gettext_lazy, pgettext, pgettext_lazy
+from django.utils.translation import gettext, gettext_lazy, ngettext, pgettext, pgettext_lazy
 
 from fleetops.models import (
     MAX_DATABASE_ID,
@@ -59,6 +60,15 @@ ALLIANCE_TOTAL = gettext_lazy("Alliance total")
 COUNTING_RULE = gettext_lazy(
     "PAP of closed, approved fleets that count in the statistics, in the month the fleet started (EVE time). "
     "The PAP of all characters of a person is added up on the main character."
+)
+# What the totals and averages of the corporations overview count (FB11.1); the page prints the same sentences.
+ALLIANCE_ROW_NOTE = gettext_lazy(
+    "Alliance row: the total is every counted PAP of the month, the Other corporations row included; "
+    "the average is the PAP of the current mains divided by the mains."
+)
+CORPORATION_ROWS_NOTE = gettext_lazy(
+    "Corporation rows: PAP is every PAP flown for the corporation that month, including pilots who registered "
+    "later; Mains and the average count only members registered before the month ended."
 )
 FC_RULE = gettext_lazy(
     "Fleets that count in the statistics, for the FC and for special roles that give FC credit. "
@@ -256,9 +266,11 @@ def _table(request, scope, title, columns, rows, *, scope_text, details=()) -> t
 
 def _target_details(target):
     average = gettext("No target") if target.average is None else target.average
+    # A month without any target row is not assessed: there is no member minimum either (a minimum of 0).
+    minimum = gettext("No target") if target.rule is None and not target.minimum else target.minimum
     return [
         (gettext("Corporation average target (PAP per main)"), average),
-        (gettext("Member minimum PAP"), target.minimum),
+        (gettext("Member minimum PAP"), minimum),
     ]
 
 
@@ -374,6 +386,8 @@ def build_corporations(request, scope):
         )
     details.append((gettext("Fleets not counted"), _not_counted_text(overview.not_counted)))
     details.append((gettext("Counting rule"), str(COUNTING_RULE)))
+    details.append((gettext("Note"), str(ALLIANCE_ROW_NOTE)))
+    details.append((gettext("Note"), str(CORPORATION_ROWS_NOTE)))
     return _table(
         request,
         scope,
@@ -464,6 +478,7 @@ def build_member_fleets(request, scope):
         Column("started", gettext("Fleet start (EVE)"), "datetime"),
         Column("ended", gettext("Fleet end (EVE)"), "datetime"),
         Column("fleet_type", gettext("Fleet type")),
+        Column("group", pgettext("FleetOps", "Group")),
         Column("doctrine", pgettext("FleetOps", "Doctrine")),
         Column("fc", "FC"),
         Column("character", gettext("Character")),
@@ -475,6 +490,7 @@ def build_member_fleets(request, scope):
             fleet.started_at,
             fleet.ended_at,
             fleet.fleet_type,
+            fleet.group_name,
             fleet.doctrine,
             fleet.fc_name,
             fleet.character_name,
@@ -537,6 +553,7 @@ ATTENDANCE_FIELDS = (
     "operation__ended_at",
     "operation__fleet_type__short_name",
     "operation__fleet_type__name",
+    "operation__group_name",
     "operation__doctrine_name",
     "operation__fc_character_name",
     "character_name",
@@ -553,11 +570,13 @@ def _attendance_rows(queryset) -> Iterator[list]:
     sources = dict(AttendanceRecord.Source.choices)
     rows = queryset.values_list(*ATTENDANCE_FIELDS)[: exports.MAX_EXPORT_ROWS + 1]
     for values in rows.iterator(chunk_size=ATTENDANCE_CHUNK_ROWS):
-        started, ended, short_name, type_name, doctrine, fc, character, main, corporation, source, pap, uuid = values
+        started, ended, short_name, type_name, group, doctrine, fc = values[:7]
+        character, main, corporation, source, pap, uuid = values[7:]
         yield [
             started,
             ended,
             short_name or type_name,
+            group,
             doctrine,
             fc,
             character,
@@ -585,6 +604,7 @@ def build_attendance(request, scope):
         Column("started", gettext("Fleet start (EVE)"), "datetime"),
         Column("ended", gettext("Fleet end (EVE)"), "datetime"),
         Column("fleet_type", gettext("Fleet type")),
+        Column("group", pgettext("FleetOps", "Group")),
         Column("doctrine", pgettext("FleetOps", "Doctrine")),
         Column("fc", "FC"),
         Column("character", gettext("Character")),
@@ -817,7 +837,7 @@ def build_srp_claims(request, scope):
         )
         if text
     )
-    return _table(
+    table, filename = _table(
         request,
         scope,
         gettext("SRP claims"),
@@ -826,6 +846,27 @@ def build_srp_claims(request, scope):
         scope_text=_srp_scope_text(scope),
         details=[(pgettext("FleetOps", "Filters"), filters), (gettext("Counting rule"), str(SRP_RULE))],
     )
+    # The total covers every filtered claim, also the ones a cut export leaves out.
+    table.footer.append(_srp_claims_total_line(claims, columns))
+    return table, filename
+
+
+def _srp_claims_total_line(claims, columns) -> list:
+    """The "Total" row of the claims export: the figures of the summary page for the filtered claims.
+
+    The pilot column counts the claims, the value column adds up the loss values, "Suggested" is the requested
+    total and "Approved" the amount of approved and paid claims; the other cells stay empty.
+    """
+    totals = srp_summaries.claims_totals(claims)
+    loss_value = claims.aggregate(total=Sum("loss_value"))["total"] or 0
+    filled = {
+        "claim": str(SRP_TOTAL_ROW),
+        "pilot": ngettext("%(count)s claim", "%(count)s claims", totals.claims) % {"count": totals.claims},
+        "value": loss_value,
+        "suggested": totals.requested,
+        "approved": totals.approved,
+    }
+    return [filled.get(column.key) for column in columns]
 
 
 def _totals_cells(totals) -> list:
@@ -865,7 +906,7 @@ def build_srp_members(request, scope):
     ]
     lines = [[row.main_character_name, row.corporation_name, *_totals_cells(row.totals)] for row in rows]
     name = rows[0].corporation_name if rows else ""
-    return _table(
+    table, filename = _table(
         request,
         scope,
         gettext("SRP members"),
@@ -874,6 +915,9 @@ def build_srp_members(request, scope):
         scope_text=_srp_scope_text(scope, name),
         details=[(gettext("Counting rule"), str(SRP_RULE))],
     )
+    total = srp_summaries.add_totals(*(row.totals for row in rows))
+    table.footer.append([str(SRP_TOTAL_ROW), "", *_totals_cells(total)])
+    return table, filename
 
 
 def build_srp_corporations(request, scope):

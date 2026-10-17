@@ -75,13 +75,16 @@ class Column:
 class Table:
     """Rows are sequences in column order or mappings keyed by ``Column.key``.
 
-    ``about`` holds (label, value) pairs for the XLSX "About" sheet.
+    ``about`` holds (label, value) pairs for the XLSX "About" sheet. ``footer`` holds rows written after the
+    last data row, and after the note of a cut export, so a total always covers every row of the file's scope
+    (bold in XLSX).
     """
 
     name: str
     columns: list[Column]
     rows: Iterable[Sequence | Mapping]
     about: list[tuple[str, object]] = field(default_factory=list)
+    footer: list[Sequence | Mapping] = field(default_factory=list)
 
 
 def export_filename(dataset: str, *parts) -> str:
@@ -219,6 +222,8 @@ def _csv_chunks(table: Table) -> Iterator[str]:
         if len(lines) >= _CSV_CHUNK_ROWS:
             yield "".join(lines)
             lines = []
+    for row in table.footer:
+        lines.append(writer.writerow([csv_text(cell) for cell in _row_cells(row, columns)]))
     if lines:
         yield "".join(lines)
 
@@ -352,14 +357,19 @@ def _attr(value):
 
 
 def _cell_xml(ref, value, style=None):
-    if value is None or value == "":
-        return ""
+    """One cell. An empty value is a cell element without content, so every row keeps all its columns.
+
+    Spreadsheet programs that skip a missing element (Quick Look, some viewers) would otherwise shift the
+    cells of a row left, and a row without a rank would start in column A.
+    """
     style_attr = f' s="{style}"' if style is not None else ""
+    if value is None or value == "":
+        return f'<c r="{ref}"{style_attr}/>'
     if not isinstance(value, str):
         return f'<c r="{ref}"{style_attr}><v>{_number_text(value)}</v></c>'
     text = _EXCEL_ESCAPE.sub(r"_x005F_\1", xlsx_text(value).replace("\r\n", "\n").replace("\r", "\n"))
     if not text:
-        return ""
+        return f'<c r="{ref}"{style_attr}/>'
     space = ' xml:space="preserve"' if text != text.strip() else ""
     return f'<c r="{ref}"{style_attr} t="inlineStr"><is><t{space}>{escape(text)}</t></is></c>'
 
@@ -404,6 +414,9 @@ def _data_sheet_chunks(table: Table) -> Iterator[str]:
         if len(lines) >= _XLSX_CHUNK_ROWS:
             yield "".join(lines)
             lines = []
+    for row in table.footer:
+        number += 1
+        lines.append(_row_xml(number, _row_cells(row, columns), BOLD_STYLE))
     lines.append(_SHEET_END)
     yield "".join(lines)
 

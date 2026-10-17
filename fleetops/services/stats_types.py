@@ -87,6 +87,8 @@ class MemberFleetRow:
     character_name: str
     source: str
     pap: int
+    # The name of the group a group fleet was flown for; empty for an alliance fleet.
+    group_name: str = ""
 
 
 @dataclass(slots=True)

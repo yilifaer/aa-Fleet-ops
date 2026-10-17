@@ -61,7 +61,8 @@ def my_statistics_view(request):
     stats = member_statistics(request.user, year, month)
     target = month_target(year, month)
     ref = month_ref(year, month)
-    # A month that ended before the user registered has no status for them.
+    # A month that ended before the user registered has no status for them, and a month without a target is
+    # not assessed at all.
     registered_later = not population.registered_by(request.user, ref.end)
     return _render(
         request,
@@ -74,6 +75,8 @@ def my_statistics_view(request):
             minimum=target.minimum,
             minimum_missing=max(target.minimum - stats["total"], 0),
             minimum_status="none" if registered_later else member_status(stats["total"], target, ref),
+            registered_later=registered_later,
+            no_target=target.rule is None,
             rank_card=_rank_card(request.user, year, month, stats["total"]),
         ),
     )
