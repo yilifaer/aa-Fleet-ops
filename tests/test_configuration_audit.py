@@ -46,6 +46,7 @@ from fleetops.services.messages import render_operation_messages
 from fleetops.services.operations import retry_ping
 
 from . import factories as f
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 
 WEBHOOK_SECRET = "Zq7-hunter2-webhook-token-0d9c"
 WEBHOOK_URL = f"https://discord.com/api/webhooks/112233445566/{WEBHOOK_SECRET}"

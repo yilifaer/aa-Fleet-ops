@@ -15,6 +15,7 @@ from fleetops.services.operations import create_srp_at_start, retry_motd, retry_
 from fleetops.srp.links import link_path
 
 from . import factories as f
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 from .test_aasrp_provider import AaSrpInstalledMixin
 from .test_integrations_roles import PatchedStartFleetMixin, action_of, fake_aa_srp_model
 from .test_scheduling import SchedulingTestBase, steps

@@ -349,7 +349,7 @@ class CompositionFlowTests(FleetTabFlowTestCase):
 
     def test_the_bridge_setting_names_its_groups(self):
         form = FleetOpsSettingsForm(instance=f.settings())
-        self.assertIn("Now: Titan (30), Dreadnought (485), Freighter (513)", form.fields["bridge_excluded_group_ids"].help_text)
+        self.assertEqual(form.bridge_now[:3], [(30, "Titan"), (485, "Dreadnought"), (513, "Freighter")])
 
 
 class VisibilityFlowTests(FleetTabFlowTestCase):

@@ -602,7 +602,10 @@ class StartFormChoiceTests(GroupFleetBase):
 
         self.assertEqual(list(form.fields["fleet_type"].queryset), [self.activity])
         self.assertEqual(set(form.fields["ping_channel"].queryset), {self.channel})
-        self.assertEqual(form.group_rules(), {})
+        self.assertEqual(
+            form.group_rules(),
+            {str(self.group.pk): {"name": "Example Fleet Group", "fleet_types": [self.activity.pk], "channels": [self.channel.pk]}},
+        )
 
     def test_an_fc_is_never_offered_a_reserved_channel(self):
         form = StartFleetForm(user=fresh(self.fc))

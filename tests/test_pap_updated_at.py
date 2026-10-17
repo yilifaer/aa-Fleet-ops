@@ -7,7 +7,6 @@ changed, and writes nothing at all when nothing changed."""
 from datetime import timedelta
 
 from django.db import connection
-from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone

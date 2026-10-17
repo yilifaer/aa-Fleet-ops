@@ -4,7 +4,7 @@
 """Group fleets in the records: the fleets list (pill, filter, who sees which), the FC incentive minimum, and the
 locked fleet type on the edit page."""
 
-from datetime import datetime, timedelta, timezone as dt_timezone
+from datetime import datetime, timezone as dt_timezone
 from decimal import Decimal
 from unittest import mock
 
@@ -13,7 +13,6 @@ from django.db import connection
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
-from django.utils import timezone
 
 from fleetops.forms import OperationEditForm
 from fleetops.models import FleetOperation, GroupAccess, IncentivePeriod, MonthlyFCStatistic, OperationRoleAssignment

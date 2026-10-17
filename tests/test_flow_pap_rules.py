@@ -37,6 +37,7 @@ from fleetops.services.statistics import corporation_statistics, fc_statistics, 
 from fleetops.tasks import track_operation
 
 from . import factories as f
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 from .fleet_sim import FleetSim
 from .test_pap_links import FakeLocationAPI
 

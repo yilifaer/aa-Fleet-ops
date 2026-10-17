@@ -677,8 +677,7 @@ class StyleSheetTests(SimpleTestCase):
         self.assertIn("outline: 2px solid var(--fo-focus); outline-offset: 2px;", self.css)
         self.assertIn(":focus-visible:not(.btn, .form-control, .form-select, .form-check-input) { outline-offset: -2px; }", self.css)
 
-    def test_the_old_metric_cards_keep_a_thin_edge_in_theme_colours(self):
-        self.assertIn(".fleetops-metric-1 { border-top-color: var(--fo-type-1); }", self.css)
+    def test_the_stylesheet_keeps_no_fixed_palette_colours(self):
         self.assertNotIn("#20c997", self.css)
         self.assertNotIn("#6f42c1", self.css)
         self.assertNotIn("#adb5bd", self.css)

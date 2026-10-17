@@ -4,7 +4,7 @@
 <div class="modal fade" id="kickListModal" tabindex="-1" aria-hidden="true" data-preview-url="{% url 'fleetops:kick_preview' operation.uuid %}" data-capsules-url="{% url 'fleetops:kick_capsules' operation.uuid %}" data-system-url="{% url 'fleetops:kick_outside_system' operation.uuid %}">
   <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
     <form method="post" id="kick-list-form">{% csrf_token %}
-      <div class="modal-header"><h5 class="modal-title" id="kick-list-title">{% translate "Kick members" %}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% translate 'Close' %}"></button></div>
+      <div class="modal-header"><h5 class="modal-title" id="kick-list-title">{% translate "Kick members" %}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% translate 'Close' %}" title="{% translate 'Close' %}"></button></div>
       <div class="modal-body">
         <div id="kick-list-systems" class="mb-3"></div>
         <div id="kick-list-status" class="small text-muted mb-2"></div>

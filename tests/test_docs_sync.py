@@ -24,6 +24,7 @@ from fleetops.models import FleetOpsSettings, SrpSettings
 from fleetops.services.messages import build_context
 
 from . import factories as f
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 from . import i18n_utils as po
 
 PACKAGE = Path(fleetops.__file__).resolve().parent

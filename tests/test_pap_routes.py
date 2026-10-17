@@ -44,7 +44,7 @@ class ConfigurationSectionTests(TestCase):
         response = self.client.get(reverse("fleetops:configuration_list", args=["multiplier-tiers"]))
 
         self.assertContains(response, "Longer than (minutes)")
-        self.assertContains(response, "<td>180</td>", html=False)
+        self.assertContains(response, '<td class="text-end">180</td>', html=False)
 
     def test_adding_a_tier_is_audited(self):
         response = self.client.post(

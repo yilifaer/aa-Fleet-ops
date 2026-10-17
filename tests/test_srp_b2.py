@@ -5,14 +5,13 @@
 settings, the SRP menu of FCs and group leaders, one fleet type name, specific reason messages, the confirmations
 before dangerous decisions, the undo notice of a payment and the ESI hint of the loss check."""
 
-from datetime import timedelta
 from decimal import Decimal
 from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, tag
 from django.urls import reverse
-from django.utils import timezone, translation
+from django.utils import translation
 
 from fleetops import texts
 from fleetops.forms_srp import ReasonForm

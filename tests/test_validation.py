@@ -46,6 +46,7 @@ from fleetops.services.history import prune_history, retention_cutoff
 from fleetops.services.messages import render_operation_messages
 
 from . import factories as f
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 
 WEBHOOK_TOKEN = "Qp4-validation-webhook-token"
 WEBHOOK_URL = f"https://discord.com/api/webhooks/445566778899/{WEBHOOK_TOKEN}"
@@ -498,7 +499,8 @@ class OperationEditFormTests(TestCase):
                 self.assertEqual(form.errors["ended_at"], ["End Time must be after Start Time."])
 
     def test_later_end_and_open_end_are_accepted(self):
-        start = timezone.now()
+        # A fleet record cannot end in the future (FB16.4), so the whole fleet lies in the past.
+        start = timezone.now() - timedelta(hours=4)
         for ended in (start + timedelta(minutes=1), start + timedelta(hours=2), None):
             with self.subTest(ended=ended):
                 self.assertTrue(self._form(start, ended).is_valid())

@@ -19,6 +19,7 @@ from fleetops.models import DiscordWebhook, FleetOperation, StatisticsTarget
 from fleetops.providers.esi import FleetDetectionResult, FleetESIError
 
 from . import factories as f
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 from .static_files import static_source
 from .test_configuration_audit import CONFIG_PERMS
 from .test_scheduling import SchedulingTestBase
@@ -38,6 +39,7 @@ PLACES = {
     "configuration/form.html": 1,
     "configuration/settings_form.html": 1,
     "configuration/srp_settings.html": 1,
+    "send_ping.html": 1,
 }
 NOT_IN_FLEET = "Character is currently not in a fleet."
 FLEET_ID = 1_046_000_000_001
@@ -117,7 +119,7 @@ class TemplateUseTests(SimpleTestCase):
         for name, count in PLACES.items():
             with self.subTest(template=name):
                 self.assertEqual(len(include.findall(sources[name])), count)
-        self.assertEqual(sum(PLACES.values()), 12)
+        self.assertEqual(sum(PLACES.values()), 13)
         used = {name for name, source in sources.items() if PARTIAL in source and name != "partials/form_errors.html"}
         self.assertEqual(used, set(PLACES))
 

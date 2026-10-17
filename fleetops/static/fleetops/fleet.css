@@ -228,11 +228,6 @@
   outline: 1px solid var(--fo-border);
 }
 
-.fleet-bar {
-  height: 0.4rem;
-  margin-bottom: 0.35rem;
-}
-
 .fleet-classify .form-select {
   min-width: 8rem;
 }

@@ -13,7 +13,7 @@ from django.utils import timezone, translation
 from fleetops.forms import OperationRoleAssignmentForm
 from fleetops.models import AttendanceRecord, AuditLog, FleetOperation, OperationRoleAssignment, ReviewStatus
 from fleetops.services.approvals import approve_operation, reject_operation
-from fleetops.services.roles import add_role_assignment, delete_role_assignment
+from fleetops.services.roles import add_role_assignment
 from fleetops.texts import translate_stored
 
 from . import factories as f

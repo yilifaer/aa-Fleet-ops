@@ -432,7 +432,7 @@ class FleetConfigurationTests(FleetTabTestCase):
 
         self.assertContains(response, 'id="settings-fleet-tab"')
         self.assertContains(response, 'name="fleet_live_refresh_seconds"')
-        self.assertContains(response, 'name="bridge_excluded_group_ids"')
+        self.assertContains(response, 'name="bridge_groups"')
 
 
 class WantsJsonTests(SimpleTestCase):

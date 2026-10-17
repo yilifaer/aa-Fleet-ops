@@ -8,7 +8,7 @@
 <form method="post" action="{% url 'fleetops:fleet_members_move' operation.uuid %}" class="d-none" id="fleet-move-form" data-fleet-action>{% csrf_token %}<input type="hidden" name="role" value=""><input type="hidden" name="wing_id" value=""><input type="hidden" name="squad_id" value=""><button type="submit" tabindex="-1">{% translate "Move" %}</button></form>
 <div class="modal fade" id="fleet-move-modal" tabindex="-1" aria-labelledby="fleet-move-title" aria-hidden="true">
   <div class="modal-dialog modal-dialog-scrollable"><div class="modal-content">
-    <div class="modal-header"><h5 class="modal-title" id="fleet-move-title">{% translate "Move to…" %}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% translate 'Close' %}"></button></div>
+    <div class="modal-header"><h5 class="modal-title" id="fleet-move-title">{% translate "Move to…" %}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% translate 'Close' %}" title="{% translate 'Close' %}"></button></div>
     <div class="modal-body">
       <p class="small text-muted" id="fleet-move-hint">{% translate "Several members can only be moved into squads; commander positions take one member." %}</p>
       <div id="fleet-move-targets"></div>

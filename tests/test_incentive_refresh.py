@@ -13,7 +13,6 @@ from django.urls import reverse
 from django.utils import timezone
 
 from fleetops.models import (
-    AttendanceRecord,
     AuditLog,
     FleetOperation,
     IncentivePeriod,

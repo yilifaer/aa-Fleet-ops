@@ -25,6 +25,7 @@ from django.urls import reverse
 from django.utils import timezone, translation
 
 from fleetops import texts
+from fleetops.fleet_defaults import KNOWN_SHIP_GROUPS
 from fleetops.models import (
     AttendanceRecord,
     AuditLog,
@@ -86,6 +87,8 @@ KEPT_WORDS = {
 
 # The pages show example wing and squad names in the layout box of a structure template.
 EXAMPLE_NAMES = {"Alpha", "Bravo", "Charlie", "Delta"}
+# Ship group names stay in English (the bridge setting lists them as ticks): ship names are always English.
+EXAMPLE_NAMES |= {word for name in KNOWN_SHIP_GROUPS.values() for word in re.findall(r"[A-Za-z][A-Za-z']{2,}", name)}
 
 # Text that comes from ESI or from people stays as it was written.
 ESI_TEXT = {"Service Unavailable", "lead", "pilot", "other"}
@@ -680,7 +683,8 @@ class ChineseFlowTests(PageWorld, ChinesePageMixin, TestCase):
         response = self.post(self.lead, "srp_claim_action", self.pending_claim.uuid, "reject", data={"reason": ""})
 
         self.assertChinese(response)
-        self.assertEqual(self.flashed(response), ["这个字段是必填项。"])
+        # The rejection asks for its own reason (FB13.7), not Django's "required" sentence.
+        self.assertEqual(self.flashed(response), ["请填写拒绝原因。"])
 
     def test_recalculating_the_incentive_period_flashes_a_chinese_message(self):
         response = self.post(self.lead, "incentive_recalculate", self.period.pk)

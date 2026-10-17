@@ -23,7 +23,7 @@
     {% if srp_nav.summary %}
     {% if perms.fleetops.manage_srp or perms.fleetops.view_all_stats %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_summary' %}">{% translate "Summary" context "FleetOps" %}</a></li>{% endif %}
     {% if perms.fleetops.view_corp_stats %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_summary_own_corporation' %}">{% translate "Corporation" context "FleetOps" %}</a></li>{% endif %}
-    {% if perms.fleetops.start_fleet or perms.fleetops.manage_own_fleet or perms.fleetops.manage_fleets or perms.fleetops.create_manual_fleet %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_summary_own_fc' %}">{% translate "My fleets" %}</a></li>{% endif %}
+    {% if srp_nav.own_fleets %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_summary_own_fc' %}">{% translate "My fleets" %}</a></li>{% endif %}
     {% endif %}
   </ul></li>{% endif %}
   {% if show_incentives %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:incentive_review' %}">{% translate "FC Incentive" %}</a></li>{% endif %}

@@ -519,7 +519,9 @@ class GroupDecoratorTests(GroupFixture):
         for user in (self.only_ping, self.via, self.fc, self.lead):
             with self.subTest(user=user.username):
                 self.assertEqual(self.as_user(user, "get", page).status_code, 200)
-                self.assertEqual(self.as_user(user, "post", preview).json(), {"ok": False})
+                response = self.as_user(user, "post", preview)
+                self.assertEqual(response.status_code, 200)
+                self.assertIs(response.json()["ok"], False)
 
     def test_a_leader_of_an_inactive_row_is_refused(self):
         GroupAccess.objects.update(is_active=False)

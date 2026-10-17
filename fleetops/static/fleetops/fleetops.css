@@ -409,14 +409,6 @@ button.fo-live { cursor: pointer; }
 .jump-system details { margin-top: .5rem; max-height: 220px; overflow: auto; }
 @media (max-width: 768px) { .event-row { grid-template-columns: 1fr; } }
 
-/* Dashboard: the metric cards keep a thin edge in the colour of their kind (the theme's palette) */
-.fleetops-metric { position: relative; min-height: 106px; border-radius: var(--fo-radius); padding: 1rem 1.15rem; display: flex; align-items: center; gap: 1rem; background: var(--fo-surface-1); border-top: 3px solid var(--fo-border); }
-.fleetops-metric-value { font-size: clamp(2.25rem, 9vw, 2.75rem); line-height: 1; font-weight: 500; min-width: 64px; padding-right: 1rem; border-right: 3px solid var(--fo-border); }
-.fleetops-metric-title { font-size: .9375rem; font-weight: 600; margin-bottom: .25rem; }
-.fleetops-metric-1 { border-top-color: var(--fo-type-1); }
-.fleetops-metric-2 { border-top-color: var(--fo-type-2); }
-.fleetops-metric-3 { border-top-color: var(--fo-bar); }
-.fleetops-metric-4 { border-top-color: var(--bs-primary); }
 .fleetops-ship-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)); gap: 1rem; text-align: center; }
 .fleetops-ship img { width: 100%; max-width: 128px; aspect-ratio: 1 / 1; object-fit: cover; border-radius: var(--fo-radius-sm); border: 1px solid var(--fo-border); background: #111; } /* ui-allow: ship image backdrop */
 .fleetops-ship .fw-semibold { margin-top: .35rem; }
@@ -425,8 +417,6 @@ button.fo-live { cursor: pointer; }
 .fleetops-period-selector { padding: .9rem; border: 1px solid var(--fo-border); border-radius: var(--fo-radius); background: var(--fo-surface-1); }
 /* Bootstrap gives each select of an input group the same 1% width and lets it grow, which cuts "September" and "All retained"; size them by their text. */
 .fleetops-period-selector .input-group>.form-select{width:auto;flex:0 0 auto}
-.fleetops-daily-row { display: flex; align-items: center; gap: 1rem; margin: .55rem 0; }
-.fleetops-daily-row > span { width: 60px; flex: 0 0 60px; }
 .fleetops .table td, .fleetops .table th { vertical-align: middle; }
 
 /* Statistics: a row shows its status in the colour of its left edge; the status text is always shown as well. */
@@ -446,11 +436,9 @@ button.fo-live { cursor: pointer; }
 .fleetops-srp-claims { font-size: .875rem; }
 .fleetops-srp-claims .fleetops-srp-flags { min-width: 11rem; max-width: 18rem; }
 /* A warning is a sentence: it wraps inside its box instead of running out of it. */
-.fleetops-srp-flags :is(.badge, .fo-pill), .fleetops-srp-checks :is(.badge, .fo-pill) { white-space: normal; text-align: left; font-weight: 500; margin: 0 .25rem .25rem 0; }
-.fleetops-srp-checks :is(.badge, .fo-pill) { font-size: .85rem; }
+.fleetops-srp-flags .fo-pill, .fleetops-srp-checks .fo-pill { white-space: normal; text-align: left; font-weight: 500; margin: 0 .25rem .25rem 0; }
+.fleetops-srp-checks .fo-pill { font-size: .85rem; }
 .fleetops-srp-check { width: 2.25rem; }
-.fleetops-srp-ship { width: 64px; height: 64px; border-radius: var(--fo-radius-sm); border: 1px solid var(--fo-border); background: #111; object-fit: cover; } /* ui-allow: ship image backdrop */
-.fleetops-srp-timeline .list-group-item { background: transparent; }
 .fleetops-srp-calculation dt { font-weight: 500; color: var(--fo-text-2); }
 
 /* ===== 6. Page blocks ===== */
@@ -621,8 +609,6 @@ button.fo-live { cursor: pointer; }
 .fo-step.is-bad > .fw-semibold { color: var(--fo-bad); }
 .fo-step .fo-time-rel { display: block; margin-inline-start: 0; }
 .fleetops-srp-check { width: 2.75rem; }
-/* The year select of the month selector is 42 px wide in Materia, below the touch size; block 6.D has the same rule, one of the two goes at integration */
-.fleetops-period-selector .input-group > .form-select { min-width: 5.5rem; }
 /* A claim link on the red tint of an over-limit row: the theme link colour is below 4.5:1 there (Materia), so the text colour is used and the underline marks the link */
 .fleetops .table > tbody > tr.fleetops-srp-over-limit a:not(.btn) { color: var(--fo-text-1); text-decoration: underline; text-underline-offset: .15em; }
 /* The figures of the SRP summaries: the label is the title, the number is the thing to read */

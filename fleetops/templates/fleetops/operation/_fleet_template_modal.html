@@ -3,7 +3,7 @@
 <div class="modal fade" id="fleet-template-modal" tabindex="-1" aria-labelledby="fleet-template-title" aria-hidden="true">
   <div class="modal-dialog"><div class="modal-content">
     <form method="post" action="{% url 'fleetops:fleet_apply_template' operation.uuid %}" data-fleet-action id="fleet-template-form">{% csrf_token %}
-      <div class="modal-header"><h5 class="modal-title" id="fleet-template-title">{% translate "Apply a structure template" %}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% translate 'Close' %}"></button></div>
+      <div class="modal-header"><h5 class="modal-title" id="fleet-template-title">{% translate "Apply a structure template" %}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% translate 'Close' %}" title="{% translate 'Close' %}"></button></div>
       <div class="modal-body">
         <label class="form-label" for="fleet-template-select">{% translate "Template" %}</label>
         <select class="form-select mb-2" name="template_id" id="fleet-template-select" required>{% for template in structure_templates %}<option value="{{ template.pk }}" data-layout="{{ template.layout }}" data-description="{{ template.description }}">{{ template.name }}</option>{% endfor %}</select>

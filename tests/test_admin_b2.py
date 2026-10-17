@@ -9,10 +9,11 @@ from unittest import mock
 
 from django.contrib.messages import get_messages
 from django.core.cache import cache
-from django.test import TestCase, tag
+from django.test import TestCase
 from django.urls import reverse
 from django.utils import translation
 
+from fleetops import forms_config
 from fleetops.fleet_defaults import KNOWN_SHIP_GROUPS
 from fleetops.forms_config import FleetOpsSettingsForm
 from fleetops.models import AuditLog, CommsPreset, FleetOpsSettings, GroupAccess, ShipFunction
@@ -557,11 +558,12 @@ class ListAndFormLookTests(TestCase):
 
     def test_the_page_level_error_of_a_form_is_one_readable_callout(self):
         f.payout_rule(587, 1_000_000)
-        response = self.client.post(
-            reverse("fleetops:configuration_add", args=["srp-rules"]),
-            {"label": "", "ship": "587", "doctrine_choice": "", "doctrine_custom": "", "scope": "any",
-             "amount": "1m", "is_active": "on", "notes": ""},
-        )
+        with mock.patch.object(forms_config.sde_service, "item_type_names", return_value={587: "Rifter"}):
+            response = self.client.post(
+                reverse("fleetops:configuration_add", args=["srp-rules"]),
+                {"label": "", "ship": "587", "doctrine_choice": "", "doctrine_custom": "", "scope": "any",
+                 "amount": "1m", "is_active": "on", "notes": ""},
+            )
 
         self.assertContains(response, '<div class="alert alert-danger" role="alert">')
         self.assertNotContains(response, 'class="alert alert-danger"><ul class="errorlist')

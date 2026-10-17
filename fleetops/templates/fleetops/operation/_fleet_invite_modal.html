@@ -3,7 +3,7 @@
 <div class="modal fade" id="fleet-invite-modal" tabindex="-1" aria-labelledby="fleet-invite-title" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
     <form method="post" action="{% url 'fleetops:fleet_invite' operation.uuid %}" data-fleet-action id="fleet-invite-form">{% csrf_token %}
-      <div class="modal-header"><h5 class="modal-title" id="fleet-invite-title">{% translate "Invite characters" %}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% translate 'Close' %}"></button></div>
+      <div class="modal-header"><h5 class="modal-title" id="fleet-invite-title">{% translate "Invite characters" %}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% translate 'Close' %}" title="{% translate 'Close' %}"></button></div>
       <div class="modal-body">
         <p class="small text-muted mb-2">{% translate "Any character registered in Alliance Auth by an active user. EVE sends the invitation from the FC character; the pilot accepts it in game." %}</p>
         <input type="search" class="form-control" id="fleet-invite-search" placeholder="{% translate 'Character name (at least 3 letters)' %}" aria-label="{% translate 'Search characters' %}" aria-describedby="fleet-invite-hint" autocomplete="off" maxlength="100">

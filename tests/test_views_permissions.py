@@ -43,6 +43,7 @@ from fleetops.providers.esi import FleetDetectionResult, FleetESIError
 from fleetops.providers.srp import SRPLinkResult
 
 from . import factories as f
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 from .fleet_sim import FleetSim
 
 WEBHOOK_SECRET = "s3cr3t-webhook-token"
@@ -884,9 +885,9 @@ class PermissionMatrixTests(SrpViewTestCase):
                            {"mode": "exclude", "note": "Test fleet"}),
             Case("live_pap", "get", r("fleetops:live_pap"), None, dict.fromkeys(ROLES, OK)),
             Case("approval_queue", "get", r("fleetops:approval_queue"), None, member_only),
-            # Resubmitting a rejected fleet is not available yet: fleet managers get a 404.
-            Case("resubmit_operation", "post", r("fleetops:resubmit_operation", args=[self.own_closed.uuid]),
-                 {"note": ""}, {"member": DENIED, "corp": DENIED, "fc": HIDDEN, "lead": HIDDEN}),
+            # Resubmitting a rejected fleet: whoever manages the fleet may try; this fleet is approved, so the answer
+            # is an error message and a redirect, and nothing changes.
+            *own_and_other("resubmit_operation", "resubmit_operation", self.own_closed, self.other_closed, {"note": ""}),
             # Send Ping: FCs and group leaders (no group leader among these roles).
             Case("send_ping", "get", r("fleetops:send_ping"), None,
                  {"member": DENIED, "corp": DENIED, "fc": OK, "lead": OK}),
@@ -1680,7 +1681,7 @@ class PageRenderingTests(FleetOpsViewTestCase):
     def test_incentive_review_lists_fc_rows(self):
         response = self.client_for(self.lead).get(reverse("fleetops:incentive_review"))
         self.assertContains(response, self.fc_main.character_name)
-        self.assertContains(response, "1000000000 ISK")
+        self.assertContains(response, "1,000,000,000 ISK")
 
     def test_audit_log_page_lists_entries(self):
         response = self.client_for(self.lead).get(reverse("fleetops:audit_log"))
