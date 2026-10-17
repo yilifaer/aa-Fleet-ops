@@ -14,13 +14,18 @@ from django.views.decorators.http import require_POST
 
 from fleetops.decorators import fleet_manager_required, fleetops_permission_required
 from fleetops.forms import ManualAttendanceForm, format_duration
-from fleetops.forms_records import ReviewForm, RosterPasteForm
-from fleetops.models import AttendanceRecord, FleetOperation, ReviewStatus, SpecialRole
+from fleetops.forms_records import ResubmitForm, ReviewForm, RosterPasteForm
+from fleetops.models import AttendanceRecord, FleetOperation, OperationRoleAssignment, ReviewStatus, SpecialRole
 from fleetops.services import approvals, roster_import
 from fleetops.services.attendance import RECORDABLE_STATUSES
 from fleetops.services.review import deletable_manual_rows, is_approver, pending_attendance, pending_operations
 from fleetops.texts import translate_stored
-from fleetops.views import MANUAL_ATTENDANCE_ENTRY_KEY, _can_manage_attendance_operation, _render
+from fleetops.views import (
+    MANUAL_ATTENDANCE_ENTRY_KEY,
+    _can_manage_attendance_operation,
+    _can_manage_operation,
+    _render,
+)
 
 # Pending PAP rows listed on the approvals page at once.
 QUEUE_ROWS_SHOWN = 500
@@ -51,6 +56,11 @@ def records_context(request, operation):
         "role_assignments": operation.role_assignments.select_related("auth_user", "assigned_by", "special_role"),
         "has_active_roles": SpecialRole.objects.filter(is_active=True).exists(),
     }
+    if operation.review_status == ReviewStatus.REJECTED and operation.reviewed_at is not None:
+        # The PAP rows that were rejected together with the fleet go back with it when it is sent back.
+        context["resubmit_row_count"] = manual_rows.filter(
+            review_status=ReviewStatus.REJECTED, reviewed_at=operation.reviewed_at
+        ).count()
     entry = request.session.get(MANUAL_ATTENDANCE_ENTRY_KEY)
     if entry and entry.get("operation") == str(operation.uuid):
         del request.session[MANUAL_ATTENDANCE_ENTRY_KEY]
@@ -75,7 +85,7 @@ def _form_errors(form):
 def approval_queue(request):
     operations = list(
         pending_operations()
-        .select_related("fleet_type", "created_by", "fc_user")
+        .select_related("fleet_type", "created_by__profile__main_character", "fc_user")
         .annotate(
             pending_rows=Count(
                 "attendance_records",
@@ -87,16 +97,23 @@ def approval_queue(request):
         )
         .order_by("started_at", "pk")
     )
+    # Credit roles given before the approval (an earlier version allowed it): flagged for the approver.
+    credits = {}
+    for assignment in OperationRoleAssignment.objects.filter(
+        operation__in=operations, grants_fc_credit=True
+    ).select_related("special_role"):
+        credits.setdefault(assignment.operation_id, []).append(assignment)
     for operation in operations:
         operation.duration_text = (
             format_duration(operation.ended_at - operation.started_at)
             if operation.started_at and operation.ended_at
             else ""
         )
+        operation.credit_roles = credits.get(operation.pk, [])
     rows = list(
         pending_attendance()
         .filter(source__in=AttendanceRecord.USER_SOURCES)
-        .select_related("operation__fleet_type", "created_by")
+        .select_related("operation__fleet_type", "created_by__profile__main_character")
         .order_by("-operation__started_at", "operation_id", "character_name", "pk")[: QUEUE_ROWS_SHOWN + 1]
     )
     groups = {}
@@ -184,8 +201,10 @@ def review_attendance_view(request):
 
 
 def _preview_page(request, operation, form, lines, warnings):
-    preview = roster_import.build_import_preview(operation, lines, actor=request.user)
     data = form.cleaned_data
+    preview = roster_import.build_import_preview(
+        operation, lines, actor=request.user, duplicate_action=data["duplicate_action"]
+    )
     payload = roster_import.sign_preview(
         operation,
         preview,
@@ -287,5 +306,35 @@ def roster_import_view(request, operation_uuid):
 @fleet_manager_required()
 @require_POST
 def resubmit_operation_view(request, operation_uuid):
-    """Send a rejected fleet back for approval, with an optional note. Not available yet: always 404."""
-    raise Http404
+    """Send a rejected fleet back for approval, with an optional note for the approvers.
+
+    Only the people who manage the fleet may do it, and only from Rejected. Editing a rejected fleet never
+    sends it back by itself.
+    """
+    operation = get_object_or_404(FleetOperation, uuid=operation_uuid)
+    if not _can_manage_operation(request.user, operation):
+        raise Http404
+    form = ResubmitForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, _("The fleet was not sent back. %(errors)s") % {"errors": _form_errors(form)})
+        return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+    try:
+        count = approvals.resubmit_operation(
+            operation,
+            actor=request.user,
+            note=form.cleaned_data["note"],
+            include_attendance=form.cleaned_data["include_attendance"],
+        )
+    except ValueError as exc:
+        messages.error(request, translate_stored(str(exc)))
+    else:
+        if count:
+            text = ngettext(
+                "Fleet sent back for approval with %(count)s PAP row.",
+                "Fleet sent back for approval with %(count)s PAP rows.",
+                count,
+            )
+            messages.success(request, text % {"count": count})
+        else:
+            messages.success(request, _("Fleet sent back for approval."))
+    return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)

@@ -54,8 +54,10 @@ ADD = "add"
 CAPPED = "capped"
 HAS_PAP = "has_pap"
 INVALID = "invalid"
-# Rows that can be ticked for the import; the others are listed only.
+# Rows that can be ticked for the import; the others are listed only. A row that has PAP already is importable
+# only as a correction (see ``PreviewRow.importable``).
 IMPORTABLE = (ADD, CAPPED, HAS_PAP)
+CORRECTIONS = (AttendanceRecord.Correction.REPLACE, AttendanceRecord.Correction.MERGE)
 
 PREVIEW_SALT = "fleetops.roster"
 PREVIEW_MAX_AGE = 30 * 60
@@ -67,6 +69,8 @@ NOT_IN_AUTH_REASON = texts.ROSTER_NOT_IN_AUTH()
 NOT_FOUND_REASON = texts.ROSTER_NOT_FOUND()
 ESI_ERROR_REASON = texts.ROSTER_ESI_ERROR()
 HAS_PAP_REASON = texts.ROSTER_HAS_PAP()
+HAS_PAP_KEEP_REASON = texts.ROSTER_HAS_PAP_KEEP()
+HAS_MANUAL_PAP_REASON = texts.ROSTER_HAS_MANUAL_PAP()
 
 
 @dataclass
@@ -97,9 +101,13 @@ class PreviewRow:
     checked: bool = False
     reason: str = ""
     main_character_id: int | None = None
+    # For a row that has PAP already: the PAP can be corrected (replaced or merged into) by this import.
+    can_correct: bool = False
 
     @property
     def importable(self) -> bool:
+        if self.status == HAS_PAP:
+            return self.can_correct
         return self.status in IMPORTABLE
 
 
@@ -197,11 +205,12 @@ def resolve_character_name(name: str) -> Resolved:
     return resolve_names([name]).get(name.casefold()) or Resolved(name=name)
 
 
-def _pap_holders(operation) -> dict[int, tuple[int | None, str]]:
-    """Characters that already have, or will get, PAP in the fleet: ``{character_id: (user_id, name)}``.
+def _pap_holders(operation) -> dict[int, tuple[int | None, str, bool]]:
+    """Characters that already have, or will get, PAP in the fleet: ``{character_id: (user_id, name, tracked)}``.
 
-    Granted rows and manual rows waiting for approval count; on a fleet that is still open,
-    tracked members and PAP link registrations count too.
+    Granted rows and manual rows waiting for approval count; on a fleet that is still open, tracked members and
+    PAP link registrations count too. ``tracked`` says whether the PAP comes from tracking or a PAP link: only
+    that PAP can be replaced or merged into. A character that has both a tracked and a manual row is tracked.
     """
     holders = {}
     rows = (
@@ -210,15 +219,30 @@ def _pap_holders(operation) -> dict[int, tuple[int | None, str]]:
             Q(granted=True)
             | Q(source__in=AttendanceRecord.USER_SOURCES, review_status=ReviewStatus.PENDING)
         )
-        .values_list("character_id", "auth_user_id", "character_name")
+        .values_list("character_id", "auth_user_id", "character_name", "source")
     )
-    for character_id, user_id, name in rows:
-        holders.setdefault(character_id, (user_id, name))
+    for character_id, user_id, name, source in rows:
+        tracked = source in AttendanceRecord.MANAGED_SOURCES
+        if character_id in holders:
+            known_user, known_name, known_tracked = holders[character_id]
+            holders[character_id] = (known_user, known_name, known_tracked or tracked)
+        else:
+            holders[character_id] = (user_id, name, tracked)
     if operation.status != FleetOperation.Status.CLOSED:
         for source in (operation.member_states, operation.pap_registrations):
             for character_id, user_id, name in source.values_list("character_id", "auth_user_id", "character_name"):
-                holders.setdefault(character_id, (user_id, name))
+                known_user, known_name, _known_tracked = holders.get(character_id, (user_id, name, True))
+                holders[character_id] = (known_user, known_name, True)
     return holders
+
+
+def has_pap_reason(duplicate_action, tracked) -> str:
+    """Why a character that has PAP already is not imported (or what to know when it is): a stored message."""
+    if not tracked:
+        return HAS_MANUAL_PAP_REASON
+    if duplicate_action not in CORRECTIONS:
+        return HAS_PAP_KEEP_REASON
+    return HAS_PAP_REASON
 
 
 def _limit_reason(limit, keeping):
@@ -237,12 +261,14 @@ def _limit_reason(limit, keeping):
     ) % {"limit": limit}
 
 
-def build_import_preview(operation, lines, *, actor) -> list[PreviewRow]:
+def build_import_preview(operation, lines, *, actor, duplicate_action=AttendanceRecord.Correction.KEEP) -> list[PreviewRow]:
     """What importing the pasted lines into the fleet would do, line by line.
 
     Characters over the fleet's PAP character limit are marked "capped" (not ticked). The
     characters a player already has PAP with keep their places; among the pasted ones the FC
-    character comes first, then the player's main, then the paste order.
+    character comes first, then the player's main, then the paste order. A character that has PAP
+    already can only be imported to correct it: with ``duplicate_action`` replace or merge, and only
+    when the PAP comes from tracking or a PAP link. Such a row is listed but not ticked.
     """
     resolved = resolve_names([line.name for line in lines if line.is_valid])
     holders = _pap_holders(operation)
@@ -273,7 +299,10 @@ def build_import_preview(operation, lines, *, actor) -> list[PreviewRow]:
         elif found.character_id in listed:
             row.status, row.reason = INVALID, gettext("The same character is listed twice")
         elif found.character_id in holders:
-            row.status, row.reason = HAS_PAP, translate_stored(HAS_PAP_REASON)
+            tracked = holders[found.character_id][2]
+            row.status = HAS_PAP
+            row.can_correct = tracked and duplicate_action in CORRECTIONS
+            row.reason = translate_stored(has_pap_reason(duplicate_action, tracked))
         else:
             row.status, row.checked = ADD, True
             candidates[found.user_id].append((len(rows), row))
@@ -283,7 +312,7 @@ def build_import_preview(operation, lines, *, actor) -> list[PreviewRow]:
     limit = operation.pap_character_limit
     if limit is not None:
         holding = defaultdict(list)
-        for user_id, name in holders.values():
+        for user_id, name, _tracked in holders.values():
             if user_id is not None:
                 holding[user_id].append(name)
         for user_id, user_rows in candidates.items():
@@ -370,8 +399,12 @@ def import_rows(operation, rows, *, actor, attendance_value, duplicate_action, n
                 reason = texts.ROSTER_LISTED_TWICE()
             elif character_id not in owned:
                 reason = NOT_IN_AUTH_REASON
-            elif character_id in holders and row.get("status") != HAS_PAP:
-                reason = HAS_PAP_REASON
+            elif character_id in holders:
+                # A character that has PAP in the fleet is only imported as a correction of tracked PAP, whatever
+                # the preview said (a signed preview can be sent again with other settings, or the PAP changed).
+                tracked = holders[character_id][2]
+                if row.get("status") != HAS_PAP or not tracked or duplicate_action not in CORRECTIONS:
+                    reason = has_pap_reason(duplicate_action, tracked)
             if reason:
                 result.skipped.append(
                     {"character_id": character_id, "character_name": row["character_name"], "reason": reason}

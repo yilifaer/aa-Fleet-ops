@@ -115,7 +115,7 @@ class IncentiveRebuildTests(TestCase):
         row = stat_for(self.period, self.fc1)
         self.assertEqual(row.fleet_count, 4)
         self.assertEqual(row.total_points, Decimal("8.00"))
-        self.assertEqual(row.fleet_type_breakdown, {"StratOp": {"count": 4, "points": 8.0}})
+        self.assertEqual(row.fleet_type_breakdown, {"StratOp": {"count": 4, "points": 8.0, "toward_minimum": 4}})
 
     def test_exactly_minimum_fleets_is_eligible(self):
         closed_op(self.fc1, utc(2026, 3, 1))
@@ -373,7 +373,9 @@ class IncentiveViewTests(TestCase):
         )
         period = IncentivePeriod.objects.get(year=2026, month=4)
         self.assertRedirects(response, reverse("fleetops:incentive_review") + "?year=2026&month=4", fetch_redirect_response=False)
-        self.assertEqual(period.status, PeriodStatus.OPEN)
+        # A new period is calculated at once.
+        self.assertEqual(period.status, PeriodStatus.REVIEW)
+        self.assertIsNotNone(period.calculated_at)
         entry = AuditLog.objects.get(action="incentive.period_create")
         self.assertEqual(entry.actor, self.manager)
         self.assertEqual(entry.new_value, {"budget": 5_000_000_000, "minimum_fleets": 3})
@@ -634,7 +636,9 @@ class IncentivePeriodPageTests(TestCase):
         entry = AuditLog.objects.get(action="incentive.period_update")
         self.assertEqual(entry.old_value, {"budget": 100, "minimum_fleets": 3})
         self.assertEqual(entry.new_value, {"budget": 250, "minimum_fleets": 5})
-        self.assertEqual(flashed(response), ["Budget and minimum fleets saved. Recalculate to apply them."])
+        self.assertEqual(flashed(response), ["Budget and minimum fleets saved; the month was recalculated."])
+        self.assertEqual(period.status, PeriodStatus.REVIEW)
+        self.assertIsNotNone(period.calculated_at)
 
     def test_edit_errors_are_shown_and_nothing_changes(self):
         period = IncentivePeriod.objects.create(year=2026, month=3, budget=100, minimum_fleets=3)
@@ -645,7 +649,7 @@ class IncentivePeriodPageTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Ensure this value is greater than or equal to 1.")
-        self.assertContains(response, "<strong>100 ISK</strong>", html=True)
+        self.assertContains(response, 'id="period-budget">100 ISK</strong>')
         period.refresh_from_db()
         self.assertEqual((period.budget, period.minimum_fleets), (100, 3))
         self.assertFalse(AuditLog.objects.filter(action="incentive.period_update").exists())

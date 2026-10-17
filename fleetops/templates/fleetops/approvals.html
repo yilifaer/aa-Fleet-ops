@@ -1,40 +1,55 @@
 {% extends "fleetops/base.html" %}
-{% load i18n fleetops_i18n fleetops_messages %}
+{% load i18n fleetops_i18n fleetops_messages fleetops_ui %}
 {% block fleetops_content %}
+{% translate "PAP link" as pap_link_label %}
+{% translate "Manual" as manual_label %}
+{% translate "Times edited" as times_edited_label %}
+{% translate "An FC changed the times of this tracked fleet." as times_edited_title %}
+{% translate "Fleet pending" as fleet_pending_label %}
+{% translate "Fleet rejected" as fleet_rejected_label %}
+{% translate "Assigned before approval" as before_approval_label %}
+{% translate "Special roles with FC credit can be assigned once an FC lead has approved the fleet." as before_approval_title %}
 <div class="mb-3"><h2 class="mb-1">{% translate "Approvals" %}</h2><div class="text-muted">{% translate "Manual fleets, edited fleet times and manual PAP waiting for FC lead approval" %}</div></div>
 
-<div class="card mb-3" id="pending-fleets"><div class="card-header"><strong>{% translate "Fleets waiting for approval" %}</strong> <span class="badge bg-warning text-dark">{{ pending_fleets|length }}</span></div>
+<div class="card mb-3" id="pending-fleets"><div class="card-header"><strong>{% translate "Fleets waiting for approval" %}</strong> <span class="fo-count">{{ pending_fleets|length }}</span></div>
+{% if pending_fleets %}
 <div class="table-responsive"><table class="table table-sm align-middle mb-0">
-  <thead><tr><th>{% translate "Fleet" %}</th><th>FC</th><th>{% translate "Start (EVE)" %}</th><th>{% translate "End (EVE)" %}</th><th>{% translate "Duration" context "FleetOps" %}</th><th>{% translate "Created by" %}</th><th>{% translate "PAP rows waiting" %}</th><th>{% translate "Decision" %}</th></tr></thead>
+  <thead><tr><th>{% translate "Fleet" %}</th><th>FC</th><th>{% translate "Start (EVE)" %}</th><th>{% translate "End (EVE)" %}</th><th>{% translate "Duration" context "FleetOps" %}</th><th>{% translate "Created by" %}</th><th class="text-end">{% translate "PAP rows waiting" %}</th><th>{% translate "Decision" %}</th></tr></thead>
   <tbody>{% for op in pending_fleets %}<tr>
-    <td><a href="{% url 'fleetops:operation_detail' op.uuid %}">{{ op.fleet_type }}</a>{% if op.link_only %} <span class="badge bg-info text-dark">{% translate "PAP link" %}</span>{% elif op.is_manual %} <span class="badge bg-secondary">{% translate "Manual" %}</span>{% else %} <span class="badge bg-warning text-dark" title="{% translate 'An FC changed the times of this tracked fleet.' %}">{% translate "Times edited" %}</span>{% endif %}<div class="small text-muted">{{ op.get_status_display }}</div></td>
+    <td><a href="{% url 'fleetops:operation_detail' op.uuid %}">{{ op.fleet_type }}</a>{% if op.link_only %} {% pill "info" pap_link_label %}{% elif op.is_manual %} {% pill "neutral" manual_label %}{% else %} {% pill "warn" times_edited_label title=times_edited_title %}{% endif %}<div class="small text-muted">{{ op.get_status_display }}</div>
+      {% if op.review_request_note %}<div class="small fo-resubmitted">{% blocktranslate trimmed with note=op.review_request_note %}Resubmitted: {{ note }}{% endblocktranslate %}</div>{% endif %}
+      {% if op.credit_roles %}<div class="small fo-credit-roles">{% for role in op.credit_roles %}{% blocktranslate trimmed with name=role.character_name role=role.role_label %}FC credit: {{ name }} ({{ role }}){% endblocktranslate %}{% if not forloop.last %}; {% endif %}{% endfor %} {% pill "warn" before_approval_label title=before_approval_title %}</div>{% endif %}</td>
     <td>{{ op.fc_character_name }}</td>
     <td class="text-nowrap">{{ op.started_at|eve_time|default:"—" }}</td>
     <td class="text-nowrap">{{ op.ended_at|eve_time|default:"—" }}</td>
     <td class="text-nowrap">{{ op.duration_text|default:"—" }}{% if op.status == 'closed' %}<div class="small text-muted">{% blocktranslate trimmed with multiplier=op.attendance_multiplier %}PAP {{ multiplier }}x{% endblocktranslate %}</div>{% endif %}</td>
     <td>{{ op.created_by.profile.main_character|default:op.created_by }}</td>
-    <td>{{ op.pending_rows }}</td>
-    <td style="min-width:20rem"><form method="post" action="{% url 'fleetops:review_operation' op.uuid %}" class="d-flex flex-wrap gap-1 align-items-center">{% csrf_token %}
+    <td class="text-end">{{ op.pending_rows }}</td>
+    <td class="fo-decision"><form method="post" action="{% url 'fleetops:review_operation' op.uuid %}" class="d-flex flex-wrap gap-2 align-items-center">{% csrf_token %}
       <input class="form-control form-control-sm" name="note" maxlength="255" placeholder="{% translate 'Note (required to reject)' %}" aria-label="{% blocktranslate trimmed with fleet_type=op.fleet_type %}Note for {{ fleet_type }}{% endblocktranslate %}">
       <div class="form-check"><input class="form-check-input" type="checkbox" name="include_attendance" id="include-{{ op.pk }}" checked><label class="form-check-label small" for="include-{{ op.pk }}">{% translate "With its PAP rows" %}</label></div>
-      <button class="btn btn-sm btn-success" name="action" value="approve">{% translate "Approve" %}</button>
-      <button class="btn btn-sm btn-outline-danger" name="action" value="reject">{% translate "Reject" %}</button>
+      <button class="btn btn-sm btn-primary" name="action" value="approve">{% translate "Approve" %}</button>
+      <button class="btn btn-sm btn-outline-danger" name="action" value="reject" data-fo-confirm="{% translate 'Reject this fleet? The FC sees your note.' %}" data-fo-confirm-label="{% translate 'Reject' %}">{% translate "Reject" %}</button>
     </form></td>
-  </tr>{% empty %}<tr><td colspan="8" class="text-muted p-4">{% translate "No fleets are waiting for approval." %}</td></tr>{% endfor %}</tbody>
-</table></div></div>
+  </tr>{% endfor %}</tbody>
+</table></div>
+{% else %}
+<div class="fo-empty" id="approvals-empty"><i class="fa-regular fa-circle-check" aria-hidden="true"></i>{% if row_groups %}<div>{% translate "No fleets are waiting for approval." %}</div>{% else %}<div>{% translate "Nothing waits for approval." %}</div><a class="btn btn-outline-secondary" href="{% url 'fleetops:fleet_operations' %}">{% translate "Fleets" %}</a>{% endif %}</div>
+{% endif %}
+</div>
 
 <div class="card" id="pending-pap"><div class="card-header"><strong>{% translate "Manual PAP waiting for approval" %}</strong></div>
 {% if row_groups %}
 <form method="post" action="{% url 'fleetops:review_attendance' %}">{% csrf_token %}
-<div class="table-responsive"><table class="table table-sm align-middle mb-0">
-  <thead><tr><th><input class="form-check-input" type="checkbox" id="select-all-pap" aria-label="{% translate 'Select all' %}"></th><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th>{% translate "Value" context "PAP value" %}</th><th>{% translate "Correction" %}</th><th>{% translate "Source" %}</th><th>{% translate "Notes" %}</th><th>{% translate "Added by" %}</th></tr></thead>
+<div class="table-responsive"><table class="table table-sm align-middle mb-0 fo-table-pin">
+  <thead><tr><th><label class="fo-check-cell"><input class="form-check-input" type="checkbox" id="select-all-pap" aria-label="{% translate 'Select all' %}"></label></th><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th class="text-end">{% translate "Value" context "PAP value" %}</th><th>{% translate "Correction" %}</th><th>{% translate "Source" %}</th><th>{% translate "Notes" %}</th><th>{% translate "Added by" %}</th></tr></thead>
   {% for group in row_groups %}<tbody>
-    <tr class="table-light"><th colspan="8"><a href="{% url 'fleetops:operation_detail' group.operation.uuid %}">{% blocktranslate trimmed with started=group.operation.started_at|eve_time fleet_type=group.operation.fleet_type fc=group.operation.fc_character_name %}{{ started }} EVE · {{ fleet_type }} · FC {{ fc }}{% endblocktranslate %}</a>
-      {% if group.operation.review_status == 'pending' %} <span class="badge bg-warning text-dark">{% translate "Fleet pending" %}</span>{% elif group.operation.review_status == 'rejected' %} <span class="badge bg-danger">{% translate "Fleet rejected" %}</span>{% endif %}
-      <span class="badge bg-secondary">{{ group.operation.get_status_display }}</span></th></tr>
+    <tr class="fo-group-row"><th colspan="8"><a href="{% url 'fleetops:operation_detail' group.operation.uuid %}">{% blocktranslate trimmed with started=group.operation.started_at|eve_time fleet_type=group.operation.fleet_type fc=group.operation.fc_character_name %}{{ started }} EVE · {{ fleet_type }} · FC {{ fc }}{% endblocktranslate %}</a>
+      {% if group.operation.review_status == 'pending' %} {% pill "warn" fleet_pending_label %}{% elif group.operation.review_status == 'rejected' %} {% pill "bad" fleet_rejected_label %}{% endif %}
+      {{ group.operation|op_status_pill }}</th></tr>
     {% for r in group.rows %}<tr>
-      <td><input class="form-check-input pap-row" type="checkbox" name="ids" value="{{ r.pk }}" aria-label="{% blocktranslate trimmed with name=r.character_name %}Select {{ name }}{% endblocktranslate %}"></td>
-      <td>{{ r.character_name }}</td><td>{{ r.main_character_name|default:"—" }}</td><td>{{ r.attendance_value }}</td>
+      <td><label class="fo-check-cell"><input class="form-check-input pap-row" type="checkbox" name="ids" value="{{ r.pk }}" aria-label="{% blocktranslate trimmed with name=r.character_name %}Select {{ name }}{% endblocktranslate %}"></label></td>
+      <td>{{ r.character_name }}</td><td>{{ r.main_character_name|default:"—" }}</td><td class="text-end">{{ r.attendance_value }}</td>
       <td>{{ r.get_correction_display }}</td><td>{{ r.get_source_display }}</td><td>{{ r.notes|stored_text|default:"—" }}</td>
       <td>{{ r.created_by.profile.main_character|default:r.created_by|default:"—" }}<div class="small text-muted">{{ r.created_at|eve_time }} EVE</div></td>
     </tr>{% endfor %}
@@ -43,7 +58,7 @@
 {% if rows_truncated %}<div class="card-body small text-muted">{% blocktranslate trimmed with shown=rows_shown %}Only the first {{ shown }} rows are listed; the others follow once these are reviewed.{% endblocktranslate %}</div>{% endif %}
 <div class="card-body row g-2 align-items-center">
   <div class="col-lg-5"><input class="form-control form-control-sm" name="note" maxlength="255" placeholder="{% translate 'Note (required to reject)' %}" aria-label="{% translate 'Review note' %}"></div>
-  <div class="col-auto"><button class="btn btn-sm btn-success" name="action" value="approve">{% translate "Approve selected" %}</button> <button class="btn btn-sm btn-outline-danger" name="action" value="reject">{% translate "Reject selected" %}</button></div>
+  <div class="col-auto d-flex gap-2"><button class="btn btn-sm btn-primary" name="action" value="approve">{% translate "Approve selected" %}</button> <button class="btn btn-sm btn-outline-danger" name="action" value="reject" data-fo-confirm="{% translate 'Reject the selected PAP rows?' %}" data-fo-confirm-label="{% translate 'Reject' %}">{% translate "Reject selected" %}</button></div>
 </div>
 </form>
 <script>
@@ -52,6 +67,6 @@
   all.addEventListener('change', () => document.querySelectorAll('.pap-row').forEach(box => { box.checked = all.checked; }));
 })();
 </script>
-{% else %}<div class="card-body text-muted">{% translate "No manual PAP is waiting for approval." %}</div>{% endif %}
+{% else %}<div class="fo-empty"><i class="fa-regular fa-circle-check" aria-hidden="true"></i><div>{% translate "No manual PAP is waiting for approval." %}</div></div>{% endif %}
 </div>
 {% endblock %}

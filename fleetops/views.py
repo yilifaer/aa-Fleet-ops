@@ -49,6 +49,7 @@ from fleetops.models import (
     FleetOpsSettings,
     FleetStartPreset,
     FleetType,
+    GroupAccess,
     IncentivePeriod,
     MonthlyFCStatistic,
     OperationActionAttempt,
@@ -73,9 +74,13 @@ from fleetops.services.incentives import (
     WAIVER_LOCKED_MESSAGE,
     IncentiveError,
     finalize_period,
+    months_of,
+    numbers_differ,
     pending_multiplier_operations,
     rebuild_period,
+    refresh_months_after_commit,
     set_waiver,
+    toward_minimum_count,
     unlock_period,
 )
 from fleetops.services.mentions import DISCORD_MESSAGE_LIMIT, mention_text, selection_from_operation
@@ -116,7 +121,7 @@ from fleetops.services.review import (
     pending_approval_count,
     pending_approval_counts,
 )
-from fleetops.services.roles import add_role_assignment, delete_role_assignment
+from fleetops.services.roles import add_role_assignment, delete_role_assignment, is_fleet_member
 from fleetops.services.routing import proximity_rows
 from fleetops.services.scheduling import (
     CHANNEL_CHANGE_NEEDS_POST,
@@ -134,6 +139,7 @@ from fleetops.services.tracking import unreadable_fleet_warning
 from fleetops.srp import access as srp_access
 from fleetops.srp.links import link_made_at_start, operation_srp_context
 from fleetops.texts import translate_stored
+from fleetops.ui import PERIOD_STATUS_TONES, tone_for
 
 logger = get_extension_logger(__name__)
 
@@ -149,6 +155,8 @@ PERIOD_PARAMS = ("year", "month", "page")
 # Step messages are written for the fleet page (short ESI texts, error classes), so audit entries may keep them.
 RETRY_AUDIT_MESSAGE_LENGTH = 500
 PENDING_MULTIPLIERS_SHOWN = 20
+# The value of the fleets list filter "Group" for the fleets that belong to no group.
+ALLIANCE_FLEETS = "alliance"
 # The id of the start form in start_fleet.html; the preset fields above it post with it.
 START_FORM_ID = "fleet-start-form"
 
@@ -705,6 +713,10 @@ def fleet_operations_view(request):
     )
     if not _can_view_all_fleets(request.user):
         visible = Q(fc_user=request.user) | _member_of(request.user)
+        # Leaders see the fleets of the groups they lead now (read-only unless they started them).
+        led_groups = group_access.visible_group_ids(request.user)
+        if led_groups:
+            visible |= Q(group_id__in=led_groups)
         if _can_see_scheduled_fleets(request.user):
             visible |= Q(
                 status__in=[FleetOperation.Status.SCHEDULED, FleetOperation.Status.CANCELLED],
@@ -722,9 +734,16 @@ def fleet_operations_view(request):
     fc = request.GET.get("fc", "").strip()
     doctrine = request.GET.get("doctrine", "").strip()
     query = request.GET.get("q", "").strip()
+    group = request.GET.get("group", "").strip()
     fleet_type_id = _database_id(fleet_type)
     if fleet_type_id is not None:
         qs = qs.filter(fleet_type_id=fleet_type_id)
+    if group == ALLIANCE_FLEETS:
+        qs = qs.filter(group_id=None, group_name="")
+    elif _database_id(group) is not None:
+        qs = qs.filter(group_id=_database_id(group))
+    else:
+        group = ""
     if status:
         qs = qs.filter(status=status)
     if fc:
@@ -771,16 +790,39 @@ def fleet_operations_view(request):
             "page": page,
             "fleet_types": FleetType.objects.all(),
             "status_choices": FleetOperation.Status.choices,
+            "group_options": _group_filter_options(request.user),
+            "alliance_fleets": ALLIANCE_FLEETS,
+            # Whether an empty list is the result of the filters (or of another year or month) or of no fleets at all.
+            "filtered": bool(
+                fleet_type or status or fc or doctrine or query or group or month is not None or year != current_year
+            ),
             "filters": {
                 "fleet_type": fleet_type,
                 "status": status,
                 "fc": fc,
                 "doctrine": doctrine,
                 "q": query,
+                "group": group,
             },
         }
     )
     return _render(request, "fleetops/fleet_operations.html", period)
+
+
+def _group_filter_options(user):
+    """``(group id, name)`` for the "Group" filter of the fleets list, by name; empty when there is nothing to choose.
+
+    Those who see every fleet choose among the groups that have an access row or a fleet; a leader chooses among the
+    groups they lead; everybody else sees no filter. A fixed number of queries whatever the number of groups.
+    """
+    if _can_view_all_fleets(user):
+        names = dict(GroupAccess.objects.values_list("group_id", "group__name"))
+        names.update(
+            FleetOperation.objects.exclude(group_id=None).order_by().values_list("group_id", "group__name").distinct()
+        )
+    else:
+        names = {grant.group_id: grant.group_name for grant in group_access.leader_access(user).grants}
+    return sorted(names.items(), key=lambda item: (item[1].casefold(), item[0]))
 
 
 EDITED_FIELDS = [
@@ -848,9 +890,11 @@ def edit_operation_view(request, operation_uuid):
                 updated.ended_at
             ) != _minute(old["ended_at"])
             approver = is_approver(request.user)
+            # An approved fleet goes back to review when someone who is not an FC lead changes what decides how it
+            # counts. A rejected fleet is never sent back by an edit: "Resubmit for approval" does that.
             back_to_review = (
                 (times_changed or (fleet_type_changed and (updated.is_manual or updated.link_only)))
-                and updated.review_status != ReviewStatus.PENDING
+                and updated.review_status == ReviewStatus.APPROVED
                 and not approver
             )
             if back_to_review:
@@ -871,16 +915,23 @@ def edit_operation_view(request, operation_uuid):
                 {k: str(v) for k, v in new.items()},
                 reason=texts.AUDIT_ARCHIVE_EDIT(),
             )
-            # The multiplier chosen for the old times stays within the duration rule.
+            # The multiplier chosen for the old times stays within the duration rule, whoever edits the times.
             lowered = None
-            if times_changed and not approver:
+            if times_changed:
                 lowered = _keep_multiplier_within_duration(request.user, updated)
+            target = redirect("fleetops:operation_detail", operation_uuid=updated.uuid)
             if lowered is not None:
-                messages.warning(
-                    request, _(
-                        "PAP multiplier lowered to %(multiplier)sx: the new times do not allow more."
-                    ) % {"multiplier": lowered}
-                )
+                warning = _("PAP multiplier lowered to %(multiplier)sx: the new times do not allow more.") % {
+                    "multiplier": lowered
+                }
+                if approver:
+                    warning += " " + _("As FC lead you can set a higher multiplier with a reason on the PAP tab.")
+                    # The PAP tab opens on a closed fleet; the address leads to the multiplier card.
+                    target = redirect(
+                        reverse("fleetops:operation_detail", kwargs={"operation_uuid": updated.uuid})
+                        + "#multiplier-card"
+                    )
+                messages.warning(request, warning)
             if back_to_review:
                 messages.warning(
                     request,
@@ -888,7 +939,11 @@ def edit_operation_view(request, operation_uuid):
                 )
             else:
                 messages.success(request, _("Fleet operation updated."))
-            return redirect("fleetops:operation_detail", operation_uuid=updated.uuid)
+            # The FC points of the old and the new month follow the fleet type, the times and the review status.
+            refresh_months_after_commit(
+                *months_of(updated, previous_started_at=old["started_at"]), actor=request.user
+            )
+            return target
     else:
         form = OperationEditForm(instance=operation, user=request.user)
     return _render(
@@ -1369,6 +1424,14 @@ def _incentive_page(request, year, month, *, period=None, form=None, edit_form=N
         status=FleetOperation.Status.CLOSED, started_at__gte=start, started_at__lt=end
     )
     pending = pending_multiplier_operations(period or IncentivePeriod(year=year, month=month))
+    fc_statistics = []
+    numbers_stale = False
+    if period is not None:
+        fc_statistics = list(period.fc_statistics.select_related("fc_user__profile__main_character"))
+        for row in fc_statistics:
+            row.toward_minimum = toward_minimum_count(row)
+        # The stored rows are compared with the FC statistics of the month as they are now (four queries).
+        numbers_stale = numbers_differ(period, fc_statistics)
     return _render(
         request,
         "fleetops/incentive_review.html",
@@ -1376,9 +1439,9 @@ def _incentive_page(request, year, month, *, period=None, form=None, edit_form=N
             year,
             month,
             period=period,
-            fc_statistics=(
-                period.fc_statistics.select_related("fc_user__profile__main_character") if period is not None else []
-            ),
+            fc_statistics=fc_statistics,
+            numbers_stale=numbers_stale,
+            period_tone=tone_for(PERIOD_STATUS_TONES, period.status) if period is not None else "",
             form=form,
             edit_form=edit_form,
             pending_multiplier_operations=list(pending.select_related("fleet_type")[:PENDING_MULTIPLIERS_SHOWN]),
@@ -1386,6 +1449,20 @@ def _incentive_page(request, year, month, *, period=None, form=None, edit_form=N
             not_counted_count=closed.count() - counted_operations(closed).count(),
         ),
     )
+
+
+def _calculate_now(request, period):
+    """Calculate a period after it was created or changed; False (with a message) when that did not work."""
+    try:
+        rebuild_period(period, actor=request.user)
+    except IncentiveError as exc:
+        messages.error(request, translate_stored(str(exc)))
+        return False
+    except Exception as exc:
+        log_failure(logger, "Incentive calculation", exc)
+        messages.error(request, _("The period was saved, but its numbers could not be calculated. Use Recalculate."))
+        return False
+    return True
 
 
 @fleetops_permission_required("fleetops.manage_incentives")
@@ -1430,10 +1507,13 @@ def incentive_review(request):
         None,
         {"budget": period.budget, "minimum_fleets": period.minimum_fleets},
     )
-    messages.success(
-        request,
-        _("Incentive period %(period)s created. Recalculate to build the FC statistics.") % {"period": period},
-    )
+    # A new period shows its numbers at once.
+    if _calculate_now(request, period):
+        messages.success(
+            request, _("Incentive period %(period)s created and calculated.") % {"period": period}
+        )
+    else:
+        messages.success(request, _("Incentive period %(period)s created.") % {"period": period})
     return _incentive_redirect(period)
 
 
@@ -1445,7 +1525,7 @@ def incentive_recalculate(request, pk):
         return redirect("fleetops:dashboard")
     old_status = period.status
     try:
-        rebuild_period(period)
+        rebuild_period(period, actor=request.user)
     except IncentiveError as exc:
         messages.error(request, translate_stored(str(exc)))
         return _incentive_redirect(period)
@@ -1480,7 +1560,11 @@ def incentive_update(request, pk):
         messages.info(request, _("Budget and minimum fleets are unchanged."))
         return _incentive_redirect(period)
     audit(request.user, "incentive.period_update", period, old, new)
-    messages.success(request, _("Budget and minimum fleets saved. Recalculate to apply them."))
+    # The saved values apply at once.
+    if _calculate_now(request, period):
+        messages.success(request, _("Budget and minimum fleets saved; the month was recalculated."))
+    else:
+        messages.success(request, _("Budget and minimum fleets saved."))
     return _incentive_redirect(period)
 
 
@@ -1624,10 +1708,22 @@ def delete_manual_attendance(request, pk):
         {"attendance_value": record.attendance_value},
         None,
     )
+    character_id, character_name = record.character_id, record.character_name
     record.delete()
     # A deleted correction gives the tracked PAP back.
     pap.refresh_after_change(operation, actor=request.user, reason=texts.AUDIT_PAP_DELETED())
     messages.warning(request, _("Manual PAP deleted."))
+    credit_roles = list(operation.role_assignments.filter(character_id=character_id, grants_fc_credit=True))
+    if credit_roles and not is_fleet_member(operation, character_id):
+        # The roles stay; taking FC credit away is a decision of the FC lead.
+        messages.warning(
+            request,
+            _(
+                "%(name)s is no longer recorded in this fleet but keeps FC credit through %(roles)s. "
+                "Remove the role on the Special Roles tab if that is not right."
+            )
+            % {"name": character_name, "roles": ", ".join(role.role_label for role in credit_roles)},
+        )
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 

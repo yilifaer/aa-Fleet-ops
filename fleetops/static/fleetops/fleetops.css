@@ -461,6 +461,20 @@ button.fo-live { cursor: pointer; }
 /* end 6.B */
 
 /* 6.C fleet records, PAP, approvals and incentives */
+/* The decision of the approval queue: a note field that takes the room it gets, and the two buttons. */
+.fleetops .fo-decision { min-width: 20rem; }
+.fleetops .fo-decision .form-control { flex: 1 1 12rem; width: auto; }
+.fleetops .fo-resubmitted, .fleetops .fo-credit-roles { margin-top: var(--fo-space-1); }
+/* Pasted roster: why a row cannot be imported stays readable next to its status */
+.fleetops .fo-roster-reason { max-width: 24rem; white-space: normal; }
+/* The manual PAP table scrolls sideways on a phone; its times and names stay on one line */
+.fleetops #manual-pap-table { white-space: nowrap; }
+/* The statistics card of the fleet page: the forms take the room they get and wrap on a phone */
+.fleetops .fo-stats-actions > form .form-control { flex: 1 1 10rem; width: auto; min-width: 0; }
+@media (max-width: 575.98px) { .fleetops .fo-stats-actions { flex: 1 1 100%; } .fleetops .fo-stats-actions > form { flex: 1 1 100%; } }
+/* The PAP multiplier choice of the end dialog and the pending-choice callout */
+.fleetops #end-multiplier-choice .fo-seg { flex-wrap: wrap; }
+.fleetops #multiplier-pending .btn-group { gap: var(--fo-space-2); }
 /* end 6.C */
 
 /* 6.D home and statistics */

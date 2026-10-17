@@ -140,6 +140,7 @@ def set_operation_attendance_multiplier(operation, multiplier: int, *, actor=Non
     callers for overrides beyond the duration rule. Returns the PAP summary of a closed fleet,
     otherwise None.
     """
+    from fleetops.services import incentives
     from fleetops.services.audit import audit
     from fleetops.services.pap import refresh_after_change
 
@@ -173,4 +174,6 @@ def set_operation_attendance_multiplier(operation, multiplier: int, *, actor=Non
             if summary is not None:
                 new["pap"] = summary
             audit(actor, "attendance.multiplier", operation, old, new, reason=reason)
+    # The FC points of the month follow the multiplier, also when the choice only cleared the pending state.
+    incentives.refresh_months_after_commit(*incentives.months_of(operation), actor=actor)
     return summary

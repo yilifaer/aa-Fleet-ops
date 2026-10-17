@@ -22,6 +22,7 @@ from datetime import datetime
 from allianceauth.authentication.models import CharacterOwnership
 from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
 
 from fleetops.models import (
     AttendanceRecord,
@@ -46,6 +47,9 @@ _MANAGED_FIELDS = [
     "corporation_name", "source", "attendance_value", "granted", "capped", "below_minimum", "replaced",
     "extra_value", "tracked_seconds", "first_seen", "last_seen",
 ]
+# The fields as the rows hold them (the foreign key as its id); a row whose values did not change keeps its
+# ``updated_at``.
+_MANAGED_VALUES = [("auth_user_id" if name == "auth_user" else name) for name in _MANAGED_FIELDS]
 
 
 @dataclass
@@ -207,6 +211,23 @@ def compute_pap(operation, *, only_user=None, owned_rows=None) -> PapPlan:
     )
 
 
+def _managed_state(row):
+    """What the engine writes to a managed row, to tell whether a recalculation changed it."""
+    return tuple(getattr(row, name) for name in _MANAGED_VALUES)
+
+
+def _seen_state(row):
+    """The state of a managed row as far as anyone is credited by it.
+
+    The value of a row that is not granted only follows the fleet's multiplier and counts for nothing, so a
+    change of the multiplier does not make such a row "changed": it is written, but keeps its ``updated_at``.
+    """
+    state = list(_managed_state(row))
+    if not row.granted:
+        state[_MANAGED_VALUES.index("attendance_value")] = None
+    return tuple(state)
+
+
 def _write_identity(row, candidate):
     identity = candidate.identity
     row.main_character_id = identity.main_character_id
@@ -320,6 +341,10 @@ def finalize_pap(operation, *, actor=None, reason="") -> dict:
         rows = list(AttendanceRecord.objects.filter(operation=current).select_related("auth_user"))
         managed = [row for row in rows if row.source in AttendanceRecord.MANAGED_SOURCES]
         user_rows = [row for row in rows if row.source in AttendanceRecord.USER_SOURCES]
+        # What the rows hold now: only a row whose values change is written, and only then does its
+        # ``updated_at`` move, so it says when the row last really changed.
+        managed_before = {row.pk: (_managed_state(row), _seen_state(row)) for row in managed}
+        granted_before = {row.pk: row.granted for row in user_rows}
         created = []
         unregistered = 0
         if current.pap_rules == FleetOperation.PapRules.TIME_IN_FLEET:
@@ -332,11 +357,22 @@ def finalize_pap(operation, *, actor=None, reason="") -> dict:
         new_rows = {id(row) for row in created}
         if created:
             AttendanceRecord.objects.bulk_create(created, batch_size=500)
+        now = timezone.now()
         existing = [row for row in managed if id(row) not in new_rows]
-        if existing:
-            AttendanceRecord.objects.bulk_update(existing, _MANAGED_FIELDS, batch_size=500)
-        if user_rows:
-            AttendanceRecord.objects.bulk_update(user_rows, ["granted"], batch_size=500)
+        changed = [row for row in existing if _managed_state(row) != managed_before[row.pk][0]]
+        # Rows whose credit changed get a new ``updated_at``; the others are only brought up to date.
+        moved = [row for row in changed if _seen_state(row) != managed_before[row.pk][1]]
+        changed_user_rows = [row for row in user_rows if row.granted != granted_before[row.pk]]
+        for row in (*moved, *changed_user_rows):
+            row.updated_at = now
+        moved_ids = {id(row) for row in moved}
+        if moved:
+            AttendanceRecord.objects.bulk_update(moved, [*_MANAGED_FIELDS, "updated_at"], batch_size=500)
+        quiet = [row for row in changed if id(row) not in moved_ids]
+        if quiet:
+            AttendanceRecord.objects.bulk_update(quiet, _MANAGED_FIELDS, batch_size=500)
+        if changed_user_rows:
+            AttendanceRecord.objects.bulk_update(changed_user_rows, ["granted", "updated_at"], batch_size=500)
     return _summary(managed, user_rows, unregistered)
 
 

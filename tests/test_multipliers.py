@@ -236,7 +236,8 @@ class EndPromptTests(TestCase):
         page = self.page(minutes(112, 10))
 
         self.assertEqual(page.context["end_prompt"]["mode"], "choice")
-        self.assertContains(page, "This fleet has run <strong>1 h 52 min</strong>. Multipliers above 1x need: 2x &gt; 90 min, 3x &gt; 180 min.")
+        # The fleet is past the first tier: it can get 1x and 2x and only the 3x condition is still listed.
+        self.assertContains(page, "This fleet has run <strong>1 h 52 min</strong> and can get 1x, 2x. Higher multipliers need: 3x &gt; 180 min.")
         self.assertContains(page, 'type="radio" name="attendance_multiplier"', count=2)
         self.assertContains(page, 'value="2"')
         self.assertNotContains(page, 'value="3" ')

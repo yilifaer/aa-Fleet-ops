@@ -6,6 +6,7 @@ from datetime import timedelta
 from django import template
 
 from fleetops.forms import format_duration
+from fleetops.services.multipliers import multiplier_label as label_of_multiplier
 
 register = template.Library()
 
@@ -29,3 +30,9 @@ def joined_eve(value):
 
     join_time = stored_join_time(value)
     return join_time.strftime("%H:%M") if join_time else ""
+
+
+@register.filter
+def multiplier_label(value):
+    """A PAP multiplier as the page's language writes it: "2x", Chinese "2 倍"."""
+    return label_of_multiplier(value)
