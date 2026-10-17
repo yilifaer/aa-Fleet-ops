@@ -70,9 +70,9 @@ class RosterTestCase(TestCase):
         patcher = mock.patch.object(esi_provider, "universe_ids", self.esi)
         patcher.start()
         self.addCleanup(patcher.stop)
-        self.fc = f.create_user("fc", perms=f.FC_PERMS, main_name="yilifaerrrrrrr")
+        self.fc = f.create_user("fc", perms=f.FC_PERMS, main_name="Example FC")
         self.lead = f.create_user("lead", perms=f.FC_LEAD_PERMS)
-        self.sally = f.create_user("sally", perms=f.MEMBER_PERMS, main_name="Sally en Chalune")
+        self.pilot_a = f.create_user("pilot_a", perms=f.MEMBER_PERMS, main_name="Pilot A")
         self.operation = f.create_operation(self.fc, status=Status.CLOSED)
 
     def preview(self, text, operation=None):
@@ -85,14 +85,14 @@ class RosterTestCase(TestCase):
 
 class ResolveNamesTests(RosterTestCase):
     def test_alliance_auth_first_case_insensitive(self):
-        result = resolve_names(["sally EN chalune", "  Sally en   Chalune "])
+        result = resolve_names(["pilot A", "  Pilot   A "])
 
-        self.assertEqual(list(result), ["sally en chalune"])
-        found = result["sally en chalune"]
-        main = f.main_of(self.sally)
+        self.assertEqual(list(result), ["pilot a"])
+        found = result["pilot a"]
+        main = f.main_of(self.pilot_a)
         self.assertEqual(
             (found.status, found.character_id, found.name, found.user_id, found.main_character_name),
-            ("auth", main.character_id, "Sally en Chalune", self.sally.pk, "Sally en Chalune"),
+            ("auth", main.character_id, "Pilot A", self.pilot_a.pk, "Pilot A"),
         )
         self.assertEqual(self.esi.calls, [])
 
@@ -106,32 +106,32 @@ class ResolveNamesTests(RosterTestCase):
 
     def test_owned_copy_of_a_name_wins(self):
         f.create_character("Twin Name")
-        owned = f.add_alt(self.sally, "Twin Name")
+        owned = f.add_alt(self.pilot_a, "Twin Name")
 
         self.assertEqual(resolve_names(["Twin Name"])["twin name"].character_id, owned.character_id)
 
     def test_esi_for_the_rest(self):
-        stranger_id = self.esi.add("Stream Sarum")
+        stranger_id = self.esi.add("Pilot B")
         # A character Alliance Auth knows under its old name is found by its ID.
-        renamed = f.add_alt(self.sally, "Old Name")
+        renamed = f.add_alt(self.pilot_a, "Old Name")
         self.esi.add("New Name", renamed.character_id)
 
-        result = resolve_names(["Sally en Chalune", "stream sarum", "New Name", "Nobody Here"])
+        result = resolve_names(["Pilot A", "pilot b", "New Name", "Nobody Here"])
 
-        self.assertEqual(self.esi.calls, [["stream sarum", "New Name", "Nobody Here"]])
-        self.assertEqual((result["stream sarum"].status, result["stream sarum"].character_id), ("not_in_auth", stranger_id))
-        self.assertEqual(result["stream sarum"].name, "Stream Sarum")
-        self.assertEqual((result["new name"].status, result["new name"].user_id), ("auth", self.sally.pk))
+        self.assertEqual(self.esi.calls, [["pilot b", "New Name", "Nobody Here"]])
+        self.assertEqual((result["pilot b"].status, result["pilot b"].character_id), ("not_in_auth", stranger_id))
+        self.assertEqual(result["pilot b"].name, "Pilot B")
+        self.assertEqual((result["new name"].status, result["new name"].user_id), ("auth", self.pilot_a.pk))
         self.assertEqual(result["nobody here"].status, "not_found")
 
     def test_esi_failure_keeps_the_alliance_auth_matches(self):
         self.esi.failure = ESI_DOWN
 
-        result = resolve_names(["Sally en Chalune", "Stream Sarum"])
+        result = resolve_names(["Pilot A", "Pilot B"])
 
-        self.assertEqual(result["sally en chalune"].status, "auth")
+        self.assertEqual(result["pilot a"].status, "auth")
         self.assertEqual(
-            (result["stream sarum"].status, result["stream sarum"].error),
+            (result["pilot b"].status, result["pilot b"].error),
             ("error", "ESI returned HTTP 503 (Service unavailable)."),
         )
 
@@ -164,37 +164,45 @@ class ResolveNamesTests(RosterTestCase):
         self.assertEqual(sum(1 for found in result.values() if found.status == "not_found"), 1199)
 
     def test_single_name(self):
-        self.assertEqual(resolve_character_name(" sally en chalune ").status, "auth")
+        self.assertEqual(resolve_character_name(" pilot a ").status, "auth")
         self.assertEqual(resolve_character_name("Nobody").status, "not_found")
 
 
 class PreviewTests(RosterTestCase):
     def test_real_chinese_fleet_window(self):
-        # The FC row ("yilifaerrrrrrr", fleet commander) ends with an empty position column.
+        # The FC row ("Example FC", fleet commander) ends with an empty position column.
         f.add_attendance(self.operation, self.fc)
-        self.esi.add("Stream Sarum")
+        self.esi.add("Pilot B")
 
         rows = self.preview(CHINESE_FLEET)
 
-        self.assertEqual([row.line.name for row in rows], ["Sally en Chalune", "yilifaerrrrrrr", "Stream Sarum"])
-        sally, boss, stranger = rows
-        self.assertEqual((sally.status, sally.checked, sally.user_id), ("add", True, self.sally.pk))
-        self.assertEqual((sally.line.ship_type, sally.line.location, sally.line.role), ("Ragnarok", "HY-RWO", "中队队员"))
-        self.assertEqual((boss.status, boss.checked, boss.reason), ("has_pap", False, "Already has PAP in this fleet"))
+        self.assertEqual([row.line.name for row in rows], ["Pilot A", "Example FC", "Pilot B"])
+        pilot_a, boss, stranger = rows
+        self.assertEqual((pilot_a.status, pilot_a.checked, pilot_a.user_id), ("add", True, self.pilot_a.pk))
+        self.assertEqual((pilot_a.line.ship_type, pilot_a.line.location, pilot_a.line.role), ("Ragnarok", "Jita", "中队队员"))
+        # Someone who has PAP already can only be imported as a correction (Replace or Merge), never as a second credit.
+        self.assertEqual(
+            (boss.status, boss.checked, boss.reason),
+            (
+                "has_pap",
+                False,
+                "Already has PAP in this fleet. Choose “Replace tracked PAP” or “Merge into tracked PAP” to correct it.",
+            ),
+        )
         self.assertEqual(boss.line.role, "舰队指挥官（统帅）")
         self.assertEqual((stranger.status, stranger.checked, stranger.reason), ("not_in_auth", False, "Not in Alliance Auth"))
-        self.assertTrue(sally.importable and boss.importable)
-        self.assertFalse(stranger.importable)
+        self.assertTrue(pilot_a.importable)
+        self.assertFalse(boss.importable or stranger.importable)
 
     def test_english_fleet_window(self):
-        alpha = f.add_alt(self.sally, "Alpha Pilot")
+        alpha = f.add_alt(self.pilot_a, "Alpha Pilot")
         f.create_character("Bravo Pilot")
 
         rows = self.by_name(self.preview(ENGLISH_FLEET))
 
         self.assertEqual(list(rows), ["Alpha Pilot", "Bravo Pilot", "Charlie Pilot"])
         self.assertEqual((rows["Alpha Pilot"].status, rows["Alpha Pilot"].character_id), ("add", alpha.character_id))
-        self.assertEqual(rows["Alpha Pilot"].main_character_name, "Sally en Chalune")
+        self.assertEqual(rows["Alpha Pilot"].main_character_name, "Pilot A")
         self.assertEqual(rows["Alpha Pilot"].line.role, "Fleet Commander (Boss)")
         self.assertEqual(rows["Alpha Pilot"].line.location, "Jita IV - Moon 4 - Caldari Navy Assembly Plant")
         self.assertEqual(rows["Bravo Pilot"].status, "not_in_auth")
@@ -202,23 +210,23 @@ class PreviewTests(RosterTestCase):
         self.assertEqual(rows["Charlie Pilot"].line.position, "Wing 1 / Squad 2")
 
     def test_chat_member_list_and_chat_lines(self):
-        f.add_alt(self.sally, "Stream Sarum")
+        f.add_alt(self.pilot_a, "Pilot B")
 
-        names = self.preview("Sally en Chalune\nStream Sarum\nsally en chalune\n")
-        chat = self.preview("[12:18:36] Sally en Chalune > o7\n[12:18:40] Stream Sarum > x up\n")
+        names = self.preview("Pilot A\nPilot B\npilot a\n")
+        chat = self.preview("[12:18:36] Pilot A > o7\n[12:18:40] Pilot B > x up\n")
 
         for rows in (names, chat):
-            self.assertEqual([(row.line.name, row.status) for row in rows], [("Sally en Chalune", "add"), ("Stream Sarum", "add")])
+            self.assertEqual([(row.line.name, row.status) for row in rows], [("Pilot A", "add"), ("Pilot B", "add")])
 
     def test_invalid_names_and_esi_errors(self):
         self.esi.failure = ESI_DOWN
 
-        rows = self.by_name(self.preview(f"Sally en Chalune\n{'x' * 38}\nStream Sarum\n"))
+        rows = self.by_name(self.preview(f"Pilot A\n{'x' * 38}\nPilot B\n"))
 
-        self.assertEqual(rows["Sally en Chalune"].status, "add")
+        self.assertEqual(rows["Pilot A"].status, "add")
         self.assertEqual(rows["x" * 38].status, "invalid")
         self.assertEqual(rows["x" * 38].reason, "Character names are at most 37 characters long.")
-        self.assertEqual((rows["Stream Sarum"].status, rows["Stream Sarum"].reason), ("error", "Could not be checked (ESI error)"))
+        self.assertEqual((rows["Pilot B"].status, rows["Pilot B"].reason), ("error", "Could not be checked (ESI error)"))
 
     def test_existing_pap(self):
         pilots = {name: f.create_user(perms=f.MEMBER_PERMS, main_name=name) for name in ("Granted", "Waiting", "Rejected", "Not Granted")}
@@ -236,12 +244,12 @@ class PreviewTests(RosterTestCase):
 
     def test_tracked_members_and_link_registrations_of_open_fleets_have_pap(self):
         active = f.create_operation(self.fc)
-        tracked = f.add_alt(self.sally, "Tracked Alt")
-        linked = f.add_alt(self.sally, "Linked Alt")
+        tracked = f.add_alt(self.pilot_a, "Tracked Alt")
+        linked = f.add_alt(self.pilot_a, "Linked Alt")
         f.member_state(active, tracked, accumulated_seconds=60)
         f.registration(active, linked)
 
-        rows = self.by_name(self.preview("Tracked Alt\nLinked Alt\nSally en Chalune\n", operation=active))
+        rows = self.by_name(self.preview("Tracked Alt\nLinked Alt\nPilot A\n", operation=active))
 
         self.assertEqual([row.status for row in rows.values()], ["has_pap", "has_pap", "add"])
         # A closed fleet's PAP rows decide; a tracked member without granted PAP can be added.
@@ -252,67 +260,68 @@ class PreviewTests(RosterTestCase):
 class CharacterLimitPreviewTests(RosterTestCase):
     def setUp(self):
         super().setUp()
-        self.first_alt = f.add_alt(self.sally, "Sally Alt One")
-        self.second_alt = f.add_alt(self.sally, "Sally Alt Two")
+        self.first_alt = f.add_alt(self.pilot_a, "Pilot A Alt One")
+        self.second_alt = f.add_alt(self.pilot_a, "Pilot A Alt Two")
 
     def statuses(self, text, operation=None):
         return {row.line.name: row.status for row in self.preview(text, operation)}
 
     def test_no_limit(self):
         self.assertEqual(
-            set(self.statuses("Sally Alt One\nSally en Chalune\nSally Alt Two\n").values()), {"add"}
+            set(self.statuses("Pilot A Alt One\nPilot A\nPilot A Alt Two\n").values()), {"add"}
         )
 
     def test_main_comes_before_paste_order(self):
         FleetOperation.objects.filter(pk=self.operation.pk).update(pap_character_limit=2)
         self.operation.refresh_from_db()
 
-        rows = self.by_name(self.preview("Sally Alt One\nSally Alt Two\nSally en Chalune\n"))
+        rows = self.by_name(self.preview("Pilot A Alt One\nPilot A Alt Two\nPilot A\n"))
 
         self.assertEqual(
             {name: (row.status, row.checked) for name, row in rows.items()},
             {
-                "Sally Alt One": ("add", True),
-                "Sally Alt Two": ("capped", False),
-                "Sally en Chalune": ("add", True),
+                "Pilot A Alt One": ("add", True),
+                "Pilot A Alt Two": ("capped", False),
+                "Pilot A": ("add", True),
             },
         )
         self.assertEqual(
-            rows["Sally Alt Two"].reason,
-            "Over the limit of 2 PAP characters per player (Sally en Chalune, Sally Alt One first)",
+            rows["Pilot A Alt Two"].reason,
+            "Over the limit of 2 PAP characters per player (Pilot A, Pilot A Alt One first)",
         )
-        self.assertTrue(rows["Sally Alt Two"].importable)
+        self.assertTrue(rows["Pilot A Alt Two"].importable)
 
     def test_fc_character_comes_first(self):
         fc_alt = f.add_alt(self.fc, "FC Boss Alt")
         operation = f.create_operation(self.fc, status=Status.CLOSED, fc_character=fc_alt, pap_character_limit=1)
 
-        statuses = self.statuses("yilifaerrrrrrr\nFC Boss Alt\n", operation)
+        statuses = self.statuses("Example FC\nFC Boss Alt\n", operation)
 
-        self.assertEqual(statuses, {"yilifaerrrrrrr": "capped", "FC Boss Alt": "add"})
+        self.assertEqual(statuses, {"Example FC": "capped", "FC Boss Alt": "add"})
 
     def test_characters_with_pap_keep_their_places(self):
         operation = f.create_operation(self.fc, status=Status.CLOSED, pap_character_limit=1)
-        f.add_attendance(operation, self.sally, self.second_alt)
+        f.add_attendance(operation, self.pilot_a, self.second_alt)
 
-        rows = self.by_name(self.preview("Sally en Chalune\nSally Alt One\n", operation))
+        rows = self.by_name(self.preview("Pilot A\nPilot A Alt One\n", operation))
 
         self.assertEqual([row.status for row in rows.values()], ["capped", "capped"])
-        self.assertEqual(rows["Sally en Chalune"].reason, "Over the limit of 1 PAP character per player (Sally Alt Two first)")
+        self.assertEqual(rows["Pilot A"].reason, "Over the limit of 1 PAP character per player (Pilot A Alt Two first)")
 
     def test_limit_counts_characters_per_player(self):
         f.create_user(perms=f.MEMBER_PERMS, main_name="Other Main")
         operation = f.create_operation(self.fc, status=Status.CLOSED, pap_character_limit=1)
 
-        statuses = self.statuses("Sally Alt One\nOther Main\nSally en Chalune\n", operation)
+        statuses = self.statuses("Pilot A Alt One\nOther Main\nPilot A\n", operation)
 
-        self.assertEqual(statuses, {"Sally Alt One": "capped", "Other Main": "add", "Sally en Chalune": "add"})
+        self.assertEqual(statuses, {"Pilot A Alt One": "capped", "Other Main": "add", "Pilot A": "add"})
 
 
 class PreviewPayloadTests(RosterTestCase):
-    def rows(self):
+    def rows(self, duplicate_action="keep"):
         f.add_attendance(self.operation, self.fc)
-        return self.preview(CHINESE_FLEET)
+        lines, _warnings = parse_roster(CHINESE_FLEET)
+        return build_import_preview(self.operation, lines, actor=self.fc, duplicate_action=duplicate_action)
 
     def sign(self, rows, operation=None, actor=None):
         return sign_preview(
@@ -320,14 +329,14 @@ class PreviewPayloadTests(RosterTestCase):
         )
 
     def test_round_trip_keeps_importable_rows_and_settings(self):
-        data = load_preview(self.operation, self.sign(self.rows()), actor=self.fc)
+        data = load_preview(self.operation, self.sign(self.rows("merge")), actor=self.fc)
 
-        main = f.main_of(self.sally)
+        main = f.main_of(self.pilot_a)
         self.assertEqual(
             data["rows"],
             [
-                {"character_id": main.character_id, "character_name": "Sally en Chalune", "status": "add"},
-                {"character_id": f.main_of(self.fc).character_id, "character_name": "yilifaerrrrrrr", "status": "has_pap"},
+                {"character_id": main.character_id, "character_name": "Pilot A", "status": "add"},
+                {"character_id": f.main_of(self.fc).character_id, "character_name": "Example FC", "status": "has_pap"},
             ],
         )
         self.assertEqual((data["attendance_value"], data["duplicate_action"], data["notes"]), (2, "merge", "Ops"))
@@ -363,7 +372,7 @@ class ImportRowsTests(RosterTestCase):
         return import_rows(operation or self.operation, rows, actor=actor or self.fc, **values)
 
     def test_creates_imported_rows_through_the_attendance_service(self):
-        main = f.main_of(self.sally)
+        main = f.main_of(self.pilot_a)
         with mock.patch(
             "fleetops.services.attendance.create_manual_attendance",
             wraps=roster_import.attendance.create_manual_attendance,
@@ -377,7 +386,7 @@ class ImportRowsTests(RosterTestCase):
             self.operation,
             actor=self.fc,
             character_id=main.character_id,
-            character_name="Sally en Chalune",
+            character_name="Pilot A",
             attendance_value=2,
             duplicate_action="merge",
             notes="Ops",
@@ -389,7 +398,7 @@ class ImportRowsTests(RosterTestCase):
         self.assertEqual(result.skipped, [])
 
     def test_one_audit_entry_with_created_and_skipped_rows(self):
-        main = f.main_of(self.sally)
+        main = f.main_of(self.pilot_a)
         stranger = f.create_character("Left Alliance Auth")
 
         result = self.run_import([self.row(main), self.row(main), self.row(stranger)])
@@ -399,7 +408,7 @@ class ImportRowsTests(RosterTestCase):
         self.assertEqual(
             result.skipped,
             [
-                {"character_id": main.character_id, "character_name": "Sally en Chalune", "reason": "Listed twice"},
+                {"character_id": main.character_id, "character_name": "Pilot A", "reason": "Listed twice"},
                 {"character_id": stranger.character_id, "character_name": "Left Alliance Auth", "reason": "Not in Alliance Auth"},
             ],
         )
@@ -417,39 +426,66 @@ class ImportRowsTests(RosterTestCase):
         )
 
     def test_importing_the_same_preview_twice_credits_once(self):
-        rows = [self.row(f.main_of(self.sally))]
+        rows = [self.row(f.main_of(self.pilot_a))]
 
         self.run_import(rows)
         second = self.run_import(rows)
 
         self.assertEqual(second.created, [])
-        self.assertEqual(second.skipped[0]["reason"], "Already has PAP in this fleet")
+        self.assertEqual(second.skipped[0]["reason"], "Already has a manual PAP row in this fleet.")
         self.assertEqual(AttendanceRecord.objects.filter(source=IMPORTED).count(), 1)
 
-    def test_rows_ticked_although_they_have_pap_are_imported(self):
+    def test_rows_that_have_pap_are_skipped_unless_they_correct_tracked_pap(self):
         f.add_attendance(self.operation, self.fc)
+        boss = f.main_of(self.fc)
 
-        result = self.run_import([self.row(f.main_of(self.fc), status="has_pap")])
+        # "Keep separate" would credit the character twice, whatever the preview said.
+        kept = self.run_import([self.row(boss, status="has_pap")])
+        self.assertEqual(kept.created, [])
+        self.assertEqual(
+            kept.skipped[0]["reason"],
+            "Already has PAP in this fleet. Choose “Replace tracked PAP” or “Merge into tracked PAP” to correct it.",
+        )
+        self.assertEqual(AttendanceRecord.objects.filter(source=IMPORTED).count(), 0)
+        # A row the preview called an addition is checked again, too.
+        again = self.run_import([self.row(boss)])
+        self.assertEqual(again.created, [])
 
-        self.assertEqual(len(result.created), 1)
+        for action in ("replace", "merge"):
+            with self.subTest(action=action):
+                result = self.run_import([self.row(boss, status="has_pap")], duplicate_action=action)
+                self.assertEqual(len(result.created), 1)
+                self.assertEqual(result.created[0].correction, action)
+                result.created[0].delete()
+
+    def test_manual_pap_can_neither_be_replaced_nor_merged_into(self):
+        pilot = f.main_of(self.pilot_a)
+        f.add_attendance(self.operation, self.pilot_a, source=MANUAL)
+
+        for action in ("keep", "replace", "merge"):
+            with self.subTest(action=action):
+                result = self.run_import([self.row(pilot, status="has_pap")], duplicate_action=action)
+                self.assertEqual(result.created, [])
+                self.assertEqual(result.skipped[0]["reason"], "Already has a manual PAP row in this fleet.")
+        self.assertEqual(AttendanceRecord.objects.filter(source=IMPORTED).count(), 0)
 
     def test_only_open_and_closed_fleets(self):
         cancelled = f.create_operation(self.fc, status=Status.CANCELLED)
 
         with self.assertRaisesMessage(ValueError, "Manual PAP can only be added to Active or Closed fleets."):
-            self.run_import([self.row(f.main_of(self.sally))], operation=cancelled)
+            self.run_import([self.row(f.main_of(self.pilot_a))], operation=cancelled)
         self.assertFalse(AuditLog.objects.exists())
 
     def test_alt_of_another_corporation_counts_for_the_main(self):
-        alt = f.add_alt(self.sally, "Sally Foreign Alt", corporation=f.OTHER_CORP, alliance=f.FOREIGN_ALLIANCE)
+        alt = f.add_alt(self.pilot_a, "Pilot A Foreign Alt", corporation=f.OTHER_CORP, alliance=f.FOREIGN_ALLIANCE)
 
         self.run_import([self.row(alt)])
 
         record = AttendanceRecord.objects.get(character_id=alt.character_id)
-        main = f.main_of(self.sally)
+        main = f.main_of(self.pilot_a)
         self.assertEqual(
             (record.auth_user, record.main_character_id, record.corporation_id),
-            (self.sally, main.character_id, main.corporation_id),
+            (self.pilot_a, main.character_id, main.corporation_id),
         )
 
 
@@ -477,7 +513,7 @@ class RosterImportViewTests(RosterTestCase):
 
     def test_paste_preview_and_import(self):
         f.add_attendance(self.operation, self.fc)
-        self.esi.add("Stream Sarum")
+        self.esi.add("Pilot B")
         self.client.force_login(self.fc)
 
         preview = self.client.post(
@@ -487,9 +523,10 @@ class RosterImportViewTests(RosterTestCase):
 
         self.assertEqual(preview.status_code, 200)
         rows = preview.context["preview_rows"]
-        self.assertEqual([(item["row"].status, item["index"]) for item in rows], [("add", 0), ("has_pap", 1), ("not_in_auth", None)])
+        # With "Keep separate" the row that has PAP can only be listed.
+        self.assertEqual([(item["row"].status, item["index"]) for item in rows], [("add", 0), ("has_pap", None), ("not_in_auth", None)])
         self.assertContains(preview, 'name="rows" value="0" checked')
-        self.assertContains(preview, 'name="rows" value="1" aria-label')
+        self.assertNotContains(preview, 'name="rows" value="1"')
         self.assertContains(preview, "Ragnarok")
         self.assertEqual(preview.context["counts"], {"add": 1, "has_pap": 1, "not_in_auth": 1})
 
@@ -501,11 +538,11 @@ class RosterImportViewTests(RosterTestCase):
             response, reverse("fleetops:operation_detail", args=[self.operation.uuid]), fetch_redirect_response=False
         )
         record = AttendanceRecord.objects.get(source=IMPORTED)
-        self.assertEqual((record.character_name, record.attendance_value, record.notes), ("Sally en Chalune", 2, "Ops"))
+        self.assertEqual((record.character_name, record.attendance_value, record.notes), ("Pilot A", 2, "Ops"))
         self.assertIn("Imported PAP for 1 character.", message_texts(response)[0])
 
     def test_the_offered_note_is_in_the_language_of_the_importer_and_stored_as_a_message(self):
-        self.esi.add("Stream Sarum")
+        self.esi.add("Pilot B")
         self.client.force_login(self.fc)
         self.client.cookies["django_language"] = "zh-hans"
         with translation.override("zh-hans"):
@@ -550,7 +587,7 @@ class RosterImportViewTests(RosterTestCase):
 
         empty = self.client.post(self.url(), {"step": "parse", "text": "-----\n", "attendance_value": "1", "duplicate_action": "keep"})
         preview = self.client.post(
-            self.url(), {"step": "parse", "text": "Sally en Chalune", "attendance_value": "1", "duplicate_action": "keep"}
+            self.url(), {"step": "parse", "text": "Pilot A", "attendance_value": "1", "duplicate_action": "keep"}
         )
         none = self.client.post(self.url(), {"step": "import", "payload": preview.context["payload"]})
 
@@ -563,7 +600,7 @@ class RosterImportViewTests(RosterTestCase):
         self.client.force_login(self.fc)
         forged = signing.dumps(
             {"operation": str(self.operation.uuid), "actor": self.fc.pk, "attendance_value": 100,
-             "duplicate_action": "keep", "notes": "", "rows": [[f.main_of(self.sally).character_id, "x", "add"]]},
+             "duplicate_action": "keep", "notes": "", "rows": [[f.main_of(self.pilot_a).character_id, "x", "add"]]},
             salt="not-the-roster-salt",
         )
 
@@ -597,15 +634,15 @@ class ManualEntryByNameTests(RosterTestCase):
         return ManualAttendanceForm(values)
 
     def test_name_found_in_alliance_auth(self):
-        form = self.form(character_name="  sally EN chalune ")
+        form = self.form(character_name="  pilot A ")
 
         self.assertTrue(form.is_valid(), form.errors)
-        self.assertEqual(form.cleaned_data["character_id"], f.main_of(self.sally).character_id)
-        self.assertEqual(form.cleaned_data["character_name"], "Sally en Chalune")
+        self.assertEqual(form.cleaned_data["character_id"], f.main_of(self.pilot_a).character_id)
+        self.assertEqual(form.cleaned_data["character_name"], "Pilot A")
         self.assertEqual(self.esi.calls, [])
 
     def test_name_found_in_eve_and_owned(self):
-        renamed = f.add_alt(self.sally, "Before Rename")
+        renamed = f.add_alt(self.pilot_a, "Before Rename")
         self.esi.add("After Rename", renamed.character_id)
 
         form = self.form(character_name="After Rename")
@@ -614,9 +651,9 @@ class ManualEntryByNameTests(RosterTestCase):
         self.assertEqual(form.cleaned_data["character_id"], renamed.character_id)
 
     def test_name_errors(self):
-        self.esi.add("Stream Sarum")
+        self.esi.add("Pilot B")
         cases = {
-            "Stream Sarum": "Character 'Stream Sarum' exists in EVE but is not registered in Alliance Auth, so it cannot receive PAP.",
+            "Pilot B": "Character 'Pilot B' exists in EVE but is not registered in Alliance Auth, so it cannot receive PAP.",
             "Nobody Here": "No EVE character named 'Nobody Here' was found.",
             "Bad<Name>": "'Bad<Name>' cannot be an EVE character name. Contains characters that cannot appear in a character name.",
         }
@@ -629,7 +666,7 @@ class ManualEntryByNameTests(RosterTestCase):
     def test_esi_error(self):
         self.esi.failure = ESI_DOWN
 
-        form = self.form(character_name="Stream Sarum")
+        form = self.form(character_name="Pilot B")
 
         self.assertFalse(form.is_valid())
         self.assertEqual(
@@ -644,7 +681,7 @@ class ManualEntryByNameTests(RosterTestCase):
         self.assertEqual(form.non_field_errors(), ["Enter a character name or a character ID."])
 
     def test_id_wins_over_the_name(self):
-        main = f.main_of(self.sally)
+        main = f.main_of(self.pilot_a)
 
         form = self.form(character_id=str(main.character_id), character_name="Typed Label")
 
@@ -663,7 +700,7 @@ class ManualEntryByNameTests(RosterTestCase):
 
         response = self.client.post(
             reverse("fleetops:manual_attendance"),
-            {"operation": self.operation.pk, "character_name": "Sally en Chalune", "attendance_value": "1", "duplicate_action": "keep"},
+            {"operation": self.operation.pk, "character_name": "Pilot A", "attendance_value": "1", "duplicate_action": "keep"},
         )
         missing = self.client.post(
             reverse("fleetops:manual_attendance"),
@@ -671,7 +708,7 @@ class ManualEntryByNameTests(RosterTestCase):
         )
 
         self.assertRedirects(response, reverse("fleetops:manual_attendance"), fetch_redirect_response=False)
-        self.assertTrue(AttendanceRecord.objects.filter(character_id=f.main_of(self.sally).character_id).exists())
+        self.assertTrue(AttendanceRecord.objects.filter(character_id=f.main_of(self.pilot_a).character_id).exists())
         self.assertContains(missing, "No EVE character named &#x27;Nobody Here&#x27; was found.")
         self.assertIsInstance(missing.context["form"], HistoricalManualAttendanceForm)
 
@@ -702,8 +739,8 @@ class ManualEntryByNameTests(RosterTestCase):
 
         self.client.post(
             reverse("fleetops:add_manual_attendance", args=[self.operation.uuid]),
-            {"character_name": "sally en chalune", "attendance_value": "1", "duplicate_action": "keep"},
+            {"character_name": "pilot a", "attendance_value": "1", "duplicate_action": "keep"},
         )
 
         record = AttendanceRecord.objects.get(operation=self.operation)
-        self.assertEqual((record.character_id, record.character_name), (f.main_of(self.sally).character_id, "Sally en Chalune"))
+        self.assertEqual((record.character_id, record.character_name), (f.main_of(self.pilot_a).character_id, "Pilot A"))

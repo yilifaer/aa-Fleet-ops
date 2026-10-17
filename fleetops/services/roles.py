@@ -5,6 +5,7 @@ from django.db.models import Q
 
 from fleetops import texts
 from fleetops.models import AttendanceRecord, OperationRoleAssignment, ReviewStatus, SpecialRole
+from fleetops.services import incentives
 from fleetops.services.attendance import RECORDABLE_STATUSES
 from fleetops.services.audit import audit
 from fleetops.services.identity import identity_for_character_id
@@ -58,11 +59,17 @@ def add_role_assignment(operation, *, actor, role, character_id: int, notes: str
     role = _special_role(role)
     if not role.is_active:
         raise ValueError(texts.SPECIAL_ROLE_DISABLED(name=role.name))
+    if role.grants_fc_credit and operation.review_status != ReviewStatus.APPROVED:
+        # FC credit and the right to manage the fleet follow the role; they wait for an FC lead's approval.
+        raise ValueError(texts.SPECIAL_ROLE_FC_CREDIT_AFTER_APPROVAL())
     if not is_fleet_member(operation, character_id):
         # Pending or rejected manual PAP is no proof of taking part, so it gives no FC credit.
         raise ValueError(NOT_IN_FLEET)
     identity = identity_for_character_id(character_id)
     grants_fc_credit = bool(role.grants_fc_credit and identity.user is not None)
+    credited_before = OperationRoleAssignment.objects.filter(
+        operation=operation, role=role.key, character_id=character_id, grants_fc_credit=True
+    ).exists()
     assignment, created = OperationRoleAssignment.objects.update_or_create(
         operation=operation,
         role=role.key,
@@ -87,6 +94,9 @@ def add_role_assignment(operation, *, actor, role, character_id: int, notes: str
         None,
         _audit_values(assignment),
     )
+    if grants_fc_credit or credited_before:
+        # The FC points of the month follow the credit.
+        incentives.refresh_months_after_commit(*incentives.months_of(operation), actor=actor)
     return assignment
 
 
@@ -101,4 +111,8 @@ def _audit_values(assignment):
 
 def delete_role_assignment(assignment, *, actor):
     audit(actor, "fleet.role_delete", assignment, _audit_values(assignment), None)
+    operation = assignment.operation
+    credited = assignment.grants_fc_credit
     assignment.delete()
+    if credited:
+        incentives.refresh_months_after_commit(*incentives.months_of(operation), actor=actor)

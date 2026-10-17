@@ -16,16 +16,22 @@ from django.utils.translation import gettext_lazy as _
 from fleetops.forms_common import _style, _to_minute
 from fleetops.models import (
     MAX_DATABASE_ID,
+    MIN_RETENTION_DAYS,
     AttendanceRecord,
     ChannelPreset,
     CommsPreset,
     FleetOperation,
+    FleetOpsSettings,
     FleetType,
     IncentivePeriod,
     MessageTemplate,
+    ReviewStatus,
     SpecialRole,
 )
 from fleetops.services import group_access, roster_import
+from fleetops.services.history import retention_cutoff
+from fleetops.services.multipliers import multiplier_label
+from fleetops.services.periods import MIN_YEAR
 from fleetops.services.roles import participant_rows
 from fleetops.services.roster_paste import clean_name, name_error
 from fleetops.texts import translate_stored
@@ -37,7 +43,7 @@ def multiplier_choices(values=None):
     """PAP multiplier choices: ``values``, or every configured multiplier."""
     from fleetops.services.multipliers import all_multipliers
 
-    return [(value, f"{value}x") for value in (all_multipliers() if values is None else values)]
+    return [(value, multiplier_label(value)) for value in (all_multipliers() if values is None else values)]
 
 
 class EndFleetForm(forms.Form):
@@ -88,7 +94,7 @@ class FleetAttendanceMultiplierForm(forms.Form):
         field = self.fields["attendance_multiplier"]
         shown = sorted({*self.allowed, *all_multipliers()}) if can_override else self.allowed
         field.widget.choices = [
-            (value, f"{value}x" if value in self.allowed else _("%(value)sx (override)") % {"value": value})
+            (value, multiplier_label(value) if value in self.allowed else _("%(value)sx (override)") % {"value": value})
             for value in shown
         ]
         if not can_override:
@@ -149,6 +155,50 @@ def long_fleet_message(duration):
     ) % {"duration": format_duration(duration)}
 
 
+# A fleet record is about something that happened: a start or an end later than this from now is a typing mistake
+# (a local time typed as EVE time, a wrong year). The few minutes allow for clocks that differ a little.
+FUTURE_TOLERANCE = timedelta(minutes=5)
+# A fleet older than this needs a confirmation. It can only be reached when the retention is longer than a year.
+OLD_FLEET = timedelta(days=365)
+
+
+def check_fleet_times(form, started, ended, *, stored=None):
+    """Refuse dates that cannot be right and ask to confirm very old ones; errors go to the form's fields.
+
+    - A start or an end later than now (plus a few minutes) is refused: a fleet record is not a plan, planned fleets
+      are pre pings.
+    - A start before the year EVE went live is refused.
+    - A start older than the PAP retention is refused: the daily clean-up would delete its PAP again.
+    - A start older than a year (only possible when the retention is longer) needs the box ``confirm_old_fleet``.
+
+    ``stored`` is the ``(start, end)`` of a record that is edited, as minutes: only a value that was changed is
+    checked, so an old record stays editable in its other fields.
+    """
+    now = timezone.now()
+    if started is not None and (stored is None or _to_minute(started) != stored[0]):
+        if started > now + FUTURE_TOLERANCE:
+            form.add_error("started_at", _("A fleet record cannot start or end in the future (EVE time)."))
+        elif started.year < MIN_YEAR:
+            form.add_error("started_at", _("EVE Online did not exist in %(year)s; check the year.") % {"year": started.year})
+        else:
+            retention_days = FleetOpsSettings.get_solo().data_retention_days
+            cutoff = retention_cutoff(retention_days)
+            if cutoff is not None and started < cutoff:
+                days = max(MIN_RETENTION_DAYS, int(retention_days or 0))
+                form.add_error(
+                    "started_at",
+                    _("Fleets older than the PAP retention (%(days)s days) would be deleted again; check the date.")
+                    % {"days": days},
+                )
+            elif started < now - OLD_FLEET and not form.cleaned_data.get("confirm_old_fleet"):
+                form.add_error(
+                    "confirm_old_fleet",
+                    _("This fleet started more than a year ago. Check the date, or tick this box if it really did."),
+                )
+    if ended is not None and (stored is None or _to_minute(ended) != stored[1]) and ended > now + FUTURE_TOLERANCE:
+        form.add_error("ended_at", _("A fleet record cannot start or end in the future (EVE time)."))
+
+
 class ManualFleetForm(forms.Form):
     # Longer fleets are usually a mistyped date or time, so they need a confirmation.
     LONG_FLEET = timedelta(hours=6)
@@ -162,6 +212,7 @@ class ManualFleetForm(forms.Form):
         label=_("This fleet really ran for more than 6 hours"),
         required=False,
     )
+    confirm_old_fleet = forms.BooleanField(label=_("This fleet really took place more than a year ago"), required=False)
     attendance_multiplier = forms.TypedChoiceField(
         label=_("PAP multiplier"),
         choices=multiplier_choices,
@@ -202,6 +253,7 @@ class ManualFleetForm(forms.Form):
                 self.add_error("ended_at", _("End Time must be after Start Time."))
             elif ended - started > self.LONG_FLEET and not data.get("confirm_long_fleet"):
                 self.add_error("confirm_long_fleet", long_fleet_message(ended - started))
+        check_fleet_times(self, started, ended)
         return data
 
 
@@ -214,6 +266,7 @@ class OperationEditForm(forms.ModelForm):
         label=_("This fleet really ran for more than 6 hours"),
         required=False,
     )
+    confirm_old_fleet = forms.BooleanField(label=_("This fleet really took place more than a year ago"), required=False)
 
     class Meta:
         model = FleetOperation
@@ -261,14 +314,15 @@ class OperationEditForm(forms.ModelForm):
         data = super().clean()
         started = data.get("started_at")
         ended = data.get("ended_at")
+        # Only new times are checked strictly; a fleet that was already stored stays editable.
+        stored = (_to_minute(self.instance.started_at), _to_minute(self.instance.ended_at))
         if started and ended:
-            # Only new times are checked strictly; a fleet that was already stored stays editable.
-            stored = (_to_minute(self.instance.started_at), _to_minute(self.instance.ended_at))
             times_changed = (_to_minute(started), _to_minute(ended)) != stored
             if ended < started or (ended == started and times_changed):
                 self.add_error("ended_at", _("End Time must be after Start Time."))
             elif times_changed and ended - started > self.LONG_FLEET and not data.get("confirm_long_fleet"):
                 self.add_error("confirm_long_fleet", long_fleet_message(ended - started))
+        check_fleet_times(self, started, ended, stored=stored)
         return data
 
 
@@ -392,12 +446,25 @@ class HistoricalManualAttendanceForm(ManualAttendanceForm):
         self.fields["operation"].widget.attrs["class"] = "form-select"
 
 
+class RoleSelect(forms.Select):
+    """A select whose options for the keys in ``disabled_keys`` cannot be chosen (they are shown, greyed out)."""
+
+    disabled_keys = frozenset()
+
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex=subindex, attrs=attrs)
+        if str(getattr(value, "value", value)) in self.disabled_keys:
+            option["attrs"]["disabled"] = True
+        return option
+
+
 class OperationRoleAssignmentForm(forms.Form):
     role = forms.ModelChoiceField(
         label=_("Role"),
         queryset=SpecialRole.objects.none(),
         to_field_name="key",
         empty_label=None,
+        widget=RoleSelect,
         help_text=_("Roles marked FC credit count the fleet as an FC fleet for the pilot's FC points and incentives."),
     )
     character_id = forms.ChoiceField(label=_("Fleet Member"))
@@ -407,6 +474,12 @@ class OperationRoleAssignmentForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.fields["role"].queryset = SpecialRole.objects.filter(is_active=True)
         self.fields["role"].label_from_instance = _role_label
+        # Until an FC lead has approved the fleet, roles with FC credit cannot be assigned (the server refuses too).
+        self.credit_after_approval = bool(operation is not None and operation.review_status != ReviewStatus.APPROVED)
+        if self.credit_after_approval:
+            self.fields["role"].widget.disabled_keys = frozenset(
+                SpecialRole.objects.filter(is_active=True, grants_fc_credit=True).values_list("key", flat=True)
+            )
         self.fields["character_id"].choices = _fleet_member_choices(operation) if operation is not None else []
         self.fields["role"].widget.attrs["class"] = "form-select"
         self.fields["character_id"].widget.attrs["class"] = "form-select"

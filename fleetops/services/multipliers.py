@@ -10,7 +10,7 @@ A fleet qualifies for a tier when it ran strictly longer than the tier's thresho
 from datetime import timedelta
 
 from django.utils import timezone
-from django.utils.translation import gettext
+from django.utils.translation import gettext, pgettext
 
 from fleetops.models import FleetOperation, FleetOpsSettings, MultiplierTier
 
@@ -60,12 +60,38 @@ def fleet_duration(operation, end=None):
     return max(timedelta(0), (end or effective_end(operation)) - operation.started_at)
 
 
+def multiplier_label(value):
+    """One multiplier as the pages write it: "2x" in English, "2 倍" in Chinese."""
+    return gettext("%(multiplier)sx") % {"multiplier": value}
+
+
+def multiplier_list_text(values):
+    """Several multipliers in one sentence: "1x, 2x, 3x" (Chinese "1 倍、2 倍、3 倍")."""
+    return pgettext("list separator", ", ").join(multiplier_label(value) for value in values)
+
+
+def _requirement(tier):
+    return gettext("%(multiplier)sx > %(minutes)s min") % {
+        "multiplier": tier.multiplier,
+        "minutes": tier.threshold_minutes,
+    }
+
+
 def requirements_text():
     """What the multipliers above 1x need, such as "2x > 90 min, 3x > 180 min"."""
-    return ", ".join(
-        gettext("%(multiplier)sx > %(minutes)s min")
-        % {"multiplier": tier.multiplier, "minutes": tier.threshold_minutes}
+    return pgettext("list separator", ", ").join(_requirement(tier) for tier in tiers())
+
+
+def unmet_requirements_text(duration):
+    """What the multipliers a fleet of this length has not reached still need, such as "3x > 180 min".
+
+    A tier counts as reached when the duration is strictly longer than its threshold (``allowed_multipliers``).
+    Empty when the fleet has reached every tier.
+    """
+    return pgettext("list separator", ", ").join(
+        _requirement(tier)
         for tier in tiers()
+        if duration is None or duration <= timedelta(minutes=tier.threshold_minutes)
     )
 
 

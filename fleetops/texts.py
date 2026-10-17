@@ -1246,6 +1246,19 @@ FLEET_ROLE_LABELS = {
 # --- end lane B ---
 
 # --- 0.2.0b2 lane C: records and incentives ---
+SPECIAL_ROLE_FC_CREDIT_AFTER_APPROVAL = StoredText(
+    gettext_noop("Special roles with FC credit can be assigned once an FC lead has approved the fleet.")
+)
+APPROVAL_RESUBMIT_NOT_REJECTED = StoredText(gettext_noop("Only rejected fleets can be sent back for approval."))
+INCENTIVES_AUTO_RECALCULATED = StoredText(
+    gettext_noop("Recalculated automatically after a fleet of this month changed.")
+)
+ROSTER_HAS_PAP_KEEP = StoredText(
+    gettext_noop(
+        "Already has PAP in this fleet. Choose “Replace tracked PAP” or “Merge into tracked PAP” to correct it."
+    )
+)
+ROSTER_HAS_MANUAL_PAP = StoredText(gettext_noop("Already has a manual PAP row in this fleet."))
 # --- end lane C ---
 
 # --- 0.2.0b2 lane D: statistics ---

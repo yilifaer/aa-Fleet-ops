@@ -20,9 +20,10 @@ from fleetops.services.multipliers import (
     allowed_multipliers,
     auto_multiplier,
     fleet_duration,
+    multiplier_list_text,
     needs_choice,
-    requirements_text,
     tiers,
+    unmet_requirements_text,
 )
 from fleetops.services.pap import compute_pap, finalize_pap, live_pap_status
 from fleetops.texts import translate_stored
@@ -49,7 +50,13 @@ def _end_prompt(operation, settings):
     """What End Fleet shows for a running fleet: the multiplier choice, the automatic result, or nothing."""
     duration = fleet_duration(operation)
     allowed = allowed_multipliers(duration)
-    prompt = {"allowed": allowed, "duration": format_duration(duration) if duration else "", "requirements": requirements_text()}
+    prompt = {
+        "allowed": allowed,
+        "allowed_text": multiplier_list_text(allowed),
+        "duration": format_duration(duration) if duration else "",
+        # Only what the fleet has not reached yet; the multipliers it has are listed in "allowed_text".
+        "requirements": unmet_requirements_text(duration),
+    }
     if settings.multiplier_mode == FleetOpsSettings.MultiplierMode.AUTO:
         multiplier = auto_multiplier(duration)
         reached = [tier.threshold_minutes for tier in tiers() if tier.multiplier == multiplier]
@@ -108,7 +115,8 @@ def pap_context(request, operation):
     if operation.started_at:
         duration = fleet_duration(operation, operation.ended_at if is_closed else None)
         context["multiplier_allowed"] = allowed_multipliers(duration)
-        context["multiplier_requirements"] = requirements_text()
+        context["multiplier_allowed_text"] = multiplier_list_text(context["multiplier_allowed"])
+        context["multiplier_requirements"] = unmet_requirements_text(duration)
         context["fleet_duration_text"] = format_duration(duration)
     return context
 

@@ -1,24 +1,24 @@
-{% load i18n %}
+{% load i18n fleetops_pap %}
 {% if operation.status == 'active' or operation.status == 'ending' or operation.status == 'closed' %}
 {% if operation.multiplier_pending %}
 <div class="alert alert-warning" id="multiplier-pending">
-  <div><strong>{% blocktranslate trimmed with multiplier=operation.attendance_multiplier %}This fleet ended automatically. Choose the PAP multiplier (currently {{ multiplier }}x).{% endblocktranslate %}</strong>{% if multiplier_requirements %} <span class="small">{% blocktranslate trimmed with requirements=multiplier_requirements %}Multipliers above 1x need: {{ requirements }}.{% endblocktranslate %}</span>{% endif %}</div>
+  <div><strong>{% blocktranslate trimmed with multiplier=operation.attendance_multiplier %}This fleet ended automatically. Choose the PAP multiplier (currently {{ multiplier }}x).{% endblocktranslate %}</strong>{% if multiplier_requirements %} <span class="small">{% blocktranslate trimmed with requirements=multiplier_requirements %}Higher multipliers need: {{ requirements }}.{% endblocktranslate %}</span>{% endif %}</div>
   {% if can_set_multiplier %}
-  <form method="post" action="{% url 'fleetops:set_attendance_multiplier' operation.uuid %}" class="d-flex flex-wrap gap-2 mt-2 align-items-center">{% csrf_token %}
-    {% for value in multiplier_allowed %}<button class="btn btn-sm {% if value == 1 %}btn-outline-secondary{% else %}btn-warning{% endif %}" name="attendance_multiplier" value="{{ value }}">{% if value == 1 %}{% translate "Keep 1x" %}{% else %}{{ value }}x{% endif %}</button>{% endfor %}
+  <form method="post" action="{% url 'fleetops:set_attendance_multiplier' operation.uuid %}" class="mt-2">{% csrf_token %}
+    <div class="btn-group flex-wrap" role="group" aria-label="{% translate 'PAP multiplier' %}">{% for value in multiplier_allowed %}<button class="btn btn-sm btn-outline-secondary" name="attendance_multiplier" value="{{ value }}">{% if value == 1 %}{% translate "Keep 1x" %}{% else %}{{ value|multiplier_label }}{% endif %}</button>{% endfor %}</div>
   </form>
   {% endif %}
 </div>
 {% endif %}
 <div class="card mb-3" id="pap-stats-card"><div class="card-body d-flex flex-wrap gap-3 align-items-start justify-content-between">
   <div>
-    <div><strong>{% translate "Counted in statistics and incentives:" %}</strong> {% if count_reason %}<span class="text-warning-emphasis" id="stats-not-counted">{% blocktranslate trimmed with reason=count_reason %}No — {{ reason }}{% endblocktranslate %}</span>{% elif operation.status == 'closed' %}<span id="stats-counted">{% translate "Yes" context "FleetOps" %}</span>{% else %}<span id="stats-counted">{% translate "Yes, once the fleet has closed" %}</span>{% endif %}
+    <div><strong>{% translate "Counted in statistics and incentives:" %}</strong> {% if count_reason %}<span id="stats-not-counted">{% blocktranslate trimmed with reason=count_reason %}No — {{ reason }}{% endblocktranslate %}</span>{% elif operation.status == 'closed' %}<span id="stats-counted">{% translate "Yes" context "FleetOps" %}</span>{% else %}<span id="stats-counted">{% translate "Yes, once the fleet has closed" %}</span>{% endif %}
       {% if operation.stats_mode != 'auto' %}<span class="small text-muted">({{ operation.get_stats_mode_display }}{% if operation.stats_note %}: {{ operation.stats_note }}{% endif %})</span>{% endif %}</div>
     <div class="small text-muted">{% if pap_minimum_minutes %}{% blocktranslate trimmed with minutes=pap_minimum_minutes %}PAP minimum time {{ minutes }} min{% endblocktranslate %}{% else %}{% blocktranslate trimmed with minutes=pap_minimum_minutes %}PAP minimum time {{ minutes }} min (any presence){% endblocktranslate %}{% endif %} · {% if operation.pap_character_limit %}{% blocktranslate trimmed count counter=operation.pap_character_limit %}{{ counter }} PAP character per player{% plural %}{{ counter }} PAP characters per player{% endblocktranslate %}{% else %}{% translate "no PAP character limit per player" %}{% endif %}{% if operation.pap_rules == 1 %} · {% translate "closed before PAP followed time in fleet" %}{% endif %}</div>
   </div>
-  <div class="d-flex flex-wrap gap-2 align-items-start">
+  <div class="d-flex flex-wrap gap-2 align-items-start fo-stats-actions">
     {% if can_exclude_from_stats %}
-    <form method="post" action="{% url 'fleetops:set_stats_mode' operation.uuid %}" class="d-flex gap-2" id="stats-exclude-form">{% csrf_token %}
+    <form method="post" action="{% url 'fleetops:set_stats_mode' operation.uuid %}" class="d-flex flex-wrap gap-2" id="stats-exclude-form">{% csrf_token %}
       <input type="hidden" name="mode" value="exclude">
       <input class="form-control form-control-sm" name="note" maxlength="255" required placeholder="{% translate 'Reason, e.g. test fleet' %}" aria-label="{% translate 'Reason for excluding the fleet' %}">
       <button class="btn btn-sm btn-outline-danger text-nowrap">{% translate "Do not count" %}</button>
@@ -26,10 +26,10 @@
     {% endif %}
     {% if can_include_in_stats %}
       {% if operation.stats_mode != 'include' %}
-      <form method="post" action="{% url 'fleetops:set_stats_mode' operation.uuid %}" class="d-flex gap-2" id="stats-include-form">{% csrf_token %}
+      <form method="post" action="{% url 'fleetops:set_stats_mode' operation.uuid %}" class="d-flex flex-wrap gap-2" id="stats-include-form">{% csrf_token %}
         <input type="hidden" name="mode" value="include">
         <input class="form-control form-control-sm" name="note" maxlength="255" placeholder="{% translate 'Note (optional)' %}" aria-label="{% translate 'Note for counting the fleet' %}">
-        <button class="btn btn-sm btn-outline-success text-nowrap">{% translate "Always count" %}</button>
+        <button class="btn btn-sm btn-outline-secondary text-nowrap">{% translate "Always count" %}</button>
       </form>
       {% endif %}
       {% if operation.stats_mode != 'auto' %}
