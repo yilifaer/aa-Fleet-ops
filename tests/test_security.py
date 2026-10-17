@@ -730,7 +730,7 @@ class ObjectIsolationTests(StartFleetPatchesMixin, TestCase):
         f.add_attendance(self.op_b_closed, outsider)
         self.client.force_login(manager)
         self.assertEqual(
-            self.client.get(reverse("fleetops:corporation_statistics_detail", args=[f.OTHER_CORP[0]])).status_code, 403
+            self.client.get(reverse("fleetops:corporation_statistics_detail", args=[f.OTHER_CORP[0]])).status_code, 404
         )
         self.assertEqual(self.client.get(reverse("fleetops:all_corporation_statistics")).status_code, 403)
         self.assertEqual(self.client.get(reverse("fleetops:attendance_history_alliance")).status_code, 403)

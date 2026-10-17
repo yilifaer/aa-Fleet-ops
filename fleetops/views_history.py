@@ -3,13 +3,13 @@
 
 """PAP history pages: personal, corporation and alliance."""
 
-from django.contrib.auth.decorators import permission_required
 from django.core.paginator import Paginator
 from django.db.models import Sum
 from django.http import Http404
 from django.utils.translation import gettext as _
 from django.utils.translation import pgettext
 
+from fleetops.decorators import fleetops_permission_required
 from fleetops.services.attendance_history import history_month, history_queryset, retention_days
 from fleetops.services.history import retention_cutoff
 from fleetops.services.periods import current_year_month, month_bounds
@@ -74,13 +74,13 @@ def _history_page(request, scope, title, scope_label, **filters):
     )
 
 
-@permission_required("fleetops.basic_access", raise_exception=True)
+@fleetops_permission_required("fleetops.basic_access")
 def attendance_history_me(request):
     personal = pgettext("PAP history scope", "Personal")
     return _history_page(request, "me", _("My PAP History"), personal, user=request.user)
 
 
-@permission_required("fleetops.view_corp_stats", raise_exception=True)
+@fleetops_permission_required("fleetops.view_corp_stats")
 def attendance_history_corporation(request):
     corporation = own_corporation(request.user)
     if corporation is None:
@@ -95,6 +95,6 @@ def attendance_history_corporation(request):
     )
 
 
-@permission_required("fleetops.view_all_stats", raise_exception=True)
+@fleetops_permission_required("fleetops.view_all_stats")
 def attendance_history_alliance(request):
     return _history_page(request, "alliance", _("Alliance PAP History"), pgettext("FleetOps", "Alliance"))

@@ -283,6 +283,8 @@ class PreviewTests(StartFormTestBase):
             ping_display="@Sig A Ping",
             warnings=["The ping template does not contain {{ ping_mention }}; nobody will be notified."],
             motd_length=4,
+            motd_visible_length=4,
+            motd_limit=2000,
         )
         with mock.patch("fleetops.views.render_messages", return_value=result) as render:
             payload = self.preview(ping_channel=str(self.ops_channel.pk), ping_mentions=[EVERYONE]).json()
@@ -299,6 +301,8 @@ class PreviewTests(StartFormTestBase):
                 "blocking": [],
                 "ping_length": 10,
                 "motd_length": 4,
+                "motd_visible_length": 4,
+                "motd_limit": 2000,
             },
         )
         self.assertEqual(render.call_args.kwargs, {"actor": self.fc, "pre_ping": False})
@@ -475,6 +479,8 @@ class StartWithChannelTests(StartFormTestBase):
                 "esi_fleet_id": FLEET_ID,
                 "fc_character_id": self.fc_char.character_id,
                 "fleet_type": "StratOp",
+                "group_id": None,
+                "group": "",
                 "operation_mode": "full",
                 "ping_channel": "Ops",
                 "ping_mention_mode": HERE,
@@ -509,7 +515,7 @@ class SendPingTests(TestCase):
         )
 
     def test_retry_posts_with_the_stored_mention(self):
-        result = retry_ping(self.operation())
+        result = retry_ping(self.operation(), actor=self.fc)
 
         self.assertEqual(result.status, ActionStatus.SUCCESS)
         self.assertEqual(
@@ -524,7 +530,7 @@ class SendPingTests(TestCase):
         FleetOperation.objects.filter(pk=operation.pk).update(ping_text="@here\nStratOp\n\nBring alts, @everyone welcome")
         operation.refresh_from_db()
 
-        retry_ping(operation)
+        retry_ping(operation, actor=operation.fc_user)
 
         payload = self.post.call_args.kwargs["json"]
         self.assertEqual(payload["content"], "@here\nStratOp\n\nBring alts, @\u200beveryone welcome")
@@ -538,7 +544,7 @@ class SendPingTests(TestCase):
                 FleetOperation.objects.filter(pk=operation.pk).update(ping_text=text)
                 operation.refresh_from_db()
 
-                retry_ping(operation)
+                retry_ping(operation, actor=operation.fc_user)
 
                 self.assertEqual(self.post.call_args.kwargs["json"]["content"], text)
 
@@ -547,7 +553,7 @@ class SendPingTests(TestCase):
         self.channel.is_active = False
         self.channel.save()
 
-        result = retry_ping(operation)
+        result = retry_ping(operation, actor=operation.fc_user)
 
         self.assertEqual((result.status, result.error_message), (ActionStatus.FAILED, "Ping channel STR is disabled."))
         self.post.assert_not_called()
@@ -557,7 +563,7 @@ class SendPingTests(TestCase):
         self.channel.allow_everyone = False
         self.channel.save()
 
-        result = retry_ping(operation)
+        result = retry_ping(operation, actor=operation.fc_user)
 
         self.assertEqual((result.status, result.error_message), (ActionStatus.FAILED, "@everyone is not allowed in STR."))
         self.post.assert_not_called()
@@ -567,7 +573,7 @@ class SendPingTests(TestCase):
         self.sig_a.is_active = False
         self.sig_a.save()
 
-        result = retry_ping(operation)
+        result = retry_ping(operation, actor=operation.fc_user)
 
         self.assertEqual(result.error_message, "Role Sig A is no longer available.")
         self.post.assert_not_called()
@@ -577,7 +583,7 @@ class SendPingTests(TestCase):
         self.channel.delete()
         operation.refresh_from_db()
 
-        result = retry_ping(operation)
+        result = retry_ping(operation, actor=operation.fc_user)
 
         self.assertEqual(result.status, ActionStatus.SKIPPED)
         self.post.assert_not_called()
@@ -752,7 +758,7 @@ class EditOperationViewTests(TestCase):
         with mock.patch(
             "fleetops.providers.pings.requests.post", return_value=mock.Mock(status_code=204, text="")
         ) as post, mock.patch("fleetops.services.operations.set_fleet_motd") as set_motd:
-            retry_ping(self.operation)
+            retry_ping(self.operation, actor=self.operation.fc_user)
             operations_module.retry_motd(self.operation)
 
         self.assertEqual(self.operation.ping_template, self.ping)

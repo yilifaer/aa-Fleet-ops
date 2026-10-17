@@ -31,6 +31,7 @@ from fleetops.services.operations import (
     run_start_steps,
     send_channel_notice,
     set_action,
+    start_refusal,
 )
 from fleetops.services.periods import format_eve
 
@@ -96,9 +97,9 @@ def _render_pre_ping(operation, *, actor):
     return True
 
 
-def _send_pre_ping(operation):
+def _send_pre_ping(operation, *, actor):
     try:
-        return _send_ping(operation, action="pre_ping")
+        return _send_ping(operation, actor=actor, action="pre_ping")
     except Exception as exc:
         return set_action(operation, "pre_ping", False, report_failure(logger, "Pre ping", exc, operation))
 
@@ -110,6 +111,12 @@ def schedule_fleet(*, user, cleaned_data, request_id=None) -> FleetOperation:
     if existing:
         return existing
     character = owned_fleet_character(user, cleaned_data["fc_character_id"])
+    # Pre pings are alliance fleets of FCs; group fleets start at once (Send Ping announces them).
+    if cleaned_data.get("group") is not None:
+        raise PermissionError(texts.GROUP_NO_PRE_PING())
+    refusal = start_refusal(user, cleaned_data, full_mode=True, pre_ping=True)
+    if refusal:
+        raise PermissionError(refusal)
     values = {"created_by": user, **fc_values(user, character), **fleet_values(cleaned_data)}
     try:
         with transaction.atomic():
@@ -145,7 +152,7 @@ def schedule_fleet(*, user, cleaned_data, request_id=None) -> FleetOperation:
         return existing
 
     if _render_pre_ping(operation, actor=user):
-        _send_pre_ping(operation)
+        _send_pre_ping(operation, actor=user)
     else:
         set_action(operation, "pre_ping", False, NOT_RENDERED)
     return operation
@@ -203,7 +210,7 @@ def update_scheduled_fleet(operation, *, actor, cleaned_data, send_update: bool,
     result = None
     if _render_pre_ping(current, actor=actor):
         if send_update:
-            result = _send_pre_ping(current)
+            result = _send_pre_ping(current, actor=actor)
     elif send_update:
         result = set_action(current, "pre_ping", False, NOT_RENDERED)
     if edit_token and result is not None and result.status != OperationAction.Status.SUCCESS:
@@ -306,7 +313,9 @@ def cancel_scheduled_fleet(operation, *, actor, notify: bool) -> FleetOperation:
         )
     if notify:
         try:
-            send_channel_notice(current, "cancel_notice", render_cancellation_notice(current, actor=actor))
+            send_channel_notice(
+                current, "cancel_notice", render_cancellation_notice(current, actor=actor), actor=actor
+            )
         except Exception as exc:
             set_action(current, "cancel_notice", False, report_failure(logger, "Cancellation notice", exc, current))
     current.cancelled = True

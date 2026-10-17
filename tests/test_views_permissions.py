@@ -10,7 +10,6 @@ from decimal import Decimal
 from unittest import mock
 
 import requests
-from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.http import Http404
 from django.test import Client, RequestFactory, TestCase
@@ -517,9 +516,10 @@ class PermissionMatrixTests(SrpViewTestCase):
             Case("my_statistics", "get", r("fleetops:my_statistics"), None, {**dict.fromkeys(ROLES, OK), STATS: OK}),
             Case("corporation_statistics", "get", r("fleetops:corporation_statistics"), None,
                  {"member": DENIED, "corp": OK, "fc": DENIED, "lead": OK, STATS: DENIED}),
+            # A corporation manager opens the own corporation by ID too (FB12).
             Case("corporation_statistics_detail", "get",
                  r("fleetops:corporation_statistics_detail", args=[f.DEFAULT_CORP[0]]), None,
-                 {**member_only, STATS: OK}),
+                 {**member_only, "corp": OK, STATS: OK}),
             Case("all_corporation_statistics", "get", r("fleetops:all_corporation_statistics"), None,
                  {**member_only, STATS: OK}),
             Case("all_fc_statistics", "get", r("fleetops:all_fc_statistics"), None, {**member_only, STATS: OK}),
@@ -728,19 +728,21 @@ class PermissionMatrixTests(SrpViewTestCase):
                  by_srp_role(SRP_MANAGERS | {"srp_stats"})),
             Case("srp_summary_own_corporation", "get", r("fleetops:srp_summary_own_corporation"), None,
                  by_srp_role(SRP_MANAGERS | {"srp_stats", "srp_corp", "srp_corp_other"})),
+            # A corporation manager's own corporation by ID is their page; any other ID is a 404 with the reason.
             Case("srp_summary_corporation", "get", r("fleetops:srp_summary_corporation", args=[f.DEFAULT_CORP[0]]), None,
-                 by_srp_role(SRP_MANAGERS | {"srp_stats"})),
+                 by_srp_role(SRP_MANAGERS | {"srp_stats", "srp_corp"}, srp_corp_other=HIDDEN)),
             Case("srp_summary_corporation other", "get",
                  r("fleetops:srp_summary_corporation", args=[f.OTHER_CORP[0]]), None,
-                 by_srp_role(SRP_MANAGERS | {"srp_stats"})),
+                 by_srp_role(SRP_MANAGERS | {"srp_stats", "srp_corp_other"}, srp_corp=HIDDEN)),
             Case("srp_summary_corporation unknown", "get", r("fleetops:srp_summary_corporation", args=[2_999_999]), None,
-                 by_srp_role(SRP_MANAGERS | {"srp_stats"}, granted=HIDDEN)),
+                 by_srp_role(SRP_MANAGERS | {"srp_stats", "srp_corp", "srp_corp_other"}, granted=HIDDEN)),
             Case("srp_summary_own_fc", "get", r("fleetops:srp_summary_own_fc"), None,
                  by_srp_role(SRP_MANAGERS | {"srp_stats", "srp_fc"})),
+            # Somebody else's FC summary is a 404 with the reason for everybody who does not see everything.
             Case("srp_summary_fc", "get", r("fleetops:srp_summary_fc", args=[self.srp_users["srp_fc"].pk]), None,
-                 by_srp_role(SRP_MANAGERS | {"srp_stats"})),
+                 by_srp_role(SRP_MANAGERS | {"srp_stats", "srp_fc"}, otherwise=HIDDEN)),
             Case("srp_summary_fc unknown", "get", r("fleetops:srp_summary_fc", args=[99_999_999]), None,
-                 by_srp_role(SRP_MANAGERS | {"srp_stats"}, granted=HIDDEN)),
+                 dict.fromkeys(SRP_ROLES, HIDDEN)),
         ]
 
     def statistics_cases(self):
@@ -769,13 +771,15 @@ class PermissionMatrixTests(SrpViewTestCase):
             Case("corporation_members", "get", r("fleetops:corporation_members"), None, corporation_pages),
             Case("corporation_members inactive", "get", r("fleetops:corporation_members"),
                  {"status": "inactive", "q": "main"}, corporation_pages),
+            # A corporation manager opens the own corporation by ID; any other ID is the same 404 (FB12).
             Case("corporation_members_detail own", "get",
-                 r("fleetops:corporation_members_detail", args=[f.DEFAULT_CORP[0]]), None, stats_pages),
+                 r("fleetops:corporation_members_detail", args=[f.DEFAULT_CORP[0]]), None, {**stats_pages, "corp": OK}),
             Case("corporation_members_detail other", "get",
-                 r("fleetops:corporation_members_detail", args=[f.OTHER_CORP[0]]), None, stats_pages),
+                 r("fleetops:corporation_members_detail", args=[f.OTHER_CORP[0]]), None,
+                 {**stats_pages, "corp": HIDDEN}),
             Case("corporation_members_detail unknown", "get",
                  r("fleetops:corporation_members_detail", args=[unknown_corporation]), None,
-                 {"member": DENIED, "corp": DENIED, "fc": DENIED, "lead": HIDDEN, STATS: HIDDEN}),
+                 {"member": DENIED, "corp": HIDDEN, "fc": DENIED, "lead": HIDDEN, STATS: HIDDEN}),
             # Members see themselves; a corporation manager sees the members of the own corporation.
             Case("member_detail self", "get", lambda user: r("fleetops:member_detail", args=[user.pk]), None,
                  dict.fromkeys((*ROLES, STATS), REDIRECT)),
@@ -880,6 +884,14 @@ class PermissionMatrixTests(SrpViewTestCase):
                            {"mode": "exclude", "note": "Test fleet"}),
             Case("live_pap", "get", r("fleetops:live_pap"), None, dict.fromkeys(ROLES, OK)),
             Case("approval_queue", "get", r("fleetops:approval_queue"), None, member_only),
+            # Resubmitting a rejected fleet is not available yet: fleet managers get a 404.
+            Case("resubmit_operation", "post", r("fleetops:resubmit_operation", args=[self.own_closed.uuid]),
+                 {"note": ""}, {"member": DENIED, "corp": DENIED, "fc": HIDDEN, "lead": HIDDEN}),
+            # Send Ping: FCs and group leaders (no group leader among these roles).
+            Case("send_ping", "get", r("fleetops:send_ping"), None,
+                 {"member": DENIED, "corp": DENIED, "fc": OK, "lead": OK}),
+            Case("preview_ping", "post", r("fleetops:preview_ping"), {},
+                 {"member": DENIED, "corp": DENIED, "fc": OK, "lead": OK}),
             Case("review_operation", "post", r("fleetops:review_operation", args=[self.own_closed.uuid]),
                  {"action": "approve", "note": ""}, lead_post),
             Case("review_attendance", "post", r("fleetops:review_attendance"),
@@ -1183,10 +1195,13 @@ class StatisticsRouteTests(FleetOpsViewTestCase):
     def test_corporation_manager_without_a_main_has_no_own_corporation(self):
         nomad = f.create_user("nomad", perms=f.CORP_MANAGEMENT_PERMS, with_main=False)
 
+        # The views raise Http404; their decorator shows it as the FleetOps 404 page.
         with self.assertRaises(Http404):
-            self.call(views_members.corporation_members_view, nomad)
+            self.call(views_members.corporation_members_view.__wrapped__, nomad)
         with self.assertRaises(Http404):
-            self.call(views_statistics.corporation_statistics_view, nomad)
+            self.call(views_statistics.corporation_statistics_view.__wrapped__, nomad)
+        self.assertEqual(self.call(views_members.corporation_members_view, nomad).status_code, 404)
+        self.assertEqual(self.call(views_statistics.corporation_statistics_view, nomad).status_code, 404)
 
     def test_users_without_a_main_are_sent_to_the_dashboard(self):
         nomad = f.create_user("nomad", perms=f.CORP_MANAGEMENT_PERMS, with_main=False)
@@ -1230,7 +1245,7 @@ class StatisticsRouteTests(FleetOpsViewTestCase):
         self.assertEqual(self.get(self.corp_manager, "member_detail", self.outsider.pk).status_code, 404)
         self.assertEqual(self.get(self.corp_manager, "member_detail", self.member.pk).status_code, 200)
         self.assertEqual(
-            self.get(self.corp_manager, "corporation_members_detail", f.OTHER_CORP[0]).status_code, 403
+            self.get(self.corp_manager, "corporation_members_detail", f.OTHER_CORP[0]).status_code, 404
         )
 
     def test_leaderboard_visibility_setting(self):
@@ -1248,8 +1263,10 @@ class StatisticsRouteTests(FleetOpsViewTestCase):
         f.settings(leaderboard_visibility="managers")
         nomad = f.create_user("nomad", perms=f.CORP_MANAGEMENT_PERMS, with_main=False)
 
-        with self.assertRaises(PermissionDenied):
-            self.call(views_members.leaderboard_view, nomad)
+        response = self.call(views_members.leaderboard_view, nomad)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("The leaderboard is only open to statistics managers.", response.content.decode())
 
     def test_exports_are_get_only(self):
         client = self.client_for(self.lead)
@@ -1554,7 +1571,8 @@ class ObjectIsolationTests(FleetOpsViewTestCase):
     def test_corp_management_cannot_open_other_corporation_statistics(self):
         client = self.client_for(self.corp_manager)
         response = client.get(reverse("fleetops:corporation_statistics_detail", args=[f.OTHER_CORP[0]]))
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 404)
+        self.assertContains(response, "You can only open the statistics of your own corporation.", status_code=404)
         response = client.get(reverse("fleetops:corporation_statistics"))
         self.assertEqual(response.context["stats"]["corporation_id"], f.DEFAULT_CORP[0])
 

@@ -304,9 +304,9 @@ class StatisticsFlow:
         table = self.page(self.corpmgr, "corporation_members", month=MARCH, status="inactive").context["table"]
         self.assertEqual(sorted(row.main_character_name for row in table.rows), ["Alpha Manager", "Alpha Three"])
         self.assertTrue(all(row.corporation_id == f.DEFAULT_CORP[0] for row in table.rows))
-        # Nothing of the alliance or of another corporation.
-        for route, args in (("alliance_members", ()), ("corporation_members_detail", (f.OTHER_CORP[0],))):
-            self.page(self.corpmgr, route, *args, month=MARCH, expect=403)
+        # Nothing of the alliance or of another corporation (that one answers 404 with the reason).
+        self.page(self.corpmgr, "alliance_members", month=MARCH, expect=403)
+        self.page(self.corpmgr, "corporation_members_detail", f.OTHER_CORP[0], month=MARCH, expect=404)
         # The nav of the corporation manager lists no alliance pages.
         page = self.html(self.corpmgr, "corporation_members", month=MARCH)
         self.assertIsNone(re.search(rf'href="{re.escape(reverse("fleetops:alliance_members"))}(\?[^"]*)?"', page))

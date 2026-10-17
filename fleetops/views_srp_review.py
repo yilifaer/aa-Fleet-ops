@@ -7,7 +7,6 @@ import re
 from datetime import datetime, time, timedelta, timezone as dt_timezone
 
 from django.contrib import messages
-from django.contrib.auth.decorators import permission_required
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db.models import Count, Q, Sum
@@ -18,6 +17,7 @@ from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
+from fleetops.decorators import fleetops_permission_required
 from fleetops.forms_srp import ClaimSelectionForm, PaidForm, PaymentFilterForm, ReviewFilterForm
 from fleetops.models import SrpClaim, SrpFleetLink, SrpSettings
 from fleetops.services.periods import eve_now, month_bounds
@@ -171,7 +171,7 @@ def filtered_claims(filters, bounds=None):
 
 
 @require_GET
-@permission_required(MANAGE_SRP, raise_exception=True)
+@fleetops_permission_required(MANAGE_SRP)
 def review_queue(request):
     """Claims waiting for a decision, with filters; 50 per page."""
     settings_obj = SrpSettings.get_solo()
@@ -207,7 +207,7 @@ def review_queue(request):
 
 
 @require_POST
-@permission_required(MANAGE_SRP, raise_exception=True)
+@fleetops_permission_required(MANAGE_SRP, page=False)
 def bulk_approve(request):
     """Approve the ticked claims that are clean at their suggested amount; the others are listed as skipped."""
     form = ClaimSelectionForm(request.POST)
@@ -237,7 +237,7 @@ def bulk_approve(request):
 
 
 @require_POST
-@permission_required(MANAGE_SRP, raise_exception=True)
+@fleetops_permission_required(MANAGE_SRP, page=False)
 def recalculate_pending(request):
     """Recalculate every pending claim with the current policy."""
     count = review.recalculate_pending(actor=request.user)
@@ -362,7 +362,7 @@ HANDLERS = {
 
 
 @require_POST
-@permission_required(MANAGE_SRP, raise_exception=True)
+@fleetops_permission_required(MANAGE_SRP, page=False)
 def claim_action(request, claim_uuid, action):
     """One decision on one claim: approve, reject, revoke, paid, unpaid, reopen, reclassify, recalculate,
     recheck (the presence check) or note. An unknown action or claim is a 404.
@@ -461,7 +461,7 @@ def mark_selected_paid(request, settings_obj):
 
 
 @require_http_methods(["GET", "POST"])
-@permission_required(MANAGE_SRP, raise_exception=True)
+@fleetops_permission_required(MANAGE_SRP)
 def payments(request):
     """Approved claims waiting for payment, grouped by main; a POST marks the ticked claims paid.
 

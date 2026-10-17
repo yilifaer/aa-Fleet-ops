@@ -30,6 +30,15 @@ NOW = datetime(2026, 4, 14, 12, 0, tzinfo=UTC)
 MONTH = {"year": 2026, "month": 3}
 APRIL_FIRST = datetime(2026, 4, 1, tzinfo=UTC)
 
+# None of the page viewers below but the dashboard's FC holds start_fleet, so the menu looks up whether they lead
+# a group that may send pings or run fleets (one query, services.group_access.leader_access).
+GROUP_NAV = 1
+# The dashboard's running fleets: for a viewer without view_all_fleets the query asks for the groups they lead
+# (one query).
+RUNNING_GROUP_FLEETS = 1
+# The incentive page compares its stored rows with the current FC statistics (four queries).
+INCENTIVE_STALENESS = 4
+
 ALL_STATS = f.MEMBER_PERMS + ["fleetops.view_all_stats"]
 FLEET_LEAD = ALL_STATS + ["fleetops.view_all_fleets", "fleetops.manage_incentives"]
 
@@ -126,30 +135,30 @@ class StatisticsQueryBudgetTests(TestCase):
         inactive = {**MONTH, "status": "inactive"}
         fc = data.fcs[0]
         return [
-            ("dashboard", fc, route("dashboard"), {}, 40),
-            ("my statistics", self.pilot, route("my_statistics"), MONTH, 47),
-            ("all corporations", self.statsmgr, route("all_corporation_statistics"), MONTH, 36),
-            ("all corporations sorted", self.statsmgr, route("all_corporation_statistics"), {**MONTH, "sort": "-total"}, 36),
-            ("corporation", self.corpmgr, route("corporation_statistics"), MONTH, 35),
-            ("corporation by id", self.statsmgr, route("corporation_statistics_detail", own_corporation), MONTH, 37),
-            ("fc statistics", self.statsmgr, route("all_fc_statistics"), MONTH, 32),
-            ("fc detail", self.statsmgr, route("fc_statistics_detail", fc.pk), MONTH, 35),
-            ("alliance members", self.statsmgr, route("alliance_members"), MONTH, 37),
-            ("alliance inactive", self.statsmgr, route("alliance_members"), inactive, 37),
-            ("alliance members of a corporation", self.statsmgr, route("alliance_members"), {**MONTH, "corporation": own_corporation}, 37),
-            ("corporation members", self.corpmgr, route("corporation_members"), MONTH, 36),
-            ("corporation inactive", self.corpmgr, route("corporation_members"), inactive, 36),
-            ("corporation members by id", self.statsmgr, route("corporation_members_detail", own_corporation), MONTH, 38),
-            ("leaderboard", self.pilot, route("leaderboard"), MONTH, 37),
-            ("leaderboard of the manager", self.statsmgr, route("leaderboard"), MONTH, 37),
-            ("member detail", self.statsmgr, route("member_detail", self.pilot.pk), MONTH, 42),
-            ("member detail of the corporation", self.corpmgr, route("member_detail", self.pilot.pk), MONTH, 42),
-            ("member detail of a later registration", self.statsmgr, route("member_detail", data.late[0].pk), MONTH, 42),
-            ("history", self.pilot, route("attendance_history_me"), MONTH, 34),
-            ("corporation history", self.corpmgr, route("attendance_history_corporation"), MONTH, 34),
-            ("alliance history", self.statsmgr, route("attendance_history_alliance"), MONTH, 34),
-            ("alliance history of all months", self.statsmgr, route("attendance_history_alliance"), {}, 34),
-            ("incentive review", self.statsmgr, route("incentive_review"), MONTH, 35),
+            ("dashboard", fc, route("dashboard"), {}, 40 + RUNNING_GROUP_FLEETS),
+            ("my statistics", self.pilot, route("my_statistics"), MONTH, 47 + GROUP_NAV),
+            ("all corporations", self.statsmgr, route("all_corporation_statistics"), MONTH, 36 + GROUP_NAV),
+            ("all corporations sorted", self.statsmgr, route("all_corporation_statistics"), {**MONTH, "sort": "-total"}, 36 + GROUP_NAV),
+            ("corporation", self.corpmgr, route("corporation_statistics"), MONTH, 35 + GROUP_NAV),
+            ("corporation by id", self.statsmgr, route("corporation_statistics_detail", own_corporation), MONTH, 37 + GROUP_NAV),
+            ("fc statistics", self.statsmgr, route("all_fc_statistics"), MONTH, 32 + GROUP_NAV),
+            ("fc detail", self.statsmgr, route("fc_statistics_detail", fc.pk), MONTH, 35 + GROUP_NAV),
+            ("alliance members", self.statsmgr, route("alliance_members"), MONTH, 37 + GROUP_NAV),
+            ("alliance inactive", self.statsmgr, route("alliance_members"), inactive, 37 + GROUP_NAV),
+            ("alliance members of a corporation", self.statsmgr, route("alliance_members"), {**MONTH, "corporation": own_corporation}, 37 + GROUP_NAV),
+            ("corporation members", self.corpmgr, route("corporation_members"), MONTH, 36 + GROUP_NAV),
+            ("corporation inactive", self.corpmgr, route("corporation_members"), inactive, 36 + GROUP_NAV),
+            ("corporation members by id", self.statsmgr, route("corporation_members_detail", own_corporation), MONTH, 38 + GROUP_NAV),
+            ("leaderboard", self.pilot, route("leaderboard"), MONTH, 37 + GROUP_NAV),
+            ("leaderboard of the manager", self.statsmgr, route("leaderboard"), MONTH, 37 + GROUP_NAV),
+            ("member detail", self.statsmgr, route("member_detail", self.pilot.pk), MONTH, 42 + GROUP_NAV),
+            ("member detail of the corporation", self.corpmgr, route("member_detail", self.pilot.pk), MONTH, 42 + GROUP_NAV),
+            ("member detail of a later registration", self.statsmgr, route("member_detail", data.late[0].pk), MONTH, 42 + GROUP_NAV),
+            ("history", self.pilot, route("attendance_history_me"), MONTH, 34 + GROUP_NAV),
+            ("corporation history", self.corpmgr, route("attendance_history_corporation"), MONTH, 34 + GROUP_NAV),
+            ("alliance history", self.statsmgr, route("attendance_history_alliance"), MONTH, 34 + GROUP_NAV),
+            ("alliance history of all months", self.statsmgr, route("attendance_history_alliance"), {}, 34 + GROUP_NAV),
+            ("incentive review", self.statsmgr, route("incentive_review"), MONTH, 35 + GROUP_NAV + INCENTIVE_STALENESS),
             ("corporations file", self.statsmgr, export("corporations"), {**MONTH, "format": "csv"}, 29),
             ("corporations workbook", self.statsmgr, export("corporations"), {**MONTH, "format": "xlsx"}, 29),
             ("members file", self.statsmgr, export("members"), {**MONTH, "format": "csv"}, 29),

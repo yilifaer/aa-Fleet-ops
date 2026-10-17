@@ -4,14 +4,13 @@
 """Members, inactive members, leaderboard and member details of the statistics."""
 
 from django.contrib.auth import get_user_model
-from django.contrib.auth.decorators import permission_required
-from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.http import Http404
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.translation import gettext as _
 
+from fleetops.decorators import fleetops_permission_required
 from fleetops.models import FleetOpsSettings
 from fleetops.services import members as member_stats
 from fleetops.services import population
@@ -26,6 +25,14 @@ from fleetops.services.stats_access import (
     own_corporation,
 )
 from fleetops.views import _can_view_all_fleets, _database_id, _period_render_context, _render, _year_month
+from fleetops.views_errors import (
+    LEADERBOARD_REASON,
+    OWN_CORPORATION_MEMBERS_REASON,
+    OWN_CORPORATION_STATISTICS_REASON,
+    denied,
+    not_found,
+    reason_for,
+)
 
 # Filters the member tables keep when the month changes.
 MEMBER_FILTERS = ("corporation", "status", "q", "sort")
@@ -126,24 +133,29 @@ def _members_page(request, *, scope, corporation_id, corporation_name):
     )
 
 
-@permission_required("fleetops.view_all_stats", raise_exception=True)
+@fleetops_permission_required("fleetops.view_all_stats")
 def alliance_members_view(request):
     """Every member of the alliance (view_all_stats); ``?corporation=`` narrows the list."""
     corporation_id = _database_id(request.GET.get("corporation", ""))
     return _members_page(request, scope="alliance", corporation_id=corporation_id, corporation_name="")
 
 
+@fleetops_permission_required((VIEW_CORP_STATS, VIEW_ALL_STATS), any_perm=True)
 def corporation_members_view(request, corporation_id=None):
-    """The members of one corporation: the viewer's own (view_corp_stats) or any (view_all_stats)."""
-    if corporation_id is None:
+    """The members of one corporation: the viewer's own (view_corp_stats) or any (view_all_stats).
+
+    A corporation manager who opens a corporation by ID gets their own page for their own corporation and the
+    same 404 for every other ID, known or not.
+    """
+    if corporation_id is None or not request.user.has_perm(VIEW_ALL_STATS):
         if not request.user.has_perm(VIEW_CORP_STATS):
-            raise PermissionDenied
+            return denied(request, reason_for(VIEW_CORP_STATS), permission=VIEW_CORP_STATS)
         own = own_corporation(request.user)
+        if corporation_id is not None and (own is None or own[0] != corporation_id):
+            return not_found(request, OWN_CORPORATION_STATISTICS_REASON)
         if own is None:
             raise Http404
         return _members_page(request, scope="own_corporation", corporation_id=own[0], corporation_name=own[1])
-    if not request.user.has_perm(VIEW_ALL_STATS):
-        raise PermissionDenied
     name = (
         population.member_profiles(corporation_id=corporation_id)
         .values_list("main_character__corporation_name", flat=True)
@@ -181,15 +193,20 @@ def _board(request, board, title, can_open):
     }
 
 
-@permission_required("fleetops.basic_access", raise_exception=True)
+@fleetops_permission_required("fleetops.basic_access")
 def member_detail_view(request, user_id):
     """One member's month: themselves (their own page), a corporation manager's members, or anyone."""
-    member = get_object_or_404(get_user_model().objects.select_related("profile__main_character"), pk=user_id)
+    member = get_user_model().objects.select_related("profile__main_character").filter(pk=user_id).first()
+    if member is None:
+        # The same answer as for a member of another corporation, so user IDs do not leak.
+        if request.user.has_perm(VIEW_ALL_STATS):
+            raise Http404
+        return not_found(request, OWN_CORPORATION_MEMBERS_REASON)
     year, month = _year_month(request)
     if member.pk == request.user.pk:
         return redirect(f"{reverse('fleetops:my_statistics')}?year={year}&month={month}")
     if not can_view_member(request.user, member):
-        raise Http404
+        return not_found(request, OWN_CORPORATION_MEMBERS_REASON)
     settings_obj = FleetOpsSettings.get_solo()
     detail = member_stats.member_detail(member, year, month, settings_obj=settings_obj)
     if detail is None:
@@ -214,11 +231,11 @@ def member_detail_view(request, user_id):
     )
 
 
-@permission_required("fleetops.basic_access", raise_exception=True)
+@fleetops_permission_required("fleetops.basic_access")
 def leaderboard_view(request):
     """The PAP leaderboard of the alliance and of one corporation, as far as the settings let the viewer see it."""
     if not leaderboard_visible(request.user):
-        raise PermissionDenied
+        return denied(request, LEADERBOARD_REASON)
     access = leaderboard_access(request.user)
     own = access["own_corporation"]
     # Only viewers of every corporation choose the corporation; everybody else sees their own.

@@ -4,7 +4,6 @@
 """Fleet Start presets of the signed-in FC."""
 
 from django.contrib import messages
-from django.contrib.auth.decorators import permission_required
 from django.db import IntegrityError, transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
@@ -12,6 +11,7 @@ from django.urls import reverse
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 
+from fleetops.decorators import fleet_starter_required
 from fleetops.forms_presets import PRESET_FORM_PREFIX, PresetRenameForm, PresetSaveForm
 from fleetops.models import FleetStartPreset
 from fleetops.services.presets import FC_CHARACTER, PresetConflict, save_preset
@@ -38,7 +38,7 @@ def _summary(preset):
     return " · ".join(parts)
 
 
-@permission_required("fleetops.start_fleet", raise_exception=True)
+@fleet_starter_required
 def preset_list_view(request):
     presets = FleetStartPreset.objects.filter(owner=request.user, is_last_used=False)
     rows = [{"preset": preset, "summary": _summary(preset)} for preset in presets]
@@ -61,7 +61,7 @@ def _save_result(request, *, ok, message, conflict=False, preset=None):
     return redirect(f"{url}?preset={preset.pk}" if preset else f"{url}?preset=none")
 
 
-@permission_required("fleetops.start_fleet", raise_exception=True)
+@fleet_starter_required(page=False)
 @require_POST
 def preset_save_view(request):
     form = PresetSaveForm(request.POST, prefix=PRESET_FORM_PREFIX)
@@ -92,7 +92,7 @@ def preset_save_view(request):
     return _save_result(request, ok=True, message=" ".join(sentences), preset=preset)
 
 
-@permission_required("fleetops.start_fleet", raise_exception=True)
+@fleet_starter_required(page=False)
 @require_POST
 def preset_rename_view(request, pk):
     preset = _own_preset(request, pk)
@@ -121,7 +121,7 @@ def preset_rename_view(request, pk):
     return redirect("fleetops:preset_list")
 
 
-@permission_required("fleetops.start_fleet", raise_exception=True)
+@fleet_starter_required(page=False)
 @require_POST
 def preset_delete_view(request, pk):
     preset = _own_preset(request, pk)
@@ -131,7 +131,7 @@ def preset_delete_view(request, pk):
     return redirect("fleetops:preset_list")
 
 
-@permission_required("fleetops.start_fleet", raise_exception=True)
+@fleet_starter_required(page=False)
 @require_POST
 def preset_default_view(request, pk):
     preset = _own_preset(request, pk)

@@ -55,8 +55,8 @@ class SetActionHistoryTests(TestCase):
     def test_skipped_step_is_recorded_once(self):
         operation = f.create_operation(self.fc, send_ping=False)
 
-        retry_ping(operation)
-        step = retry_ping(operation)
+        retry_ping(operation, actor=operation.fc_user)
+        step = retry_ping(operation, actor=operation.fc_user)
 
         self.assertEqual(step.status, Status.SKIPPED)
         self.assertEqual(step.history.count(), 1)

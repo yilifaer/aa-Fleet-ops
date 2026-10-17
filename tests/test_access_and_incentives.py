@@ -3,8 +3,6 @@
 
 """Regression tests for fleet record access, FC incentives, paging and manual fleet records."""
 
-import json
-import uuid
 from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 from unittest import mock
@@ -14,7 +12,6 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from fleetops import views as views_module
 from fleetops.models import (
     AttendanceRecord,
     AuditLog,
@@ -25,7 +22,6 @@ from fleetops.models import (
     OperationRoleAssignment,
 )
 from fleetops.services.attendance import create_manual_attendance
-from fleetops.services.audit import audit
 from fleetops.services.incentives import (
     INCENTIVES_DISABLED_MESSAGE,
     WAIVER_LOCKED_MESSAGE,
@@ -49,7 +45,6 @@ MANUAL = AttendanceRecord.Source.MANUAL
 # An FC who may run and manage their own fleets but has no read access to every fleet record.
 OWN_FLEET_FC_PERMS = ["fleetops.basic_access", "fleetops.start_fleet", "fleetops.manage_own_fleet"]
 NOT_RECORDABLE = (Status.DRAFT, Status.STARTING, Status.ENDING, Status.CANCELLED, Status.ERROR)
-WEBHOOK_SECRET = "hook-secret-token"
 
 
 def utc(*args):
@@ -535,97 +530,6 @@ class EndFleetTests(TestCase):
 # ---------------------------------------------------------------------------
 
 
-@mock.patch("fleetops.views_history.HISTORY_PAGE_SIZE", 2)
-class AttendanceHistoryPagingTests(TestCase):
-    BAD_PAGES = ("abc", "0", "-1", "1.5", "999", "")
-
-    def setUp(self):
-        self.fc = f.create_user("fc", perms=f.FC_PERMS)
-        self.pilot = f.create_user("pilot", perms=f.CORP_MANAGEMENT_PERMS)
-        self.outsider = f.create_user("outsider", perms=f.MEMBER_PERMS, corporation=f.OTHER_CORP)
-        now = timezone.now()
-        self.operations = [closed_op(self.fc, now - timedelta(days=day + 1)) for day in range(5)]
-        for value, operation in enumerate(self.operations, start=1):
-            f.add_attendance(operation, self.pilot, value=value)
-        f.add_attendance(self.operations[0], self.outsider, value=10)
-
-    def get(self, user, name, page=None):
-        self.client.force_login(user)
-        response = self.client.get(reverse(f"fleetops:{name}"), {} if page is None else {"page": page})
-        self.assertEqual(response.status_code, 200)
-        return response
-
-    def assert_paged(self, user, name, *, count, total):
-        first = self.get(user, name)
-        self.assertEqual(len(first.context["rows"]), 2)
-        self.assertEqual(first.context["page"].paginator.count, count)
-        self.assertEqual(first.context["total"], total)
-        self.assertContains(first, "Page 1 of 3")
-        self.assertContains(first, "?page=2")
-
-        last = self.get(user, name, page=3)
-        self.assertEqual(len(last.context["rows"]), count - 4)
-        self.assertEqual(last.context["total"], total)
-        self.assertContains(last, "?page=2")
-
-        seen = {r.pk for page in (1, 2, 3) for r in self.get(user, name, page=page).context["rows"]}
-        self.assertEqual(len(seen), count)
-
-        for page in self.BAD_PAGES:
-            with self.subTest(page=page):
-                self.assertIn(self.get(user, name, page=page).context["page"].number, (1, 3))
-
-    def test_personal_history(self):
-        self.assert_paged(self.pilot, "attendance_history_me", count=5, total=15)
-
-    def test_corporation_history(self):
-        self.assert_paged(self.pilot, "attendance_history_corporation", count=5, total=15)
-
-    def test_alliance_history(self):
-        lead = f.create_user("lead", perms=f.MEMBER_PERMS + ["fleetops.view_all_stats"])
-        self.assert_paged(lead, "attendance_history_alliance", count=6, total=25)
-
-    def test_fleet_links_require_access_to_the_fleet(self):
-        lead = f.create_user("lead", perms=f.MEMBER_PERMS + ["fleetops.view_all_stats"])
-        link = reverse("fleetops:operation_detail", args=[self.operations[0].uuid])
-
-        self.assertNotContains(self.get(lead, "attendance_history_alliance"), link)
-        self.assertContains(self.get(self.pilot, "attendance_history_me"), link)
-        viewer = f.create_user("viewer", perms=f.MEMBER_PERMS + ["fleetops.view_all_stats", "fleetops.view_all_fleets"])
-        self.assertContains(self.get(viewer, "attendance_history_alliance"), link)
-
-
-@mock.patch("fleetops.views.AUDIT_PAGE_SIZE", 2)
-class AuditLogPagingTests(TestCase):
-    def setUp(self):
-        self.auditor = f.create_user("auditor", perms=f.MEMBER_PERMS + ["fleetops.view_audit_log"])
-        fleet_type = f.fleet_type()
-        self.oldest = audit(self.auditor, "oldest.entry", fleet_type)
-        AuditLog.objects.filter(pk=self.oldest.pk).update(created_at=timezone.now() - timedelta(days=30))
-        for index in range(4):
-            audit(self.auditor, f"entry.{index}", fleet_type)
-        self.client.force_login(self.auditor)
-
-    def get(self, **params):
-        response = self.client.get(reverse("fleetops:audit_log"), params)
-        self.assertEqual(response.status_code, 200)
-        return response
-
-    def test_pages_cover_every_entry_newest_first(self):
-        first = self.get()
-        self.assertEqual([r.action for r in first.context["rows"]], ["entry.3", "entry.2"])
-        self.assertContains(first, "Page 1 of 3")
-        self.assertContains(first, "?page=2")
-
-        last = self.get(page=3)
-        self.assertEqual([r.action for r in last.context["rows"]], ["oldest.entry"])
-
-    def test_bad_page_values_fall_back(self):
-        for page in ("abc", "0", "-1", "1.5", "999"):
-            with self.subTest(page=page):
-                self.assertIn(self.get(page=page).context["page"].number, (1, 3))
-
-
 # ---------------------------------------------------------------------------
 # Archive filters
 # ---------------------------------------------------------------------------
@@ -790,36 +694,3 @@ class ManualRecordStatusTests(TestCase):
 # ---------------------------------------------------------------------------
 # Start fleet preview
 # ---------------------------------------------------------------------------
-
-
-class PreviewErrorTests(TestCase):
-    def test_render_failure_returns_a_json_error_without_details(self):
-        fc = f.create_user("fc", perms=f.FC_PERMS)
-        fleet_type = f.fleet_type()
-        self.client.force_login(fc)
-        error = RuntimeError(f"Failed posting to https://discord.com/api/webhooks/1/{WEBHOOK_SECRET}")
-
-        with mock.patch("fleetops.views.render_messages", side_effect=error), self.assertLogs(
-            views_module.logger, "ERROR"
-        ) as logs:
-            response = self.client.post(
-                reverse("fleetops:preview_fleet"),
-                {
-                    "request_id": str(uuid.uuid4()),
-                    "operation_mode": "full",
-                    "fc_character_id": str(f.main_of(fc).character_id),
-                    "fleet_type": str(fleet_type.pk),
-                    "formup": "Jita",
-                },
-            )
-
-        self.assertEqual(response.status_code, 400)
-        body = json.loads(response.content)
-        self.assertFalse(body["ok"])
-        self.assertIn("could not be rendered", body["error"])
-        self.assertNotIn(WEBHOOK_SECRET, response.content.decode())
-        log = "\n".join(logs.output)
-        self.assertIn("Message preview failed (RuntimeError)", log)
-        self.assertIn("Traceback", log)
-        self.assertNotIn(WEBHOOK_SECRET, log)
-        self.assertTrue(all(record.exc_info is None for record in logs.records))

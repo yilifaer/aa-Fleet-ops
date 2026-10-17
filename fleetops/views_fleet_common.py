@@ -19,8 +19,6 @@ from fleetops.services.fleet_view import state_payload
 from fleetops.texts import translate_stored
 from fleetops.views import _database_id, _operation_for_user
 
-MANAGE_PERMISSIONS = ("fleetops.manage_own_fleet", "fleetops.manage_fleets")
-
 MESSAGE_LEVELS = {
     "success": messages.success,
     "info": messages.info,

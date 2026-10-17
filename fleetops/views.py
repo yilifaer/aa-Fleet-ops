@@ -4,10 +4,8 @@
 import uuid
 from datetime import timedelta
 
-from allianceauth.authentication.decorators import permissions_required
 from allianceauth.services.hooks import get_extension_logger
 from django.contrib import messages
-from django.contrib.auth.decorators import permission_required
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Count, IntegerField, OuterRef, Prefetch, Q, Subquery, Sum
@@ -25,6 +23,7 @@ from esi.decorators import token_required
 
 from fleetops import texts
 from fleetops.constants import FLEET_SCOPES
+from fleetops.decorators import fleet_manager_required, fleet_starter_required, fleetops_permission_required
 from fleetops.forms import (
     CancelScheduledFleetForm,
     EndFleetForm,
@@ -57,7 +56,7 @@ from fleetops.models import (
     ReviewStatus,
 )
 from fleetops.providers.esi import FleetESIError, detect_character_fleet
-from fleetops.services import pap
+from fleetops.services import group_access, pap
 from fleetops.services.audit import audit
 from fleetops.services.attendance import (
     RECORDABLE_STATUSES,
@@ -65,7 +64,7 @@ from fleetops.services.attendance import (
     set_operation_attendance_multiplier,
 )
 from fleetops.services.counting import counted_operations, evaluate_stats_inclusion, operation_count_reason
-from fleetops.services.dashboard import dashboard_metrics
+from fleetops.services.dashboard import dashboard_metrics, running_fleet_rows
 from fleetops.services.errors import log_failure
 from fleetops.services.fleet_controls import CAPSULES, KickRefused, kick_members
 from fleetops.services.identity import get_owned_character
@@ -111,7 +110,12 @@ from fleetops.services.periods import (
     year_month_of,
 )
 from fleetops.services.presets import load_preset, save_last_used
-from fleetops.services.review import can_delete_manual_row, is_approver, pending_approval_count
+from fleetops.services.review import (
+    can_delete_manual_row,
+    is_approver,
+    pending_approval_count,
+    pending_approval_counts,
+)
 from fleetops.services.roles import add_role_assignment, delete_role_assignment
 from fleetops.services.routing import proximity_rows
 from fleetops.services.scheduling import (
@@ -160,6 +164,11 @@ def _render(request, template_name, context=None):
     context["srp_nav"] = srp_access.srp_nav(request.user)
     if is_approver(request.user):
         context["pending_approval_count"] = pending_approval_count()
+        context["pending_approvals"] = pending_approval_counts()
+    if not request.user.has_perm("fleetops.start_fleet"):
+        # FCs see "Start Fleet" and "Send Ping" anyway; only other users need the group lookup.
+        access = group_access.leader_access(request.user)
+        context["group_nav"] = {"fleets": bool(access.fleet_group_ids), "pings": bool(access.grants)}
     return render(request, template_name, context)
 
 
@@ -182,9 +191,12 @@ def _is_credited_fc(user, operation):
 
 
 def _can_manage_operation(user, operation):
-    return user.has_perm("fleetops.manage_fleets") or (
-        user.has_perm("fleetops.manage_own_fleet") and _is_credited_fc(user, operation)
-    )
+    if user.has_perm("fleetops.manage_fleets"):
+        return True
+    if user.has_perm("fleetops.manage_own_fleet") and _is_credited_fc(user, operation):
+        return True
+    # The leader who started a group fleet manages it while they lead the group (no query for alliance fleets).
+    return group_access.manages_group_fleet(user, operation)
 
 
 def _can_see_scheduled_fleets(user):
@@ -201,6 +213,9 @@ def _can_view_operation(user, operation):
         # A pre ping may have gone to a restricted channel.
         return operation.fc_user_id == user.pk or user.has_perm("fleetops.start_fleet")
     if _is_credited_fc(user, operation):
+        return True
+    # Leaders open the fleets of the groups they lead, read-only unless they started them.
+    if operation.group_id and operation.group_id in group_access.visible_group_ids(user):
         return True
     if operation.role_assignments.filter(auth_user=user).exists():
         return True
@@ -329,13 +344,18 @@ def _incentives_enabled(request):
     return False
 
 
-@permission_required("fleetops.basic_access", raise_exception=True)
+@fleetops_permission_required("fleetops.basic_access")
 def dashboard(request):
     from fleetops.views_pap import live_pap_rows
 
     active_qs = FleetOperation.objects.filter(status=FleetOperation.Status.ACTIVE)
     if not _can_view_all_fleets(request.user):
-        active_qs = active_qs.filter(Q(fc_user=request.user) | _member_of(request.user)).distinct()
+        # Leaders also see the running fleets of the groups they lead (read-only unless they started them).
+        visible = Q(fc_user=request.user) | _member_of(request.user)
+        group_ids = group_access.visible_group_ids(request.user)
+        if group_ids:
+            visible |= Q(group_id__in=group_ids)
+        active_qs = active_qs.filter(visible).distinct()
     active = (
         active_qs.select_related("fleet_type", "fc_user")
         .annotate(active_member_count=Count("member_states", filter=Q(member_states__is_active=True), distinct=True))[:20]
@@ -370,6 +390,7 @@ def dashboard(request):
         "fleetops/dashboard.html",
         {
             "active_operations": active,
+            "running_fleets": running_fleet_rows(request.user, active),
             "scheduled_operations": scheduled[:SCHEDULED_FLEETS_SHOWN],
             "own_operations": own,
             "fc_stats": fc,
@@ -470,6 +491,8 @@ def _preview_payload(operation, *, actor, pre_ping):
             "blocking": list(rendered.blocking) if sends else [],
             "ping_length": rendered.ping_length,
             "motd_length": rendered.motd_length,
+            "motd_visible_length": rendered.motd_visible_length,
+            "motd_limit": rendered.motd_limit,
         }
     )
 
@@ -482,6 +505,7 @@ def _start_page(request, form, operation=None, **extra):
             "form": form,
             "operation": operation,
             "channel_rules": form.channel_rules(),
+            "group_rules": form.group_rules(),
             "ping_limit": DISCORD_MESSAGE_LIMIT,
             "eve_now": timezone.now(),
             **extra,
@@ -545,7 +569,7 @@ def _remember_last_used(user, cleaned_data):
         log_failure(logger, "Saving the last used start settings", exc)
 
 
-@permission_required("fleetops.start_fleet", raise_exception=True)
+@fleet_starter_required
 def start_fleet_view(request):
     if request.method != "POST":
         preset, how = _chosen_preset(request)
@@ -607,7 +631,7 @@ def start_fleet_view(request):
     return _start_page(request, form, **_preset_bar(request))
 
 
-@permission_required("fleetops.start_fleet", raise_exception=True)
+@fleet_starter_required(page=False)
 @require_POST
 def preview_fleet(request):
     form = StartFleetForm(request.POST, user=request.user)
@@ -622,7 +646,7 @@ def preview_fleet(request):
     return _preview_payload(operation, actor=request.user, pre_ping=form.cleaned_data["is_pre_ping"])
 
 
-@permission_required("fleetops.start_fleet", raise_exception=True)
+@fleet_starter_required(page=False)
 def detect_fleet(request, character_id):
     ownership = get_owned_character(request.user, character_id)
     if ownership is None:
@@ -649,14 +673,14 @@ def detect_fleet(request, character_id):
     )
 
 
-@permission_required("fleetops.start_fleet", raise_exception=True)
+@fleet_starter_required
 @token_required(scopes=FLEET_SCOPES)
 def authorize_esi(request, token):
     messages.success(request, _("Fleet ESI token saved for %(name)s.") % {"name": token.character_name})
     return redirect("fleetops:start_fleet")
 
 
-@permission_required("fleetops.basic_access", raise_exception=True)
+@fleetops_permission_required("fleetops.basic_access")
 def fleet_operations_view(request):
     current_year, current_month = current_year_month()
     try:
@@ -797,7 +821,7 @@ def _keep_multiplier_within_duration(user, operation):
     return lowered
 
 
-@permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
+@fleet_manager_required(page=True)
 def edit_operation_view(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid, manage=True)
     if not _can_manage_operation(request.user, operation):
@@ -927,7 +951,7 @@ def _scheduled_fleet_page(request, operation, *, start_form=None):
     )
 
 
-@permission_required("fleetops.basic_access", raise_exception=True)
+@fleetops_permission_required("fleetops.basic_access")
 def operation_detail(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid)
     if is_pre_ping_record(operation):
@@ -1008,7 +1032,7 @@ def _end_multiplier_problem(operation, posted):
     return _("This fleet now runs longer than %(minutes)s minutes; choose the PAP multiplier.") % {"minutes": longest}
 
 
-@permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def end_fleet_view(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid, manage=True)
@@ -1051,7 +1075,7 @@ def end_fleet_view(request, operation_uuid):
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
-@permission_required("fleetops.start_fleet", raise_exception=True)
+@fleetops_permission_required("fleetops.start_fleet", page=False)
 @require_POST
 def start_scheduled_fleet(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid)
@@ -1117,7 +1141,7 @@ def _edited_copy(operation, cleaned_data):
     return copy
 
 
-@permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
+@fleet_manager_required(page=True)
 def edit_scheduled_fleet(request, operation_uuid):
     operation = _scheduled_for_manager(request, operation_uuid)
     if operation.status != FleetOperation.Status.SCHEDULED:
@@ -1164,7 +1188,7 @@ def edit_scheduled_fleet(request, operation_uuid):
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
-@permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def cancel_scheduled_fleet(request, operation_uuid):
     operation = _scheduled_for_manager(request, operation_uuid)
@@ -1214,7 +1238,7 @@ def _audit_retry(actor, name, operation, action, before):
     )
 
 
-@permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def retry_ping_view(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid, manage=True)
@@ -1224,13 +1248,13 @@ def retry_ping_view(request, operation_uuid):
         messages.info(request, _("This scheduled fleet was cancelled, so its pre ping is not posted again."))
         return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     before = _step_statuses(operation)
-    action = retry_ping(operation)
+    action = retry_ping(operation, actor=request.user)
     _audit_retry(request.user, "fleet.retry_ping", operation, action, before)
     messages.info(request, _retry_text(_("Ping retry: %(status)s."), action))
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
-@permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def retry_motd_view(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid, manage=True)
@@ -1246,7 +1270,7 @@ def retry_motd_view(request, operation_uuid):
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
-@permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def retry_srp_view(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid, manage=True)
@@ -1269,9 +1293,7 @@ def _can_set_multiplier(user, operation):
     return operation.multiplier_pending and _can_manage_operation(user, operation)
 
 
-@permissions_required(
-    ("fleetops.manage_attendance", "fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True
-)
+@fleet_manager_required("fleetops.manage_attendance")
 @require_POST
 def set_attendance_multiplier_view(request, operation_uuid):
     operation = get_object_or_404(FleetOperation, uuid=operation_uuid)
@@ -1301,7 +1323,7 @@ def set_attendance_multiplier_view(request, operation_uuid):
     return detail
 
 
-@permission_required("fleetops.create_manual_fleet", raise_exception=True)
+@fleetops_permission_required("fleetops.create_manual_fleet")
 def manual_fleet_view(request):
     if request.method == "POST":
         form = ManualFleetForm(request.POST)
@@ -1366,7 +1388,7 @@ def _incentive_page(request, year, month, *, period=None, form=None, edit_form=N
     )
 
 
-@permission_required("fleetops.manage_incentives", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_incentives")
 def incentive_review(request):
     if not _incentives_enabled(request):
         return redirect("fleetops:dashboard")
@@ -1415,7 +1437,7 @@ def incentive_review(request):
     return _incentive_redirect(period)
 
 
-@permission_required("fleetops.manage_incentives", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_incentives", page=False)
 @require_POST
 def incentive_recalculate(request, pk):
     period = get_object_or_404(IncentivePeriod, pk=pk)
@@ -1432,7 +1454,7 @@ def incentive_recalculate(request, pk):
     return _incentive_redirect(period)
 
 
-@permission_required("fleetops.manage_incentives", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_incentives", page=False)
 @require_POST
 def incentive_update(request, pk):
     period = get_object_or_404(IncentivePeriod, pk=pk)
@@ -1462,7 +1484,7 @@ def incentive_update(request, pk):
     return _incentive_redirect(period)
 
 
-@permission_required("fleetops.manage_incentives", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_incentives", page=False)
 @require_POST
 def incentive_finalize(request, pk):
     period = get_object_or_404(IncentivePeriod, pk=pk)
@@ -1479,7 +1501,7 @@ def incentive_finalize(request, pk):
     return _incentive_redirect(period)
 
 
-@permission_required("fleetops.manage_incentives", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_incentives", page=False)
 @require_POST
 def incentive_unlock(request, pk):
     period = get_object_or_404(IncentivePeriod, pk=pk)
@@ -1496,7 +1518,7 @@ def incentive_unlock(request, pk):
     return _incentive_redirect(period)
 
 
-@permission_required("fleetops.manage_incentives", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_incentives", page=False)
 @require_POST
 def incentive_waiver(request, pk, user_id):
     period = get_object_or_404(IncentivePeriod, pk=pk)
@@ -1524,7 +1546,7 @@ def incentive_waiver(request, pk, user_id):
     return _incentive_redirect(period)
 
 
-@permission_required("fleetops.manage_attendance", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_attendance", page=False)
 @require_POST
 def add_manual_attendance(request, operation_uuid):
     operation = get_object_or_404(FleetOperation, uuid=operation_uuid)
@@ -1585,7 +1607,7 @@ def _save_manual_attendance(request, operation, data, *, form=None):
     return record
 
 
-@permission_required("fleetops.manage_attendance", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_attendance", page=False)
 @require_POST
 def delete_manual_attendance(request, pk):
     record = get_object_or_404(AttendanceRecord, pk=pk, source__in=AttendanceRecord.USER_SOURCES)
@@ -1609,7 +1631,7 @@ def delete_manual_attendance(request, pk):
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
-@permission_required("fleetops.manage_attendance", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_attendance")
 def manual_attendance_view(request):
     roster_fleet = request.GET.get("roster_fleet")
     if roster_fleet:
@@ -1649,7 +1671,7 @@ def manual_attendance_view(request):
     )
 
 
-@permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def add_operation_role(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid, manage=True)
@@ -1685,7 +1707,7 @@ def add_operation_role(request, operation_uuid):
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
-@permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def delete_operation_role(request, pk):
     assignment = get_object_or_404(OperationRoleAssignment.objects.select_related("operation"), pk=pk)
@@ -1697,7 +1719,7 @@ def delete_operation_role(request, pk):
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
-@permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def kick_capsules_view(request, operation_uuid):
     # Imported here because the fleet control views import their helpers from this module.
@@ -1717,7 +1739,7 @@ def kick_capsules_view(request, operation_uuid):
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
-@permission_required("fleetops.view_audit_log", raise_exception=True)
+@fleetops_permission_required("fleetops.view_audit_log")
 def audit_log_view(request):
     entries = AuditLog.objects.select_related("actor").order_by("-created_at", "-pk")
     page = Paginator(entries, AUDIT_PAGE_SIZE).get_page(request.GET.get("page"))

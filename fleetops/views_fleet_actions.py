@@ -3,20 +3,20 @@
 
 """Actions on a running fleet."""
 
-from allianceauth.authentication.decorators import permissions_required
 from django.contrib import messages
 from django.http import Http404
 from django.shortcuts import redirect
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 
+from fleetops.decorators import fleet_manager_required
 from fleetops.models import OperationAction
 from fleetops.services.motd import regenerate_and_push_motd
 from fleetops.texts import translate_stored
 from fleetops.views import _can_manage_operation, _operation_for_user
 
 
-@permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def regenerate_motd(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid, manage=True)

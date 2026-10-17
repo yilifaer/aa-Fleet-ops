@@ -953,7 +953,9 @@ class CorporationPageTests(MembersTestCase):
         self.assertEqual(self.listed(response), ["Carol", "Manager", "Plain", "Statsman"])
 
     def test_a_corporation_manager_cannot_open_other_corporations_or_the_alliance(self):
-        self.assertEqual(self.get(self.manager, "corporation_members_detail", f.OTHER_CORP[0]).status_code, 403)
+        # Another corporation by ID is not found (FleetOps page with the reason); the alliance list is not allowed.
+        self.assertEqual(self.get(self.manager, "corporation_members_detail", f.OTHER_CORP[0]).status_code, 404)
+        self.assertEqual(self.get(self.manager, "corporation_members_detail", f.DEFAULT_CORP[0]).status_code, 200)
         self.assertEqual(self.get(self.manager, "alliance_members").status_code, 403)
 
     def test_a_member_cannot_open_corporation_lists(self):

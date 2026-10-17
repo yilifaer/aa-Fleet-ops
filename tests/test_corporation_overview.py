@@ -446,8 +446,9 @@ class OverviewQueryBudgetTests(TestCase):
         small = self.count(page)
         self.add_corporations(fc, strat, 2, 4, 9)
         self.assertEqual(small, self.count(page))
-        # Alliance Auth's own page chrome (login state, user, permissions, menu) takes about 16 of these.
-        self.assertLessEqual(small, 28)
+        # Alliance Auth's own page chrome (login state, user, permissions, menu) takes about 16 of these; the menu's
+        # group lookup for viewers without start_fleet one more.
+        self.assertLessEqual(small, 29)
 
     def test_corporation_page(self):
         corporation = (2_100_000, "Budget Corp 0")
@@ -470,7 +471,8 @@ class OverviewQueryBudgetTests(TestCase):
             f.add_attendance(f.closed_operation(fc, utc(2026, 3, 22, 18), type_obj=strat), user)
         self.assertEqual(self.client.get(url, {"year": 2026, "month": 3}).context["stats"]["main_character_count"], 16)
         self.assertEqual(small, self.count(page))
-        self.assertLessEqual(small, 28)
+        # One more than before for the menu's group lookup (the manager has no start_fleet).
+        self.assertLessEqual(small, 29)
 
     def test_corporation_statistics(self):
         fc = f.member("fc", perms=f.FC_PERMS)

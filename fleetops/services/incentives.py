@@ -8,6 +8,7 @@ from fleetops.calculations import calculate_payouts
 from fleetops import texts
 from fleetops.models import FleetOperation, FleetOpsSettings, FleetType, IncentivePeriod, MonthlyFCStatistic
 from fleetops.services.history import current_member_user_ids
+from fleetops.services.periods import year_month_of
 from fleetops.services.statistics import (
     credited_operations,
     fc_breakdown,
@@ -138,3 +139,24 @@ def set_waiver(period: IncentivePeriod, user_id: int, waived: bool):
     row.save(update_fields=["waived"])
     rebuild_period(period)
     return period.fc_statistics.filter(fc_user_id=user_id).first()
+
+
+def months_of(operation, *, previous_started_at=None) -> set[tuple[int, int]]:
+    """The EVE months whose incentive periods a change to ``operation`` can affect.
+
+    The month of its start and, after its start time was edited, the month of the old start too.
+    """
+    months = set()
+    for value in (operation.started_at, previous_started_at):
+        if value is not None:
+            months.add(year_month_of(value))
+    return months
+
+
+def refresh_months_after_commit(*months: tuple[int, int], actor=None) -> None:
+    """Recalculate the incentive periods of ``months`` that are not finalised, after the current transaction.
+
+    Called wherever a fleet's figures change (end, manual fleet, multiplier, approval, edits). Not implemented
+    yet: it does nothing.
+    """
+    return None

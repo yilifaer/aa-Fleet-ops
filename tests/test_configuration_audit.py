@@ -25,6 +25,7 @@ from fleetops.models import (
     FleetOpsSettings,
     FleetStructureTemplate,
     FleetType,
+    GroupAccess,
     MessageTemplate,
     MultiplierTier,
     OperationAction,
@@ -74,6 +75,8 @@ FLEET_SECTION_MODELS = {
 }
 # Sections of FleetOps SRP; tests/test_srp_config.py covers their pages.
 SRP_SECTION_MODELS = {"srp-rules": SrpPayoutRule, "srp-corporation-limits": SrpCorporationLimit}
+# The Groups section; tests/test_discord_config.py covers its hooks.
+GROUP_SECTION_MODELS = {"groups": GroupAccess}
 
 
 def create_sample_objects():
@@ -151,6 +154,7 @@ def settings_payload(**overrides):
         "leaderboard_visibility": "members",
         "fleet_live_refresh_seconds": "15",
         "bridge_excluded_group_ids": DEFAULT_BRIDGE_EXCLUDED_GROUP_IDS,
+        "motd_warning_length": "2000",
     }
     data.update(overrides)
     return {key: value for key, value in data.items() if value is not None}
@@ -250,6 +254,7 @@ class ConfigurationAccessTests(TestCase):
             **STATISTICS_SECTION_MODELS,
             **FLEET_SECTION_MODELS,
             **SRP_SECTION_MODELS,
+            **GROUP_SECTION_MODELS,
         }
         self.assertEqual(set(cards), set(models))
         for section, model in models.items():
@@ -1093,7 +1098,7 @@ class WebhookSecretTests(TestCase):
         )
 
         with mock.patch("fleetops.providers.pings.requests.post", side_effect=error) as post:
-            action = retry_ping(operation)
+            action = retry_ping(operation, actor=operation.fc_user)
 
         post.assert_called_once()
         self.assertEqual(action.status, OperationAction.Status.FAILED)

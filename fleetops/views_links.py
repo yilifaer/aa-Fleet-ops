@@ -3,9 +3,7 @@
 
 """PAP links: creating and revoking them, the registration page and PAP-link fleets."""
 
-from allianceauth.authentication.decorators import permissions_required
 from django.contrib import messages
-from django.contrib.auth.decorators import permission_required
 from django.db.models import Count
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
@@ -17,6 +15,7 @@ from esi.decorators import token_required
 from esi.models import CallbackRedirect, Token
 
 from fleetops.constants import CLICK_SCOPES
+from fleetops.decorators import fleet_manager_required, fleetops_permission_required
 from fleetops.forms_links import LinkOnlyFleetForm, PapLinkForm
 from fleetops.models import PapLink, PapRegistration, ReviewStatus
 from fleetops.services.identity import owned_characters
@@ -135,7 +134,7 @@ def _report(request, result):
         )
 
 
-@permission_required("fleetops.basic_access", raise_exception=True)
+@fleetops_permission_required("fleetops.basic_access")
 def pap_link_register(request, code):
     link = _link(code)
     if request.method == "POST":
@@ -160,7 +159,7 @@ def _back_from_login(request):
     )
 
 
-@permission_required("fleetops.basic_access", raise_exception=True)
+@fleetops_permission_required("fleetops.basic_access")
 def pap_link_authorize(request, code):
     link = _link(code)
     if not link_is_valid(link) and not _back_from_login(request):
@@ -188,7 +187,7 @@ def _form_errors(form):
     return " ".join(texts)
 
 
-@permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def create_pap_link_view(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid, manage=True)
@@ -214,7 +213,7 @@ def create_pap_link_view(request, operation_uuid):
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
-@permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def revoke_pap_link_view(request, pk):
     link = get_object_or_404(PapLink.objects.select_related("operation"), pk=pk)
@@ -228,7 +227,7 @@ def revoke_pap_link_view(request, pk):
     return redirect("fleetops:operation_detail", operation_uuid=link.operation.uuid)
 
 
-@permission_required("fleetops.start_fleet", raise_exception=True)
+@fleetops_permission_required("fleetops.start_fleet")
 def start_link_only_fleet_view(request):
     form = LinkOnlyFleetForm(request.POST if request.method == "POST" else None, user=request.user)
     if request.method == "POST" and form.is_valid():

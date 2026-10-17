@@ -3,7 +3,6 @@
 
 """Fleet control from the fleet page: kicking single members, everyone outside a system, capsules."""
 
-from allianceauth.authentication.decorators import permissions_required
 from django.contrib import messages
 from django.core.cache import cache
 from django.http import JsonResponse
@@ -13,6 +12,7 @@ from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
 from django.views.decorators.http import require_GET, require_POST
 
+from fleetops.decorators import fleet_manager_required
 from fleetops.models import FleetOperation
 from fleetops.services import fleet_access, fleet_refresh
 from fleetops.services.fleet_access import FleetManageError
@@ -166,7 +166,7 @@ def _kick_answer(operation, character_id, actor):
     return FleetActionResult(False, result.message, level=level, status=result.status)
 
 
-@permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def kick_member_view(request, operation_uuid, character_id):
     """Kick one member: the member list's form gets the Members tab back, the Fleet tab's scripts JSON."""
@@ -185,7 +185,7 @@ def kick_member_view(request, operation_uuid, character_id):
     return _back(operation, "members")
 
 
-@permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
+@fleet_manager_required()
 @require_GET
 def kick_preview_view(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid, manage=True)
@@ -209,7 +209,7 @@ def _system_name(operation, system_id):
     return name or solar_system_names({system_id}).get(system_id) or str(system_id)
 
 
-@permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def kick_outside_system_view(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid, manage=True)

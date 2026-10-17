@@ -1,0 +1,9 @@
+{% extends "fleetops/base.html" %}
+{% load i18n %}
+{% block fleetops_content %}
+<div class="mb-3" id="send-ping">
+  <h2 class="mb-1">{% translate "Send Ping" %}</h2>
+  <div class="text-muted">{% translate "Posts a Discord ping without a fleet. Nothing is tracked and no PAP is given." %}</div>
+</div>
+<p id="send-ping-unavailable">{% translate "Sending pings without a fleet is not available yet." %}</p>
+{% endblock %}

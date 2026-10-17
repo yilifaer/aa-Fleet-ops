@@ -130,8 +130,10 @@ class NavigationAndPageTests(TestCase):
         )
 
         response = self.get(self.lead, reverse("fleetops:dashboard"))
-        self.assertContains(response, f'href="{approvals}">Approvals (1)</a>')
+        self.assertContains(response, f'href="{approvals}">Approvals <span')
+        self.assertContains(response, "(1 fleet)</span></a>")
         self.assertEqual(response.context["pending_approval_count"], 1)
+        self.assertEqual(response.context["pending_approvals"], {"fleets": 1, "pap": 0})
 
     def test_fcs_do_not_see_the_approvals_item(self):
         response = self.get(self.fc, reverse("fleetops:dashboard"))

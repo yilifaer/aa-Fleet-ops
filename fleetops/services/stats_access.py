@@ -3,8 +3,10 @@
 
 """Who may see which statistics.
 
-Failures on a single object (a member, a corporation) are answered with ``Http404`` by the views, as
-elsewhere in FleetOps; a leaderboard that is switched off for the user is a ``PermissionDenied``.
+A single object out of scope (a member, a corporation) is answered by the views with the FleetOps 404 page and
+its reason, the same for an ID that exists and one that does not; a corporation manager who opens the own
+corporation by its ID gets the own page. A leaderboard that is switched off for the user is the FleetOps 403
+page with its reason (``fleetops.views_errors``).
 """
 
 from __future__ import annotations

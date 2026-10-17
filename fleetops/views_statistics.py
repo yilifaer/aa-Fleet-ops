@@ -4,10 +4,10 @@
 """Statistics pages: personal, corporation, alliance and FC figures."""
 
 from django.contrib.auth import get_user_model
-from django.contrib.auth.decorators import permission_required
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 
+from fleetops.decorators import fleetops_permission_required
 from fleetops.services import population
 from fleetops.services.assessment import corporation_status, member_status, month_target
 from fleetops.services.history import configured_alliance_ids, month_retention_days
@@ -24,6 +24,7 @@ from fleetops.services.statistics import (
 )
 from fleetops.services.stats_access import leaderboard_access, own_corporation
 from fleetops.views import _can_view_all_fleets, _period_render_context, _render, _year_month
+from fleetops.views_errors import OWN_CORPORATION_STATISTICS_REASON, not_found
 
 # What the corporation overview keeps when the month changes.
 OVERVIEW_FILTERS = ("sort",)
@@ -52,7 +53,7 @@ def _rank_card(user, year, month, total):
     return {"rank": rank, "of": ranked, "scope": scope}
 
 
-@permission_required("fleetops.basic_access", raise_exception=True)
+@fleetops_permission_required("fleetops.basic_access")
 def my_statistics_view(request):
     from fleetops.views_pap import live_pap_rows
 
@@ -98,7 +99,7 @@ def _corporation_page(request, stats, *, year, month, corporation_id, corporatio
     )
 
 
-@permission_required("fleetops.view_corp_stats", raise_exception=True)
+@fleetops_permission_required("fleetops.view_corp_stats")
 def corporation_statistics_view(request):
     corporation = own_corporation(request.user)
     if corporation is None:
@@ -139,8 +140,17 @@ def _corporation_name(corporation_id, year, month):
     return names[0] or str(corporation_id)
 
 
-@permission_required("fleetops.view_all_stats", raise_exception=True)
+@fleetops_permission_required(("fleetops.view_corp_stats", "fleetops.view_all_stats"), any_perm=True)
 def corporation_statistics_detail_view(request, corporation_id):
+    """Any corporation for ``view_all_stats``; a corporation manager only their own (the same page as without an ID).
+
+    Every other ID, known or not, answers the same 404, so corporation IDs do not leak.
+    """
+    if not request.user.has_perm("fleetops.view_all_stats"):
+        own = own_corporation(request.user)
+        if own is None or own[0] != corporation_id:
+            return not_found(request, OWN_CORPORATION_STATISTICS_REASON)
+        return corporation_statistics_view(request)
     year, month = _year_month(request)
     name = _corporation_name(corporation_id, year, month)
     if name is None:
@@ -181,7 +191,7 @@ def _sort_links(current):
     }
 
 
-@permission_required("fleetops.view_all_stats", raise_exception=True)
+@fleetops_permission_required("fleetops.view_all_stats")
 def all_corporation_statistics_view(request):
     year, month = _year_month(request)
     overview = corporation_overview(year, month, sort=request.GET.get("sort", ""))
@@ -206,7 +216,7 @@ def all_corporation_statistics_view(request):
     )
 
 
-@permission_required("fleetops.view_all_stats", raise_exception=True)
+@fleetops_permission_required("fleetops.view_all_stats")
 def all_fc_statistics_view(request):
     year, month = _year_month(request)
     rows = fc_rows(year, month)
@@ -224,7 +234,7 @@ def all_fc_statistics_view(request):
     )
 
 
-@permission_required("fleetops.basic_access", raise_exception=True)
+@fleetops_permission_required("fleetops.basic_access")
 def fc_statistics_detail_view(request, user_id):
     if request.user.pk != user_id and not request.user.has_perm("fleetops.view_all_stats"):
         raise Http404

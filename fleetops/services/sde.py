@@ -231,6 +231,11 @@ def find_item_group(name, category_id=SHIP_CATEGORY_ID, *, strict=False):
     return _find("ItemGroup", name, [("category", "category_id", category_id)], ["published", "pk"], strict)
 
 
+def find_solar_system(name):
+    """``(solar_system_id, English name)`` of the solar system called ``name`` (exact, any case), or None."""
+    return _find("SolarSystem", name, [], ["pk"])
+
+
 def stargate_edges():
     """Return undirected solar-system adjacency from django-eveonline-sde.
 

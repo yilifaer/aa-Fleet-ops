@@ -3,17 +3,15 @@
 
 """Fleet tab tools: inviting characters, structure templates and quick ship classification."""
 
-from allianceauth.authentication.decorators import permissions_required
-from django.contrib.auth.decorators import permission_required
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_POST
 
+from fleetops.decorators import fleet_manager_required, fleetops_permission_required
 from fleetops.models import FleetStructureTemplate
 from fleetops.services import composition_config, fleet_invites, fleet_templates
 from fleetops.services.fleet_manage import FleetActionResult
 from fleetops.views import _database_id, _operation_for_user
 from fleetops.views_fleet_common import (
-    MANAGE_PERMISSIONS,
     fleet_response,
     invalid,
     json_response,
@@ -27,7 +25,7 @@ from fleetops.views_fleet_common import (
 CHECKED = ("1", "on", "true")
 
 
-@permissions_required(MANAGE_PERMISSIONS, raise_exception=True)
+@fleet_manager_required()
 @require_GET
 def invite_candidates_view(request, operation_uuid):
     """Characters to invite matching ``?q=``; without a query the user's own characters."""
@@ -37,7 +35,7 @@ def invite_candidates_view(request, operation_uuid):
     return json_response({"query": query, "candidates": candidates})
 
 
-@permissions_required(MANAGE_PERMISSIONS, raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def invite_view(request, operation_uuid):
     """Invite the posted ``character_ids`` as squad members, into ``squad_id`` or any squad with room."""
@@ -62,7 +60,7 @@ def invite_view(request, operation_uuid):
     )
 
 
-@permissions_required(MANAGE_PERMISSIONS, raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def apply_template_view(request, operation_uuid):
     """Apply ``template_id``; ``delete_extra`` also deletes empty wings and squads beyond the template."""
@@ -83,7 +81,7 @@ def apply_template_view(request, operation_uuid):
     )
 
 
-@permission_required("fleetops.manage_configuration", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_configuration", page=False)
 @require_POST
 def classify_view(request, operation_uuid):
     """Count ``type_id`` under the ship function ``function_id`` (quick classify in the composition)."""

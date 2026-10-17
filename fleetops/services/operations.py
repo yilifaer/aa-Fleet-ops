@@ -21,6 +21,7 @@ from fleetops.providers.doctrines import doctrine_fits_snapshot
 from fleetops.providers.esi import FleetESIError, detect_character_fleet, set_fleet_motd
 from fleetops.providers.pings import send_discord_webhook
 from fleetops.providers.srp import create_srp_link
+from fleetops.services import group_access, incentives
 from fleetops.services.audit import audit
 from fleetops.services.counting import evaluate_stats_inclusion
 from fleetops.services.errors import log_failure, report_failure
@@ -118,15 +119,26 @@ def _ping_channel_problem(operation, action):
     return None
 
 
-def _post_to_ping_channel(operation, action, text, mentions):
+def _post_to_ping_channel(operation, action, text, mentions, *, actor):
+    """The one place a fleet's message is posted to Discord.
+
+    Right before the post it checks again that ``actor`` may use the fleet's ping channel for the fleet's group
+    (``group_access.channel_refusal``); a refusal is the step's result and nothing is posted.
+    """
+    refusal = group_access.channel_refusal(actor, operation.ping_channel, group_id=operation.group_id)
+    if refusal:
+        return set_action(operation, action, False, refusal)
     if not text:
         return set_action(operation, action, False, EMPTY_PING)
     result = send_discord_webhook(operation.ping_channel.webhook_url, text, mentions)
     return set_action(operation, action, result.success, result.message)
 
 
-def _send_ping(operation, *, action="discord_ping"):
-    """Post the stored ping to the fleet's ping channel, notifying exactly the stored mention."""
+def _send_ping(operation, *, actor, action="discord_ping"):
+    """Post the stored ping to the fleet's ping channel, notifying exactly the stored mention.
+
+    ``actor`` is the user whose action posts it; their right to the channel is checked at the post.
+    """
     problem = _ping_channel_problem(operation, action)
     if problem is not None:
         return problem
@@ -136,15 +148,15 @@ def _send_ping(operation, *, action="discord_ping"):
     if errors:
         return set_action(operation, action, False, " ".join(errors))
     text = limit_mass_mentions(operation.ping_text, selection)
-    return _post_to_ping_channel(operation, action, text, allowed_mentions(selection))
+    return _post_to_ping_channel(operation, action, text, allowed_mentions(selection), actor=actor)
 
 
-def send_channel_notice(operation, action, text):
-    """Post ``text`` to the fleet's ping channel without notifying anybody."""
+def send_channel_notice(operation, action, text, *, actor):
+    """Post ``text`` to the fleet's ping channel without notifying anybody, on behalf of ``actor``."""
     problem = _ping_channel_problem(operation, action)
     if problem is not None:
         return problem
-    return _post_to_ping_channel(operation, action, text, {"parse": []})
+    return _post_to_ping_channel(operation, action, text, {"parse": []}, actor=actor)
 
 
 def _update_motd(operation, user, character_id):
@@ -264,7 +276,11 @@ def fleet_values(cleaned_data):
     selection = cleaned_data.get("mention_selection") or MentionSelection()
     source = cleaned_data.get("doctrine_source", "") or "custom"
     external_id = cleaned_data.get("doctrine_external_id", "") or ""
+    # The group a group fleet belongs to; None for an alliance fleet.
+    group = cleaned_data.get("group")
     return {
+        "group": group,
+        "group_name": group.name if group is not None else "",
         "fleet_type": fleet_type,
         "fleet_point_weight_snapshot": fleet_type.point_weight,
         "doctrine_name": cleaned_data.get("doctrine_name", "") or "",
@@ -387,6 +403,8 @@ def record_start(operation, actor, *, character, from_schedule, handed_over):
             "esi_fleet_id": operation.esi_fleet_id,
             "fc_character_id": operation.fc_character_id,
             "fleet_type": str(operation.fleet_type),
+            "group_id": operation.group_id,
+            "group": operation.group_name,
             "operation_mode": "full" if operation.send_ping else "attendance_only",
             "ping_channel": operation.ping_channel_name,
             "ping_mention_mode": operation.ping_mention_mode,
@@ -411,6 +429,20 @@ def record_start(operation, actor, *, character, from_schedule, handed_over):
         )
 
 
+def start_refusal(user, cleaned_data, *, full_mode, pre_ping=False) -> str:
+    """Why ``user`` must not start (or pre ping) the fleet ``cleaned_data`` describes; "" when they may."""
+    group = cleaned_data.get("group")
+    _field, message = group_access.fleet_start_refusal(
+        user,
+        group_id=group.pk if group is not None else None,
+        fleet_type=cleaned_data.get("fleet_type"),
+        channel=cleaned_data.get("ping_channel") if full_mode else None,
+        sends=full_mode,
+        pre_ping=pre_ping,
+    )
+    return message
+
+
 def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None):
     request_id = request_id or uuid.uuid4()
     existing = FleetOperation.objects.filter(start_request_id=request_id).first()
@@ -418,8 +450,12 @@ def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None
         return existing
 
     character = owned_fleet_character(user, cleaned_data["fc_character_id"])
-    detection = detect_fleet_boss(user, character)
     full_mode = cleaned_data.get("operation_mode", "full") == "full"
+    # Who may start which fleet is checked here again, before any ESI call: the form is not the only way in.
+    refusal = start_refusal(user, cleaned_data, full_mode=full_mode)
+    if refusal:
+        raise PermissionError(refusal)
+    detection = detect_fleet_boss(user, character)
     values = operation_values(cleaned_data, user=user, character=character)
     try:
         with transaction.atomic():
@@ -469,7 +505,9 @@ def create_srp_at_start(operation) -> None:
     """
     try:
         settings_obj = FleetOpsSettings.get_solo()
-        if settings_obj.srp_auto_create:
+        if not group_access.group_srp_allowed(operation):
+            set_action(operation, "srp_link", None, texts.GROUP_NO_SRP(group=operation.group_name))
+        elif settings_obj.srp_auto_create:
             with transaction.atomic():
                 srp = create_srp_link(operation, settings_obj.srp_provider)
             _apply_srp_result(operation, srp)
@@ -516,7 +554,7 @@ def run_start_steps(operation, *, user, character_id, full_mode, send_ping=True)
     else:
         if send_ping:
             try:
-                _send_ping(operation)
+                _send_ping(operation, actor=user)
             except Exception as exc:
                 set_action(operation, "discord_ping", False, report_failure(logger, "Discord ping", exc, operation))
         else:
@@ -542,7 +580,8 @@ def run_start_steps(operation, *, user, character_id, full_mode, send_ping=True)
             operation.refresh_from_db()
 
 
-def retry_ping(operation):
+def retry_ping(operation, *, actor):
+    """Post the fleet's stored ping again on behalf of ``actor`` (who must still be allowed to use the channel)."""
     # A fleet that has not started yet only has its pre ping.
     action = "pre_ping" if operation.status == FleetOperation.Status.SCHEDULED else "discord_ping"
     if not operation.send_ping:
@@ -550,7 +589,7 @@ def retry_ping(operation):
     if not _render_missing_text(operation, "ping_text"):
         return set_action(operation, action, False, NOT_RENDERED)
     try:
-        return _send_ping(operation, action=action)
+        return _send_ping(operation, actor=actor, action=action)
     except Exception as exc:
         return set_action(operation, action, False, report_failure(logger, "Discord ping", exc, operation))
 
@@ -567,6 +606,8 @@ def retry_srp(operation):
     # Manual records may link SRP later; PAP-only fleets never create one.
     if not operation.send_ping and not operation.is_manual:
         return _keep_skipped(operation, "srp_link", _skipped_message(operation, "SRP creation"))
+    if not group_access.group_srp_allowed(operation):
+        return set_action(operation, "srp_link", None, texts.GROUP_NO_SRP(group=operation.group_name))
     try:
         with transaction.atomic():
             # Lock the row so concurrent retries cannot both create an SRP fleet.
@@ -700,6 +741,8 @@ def end_fleet(operation, actor=None, automatic=False, attendance_multiplier=None
         queue_name_resolution(operation.pk, stale_character_ids(unnamed_character_ids(operation.pk)), force=True)
     except Exception as exc:
         log_failure(logger, "Queueing the name lookup", exc, operation)
+    # The incentive periods of the fleet's month follow its PAP and multiplier.
+    incentives.refresh_months_after_commit(*incentives.months_of(operation), actor=actor)
     return operation
 
 
@@ -824,4 +867,6 @@ def create_manual_fleet(*, user, cleaned_data: dict):
             "counts_for_stats": operation.counts_for_stats,
         },
     )
+    # An approved manual fleet counts at once.
+    incentives.refresh_months_after_commit(*incentives.months_of(operation), actor=user)
     return operation

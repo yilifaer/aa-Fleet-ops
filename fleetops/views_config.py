@@ -7,7 +7,6 @@ from dataclasses import dataclass
 
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth.decorators import permission_required
 from django.db import transaction
 from django.db.models.deletion import ProtectedError
 from django.http import Http404
@@ -17,7 +16,8 @@ from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy, pgettext_lazy
 from django.views.decorators.http import require_POST
 
-from fleetops import texts
+from fleetops import forms_groups, texts
+from fleetops.decorators import fleetops_permission_required
 from fleetops.forms_config import (
     ChannelPresetForm,
     CommsPresetForm,
@@ -42,6 +42,7 @@ from fleetops.models import (
     FleetOpsSettings,
     FleetStructureTemplate,
     FleetType,
+    GroupAccess,
     MessageTemplate,
     MultiplierTier,
     PingRole,
@@ -159,6 +160,8 @@ CONFIG_SECTIONS = {
             (gettext_lazy("@everyone"), "allow_everyone"),
             (gettext_lazy("@here"), "allow_here"),
             (gettext_lazy("Allowed roles"), "allowed_roles"),
+            (pgettext_lazy("FleetOps", "Groups"), "allowed_groups"),
+            (gettext_lazy("FCs"), "fcs_can_use"),
             (pgettext_lazy("enabled", "Active"), "is_active"),
             (gettext_lazy("Sort"), "sort_order"),
         ],
@@ -261,6 +264,30 @@ CONFIG_SECTIONS = {
         ],
         "default_reason": texts.AUDIT_DEFAULT_PAYOUT_RULE_REPLACED,
     },
+    "groups": {
+        "title": pgettext_lazy("FleetOps", "Groups"),
+        "description": gettext_lazy(
+            "Alliance Auth groups whose leaders may send pings to their channels or run fleets with PAP. Leaders "
+            "are the group leaders set in Alliance Auth."
+        ),
+        "model": GroupAccess,
+        "form": forms_groups.GroupAccessForm,
+        "columns": [
+            (pgettext_lazy("FleetOps", "Group"), "group"),
+            (gettext_lazy("Leaders may"), "mode"),
+            (gettext_lazy("Fleet types"), "fleet_types"),
+            (gettext_lazy("Ping channels"), "channels"),
+            (gettext_lazy("Leaders (from Alliance Auth)"), "leaders"),
+            (gettext_lazy("SRP"), "srp_enabled"),
+            (pgettext_lazy("enabled", "Active"), "is_active"),
+        ],
+        # Hooks any section may have: "prepare" gets the objects of a list page (and [obj] on the edit page of
+        # an existing row), "cell" answers a column before the generic rules (NotImplemented passes it on) and
+        # "edit_include" is a template shown next to the edit form.
+        "prepare": forms_groups.group_list_prepare,
+        "cell": forms_groups.group_cell,
+        "edit_include": "fleetops/configuration/_group_leaders.html",
+    },
     "srp-corporation-limits": {
         "title": gettext_lazy("SRP Corporation Limits"),
         "description": gettext_lazy(
@@ -304,6 +331,16 @@ def _link_settings():
     }
 
 
+def _section_cell(config, obj, field_name):
+    """A list cell: the section's own ``cell`` hook first, then the generic rules."""
+    hook = config.get("cell")
+    if hook is not None:
+        value = hook(obj, field_name)
+        if value is not NotImplemented:
+            return value
+    return _cell_value(obj, field_name)
+
+
 def _cell_value(obj, field_name):
     if field_name == "join_link":
         url = links.comms_join_url(obj) if obj.is_active else ""
@@ -331,12 +368,21 @@ def _cell_value(obj, field_name):
             return obj.corporation_name or str(obj.corporation_id)
         if field_name == "monthly_cap":
             return srp_display.format_isk(obj.monthly_cap) if obj.monthly_cap is not None else _("No limit")
-    value = getattr(obj, field_name)
+    if isinstance(obj, DiscordWebhook):
+        if field_name == "allowed_groups":
+            return ", ".join(group.name for group in obj.allowed_groups.all())
+        if field_name == "fcs_can_use":
+            # A channel without a group is open to every FC, whatever the stored switch says.
+            return bool(obj.fcs_allowed or not obj.allowed_groups.all())
+    value = getattr(obj, field_name, "")
     if field_name == "allowed_roles":
         return ", ".join(str(role) for role in value.all()) or _("Every active role")
     display = getattr(obj, f"get_{field_name}_display", None)
-    if field_name in ("channel_type", "template_type", "kind", "scope") and display is not None:
+    if field_name in ("channel_type", "template_type", "kind", "scope", "mode") and display is not None:
         return display()
+    if hasattr(value, "all") and callable(value.all):
+        # A many-to-many field without a rule of its own.
+        return ", ".join(str(item) for item in value.all())
     return value
 
 
@@ -357,7 +403,7 @@ def _delete_refusal(obj):
     return ""
 
 
-@permission_required("fleetops.manage_configuration", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_configuration")
 def configuration_index(request):
     settings_obj = FleetOpsSettings.get_solo()
     cards = [
@@ -376,7 +422,7 @@ def configuration_index(request):
     )
 
 
-@permission_required("fleetops.manage_configuration", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_configuration")
 def configuration_settings(request):
     obj = FleetOpsSettings.get_solo()
     old = config_snapshot(obj)
@@ -403,7 +449,7 @@ def configuration_settings(request):
     )
 
 
-@permission_required("fleetops.manage_configuration", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_configuration")
 def configuration_srp(request):
     """The FleetOps SRP settings (``configuration/srp/``); every change is audited with the old and new values."""
     obj = SrpSettings.get_solo()
@@ -438,17 +484,25 @@ def configuration_srp(request):
     )
 
 
-@permission_required("fleetops.manage_configuration", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_configuration")
 def configuration_list(request, section):
     if section == SRP_SETTINGS_SECTION:
         return configuration_srp(request)
     config = _configuration_section(section)
     queryset = config["model"].objects.all()
     if config["model"] is DiscordWebhook:
-        queryset = queryset.prefetch_related("allowed_roles")
+        queryset = queryset.prefetch_related("allowed_roles", "allowed_groups")
+    elif config["model"] is GroupAccess:
+        queryset = queryset.select_related("group").prefetch_related("fleet_types", "group__fleetops_ping_channels")
+    objects = list(queryset)
+    if config.get("prepare") is not None:
+        config["prepare"](objects)
     rows = [
-        {"object": obj, "values": [(label, _cell_value(obj, field_name)) for label, field_name in config["columns"]]}
-        for obj in queryset
+        {
+            "object": obj,
+            "values": [(label, _section_cell(config, obj, field_name)) for label, field_name in config["columns"]],
+        }
+        for obj in objects
     ]
     context = {"section": section, "config": config, "rows": rows, "actions": _section_actions(config)}
     if config.get("link_hints"):
@@ -456,7 +510,7 @@ def configuration_list(request, section):
     return _render(request, "fleetops/configuration/list.html", context)
 
 
-@permission_required("fleetops.manage_configuration", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_configuration")
 def configuration_edit(request, section, pk=None):
     config = _configuration_section(section)
     model = config["model"]
@@ -491,14 +545,22 @@ def configuration_edit(request, section, pk=None):
             return redirect("fleetops:configuration_list", section=section)
     else:
         form = config["form"](instance=obj)
+    if obj is not None and config.get("prepare") is not None:
+        config["prepare"]([obj])
     return _render(
         request,
         "fleetops/configuration/form.html",
-        {"section": section, "config": config, "form": form, "object": obj},
+        {
+            "section": section,
+            "config": config,
+            "form": form,
+            "object": obj,
+            "edit_include": config.get("edit_include", ""),
+        },
     )
 
 
-@permission_required("fleetops.manage_configuration", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_configuration", page=False)
 @require_POST
 def configuration_delete(request, section, pk):
     config = _configuration_section(section)
@@ -534,7 +596,7 @@ def configuration_delete(request, section, pk):
     return redirect("fleetops:configuration_list", section=section)
 
 
-@permission_required("fleetops.manage_configuration", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_configuration", page=False)
 @require_POST
 def sync_discord_roles(request):
     result = discord_roles.sync_discord_roles(actor=request.user)

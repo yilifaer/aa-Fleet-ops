@@ -8,8 +8,9 @@ Members see their own claims. ``view_all_stats`` sees every SRP summary and clai
 fleets they led, and SRP managers (``manage_srp``) everything. Only managers see internal notes and only
 managers decide, and by default not on their own claims.
 
-Failures on a single object (a claim, a corporation) are answered with ``Http404`` by the views, as elsewhere
-in FleetOps; a missing permission is a 403.
+A single object out of scope (a claim, a corporation, another FC's summary) is answered by the views with the
+FleetOps 404 page, the same for an ID that exists and one that does not; a corporation manager's own corporation
+by ID is their own summary. A missing permission is the FleetOps 403 page with its reason (``fleetops.views_errors``).
 """
 
 from __future__ import annotations

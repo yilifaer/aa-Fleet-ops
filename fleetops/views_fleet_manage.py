@@ -7,15 +7,14 @@ Every view answers through ``fleet_response``: JSON for the tab's scripts, a mes
 fleet page for plain form posts.
 """
 
-from allianceauth.authentication.decorators import permissions_required
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 
+from fleetops.decorators import fleet_manager_required
 from fleetops.services import fleet_manage
 from fleetops.services.fleet_manage import MoveRequest
 from fleetops.services.fleet_rules import FLEET_ROLES
 from fleetops.views_fleet_common import (
-    MANAGE_PERMISSIONS,
     fleet_response,
     invalid,
     manage_operation_or_404,
@@ -30,7 +29,7 @@ def _name(request):
     return request.POST.get("name", "")
 
 
-@permissions_required(MANAGE_PERMISSIONS, raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def wing_add_view(request, operation_uuid):
     operation = manage_operation_or_404(request, operation_uuid)
@@ -39,7 +38,7 @@ def wing_add_view(request, operation_uuid):
     )
 
 
-@permissions_required(MANAGE_PERMISSIONS, raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def wing_rename_view(request, operation_uuid, wing_id):
     operation = manage_operation_or_404(request, operation_uuid)
@@ -49,7 +48,7 @@ def wing_rename_view(request, operation_uuid, wing_id):
     )
 
 
-@permissions_required(MANAGE_PERMISSIONS, raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def wing_delete_view(request, operation_uuid, wing_id):
     operation = manage_operation_or_404(request, operation_uuid)
@@ -57,7 +56,7 @@ def wing_delete_view(request, operation_uuid, wing_id):
     return run_fleet_action(request, operation, fleet_manage.delete_wing, operation, wing_id, actor=request.user)
 
 
-@permissions_required(MANAGE_PERMISSIONS, raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def squad_add_view(request, operation_uuid, wing_id):
     operation = manage_operation_or_404(request, operation_uuid)
@@ -67,7 +66,7 @@ def squad_add_view(request, operation_uuid, wing_id):
     )
 
 
-@permissions_required(MANAGE_PERMISSIONS, raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def squad_rename_view(request, operation_uuid, squad_id):
     operation = manage_operation_or_404(request, operation_uuid)
@@ -77,7 +76,7 @@ def squad_rename_view(request, operation_uuid, squad_id):
     )
 
 
-@permissions_required(MANAGE_PERMISSIONS, raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def squad_delete_view(request, operation_uuid, squad_id):
     operation = manage_operation_or_404(request, operation_uuid)
@@ -85,7 +84,7 @@ def squad_delete_view(request, operation_uuid, squad_id):
     return run_fleet_action(request, operation, fleet_manage.delete_squad, operation, squad_id, actor=request.user)
 
 
-@permissions_required(MANAGE_PERMISSIONS, raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def members_move_view(request, operation_uuid):
     """Move the posted ``character_ids`` to ``role`` in ``wing_id`` / ``squad_id`` (as the role needs)."""

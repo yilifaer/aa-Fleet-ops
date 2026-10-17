@@ -6,7 +6,6 @@
 from datetime import timedelta
 
 from django.contrib import messages
-from django.contrib.auth.decorators import permission_required
 from django.core.paginator import Paginator
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
@@ -15,6 +14,7 @@ from django.utils.translation import gettext_lazy, gettext_noop
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from fleetops import __version__, texts
+from fleetops.decorators import fleetops_permission_required
 from fleetops.forms_srp import (
     ApproveForm,
     ClaimInputForm,
@@ -168,7 +168,7 @@ def home_context(request, year, month, claim_form, settings_obj):
 
 
 @require_GET
-@permission_required(REQUEST_SRP, raise_exception=True)
+@fleetops_permission_required(REQUEST_SRP)
 def srp_home(request):
     """My SRP: this month's allowance, the out-of-fleet form, recent fleets with SRP and my claims."""
     year, month = _year_month(request)
@@ -203,7 +203,7 @@ def check_loss(request, form, *, link=None):
 
 
 @require_POST
-@permission_required(REQUEST_SRP, raise_exception=True)
+@fleetops_permission_required(REQUEST_SRP, page=False)
 def srp_check(request):
     """Check an out-of-fleet loss: the preview, or the home page again with what is wrong with the input."""
     settings_obj = SrpSettings.get_solo()
@@ -225,7 +225,7 @@ def srp_check(request):
 
 
 @require_http_methods(["GET", "POST"])
-@permission_required(REQUEST_SRP, raise_exception=True)
+@fleetops_permission_required(REQUEST_SRP)
 def srp_link(request, code):
     """The SRP page of one fleet; a POST checks the pasted loss and shows the preview.
 
@@ -249,7 +249,7 @@ def srp_link(request, code):
 
 
 @require_POST
-@permission_required(REQUEST_SRP, raise_exception=True)
+@fleetops_permission_required(REQUEST_SRP, page=False)
 def srp_submit(request):
     """Submit a previewed loss. A token that does not check out goes back to My SRP with a message; a claim
     that was created (or already existed) opens its page."""
@@ -451,7 +451,7 @@ def claim_response(request, claim, *, bound=None, settings_obj=None):
 
 
 @require_GET
-@permission_required(BASIC_ACCESS, raise_exception=True)
+@fleetops_permission_required(BASIC_ACCESS)
 def srp_claim_detail(request, claim_uuid):
     """A claim. Who may open it is decided by ``access.can_view_claim``; everyone else gets a 404.
 
@@ -464,7 +464,7 @@ def srp_claim_detail(request, claim_uuid):
 
 
 @require_POST
-@permission_required(REQUEST_SRP, raise_exception=True)
+@fleetops_permission_required(REQUEST_SRP, page=False)
 def srp_claim_withdraw(request, claim_uuid):
     """Withdraw a pending claim; only the claimant. A claim in another state is left as it is, with a message."""
     claim = get_claim(claim_uuid)
@@ -486,7 +486,7 @@ def srp_claim_withdraw(request, claim_uuid):
 
 
 @require_POST
-@permission_required(REQUEST_SRP, raise_exception=True)
+@fleetops_permission_required(REQUEST_SRP, page=False)
 def srp_claim_resubmit(request, claim_uuid):
     """Resubmit a withdrawn claim; only the claimant. A claim in another state is left as it is, with a message."""
     claim = get_claim(claim_uuid)

@@ -3,9 +3,7 @@
 
 """Fleet page parts and actions of the PAP rules: recalculation, statistics inclusion, live status."""
 
-from allianceauth.authentication.decorators import permissions_required
 from django.contrib import messages
-from django.contrib.auth.decorators import permission_required
 from django.core.exceptions import PermissionDenied
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
@@ -13,6 +11,7 @@ from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 
 from fleetops import texts
+from fleetops.decorators import fleet_manager_required, fleetops_permission_required
 from fleetops.forms import EndFleetForm, FleetAttendanceMultiplierForm, format_duration
 from fleetops.models import FleetOperation, FleetOpsSettings
 from fleetops.services.audit import audit
@@ -114,7 +113,7 @@ def pap_context(request, operation):
     return context
 
 
-@permission_required("fleetops.manage_attendance", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_attendance", page=False)
 @require_POST
 def recalculate_pap_view(request, operation_uuid):
     operation = get_object_or_404(FleetOperation, uuid=operation_uuid)
@@ -136,7 +135,7 @@ def recalculate_pap_view(request, operation_uuid):
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
-@permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def set_stats_mode_view(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid, manage=True)
@@ -168,7 +167,7 @@ def live_pap_rows(user):
     return rows
 
 
-@permission_required("fleetops.basic_access", raise_exception=True)
+@fleetops_permission_required("fleetops.basic_access", page=False)
 def live_pap_partial(request):
     """The live PAP status of the user's characters, refreshed by the member pages."""
     return render(request, LIVE_PAP_TEMPLATE, {"live_pap_rows": live_pap_rows(request.user), "live_pap_fragment": True})

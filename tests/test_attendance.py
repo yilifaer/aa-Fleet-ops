@@ -958,6 +958,7 @@ class PruneHistoryTests(TestCase):
             "leaderboard_visibility": "members",
             "fleet_live_refresh_seconds": 15,
             "bridge_excluded_group_ids": DEFAULT_BRIDGE_EXCLUDED_GROUP_IDS,
+            "motd_warning_length": 2000,
         }
         return FleetOpsSettingsForm(data, instance=FleetOpsSettings.get_solo())
 

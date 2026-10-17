@@ -344,3 +344,8 @@ def eligibility(*, km, user, scope: str, link, settings_obj, now=None, operation
         if not names_capsule(rule):
             blockers.append(str(BLOCK_CAPSULE))
     return blockers
+
+
+def outdated_pending_claim_count(settings_obj=None) -> int:
+    """How many pending claims were calculated with SRP settings that have changed since. Not implemented yet: 0."""
+    return 0

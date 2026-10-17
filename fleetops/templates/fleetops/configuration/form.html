@@ -5,6 +5,7 @@
   <div class="small"><a href="{% url 'fleetops:configuration_list' section %}">{{ config.title }}</a></div>
   <h2>{% if object %}{% translate "Edit" %}{% else %}{% translate "Add" context "FleetOps" %}{% endif %} {{ config.title }}</h2>
 </div>
+{% if edit_include %}<div class="row g-3"><div class="col-lg-8">{% endif %}
 <div class="card"><div class="card-body">
 <form method="post">
   {% csrf_token %}
@@ -29,6 +30,7 @@
   <div class="d-flex gap-2"><button class="btn btn-primary">{% translate "Save" %}</button><a class="btn btn-outline-secondary" href="{% url 'fleetops:configuration_list' section %}">{% translate "Cancel" %}</a></div>
 </form>
 </div></div>
+{% if edit_include %}</div><div class="col-lg-4">{% include edit_include %}</div></div>{% endif %}
 {% if section == "structure-templates" %}
 <script src="{% static 'fleetops/structure_layout.js' %}?v={% fleetops_version %}"></script>
 <script>

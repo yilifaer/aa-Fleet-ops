@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from allianceauth.eveonline.models import EveCorporationInfo
 from allianceauth.services.hooks import get_extension_logger
 from django import forms
+from django.contrib.auth.models import Group
 from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
 from django.utils import translation
 from django.utils.dates import MONTHS
@@ -25,6 +26,7 @@ from fleetops.models import (
     DiscordWebhook,
     FleetOpsSettings,
     FleetType,
+    GroupAccess,
     MessageTemplate,
     PingRole,
     PingTarget,
@@ -114,6 +116,7 @@ class FleetOpsSettingsForm(forms.ModelForm):
             ["minimum_fleet_minutes", "history_alliance_ids", "leaderboard_size", "leaderboard_visibility"],
         ),
         (_("PAP links"), "", ["pap_link_minutes"]),
+        (_("Messages"), "", ["motd_warning_length"]),
         (
             _("Fleet tab"),
             _("The live fleet view and its composition."),
@@ -148,6 +151,7 @@ class FleetOpsSettingsForm(forms.ModelForm):
             "srp_provider",
             "fleet_live_refresh_seconds",
             "bridge_excluded_group_ids",
+            "motd_warning_length",
         ]
         widgets = {
             "auto_end_enabled": forms.CheckboxInput(attrs={"class": "form-check-input"}),
@@ -333,8 +337,23 @@ class PingRoleChoiceField(forms.ModelMultipleChoiceField):
         return _("%(role)s (%(note)s)") % {"role": role, "note": note}
 
 
+class GroupChoiceField(forms.ModelMultipleChoiceField):
+    """Alliance Auth groups; a group without a FleetOps group access row is marked as not configured."""
+
+    configured_ids = frozenset()
+
+    def label_from_instance(self, obj):
+        if obj.pk in self.configured_ids:
+            return obj.name
+        return _("%(name)s (not configured)") % {"name": obj.name}
+
+
 class DiscordWebhookForm(forms.ModelForm):
-    """A ping channel. The webhook URL carries its token, so it can be replaced but is never shown again."""
+    """A ping channel. The webhook URL carries its token, so it can be replaced but is never shown again.
+
+    The groups whose leaders may use the channel and whether alliance FCs may use it too are set here only
+    (owner decision 5-7); Django admin leaves both fields out, so the form only touches them when present.
+    """
 
     webhook_url = forms.CharField(
         label=_("Webhook URL"),
@@ -346,8 +365,18 @@ class DiscordWebhookForm(forms.ModelForm):
 
     class Meta:
         model = DiscordWebhook
-        fields = ["name", "webhook_url", "is_active", "allow_everyone", "allow_here", "allowed_roles", "sort_order"]
-        field_classes = {"allowed_roles": PingRoleChoiceField}
+        fields = [
+            "name",
+            "webhook_url",
+            "is_active",
+            "allow_everyone",
+            "allow_here",
+            "allowed_roles",
+            "allowed_groups",
+            "fcs_allowed",
+            "sort_order",
+        ]
+        field_classes = {"allowed_roles": PingRoleChoiceField, "allowed_groups": GroupChoiceField}
         labels = {
             "name": _("Channel name"),
             "allow_everyone": _("Allow @everyone"),
@@ -357,16 +386,45 @@ class DiscordWebhookForm(forms.ModelForm):
         help_texts = {
             "name": _("Shown to FCs when they choose where the ping goes."),
             "allowed_roles": _("Leave empty to allow every active role."),
+            "fcs_allowed": _(
+                "Only applies while the channel is assigned to at least one group. FC leads (manage_fleets) can "
+                "always use it."
+            ),
         }
-        widgets = {"allowed_roles": forms.CheckboxSelectMultiple}
+        widgets = {"allowed_roles": forms.CheckboxSelectMultiple, "allowed_groups": forms.CheckboxSelectMultiple}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Facts the audit entry cannot read from the model fields.
         self.audit_extra = {}
+        self.warnings = []
         if self.instance.pk is not None:
             self.fields["webhook_url"].required = False
             self.fields["webhook_url"].help_text = _("Leave empty to keep the stored URL.")
+        groups = self.fields.get("allowed_groups")
+        if groups is not None:
+            # Groups with a FleetOps access row, plus the ones the channel has already (shown as not configured).
+            configured = set(GroupAccess.objects.values_list("group_id", flat=True))
+            selected = set(self.instance.allowed_groups.values_list("pk", flat=True)) if self.instance.pk else set()
+            groups.queryset = Group.objects.filter(pk__in=configured | selected).order_by("name")
+            groups.configured_ids = frozenset(configured)
+
+    def clean(self):
+        cleaned = super().clean()
+        if "allowed_groups" in self.fields and "fcs_allowed" in self.fields:
+            groups = cleaned.get("allowed_groups")
+            if not groups:
+                # A channel without a group is an alliance channel (owner decision 5-7); the switch only matters
+                # while the channel has a group.
+                cleaned["fcs_allowed"] = True
+            elif cleaned.get("fcs_allowed"):
+                self.warnings.append(
+                    _(
+                        'Alliance FCs can still use this channel. Untick "Alliance FCs can use this channel" to '
+                        "reserve it for the groups."
+                    )
+                )
+        return cleaned
 
     def clean_webhook_url(self):
         # Errors name the expected form only, never the value that was entered.

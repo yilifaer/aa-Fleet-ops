@@ -3,13 +3,12 @@
 
 """The Fleet tab of the fleet page: its context, the poller's state endpoint and the Refresh button."""
 
-from allianceauth.authentication.decorators import permissions_required
-from django.contrib.auth.decorators import permission_required
 from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.translation import gettext_lazy
 from django.views.decorators.http import require_GET, require_POST
 
+from fleetops.decorators import fleet_manager_required, fleetops_permission_required
 from fleetops.models import AttendanceRecord, FleetOperation, FleetOpsSettings
 from fleetops.services import fleet_refresh
 from fleetops.services.fleet_access import LIVE_STATUSES, can_manage_fleet, can_view_fleet_tab, can_view_live_fleet
@@ -19,7 +18,6 @@ from fleetops.services.review import deletable_manual_rows
 from fleetops.templatetags.fleetops_operation import owned_by
 from fleetops.views import _can_manage_attendance_operation, _can_manage_operation
 from fleetops.views_fleet_common import (
-    MANAGE_PERMISSIONS,
     fleet_response,
     fleet_tab_operation_or_404,
     json_response,
@@ -114,7 +112,7 @@ def live_refresh(user, operation) -> bool:
     return bool(fleet_refresh.schedule_refresh(operation, delays=(0,), dedupe_seconds=seconds))
 
 
-@permission_required("fleetops.basic_access", raise_exception=True)
+@fleetops_permission_required("fleetops.basic_access", page=False)
 @require_GET
 def fleet_state_view(request, operation_uuid):
     """The Fleet tab's state; ``?v=<version>`` answers ``unchanged`` without HTML, ``live=1`` asks for ESI reads."""
@@ -125,7 +123,7 @@ def fleet_state_view(request, operation_uuid):
     return json_response(state_payload(request, operation, known_version=request.GET.get("v", "")), request=request)
 
 
-@permissions_required(MANAGE_PERMISSIONS, raise_exception=True)
+@fleet_manager_required()
 @require_POST
 def fleet_refresh_view(request, operation_uuid):
     """Read the fleet from ESI now (Refresh button)."""

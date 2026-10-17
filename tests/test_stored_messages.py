@@ -315,22 +315,22 @@ class StartFlowTests(StoredTextAssertions, StartFleetTestBase):
         for prepare in cases:
             self.discord_post.side_effect = None
             prepare()
-            retry_ping(operation)
+            retry_ping(operation, actor=operation.fc_user)
             self.assertStored(operation)
         self.discord_post.side_effect = None
         # A ping over Discord's limit is not sent.
         FleetOperation.objects.filter(pk=operation.pk).update(ping_text="x" * 2100)
         operation.refresh_from_db()
-        action = retry_ping(operation)
+        action = retry_ping(operation, actor=operation.fc_user)
         self.assertEqual(action.error_message, texts.PING_TOO_LONG(length=2100, limit=2000))
         # The webhook is switched off, then gone.
         self.webhook.is_active = False
         self.webhook.save()
         operation.refresh_from_db()
-        self.assertEqual(retry_ping(operation).error_message, texts.PING_CHANNEL_DISABLED(name="Pings"))
+        self.assertEqual(retry_ping(operation, actor=operation.fc_user).error_message, texts.PING_CHANNEL_DISABLED(name="Pings"))
         FleetOperation.objects.filter(pk=operation.pk).update(ping_channel=None)
         operation.refresh_from_db()
-        self.assertEqual(retry_ping(operation).error_message, texts.NO_PING_CHANNEL())
+        self.assertEqual(retry_ping(operation, actor=operation.fc_user).error_message, texts.NO_PING_CHANNEL())
         self.assertStored(operation)
 
     def test_a_ping_that_may_not_notify_the_selection(self):

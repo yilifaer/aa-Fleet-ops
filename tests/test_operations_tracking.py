@@ -1938,7 +1938,7 @@ class DiscordWebhookTests(FakeESIMixin, TestCase):
         operation = f.create_operation(fc, ping_channel=webhook, ping_text="ping")
         self.discord_post.side_effect = lambda url, **kwargs: requests.Request("POST", url, json=kwargs.get("json")).prepare()
 
-        ping = retry_ping(operation)
+        ping = retry_ping(operation, actor=operation.fc_user)
 
         self.assertEqual(ping.status, ActionStatus.FAILED)
         self.assertNotIn("webhook-secret-token", ping.error_message)
@@ -1952,7 +1952,7 @@ class WebhookSecretPageTests(FakeESIMixin, TestCase):
         operation = f.create_operation(fc, ping_channel=webhook, ping_text="ping")
         f.add_attendance(operation, member)
         self.discord_post.side_effect = lambda url, **kwargs: requests.Request("POST", url, json=kwargs.get("json")).prepare()
-        retry_ping(operation)
+        retry_ping(operation, actor=operation.fc_user)
         self.client.force_login(member)
 
         response = self.client.get(reverse("fleetops:operation_detail", kwargs={"operation_uuid": operation.uuid}))
@@ -1986,7 +1986,7 @@ class RetryTests(FakeESIMixin, TestCase):
         self.assertEqual(result.error_message, "")
 
     def test_retry_ping_posts_stored_ping_text(self):
-        result = retry_ping(self.operation)
+        result = retry_ping(self.operation, actor=self.operation.fc_user)
 
         self.discord_post.assert_called_once_with(
             WEBHOOK_URL,

@@ -4,7 +4,6 @@
 """Fleet records: the FC lead approval queue, roster imports and the fleet page parts for them."""
 
 from django.contrib import messages
-from django.contrib.auth.decorators import permission_required
 from django.db.models import Count, Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
@@ -13,6 +12,7 @@ from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
 from django.views.decorators.http import require_POST
 
+from fleetops.decorators import fleet_manager_required, fleetops_permission_required
 from fleetops.forms import ManualAttendanceForm, format_duration
 from fleetops.forms_records import ReviewForm, RosterPasteForm
 from fleetops.models import AttendanceRecord, FleetOperation, ReviewStatus, SpecialRole
@@ -71,7 +71,7 @@ def _form_errors(form):
     return " ".join(str(error) for errors in form.errors.values() for error in errors)
 
 
-@permission_required("fleetops.manage_fleets", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_fleets")
 def approval_queue(request):
     operations = list(
         pending_operations()
@@ -114,7 +114,7 @@ def approval_queue(request):
     )
 
 
-@permission_required("fleetops.manage_fleets", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_fleets", page=False)
 @require_POST
 def review_operation_view(request, operation_uuid):
     operation = get_object_or_404(FleetOperation, uuid=operation_uuid)
@@ -149,7 +149,7 @@ def review_operation_view(request, operation_uuid):
     return _back(request, "fleetops:approval_queue")
 
 
-@permission_required("fleetops.manage_fleets", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_fleets", page=False)
 @require_POST
 def review_attendance_view(request):
     form = ReviewForm(request.POST)
@@ -258,7 +258,7 @@ def _import(request, operation):
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
-@permission_required("fleetops.manage_attendance", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_attendance")
 def roster_import_view(request, operation_uuid):
     operation = get_object_or_404(FleetOperation.objects.select_related("fleet_type"), uuid=operation_uuid)
     if not _can_manage_attendance_operation(request.user, operation):
@@ -282,3 +282,10 @@ def roster_import_view(request, operation_uuid):
         "fleetops/roster_import.html",
         {"operation": operation, "form": form, "needs_approval": not is_approver(request.user)},
     )
+
+
+@fleet_manager_required()
+@require_POST
+def resubmit_operation_view(request, operation_uuid):
+    """Send a rejected fleet back for approval, with an optional note. Not available yet: always 404."""
+    raise Http404

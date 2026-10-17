@@ -83,3 +83,22 @@ def dashboard_metrics(user):
         for row in top_ship_rows
     ]
     return {"cards": cards, "recent": recent, "top_ships": top_ships}
+
+
+def running_fleet_rows(user, operations) -> list[dict]:
+    """The running fleets of the home page, one row per fleet of ``operations`` (already limited to what
+    ``user`` may see).
+
+    Each row has ``operation``, ``can_manage``, ``show_system``, ``fc_system_name`` and ``member_count``. For now
+    no row offers management or the FC's system.
+    """
+    return [
+        {
+            "operation": operation,
+            "can_manage": False,
+            "show_system": False,
+            "fc_system_name": "",
+            "member_count": getattr(operation, "active_member_count", 0),
+        }
+        for operation in operations
+    ]
