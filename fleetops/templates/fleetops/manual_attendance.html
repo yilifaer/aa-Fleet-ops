@@ -8,7 +8,7 @@
 {% if needs_approval %}<div class="alert alert-info">{% translate "Manual PAP you add here counts once an FC lead approves it." %}</div>{% endif %}
 <div class="card mb-3"><div class="card-header"><strong>{% translate "Add PAP" %}</strong></div><div class="card-body">
   <form method="post">{% csrf_token %}
-    {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+    {% include "fleetops/partials/form_errors.html" with errors=form.non_field_errors %}
     <div class="row g-3">
       <div class="col-lg-6">{{ form.operation.label_tag }}{{ form.operation }}{% if form.operation.errors %}<div class="text-danger small">{{ form.operation.errors|join:" " }}</div>{% endif %}<div class="form-text">{{ form.operation.help_text }}</div></div>
       <div class="col-lg-3">{{ form.character_name.label_tag }}{{ form.character_name }}{% if form.character_name.errors %}<div class="text-danger small">{{ form.character_name.errors|join:" " }}</div>{% endif %}<div class="form-text">{{ form.character_name.help_text }}</div></div>

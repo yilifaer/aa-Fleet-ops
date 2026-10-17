@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 
 from django import template
+from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.translation import gettext as _
 
@@ -62,3 +63,8 @@ def eve_when(value, relative=True):
         return time
     return format_html('{}<span class="fo-time-rel" data-relative-utc="{}"></span>', time, stamp)
 
+
+@register.simple_tag
+def eve_clock():
+    """The time now as ``13:05 EVE``: what the brand of the navbar shows until ``fleetops.js`` takes over."""
+    return f"{format_eve(timezone.now(), '%H:%M')} EVE"

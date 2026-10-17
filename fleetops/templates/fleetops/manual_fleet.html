@@ -1,5 +1,5 @@
 {% extends "fleetops/base.html" %}
-{% load i18n static fleetops_i18n tz %}
+{% load i18n tz %}
 {% block fleetops_content %}
 <div class="d-flex justify-content-between align-items-start mb-3 gap-2 flex-wrap">
   <div><h2 class="mb-1">{% translate "Add Manual Fleet" %}</h2><div class="text-muted">{% translate "Create a historical fleet record without ESI tracking or a Discord ping." %}</div></div>
@@ -9,7 +9,7 @@
 {% if needs_approval %}<div class="alert alert-warning" id="manual-fleet-approval">{% translate "A manual fleet and its PAP count in statistics and incentives once an FC lead approves them." %}</div>{% endif %}
 <div class="card"><div class="card-body">
 <form method="post" id="manual-fleet-form">{% csrf_token %}
-  {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+  {% include "fleetops/partials/form_errors.html" with errors=form.non_field_errors %}
   <div class="row g-3">
     <div class="col-md-4">{{ form.fleet_type.label_tag }}{{ form.fleet_type }}{{ form.fleet_type.errors }}</div>
     <div class="col-md-4">{{ form.doctrine_name.label_tag }}{{ form.doctrine_name }}{{ form.doctrine_name.errors }}</div>
@@ -30,7 +30,6 @@
 {% translate "End Time must be after Start Time." as end_before_start_text %}
 {% blocktranslate trimmed asvar duration_text with duration="%(duration)s" %}Duration: {{ duration }}{% endblocktranslate %}
 {% blocktranslate trimmed asvar duration_long_text with duration="%(duration)s" %}Duration: {{ duration }} — longer than 6 hours, please confirm below.{% endblocktranslate %}
-<script src="{% static 'fleetops/fleetops.js' %}?v={% fleetops_version %}"></script>
 <script>
 (() => {
  const started = document.getElementById('{{ form.started_at.id_for_label }}');

@@ -1,10 +1,10 @@
 {% extends "fleetops/base.html" %}
-{% load i18n static fleetops_i18n fleetops_messages %}
+{% load i18n fleetops_messages %}
 {% block fleetops_content %}
 <div class="d-flex justify-content-between align-items-start mb-3"><div><h2 class="mb-1">{% translate "Edit Fleet Operation" %}</h2><div class="text-muted">{{ operation.fleet_type }} · {{ operation.fc_character_name }} · {{ operation.started_at|eve_time }} EVE</div></div><a class="btn btn-outline-secondary" href="{% url 'fleetops:operation_detail' operation.uuid %}">{% translate "Cancel" %}</a></div>
 <div class="alert alert-info">{% translate "This edits FleetOps metadata/history only. It does not recreate the fleet, resend the ping, or retroactively change ESI tracking events. Retry Ping and Retry MOTD resend the stored text; use Regenerate &amp; Push MOTD to apply a changed MOTD template. A changed ping template is only recorded on the fleet." %}</div>
 <div class="card"><div class="card-body"><form method="post" id="operation-edit-form" data-stored-start="{{ stored_started_at|eve_time:'%Y-%m-%dT%H:%M' }}" data-stored-end="{{ stored_ended_at|eve_time:'%Y-%m-%dT%H:%M' }}">{% csrf_token %}
-  {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+  {% include "fleetops/partials/form_errors.html" with errors=form.non_field_errors %}
   <div class="row g-3">
     <div class="col-md-4">{{ form.fleet_type.label_tag }}{{ form.fleet_type }}{{ form.fleet_type.errors }}</div>
     <div class="col-md-4">{{ form.doctrine_name.label_tag }}{{ form.doctrine_name }}{{ form.doctrine_name.errors }}{% if operation.doctrine_fits %}<div class="form-text">{% translate "Changing the doctrine name turns it into a custom doctrine without its Fittings fits." %}</div>{% endif %}</div>
@@ -28,7 +28,6 @@
 {% translate "End Time must be after Start Time." as end_before_start_text %}
 {% blocktranslate trimmed asvar duration_text with duration="%(duration)s" %}Duration: {{ duration }}{% endblocktranslate %}
 {% blocktranslate trimmed asvar duration_long_text with duration="%(duration)s" %}Duration: {{ duration }} — longer than 6 hours, please confirm below.{% endblocktranslate %}
-<script src="{% static 'fleetops/fleetops.js' %}?v={% fleetops_version %}"></script>
 <script>
 (() => {
  const form = document.getElementById('operation-edit-form');

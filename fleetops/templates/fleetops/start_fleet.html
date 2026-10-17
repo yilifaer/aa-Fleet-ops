@@ -46,7 +46,7 @@
       data-preview-url="{% if operation %}{% url 'fleetops:edit_scheduled_fleet' operation.uuid %}{% else %}{% url 'fleetops:preview_fleet' %}{% endif %}"
       data-detect-url="{% url 'fleetops:detect_fleet' 999999 %}" data-ping-limit="{{ ping_limit }}">{% csrf_token %}
   {% if operation %}{{ form.edit_token }}{% else %}{{ form.request_id }}{% endif %}
-  {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+  {% include "fleetops/partials/form_errors.html" with errors=form.non_field_errors %}
   <div class="row g-3 mb-3">
     {% if not operation %}
     <div class="col-lg-6"><div class="card h-100"><div class="card-header"><strong>{% translate "Operation Mode" %}</strong></div><div class="card-body">
@@ -113,6 +113,5 @@
   <div class="d-grid mt-3"><button class="btn btn-primary btn-lg" id="fleet-start-submit" type="submit" data-label-save="{% translate 'SAVE CHANGES' %}" data-label-pap-only="{% translate 'START PAP TRACKING' %}" data-label-pre-ping="{% translate 'SEND PRE PING & SCHEDULE FLEET' %}" data-label-now="{% translate 'SEND PING & START FLEET' %}">{% if operation %}{% translate "SAVE CHANGES" %}{% else %}{% translate "SEND PING & START FLEET" %}{% endif %}</button></div>
 </form>
 {{ channel_rules|json_script:"ping-channel-rules" }}
-<script src="{% static 'fleetops/fleetops.js' %}?v={% fleetops_version %}"></script>
 <script src="{% static 'fleetops/start_fleet.js' %}?v={% fleetops_version %}"></script>
 {% endblock %}

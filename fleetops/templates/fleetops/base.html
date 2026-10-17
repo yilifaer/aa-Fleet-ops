@@ -1,7 +1,8 @@
 {% extends "allianceauth/base-bs5.html" %}
-{% load i18n static fleetops_i18n %}
+{% load i18n static fleetops_i18n fleetops_messages fleetops_ui %}
 {% block page_title %}FleetOps{% endblock %}
-{% block header_nav_brand %}FleetOps{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'fleetops/fleetops.css' %}?v={% fleetops_version %}">{% endblock %}
+{% block header_nav_brand %}FleetOps <span class="fo-eve-clock" id="fo-eve-clock">{% eve_clock %}</span>{% endblock %}
 {% block header_nav_collapse_left %}
 <ul class="navbar-nav">
   <li class="nav-item"><a class="nav-link" href="{% url 'fleetops:dashboard' %}">{% translate "Dashboard" context "FleetOps" %}</a></li>
@@ -12,13 +13,13 @@
   <li class="nav-item"><a class="nav-link" href="{% url 'fleetops:my_statistics' %}">{% translate "My Statistics" %}</a></li>
   <li class="nav-item"><a class="nav-link" href="{% url 'fleetops:attendance_history_me' %}">{% translate "My History" %}</a></li>
   {% if perms.fleetops.manage_attendance %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:manual_attendance' %}">{% translate "Manual PAP" %}</a></li>{% endif %}
-  {% if perms.fleetops.manage_fleets %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:approval_queue' %}">{% translate "Approvals" %}{% if pending_approvals.fleets or pending_approvals.pap %} <span class="fo-approval-count" title="{% translate 'Fleets and PAP rows waiting for approval.' %}">({% if pending_approvals.fleets %}{% blocktranslate trimmed count counter=pending_approvals.fleets %}{{ counter }} fleet{% plural %}{{ counter }} fleets{% endblocktranslate %}{% endif %}{% if pending_approvals.fleets and pending_approvals.pap %} · {% endif %}{% if pending_approvals.pap %}{% blocktranslate trimmed count counter=pending_approvals.pap %}{{ counter }} PAP row{% plural %}{{ counter }} PAP rows{% endblocktranslate %}{% endif %})</span>{% endif %}</a></li>{% endif %}
+  {% if perms.fleetops.manage_fleets %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:approval_queue' %}">{% translate "Approvals" %}{% if pending_approvals.fleets or pending_approvals.pap %} <span class="fo-count fo-count-nav" title="{% translate 'Fleets and PAP rows waiting for approval.' %}">{% if pending_approvals.fleets %}{% blocktranslate trimmed count counter=pending_approvals.fleets %}{{ counter }} fleet{% plural %}{{ counter }} fleets{% endblocktranslate %}{% endif %}{% if pending_approvals.fleets and pending_approvals.pap %} · {% endif %}{% if pending_approvals.pap %}{% blocktranslate trimmed count counter=pending_approvals.pap %}{{ counter }} PAP row{% plural %}{{ counter }} PAP rows{% endblocktranslate %}{% endif %}</span>{% endif %}</a></li>{% endif %}
   {% if leaderboard_visible %}<li class="nav-item"><a class="nav-link" href="{% url 'fleetops:leaderboard' %}">{% translate "Leaderboard" %}</a></li>{% endif %}
   {% if perms.fleetops.view_corp_stats %}<li class="nav-item dropdown"><a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">{% translate "Corporation" context "FleetOps" %}</a><ul class="dropdown-menu"><li><a class="dropdown-item" href="{% url 'fleetops:corporation_statistics' %}">{% translate "Statistics" %}</a></li><li><a class="dropdown-item" href="{% url 'fleetops:corporation_members' %}">{% translate "Members" %}</a></li><li><a class="dropdown-item" href="{% url 'fleetops:corporation_members' %}?status=inactive">{% translate "Inactive" %}</a></li><li><a class="dropdown-item" href="{% url 'fleetops:attendance_history_corporation' %}">{% translate "History" %}</a></li></ul></li>{% endif %}
   {% if perms.fleetops.view_all_stats %}<li class="nav-item dropdown"><a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">{% translate "Alliance" context "FleetOps" %}</a><ul class="dropdown-menu"><li><a class="dropdown-item" href="{% url 'fleetops:all_corporation_statistics' %}">{% translate "All Corps" %}</a></li><li><a class="dropdown-item" href="{% url 'fleetops:alliance_members' %}">{% translate "Members" %}</a></li><li><a class="dropdown-item" href="{% url 'fleetops:alliance_members' %}?status=inactive">{% translate "Inactive" %}</a></li><li><a class="dropdown-item" href="{% url 'fleetops:all_fc_statistics' %}">{% translate "FC Stats" %}</a></li><li><a class="dropdown-item" href="{% url 'fleetops:attendance_history_alliance' %}">{% translate "PAP History" %}</a></li></ul></li>{% endif %}
-  {% if srp_nav.visible %}<li class="nav-item dropdown"><a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">SRP{% if srp_nav.pending_count %} <span class="badge bg-danger">{{ srp_nav.pending_count }}</span>{% endif %}</a><ul class="dropdown-menu">
+  {% if srp_nav.visible %}<li class="nav-item dropdown"><a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">SRP{% if srp_nav.pending_count %} <span class="fo-count fo-count-nav">{{ srp_nav.pending_count }}</span>{% endif %}</a><ul class="dropdown-menu">
     {% if srp_nav.request %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_home' %}">{% translate "My SRP" %}</a></li>{% endif %}
-    {% if srp_nav.review %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_review' %}">{% translate "Review" %}{% if srp_nav.pending_count %} <span class="badge bg-danger">{{ srp_nav.pending_count }}</span>{% endif %}</a></li><li><a class="dropdown-item" href="{% url 'fleetops:srp_payments' %}">{% translate "Payments" %}</a></li>{% endif %}
+    {% if srp_nav.review %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_review' %}">{% translate "Review" %}{% if srp_nav.pending_count %} <span class="fo-pill fo-pill-warn">{{ srp_nav.pending_count }}</span>{% endif %}</a></li><li><a class="dropdown-item" href="{% url 'fleetops:srp_payments' %}">{% translate "Payments" %}</a></li>{% endif %}
     {% if srp_nav.summary %}
     {% if perms.fleetops.manage_srp or perms.fleetops.view_all_stats %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_summary' %}">{% translate "Summary" context "FleetOps" %}</a></li>{% endif %}
     {% if perms.fleetops.view_corp_stats %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_summary_own_corporation' %}">{% translate "Corporation" context "FleetOps" %}</a></li>{% endif %}
@@ -31,7 +32,6 @@
 </ul>
 {% endblock %}
 {% block content %}
-<link rel="stylesheet" href="{% static 'fleetops/fleetops.css' %}?v={% fleetops_version %}">
 {% get_current_language as FLEETOPS_LANGUAGE %}
 <script src="{% url 'fleetops:jsi18n' %}?l={{ FLEETOPS_LANGUAGE }}&amp;v={% fleetops_version %}"></script>
 <script>
@@ -45,5 +45,9 @@ if (typeof window.gettext !== 'function') {
   window.interpolate = (f, o, named) => named ? f.replace(/%\((\w+)\)s/g, (m, k) => String(o[k])) : f.replace(/%s/g, () => String(o.shift()));
 }
 </script>
+<script src="{% static 'fleetops/fleetops.js' %}?v={% fleetops_version %}"></script>
+<div id="fo-toasts" class="fo-toasts" aria-live="polite"></div>
+{% include "fleetops/partials/confirm_modal.html" %}
+{% fleetops_notices %}
 <div class="container-fluid py-3 fleetops">{% block fleetops_content %}{% endblock %}</div>
 {% endblock %}

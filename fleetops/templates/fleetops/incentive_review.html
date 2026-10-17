@@ -24,7 +24,7 @@
   <details class="mt-3" id="incentive-edit"{% if edit_form.errors %} open{% endif %}>
     <summary>{% translate "Edit budget / minimum fleets" %}</summary>
     <form method="post" action="{% url 'fleetops:incentive_update' period.pk %}" class="mt-2">{% csrf_token %}
-      {% if edit_form.non_field_errors %}<div class="alert alert-danger">{{ edit_form.non_field_errors }}</div>{% endif %}
+      {% include "fleetops/partials/form_errors.html" with errors=edit_form.non_field_errors %}
       <div class="row g-2 align-items-start">
         {% for field in edit_form %}<div class="col-sm-4"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}<div class="text-danger small">{{ field.errors }}</div></div>{% endfor %}
         <div class="col-sm-4 align-self-end"><button class="btn btn-outline-primary">{% translate "Save" %}</button></div>
@@ -43,7 +43,7 @@
 <div class="card mt-3"><div class="card-header">{% blocktranslate trimmed with year=year month=month|stringformat:"02d" %}Create {{ year }}-{{ month }}{% endblocktranslate %}</div><div class="card-body">
   <form method="post" action="{% url 'fleetops:incentive_review' %}?year={{ year }}&amp;month={{ month }}" id="incentive-create">{% csrf_token %}
     <input type="hidden" name="create_period" value="1">
-    {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+    {% include "fleetops/partials/form_errors.html" with errors=form.non_field_errors %}
     {% for field in form %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}<div class="text-danger small">{{ field.errors }}</div></div>{% endfor %}
     <button class="btn btn-primary">{% translate "Create Period" %}</button>
   </form>

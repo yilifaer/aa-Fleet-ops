@@ -1,5 +1,5 @@
 {% extends "fleetops/base.html" %}
-{% load i18n static fleetops_i18n fleetops_messages %}
+{% load i18n fleetops_messages %}
 {% block fleetops_content %}
 {% include "fleetops/partials/live_pap_status.html" %}
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -109,5 +109,4 @@
     </div>
   </div>
 </div>
-<script src="{% static 'fleetops/fleetops.js' %}?v={% fleetops_version %}"></script>
 {% endblock %}

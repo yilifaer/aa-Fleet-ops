@@ -288,7 +288,8 @@ class ApprovalQueueViewTests(ApprovalTestCase):
         # The navigation counts waiting fleets and waiting rows apart.
         self.assertEqual(response.context["pending_approvals"], {"fleets": 1, "pap": 2})
         self.assertContains(response, f'href="{reverse("fleetops:approval_queue")}">Approvals <span')
-        self.assertContains(response, "(1 fleet · 2 PAP rows)</span></a>")
+        self.assertContains(response, ">1 fleet · 2 PAP rows</span></a>")
+        self.assertContains(response, 'class="fo-count fo-count-nav" title="Fleets and PAP rows waiting for approval."')
 
     def test_empty_queue(self):
         response = self.get(self.lead, reverse("fleetops:approval_queue"))

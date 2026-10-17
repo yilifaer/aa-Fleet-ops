@@ -7,11 +7,15 @@ import json
 import re
 from datetime import datetime, timedelta, timezone as dt_timezone
 from importlib import import_module
+from pathlib import Path
+from unittest import mock
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.template import Context, Template
+from django.template.loader import render_to_string
 from django.test import RequestFactory, SimpleTestCase, TestCase
+from django.urls import reverse
 from django.utils import translation
 from django.utils.safestring import mark_safe
 
@@ -21,6 +25,7 @@ from fleetops.services import assessment
 from fleetops.srp import display
 from fleetops.templatetags import fleetops_ui
 
+from . import factories as f
 from . import i18n_extract as extract
 from .static_files import static_source
 
@@ -278,6 +283,20 @@ class EveWhenTests(SimpleTestCase):
             with self.subTest(value=value):
                 self.assertEqual(render("{% eve_when value %}", value=value), "")
         self.assertEqual(render("{% eve_when missing %}"), "")
+
+
+class EveClockTests(SimpleTestCase):
+    def test_the_clock_shows_the_minute_in_eve_time(self):
+        now = datetime(2026, 10, 16, 13, 5, 41, tzinfo=UTC)
+
+        with mock.patch("fleetops.templatetags.fleetops_messages.timezone.now", return_value=now):
+            self.assertEqual(render("{% eve_clock %}"), "13:05 EVE")
+
+    def test_the_clock_ignores_the_zone_of_the_site(self):
+        now = datetime(2026, 10, 16, 21, 5, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+        with mock.patch("fleetops.templatetags.fleetops_messages.timezone.now", return_value=now):
+            self.assertEqual(render("{% eve_clock %}"), "13:05 EVE")
 
 
 class NoticeTests(TestCase):
@@ -790,3 +809,200 @@ class RelativeWindowTests(SimpleTestCase):
 
         self.assertIn('data-relative-utc="', render("{% eve_when value %}", value=old))
         self.assertIn("const RELATIVE_WINDOW_MINUTES = 48 * 60;", static_source("fleetops.js"))
+
+
+TEMPLATES = Path(__file__).resolve().parents[1] / "fleetops" / "templates" / "fleetops"
+
+
+class BasePageTests(TestCase):
+    """What the base page carries for every FleetOps page, exactly once."""
+
+    def setUp(self):
+        self.user = f.create_user(perms=f.FC_PERMS)
+        self.client.force_login(self.user)
+
+    def page(self, name="fleetops:dashboard"):
+        response = self.client.get(reverse(name))
+        self.assertEqual(response.status_code, 200)
+        return response.content.decode()
+
+    def test_the_toast_stack_and_the_dialog_are_written_once(self):
+        html = self.page()
+
+        self.assertEqual(html.count('id="fo-toasts"'), 1)
+        self.assertIn('<div id="fo-toasts" class="fo-toasts" aria-live="polite"></div>', html)
+        for element in ("fo-confirm", "fo-confirm-title", "fo-confirm-text", "fo-confirm-cancel", "fo-confirm-ok"):
+            with self.subTest(element=element):
+                self.assertEqual(html.count(f'id="{element}"'), 1)
+
+    def test_every_page_carries_the_scripts_and_the_style_sheet_once(self):
+        for name in ("fleetops:dashboard", "fleetops:start_fleet", "fleetops:manual_fleet", "fleetops:my_statistics"):
+            with self.subTest(page=name):
+                html = self.page(name)
+                self.assertEqual(html.count("fleetops/fleetops.js"), 1)
+                self.assertEqual(html.count("fleetops/fleetops.css"), 1)
+                self.assertEqual(html.count("fleetops/jsi18n"), 1)
+
+    def test_the_style_sheet_is_in_the_head_and_the_scripts_come_before_the_page(self):
+        html = self.page()
+
+        self.assertLess(html.index("fleetops/fleetops.css"), html.index("</head>"))
+        order = [
+            html.index("fleetops/jsi18n"),
+            html.index("window.gettext = s => s;"),
+            html.index("fleetops/fleetops.js"),
+            html.index('id="fo-toasts"'),
+            html.index('id="fo-confirm"'),
+            html.index('class="container-fluid py-3 fleetops"'),
+        ]
+        self.assertEqual(order, sorted(order))
+
+    def test_only_the_base_page_loads_the_script_of_the_foundation(self):
+        # The pages that used to load it themselves rely on the base page now; a second copy does no harm
+        # (the script returns at once) but it would be a request for nothing.
+        for path in TEMPLATES.rglob("*.html"):
+            name = path.relative_to(TEMPLATES).as_posix()
+            with self.subTest(template=name):
+                source = path.read_text()
+                if name == "base.html":
+                    self.assertIn("fleetops/fleetops.js", source)
+                    self.assertIn("fleetops/fleetops.css", source)
+                else:
+                    self.assertNotIn("fleetops/fleetops.js", source)
+                    self.assertNotIn("fleetops/fleetops.css", source)
+
+    def test_the_brand_shows_the_eve_clock(self):
+        now = datetime(2026, 10, 16, 13, 5, 41, tzinfo=UTC)
+
+        with mock.patch("fleetops.templatetags.fleetops_messages.timezone.now", return_value=now):
+            html = self.page()
+
+        self.assertIn('FleetOps <span class="fo-eve-clock" id="fo-eve-clock">13:05 EVE</span>', html)
+        self.assertEqual(html.count('id="fo-eve-clock"'), 1)
+        self.assertLess(html.index('class="navbar-brand"'), html.index('id="fo-eve-clock"'))
+
+    def test_a_notice_of_the_session_is_written_once(self):
+        session = self.client.session
+        request = RequestFactory().get("/")
+        request.session = session
+        ui_notices.push_notice(request, "Marked paid.", "success", "Undo payment…", "/fleetops/srp/claims/5/#undo-payment")
+        session.save()
+
+        first = self.page()
+        second = self.page()
+
+        self.assertEqual(first.count('id="fo-notices"'), 1)
+        block = re.search(r'<script id="fo-notices" type="application/json">(.*?)</script>', first, re.S)
+        self.assertEqual(
+            json.loads(block.group(1)),
+            [
+                {
+                    "text": "Marked paid.",
+                    "level": "success",
+                    "action_label": "Undo payment…",
+                    "action_url": "/fleetops/srp/claims/5/#undo-payment",
+                }
+            ],
+        )
+        self.assertNotIn('id="fo-notices"', second)
+
+    def test_no_notice_block_without_notices(self):
+        self.assertNotIn('id="fo-notices"', self.page())
+
+    def test_the_srp_counts_use_the_count_and_pill_looks(self):
+        nav = {"enabled": True, "request": True, "review": True, "pending_count": 3, "summary": False, "visible": True}
+
+        with mock.patch("fleetops.views.srp_access.srp_nav", return_value=nav):
+            html = self.page()
+
+        self.assertIn('SRP <span class="fo-count fo-count-nav">3</span></a>', html)
+        self.assertIn('Review <span class="fo-pill fo-pill-warn">3</span></a>', html)
+        self.assertNotIn('class="badge', html.split('class="container-fluid py-3 fleetops"')[0].split("<body>")[1])
+
+    def test_the_navbar_has_no_count_without_pending_claims(self):
+        nav = {"enabled": True, "request": True, "review": True, "pending_count": 0, "summary": False, "visible": True}
+
+        with mock.patch("fleetops.views.srp_access.srp_nav", return_value=nav):
+            html = self.page()
+
+        self.assertNotIn("fo-count-nav", html)
+        self.assertNotIn("fo-pill-warn", html)
+
+    def test_the_approval_counts_use_the_count_look(self):
+        lead = f.create_user(perms=f.FC_PERMS + ["fleetops.manage_fleets"])
+        f.create_operation(
+            self.user, status=FleetOperation.Status.CLOSED, is_manual=True, review_status=ReviewStatus.PENDING
+        )
+        self.client.force_login(lead)
+
+        html = self.page()
+
+        self.assertRegex(
+            html,
+            r'Approvals <span class="fo-count fo-count-nav" title="Fleets and PAP rows waiting for approval\.">'
+            r"1 fleet</span></a>",
+        )
+        self.assertNotIn("fo-approval-count", html)
+
+
+class ConfirmModalTests(SimpleTestCase):
+    """The dialog that FleetOps.confirm fills: the ids are the contract."""
+
+    def setUp(self):
+        self.html = render_to_string("fleetops/partials/confirm_modal.html")
+
+    def test_the_ids_of_the_contract(self):
+        for element in ("fo-confirm", "fo-confirm-title", "fo-confirm-text", "fo-confirm-cancel", "fo-confirm-ok"):
+            with self.subTest(element=element):
+                self.assertEqual(self.html.count(f'id="{element}"'), 1)
+
+    def test_the_dialog_is_a_labelled_hidden_modal(self):
+        self.assertIn('class="modal fade" id="fo-confirm" tabindex="-1" aria-labelledby="fo-confirm-title" aria-hidden="true"', self.html)
+        self.assertIn('<h5 class="modal-title" id="fo-confirm-title">Please confirm</h5>', self.html)
+        self.assertIn('<p class="mb-0" id="fo-confirm-text"></p>', self.html)
+
+    def test_the_buttons(self):
+        self.assertIn('class="btn btn-outline-secondary" id="fo-confirm-cancel" data-bs-dismiss="modal">Cancel</button>', self.html)
+        self.assertIn('class="btn btn-primary" id="fo-confirm-ok">Confirm</button>', self.html)
+        self.assertIn('class="btn-close" data-bs-dismiss="modal" aria-label="Close"', self.html)
+
+    def test_the_texts_are_in_the_catalog(self):
+        # Four words the catalog has had since the fleet page; the dialog adds no message of its own.
+        keys = extract.catalog_keys("django")
+        for text in ("Please confirm", "Close", "Cancel", "Confirm"):
+            with self.subTest(text=text):
+                self.assertIn(text, keys)
+
+
+class DiscordPreviewPartialTests(SimpleTestCase):
+    def render(self, prefix):
+        return render_to_string("fleetops/partials/discord_preview.html", {"prefix": prefix})
+
+    def test_the_elements_of_the_contract(self):
+        html = self.render("ping")
+
+        for element in ("ping-box", "ping-look", "ping-preview", "ping-length", "ping-view-look", "ping-view-raw"):
+            with self.subTest(element=element):
+                self.assertEqual(html.count(f'id="{element}"'), 1)
+        self.assertIn('<pre class="preview-box mb-0" id="ping-preview" hidden>', html)
+        self.assertIn('<div class="fo-discord" id="ping-look"></div>', html)
+
+    def test_look_and_raw_text_are_a_segmented_choice_with_the_look_first(self):
+        html = self.render("ping")
+
+        self.assertIn('class="fo-seg" role="radiogroup"', html)
+        self.assertRegex(html, r'id="ping-view-look" value="look" checked>\s*<label for="ping-view-look">Look</label>')
+        self.assertRegex(html, r'id="ping-view-raw" value="raw">\s*<label for="ping-view-raw">Raw text</label>')
+
+    def test_two_previews_on_one_page_do_not_share_ids(self):
+        ping, motd = self.render("ping"), self.render("motd")
+
+        self.assertTrue(set(re.findall(r'id="([^"]+)"', ping)).isdisjoint(re.findall(r'id="([^"]+)"', motd)))
+
+    def test_the_script_switches_the_two_panes(self):
+        source = static_source("preview.js")
+
+        self.assertIn("addEventListener('change'", source)
+        self.assertIn("closest('[data-fo-preview]')", source)
+        self.assertIn("look.hidden = input.value === 'raw'", source)
+        self.assertIn("raw.hidden = input.value !== 'raw'", source)

@@ -1,5 +1,5 @@
 {% extends "fleetops/base.html" %}
-{% load i18n static fleetops_i18n fleetops_messages %}
+{% load i18n fleetops_i18n fleetops_messages %}
 {% block fleetops_content %}
 <div class="d-flex justify-content-between align-items-start mb-3 gap-3 flex-wrap">
   <div>
@@ -27,7 +27,7 @@
   {% if can_start %}
   <div class="col-lg-6"><div class="card h-100 border-primary"><div class="card-header"><strong>{% translate "Start Fleet" %}</strong></div><div class="card-body">
     <form method="post" action="{% url 'fleetops:start_scheduled_fleet' operation.uuid %}" id="scheduled-start-form" data-detect-url="{% url 'fleetops:detect_fleet' 999999 %}">{% csrf_token %}
-      {% if start_form.non_field_errors %}<div class="alert alert-danger">{{ start_form.non_field_errors }}</div>{% endif %}
+      {% include "fleetops/partials/form_errors.html" with errors=start_form.non_field_errors %}
       <div class="mb-3">{{ start_form.fc_character_id.label_tag }}{{ start_form.fc_character_id }}{{ start_form.fc_character_id.errors }}<div id="fleet-detection" class="form-text">{% translate "Select a character to detect its current ESI fleet." %}</div></div>
       <div class="form-check mb-3">{{ start_form.send_ping }} <label class="form-check-label" for="{{ start_form.send_ping.id_for_label }}">{% if operation.ping_channel_name %}{% blocktranslate trimmed with label=start_form.send_ping.label channel=operation.ping_channel_name %}{{ label }} in {{ channel }}{% endblocktranslate %}{% else %}{{ start_form.send_ping.label }}{% endif %}</label></div>
       <div class="form-text mb-3">{% translate "Starting tracks the fleet from now on with the settings below; the MOTD is set and the SRP link created as for any fleet." %}</div>
@@ -88,7 +88,6 @@
   <div class="col-lg-6"><div class="card h-100"><div class="card-header d-flex justify-content-between"><strong>{% translate "Pre Ping" %}</strong><button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy="#scheduled-ping">{% translate "Copy Ping" %}</button></div><div class="card-body"><pre id="scheduled-ping" class="preview-box" data-copy-text="{{ operation.ping_text }}">{{ operation.ping_text|ping_display:operation|default:_("No ping text.") }}</pre></div></div></div>
   <div class="col-lg-6"><div class="card h-100"><div class="card-header d-flex justify-content-between"><strong>MOTD</strong><button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy="#scheduled-motd">{% translate "Copy MOTD" %}</button></div><div class="card-body"><pre id="scheduled-motd" class="preview-box">{{ operation.motd_text|default:_("No MOTD text.") }}</pre><div class="form-text">{% translate "The MOTD is set in game when the fleet starts." %}</div></div></div></div>
 </div>
-<script src="{% static 'fleetops/fleetops.js' %}?v={% fleetops_version %}"></script>
 <script>
 (() => {
  const start = document.getElementById('scheduled-start-form');

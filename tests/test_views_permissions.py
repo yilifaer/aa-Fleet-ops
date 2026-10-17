@@ -1165,9 +1165,11 @@ class SrpRouteTests(SrpViewTestCase):
         for role, count in (("srp_manager", 3), ("srp_manager2", 4)):
             with self.subTest(role=role):
                 html = self.as_role(role, "get", reverse("fleetops:dashboard")).content.decode()
-                self.assertIn(f'<span class="badge bg-danger">{count}</span>', html)
+                self.assertIn(f'SRP <span class="fo-count fo-count-nav">{count}</span>', html)
+                self.assertIn(f'Review <span class="fo-pill fo-pill-warn">{count}</span>', html)
         html = self.as_role("srp_member", "get", reverse("fleetops:dashboard")).content.decode()
-        self.assertNotIn("badge bg-danger", html)
+        self.assertNotIn('SRP <span class="fo-count', html)
+        self.assertNotIn("Review <span", html)
 
     def test_menu_hides_my_srp_while_srp_is_off(self):
         SrpSettings.objects.filter(pk=1).update(enabled=False)

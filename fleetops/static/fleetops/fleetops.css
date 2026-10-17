@@ -161,7 +161,7 @@
 .fo-pill-wrap::before { margin-top: .45em; }
 /* Counter (tab counts, tree counts, menu counts): no dot, not a status */
 .fo-count { display: inline-block; min-width: 1.6em; padding: 0 .45em; border-radius: 999px; font-size: .75rem; font-weight: 600; line-height: 1.6; text-align: center; font-variant-numeric: tabular-nums; color: var(--fo-text-2); background: var(--fo-surface-2); }
-.fo-count-nav { color: var(--bs-body-color); background: var(--bs-body-bg); } /* on AA's navbar: body contrast */
+.fo-count-nav { color: var(--bs-body-color); background: var(--bs-body-bg); white-space: nowrap; } /* on AA's navbar: body contrast */
 
 /* Metric tile: a big number, its title and a line of context; a dot marks the kind */
 .fo-metric { position: relative; height: 100%; padding: var(--fo-space-4); border-radius: var(--fo-radius); background: var(--fo-surface-1); display: flex; flex-direction: column; gap: var(--fo-space-1); }

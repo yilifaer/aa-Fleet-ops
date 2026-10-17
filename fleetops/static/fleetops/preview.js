@@ -28,5 +28,26 @@
     return null;
   }
 
+  // The Look / Raw text buttons of a preview box (partials/discord_preview.html) show one of its two panes.
+  document.addEventListener('change', (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || input.type !== 'radio') {
+      return;
+    }
+    const box = input.closest('[data-fo-preview]');
+    if (!box) {
+      return;
+    }
+    const prefix = box.id.replace(/-box$/, '');
+    const look = document.getElementById(`${prefix}-look`);
+    const raw = document.getElementById(`${prefix}-preview`);
+    if (look) {
+      look.hidden = input.value === 'raw';
+    }
+    if (raw) {
+      raw.hidden = input.value !== 'raw';
+    }
+  });
+
   window.FleetOpsPreview = { discord, motd, motdColour };
 })();

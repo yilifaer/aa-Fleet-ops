@@ -52,7 +52,7 @@ document.getElementById('roster-import-form').addEventListener('submit',()=>{
 <div class="card mb-3" id="roster-paste-form"><div class="card-body">
 <form method="post">{% csrf_token %}
   <input type="hidden" name="step" value="parse">
-  {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+  {% include "fleetops/partials/form_errors.html" with errors=form.non_field_errors %}
   <div class="mb-3">{{ form.text.label_tag }}{{ form.text }}{% if form.text.errors %}<div class="text-danger small">{{ form.text.errors|join:" " }}</div>{% endif %}<div class="form-text">{{ form.text.help_text }}</div></div>
   <div class="row g-3">
     <div class="col-md-2">{{ form.attendance_value.label_tag }}{{ form.attendance_value }}{% if form.attendance_value.errors %}<div class="text-danger small">{{ form.attendance_value.errors|join:" " }}</div>{% endif %}</div>

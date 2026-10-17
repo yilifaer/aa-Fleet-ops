@@ -131,7 +131,7 @@ class NavigationAndPageTests(TestCase):
 
         response = self.get(self.lead, reverse("fleetops:dashboard"))
         self.assertContains(response, f'href="{approvals}">Approvals <span')
-        self.assertContains(response, "(1 fleet)</span></a>")
+        self.assertContains(response, ">1 fleet</span></a>")
         self.assertEqual(response.context["pending_approval_count"], 1)
         self.assertEqual(response.context["pending_approvals"], {"fleets": 1, "pap": 0})
 

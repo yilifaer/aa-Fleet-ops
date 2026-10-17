@@ -11,7 +11,7 @@
   {% if not perms.fleetops.manage_fleets %}<strong>{% translate "The fleet and its PAP count once an FC lead has approved it." %}</strong>{% endif %}
 </div>
 <form method="post" id="link-only-fleet-form">{% csrf_token %}{{ form.request_id }}
-  {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+  {% include "fleetops/partials/form_errors.html" with errors=form.non_field_errors %}
   {{ form.request_id.errors }}
   <div class="row g-3">
     <div class="col-lg-6"><div class="card h-100"><div class="card-header"><strong>{% translate "Fleet" %}</strong></div><div class="card-body">
