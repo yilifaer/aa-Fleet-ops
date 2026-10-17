@@ -207,7 +207,8 @@ def role_delete_refusal(role) -> str:
 
 
 def _unnamed_role(role) -> str:
-    # A role without a name is called by its ID; the word is part of the ping, so it is the site language.
+    # A role without a name is called by its ID. The word follows the active language: inside a ping it is
+    # English (the render runs in texts.outgoing_language()), on the fleet page it is the language of the viewer.
     return pgettext("discord broadcast", "role %(id)s") % {"id": role.id}
 
 
@@ -219,22 +220,20 @@ def mention_text(selection, *, display=False) -> str:
         return "@here"
     if selection.mode == ROLES:
         if display:
-            with texts.outgoing_language():
-                return " ".join("@" + (role.name or _unnamed_role(role)) for role in selection.roles)
+            return " ".join("@" + (role.name or _unnamed_role(role)) for role in selection.roles)
         return " ".join(f"<@&{role.id}>" for role in selection.roles)
     return ""
 
 
 def target_label(selection) -> str:
-    """Who the ping went to, in words, for the message footer (in the site language)."""
-    with texts.outgoing_language():
-        if selection.mode == EVERYONE:
-            return pgettext("discord broadcast", "all")
-        if selection.mode == HERE:
-            return pgettext("discord broadcast", "online members")
-        if selection.mode == ROLES and selection.roles:
-            return ", ".join(role.name or _unnamed_role(role) for role in selection.roles)
-        return pgettext("discord broadcast", "this channel")
+    """Who the ping went to, in words, for the message footer. FleetOps's own words are plain English."""
+    if selection.mode == EVERYONE:
+        return "all"
+    if selection.mode == HERE:
+        return "online members"
+    if selection.mode == ROLES and selection.roles:
+        return ", ".join(role.name or _unnamed_role(role) for role in selection.roles)
+    return "this channel"
 
 
 def allowed_mentions(selection) -> dict:

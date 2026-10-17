@@ -9,7 +9,7 @@
 
 | 后台页面 | 控制什么 |
 |---|---|
-| [常规设置](#常规设置) | 追踪、自动结束舰队、PAP 规则、统计、PAP 登记链接、舰队标签、SRP 提供方、FC 奖金、历史记录 |
+| [常规设置](#常规设置) | 追踪、自动结束舰队、PAP 规则、统计、PAP 登记链接、舰队标签、消息、SRP 提供方、FC 奖金、历史记录 |
 | [舰队类型](#舰队类型) | 舰队分类及其 FC 积分权重 |
 | [PAP 倍率](#pap-倍率) | 长时间舰队的倍率 |
 | [月度达标线](#月度达标线) | 每月的军团 PAP 达标线和成员最低要求 |
@@ -17,7 +17,7 @@
 | [语音预设](#语音预设) | 语音选项及其公开加入链接 |
 | [后勤和加成频道](#后勤和加成频道) | MOTD 里显示的游戏内频道 |
 | [Ping 频道](#ping-频道)和 [Ping 身份组](#ping-身份组) | Discord Webhook、允许的提及、可被 @ 的身份组 |
-| [消息模板](#消息模板) | Ping 和 MOTD 的文本 |
+| [消息模板](#消息模板) | Ping、MOTD 和无舰队 Ping 的文本 |
 | [舰船功能和规则](#舰船功能和规则)、[舰队结构模板](#舰队结构模板) | 编成分组以及联队、中队的布局 |
 | [FleetOps SRP](#fleetops-srp)、[SRP 赔付表](#srp-赔付表)、[SRP 军团限额](#srp-军团限额) | 舰船补损（SRP） |
 
@@ -31,7 +31,7 @@ FleetOps 会读取 Alliance Auth 项目（`local.py`）里的几个设置。前�
 | `APPS_WITH_PUBLIC_VIEWS` | 加入 `"fleetops"`，未登录的飞行员才能打开语音加入页。 |
 | `ESI_USER_CONTACT_EMAIL` | `local.py` 里已经有这一行（模板里是空的）：把它填上，不要再加第二行。写入 ESI 请求的 User-Agent（django-esi 要求），也用于 zKillboard 请求（那里以 `SITE_URL` 作为备选）。 |
 | `DISCORD_GUILD_ID` | Alliance Auth 的 Discord 服务使用它；"从 Discord 同步身份组"需要它。 |
-| `LANGUAGE_CODE` | 站点语言。Ping 和 MOTD 使用这个语言书写。 |
+| `LANGUAGE_CODE` | 站点语言。FleetOps 页面跟随每位用户在 Alliance Auth 里选的语言；Ping 和 MOTD 始终是英文。 |
 
 ## 常规设置
 
@@ -47,7 +47,7 @@ FleetOps 会读取 Alliance Auth 项目（`local.py`）里的几个设置。前�
 | 自动结束所需失败次数（Auto end missing count） | 3 | 连续多少次读不到舰队才自动结束（至少 2）。结束之前，FleetOps 会再读一次，如果这次读到了就取消结束。一次成功的读取会让计数归零。 |
 | 启用 FC 奖金（Incentive enabled） | 关 | 打开 FC 奖金页面。见 [FC 奖金](#fc-奖金)。 |
 | FC 奖金最少舰队数（Incentive minimum fleets） | 3 | 新的奖金周期的"最少舰队数"默认值。 |
-| 数据保留天数（Data retention days） | 365 | PAP 历史和成员事件保留多久，365 到 36500。`fleetops_prune_history` 和每日定时任务会清理更早的记录。 |
+| 数据保留天数（Data retention days） | 365 | PAP 历史、成员事件和无舰队 Ping 的文字保留多久，365 到 36500。`fleetops_prune_history` 和每日定时任务会清理更早的记录。 |
 | SRP 自动创建（SRP auto create） | 开 | 每支舰队开队时都创建 SRP 链接。 |
 | SRP 提供方（SRP provider） | 自动 | 由哪个 SRP 应用创建链接。见 [SRP providers](../srp-providers.md)（英文）。 |
 
@@ -105,6 +105,12 @@ FleetOps 会读取 Alliance Auth 项目（`local.py`）里的几个设置。前�
 实时刷新的开销：追踪每隔一个追踪间隔读取一次每支进行中的舰队（成员，以及联队和中队：两次 ESI 调用）。实时刷新每次还会用 FC 角色的令牌多调用两次，
 按 15 秒一次算，每 15 分钟约 120 次，而 ESI 对每个角色的上限是 1800 次。不论多少管理者在看，一支舰队在一个间隔内只读取一次；只有 `view_all_fleets` 的用户不会触发读取。
 "实时"开关按浏览器记忆。
+
+### 消息
+
+| 设置 | 默认值 | 含义 |
+|---|---|---|
+| MOTD 警告长度（MOTD warning length） | 2000 | MOTD 连标签一起超过这么多个字符时，开队预览会给出警告。游戏的上限没有文档说明；约 1700 个字符的 MOTD 已知可用。0 表示不警告，最大 100000。 |
 
 ## 舰队类型
 
@@ -233,7 +239,7 @@ FC 可以 @ 的 Discord 身份组。可以按 ID 添加（纯数字或 `<@&id>`�
 
 ## 消息模板
 
-Ping 和 MOTD 的文本。变量、内置模板和规则见[消息模板](message-templates.md)。
+Ping、MOTD 和无舰队 Ping 的文本。变量、内置模板和规则见[消息模板](message-templates.md)。
 
 ## 舰船功能和规则
 
@@ -351,6 +357,6 @@ FleetOps 有自己的舰船补损计划（SRP）。启用之前它是关闭的�
 
 ## 历史记录与保留
 
-`python manage.py fleetops_prune_history` 会删除早于 **数据保留天数** 的 PAP、已离开 **成员联盟 ID** 所列联盟的成员的 PAP，以及旧的成员事件；先加 `--dry-run` 查看数量。
+`python manage.py fleetops_prune_history` 会删除早于 **数据保留天数** 的 PAP、已离开 **成员联盟 ID** 所列联盟的成员的 PAP，旧的成员事件，以及无舰队 Ping 的旧文字（它们的审计记录会保留）；先加 `--dry-run` 查看数量。
 每日定时任务 `fleetops.tasks.prune_attendance_history` 做同样的事，并且会删除无人申请的 SRP KM。`python manage.py fleetops_refresh_names` 会用 SDE 把舰队成员记录里的
 舰船和星系名称重新写成英文（可用 `--dry-run`）。舰船和星系名称在所有地方都是英文。

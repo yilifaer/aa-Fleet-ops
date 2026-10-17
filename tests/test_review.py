@@ -13,6 +13,7 @@ from fleetops.services.review import (
     initial_review_status,
     is_approver,
     pending_approval_count,
+    pending_approval_counts,
     pending_attendance,
     pending_operations,
 )
@@ -115,3 +116,31 @@ class PendingCountTests(TestCase):
         self.assertEqual(pending_approval_count(), 4)
         self.assertEqual(set(pending_operations()), {pending_fleet, link_fleet})
         self.assertEqual(set(pending_attendance()), {pending_row, row_on_pending_fleet})
+
+    def test_fleets_and_rows_are_counted_apart(self):
+        fleet = f.create_operation(self.fc, status=Status.CLOSED, is_manual=True, review_status=ReviewStatus.PENDING)
+        approved = f.create_operation(self.fc, status=Status.CLOSED)
+        for _ in range(2):
+            f.add_attendance(
+                approved, f.create_user(), source=AttendanceRecord.Source.MANUAL, review_status=ReviewStatus.PENDING
+            )
+        f.add_attendance(fleet, self.member, source=AttendanceRecord.Source.MANUAL, review_status=ReviewStatus.PENDING)
+
+        self.assertEqual(pending_approval_counts(), {"fleets": 1, "pap": 3})
+        self.assertEqual(pending_approval_count(), 4)
+
+    def test_the_counts_of_a_fresh_install_are_zero(self):
+        self.assertEqual(pending_approval_counts(), {"fleets": 0, "pap": 0})
+
+    def test_only_rows_waiting_for_an_approver_are_counted(self):
+        approved = f.create_operation(self.fc, status=Status.CLOSED)
+        f.add_attendance(
+            approved, self.member, source=AttendanceRecord.Source.MANUAL, review_status=ReviewStatus.REJECTED
+        )
+        f.create_operation(self.fc, status=Status.CLOSED, is_manual=True, review_status=ReviewStatus.REJECTED)
+
+        self.assertEqual(pending_approval_counts(), {"fleets": 0, "pap": 0})
+
+    def test_each_count_is_one_query(self):
+        with self.assertNumQueries(2):
+            pending_approval_counts()

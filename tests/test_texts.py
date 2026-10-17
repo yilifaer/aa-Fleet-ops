@@ -131,6 +131,64 @@ class DeclarationTests(IsolatedRegistryMixin, SimpleTestCase):
         with self.assertRaises(ValueError):
             StoredText("Declared once.")
 
+    def test_number_names_have_to_be_placeholders(self):
+        with self.assertRaises(ValueError):
+            StoredText("Moved %(count)s pilots.", numbers=("total",))
+
+    def test_a_placeholder_is_a_number_or_a_nested_message(self):
+        with self.assertRaises(ValueError):
+            StoredText("Moved %(count)s pilots: %(detail)s", nested=("count",), numbers=("count",))
+
+    def test_a_number_takes_a_whole_number_only(self):
+        message = StoredText("Moved %(done)s of %(total)s pilots.", numbers=("done", "total"))
+
+        self.assertEqual(message(done=2, total=5), "Moved 2 of 5 pilots.")
+        self.assertEqual(message(done="2", total="5"), "Moved 2 of 5 pilots.")
+        for bad in ("two", "", "2.5", 2.5, None, True, "-1"):
+            with self.subTest(value=bad), self.assertRaises(TypeError):
+                message(done=bad, total=5)
+
+    def test_a_number_matches_digits_only(self):
+        message = StoredText("Moved %(done)s of %(total)s pilots.", numbers=("done", "total"))
+
+        self.assertIs(texts.find("Moved 2 of 5 pilots.")[0], message)
+        self.assertEqual(texts.find("Moved 12 of 105 pilots.")[1], {"done": "12", "total": "105"})
+        for text in ("Moved two of 5 pilots.", "Moved 2 of  pilots.", "Moved 2 of 5x pilots.", "Moved  of 5 pilots."):
+            with self.subTest(text=text):
+                self.assertIsNone(texts.find(text))
+
+    def test_priority_needs_a_number(self):
+        with self.assertRaises(ValueError):
+            StoredText("Moved %(count)s pilots.", priority=True)
+        with self.assertRaises(ValueError):
+            StoredText("Moved %(count)s pilots.", nested=(), numbers=(), priority=True)
+
+    def test_a_message_with_priority_is_tried_before_heavier_messages(self):
+        heavy = StoredText("%(label)s: a very long and specific ending: %(done)s of %(total)s finished.")
+        light = StoredText("%(label)s: %(done)s of %(total)s finished.", numbers=("done", "total"), priority=True)
+        text = "Step: a very long and specific ending: 1 of 2 finished."
+
+        self.assertGreater(heavy.weight, light.weight)
+        self.assertIs(texts.find(text)[0], light)
+        # Without digits the light message does not fit, so the heavy one is found as before.
+        self.assertIs(texts.find("Step: a very long and specific ending: x of 2 finished.")[0], heavy)
+
+    def test_a_plural_passes_numbers_and_priority_to_both_wordings(self):
+        plural = texts.StoredPlural(
+            "Moved its pilot of %(total)s.",
+            "Moved %(count)s pilots of %(total)s.",
+            numbers=("count", "total"),
+            priority=True,
+        )
+
+        self.assertEqual(plural.plural.numbers, ("count", "total"))
+        self.assertEqual(plural.singular.numbers, ("total",))
+        self.assertTrue(plural.singular.priority and plural.plural.priority)
+        self.assertEqual(plural(count=1, total=4), "Moved its pilot of 4.")
+        self.assertEqual(plural(count=3, total=4), "Moved 3 pilots of 4.")
+        with self.assertRaises(TypeError):
+            plural(count="many", total=4)
+
 
 class RecognitionTests(IsolatedRegistryMixin, SimpleTestCase):
     def test_the_whole_text_has_to_match(self):
@@ -288,6 +346,8 @@ class DeclaredMessageTests(SimpleTestCase):
         for name in entry.params:
             if name in entry.nested:
                 values[name] = texts.STEP_NAMES["Discord ping"]()
+            elif name in entry.numbers:
+                values[name] = 7
             else:
                 values[name] = "Bob: a. b (c) 100%" if awkward else f"sample {name}"
         return entry(**values)
@@ -446,18 +506,105 @@ class TemplateFilterTests(FakeCatalogMixin, SimpleTestCase):
         self.assertEqual(self.render("{% fleetops_version %}"), fleetops.__version__)
 
 
+class JobSummaryTranslationTests(SimpleTestCase):
+    """The summary of a job reads as a summary in Chinese, whatever label stands in front of it (FB06.2)."""
+
+    LABELS = {
+        "MOVE_JOB": lambda count: texts.MOVE_JOB(count=count),
+        "MOVE_JOB_TO": lambda count: texts.MOVE_JOB_TO(count=count, wing="FAX", squad="111"),
+        "INVITE_JOB": lambda count: texts.INVITE_JOB(count=count),
+        "INVITE_JOB_INTO": lambda count: texts.INVITE_JOB_INTO(count=count, wing="FAX", squad="111"),
+        "KICK_JOB_CAPSULES": lambda count: texts.KICK_JOB_CAPSULES(count=count),
+        "KICK_JOB_OUTSIDE": lambda count: texts.KICK_JOB_OUTSIDE(count=count, system="Jita"),
+        "TEMPLATE_JOB": lambda count: texts.TEMPLATE_JOB(name="Standard"),
+    }
+
+    def shown(self, text):
+        with translation.override("zh-hans"):
+            return texts.translate_stored(text)
+
+    def test_every_label_with_every_count_has_a_summary_in_chinese(self):
+        for name, label in self.LABELS.items():
+            for count in (1, 2):
+                text = texts.JOB_SUMMARY(label=label(count), done=count, total=count)
+                shown = self.shown(text)
+                with self.subTest(label=name, count=count):
+                    self.assertIn(f"已完成 {count} / {count}", shown)
+                    self.assertNotIn(" of ", shown)
+                    self.assertNotIn(" done", shown)
+                    self.assertIs(texts.find(text)[0], texts.JOB_SUMMARY)
+                    self.assertEqual(texts.find(text)[1]["label"], label(count))
+
+    def test_every_label_with_failures_has_a_summary_in_chinese(self):
+        for name, label in self.LABELS.items():
+            for count in (1, 2):
+                text = texts.JOB_SUMMARY_FAILED(label=label(count), done=count - 1, total=count, failed=1)
+                shown = self.shown(text)
+                with self.subTest(label=name, count=count):
+                    self.assertIn(f"已完成 {count - 1} / {count}，失败 1", shown)
+                    self.assertNotIn(" of ", shown)
+                    self.assertNotIn(" done", shown)
+                    self.assertNotIn("failed", shown)
+                    self.assertIs(texts.find(text)[0], texts.JOB_SUMMARY_FAILED)
+
+    def test_the_label_is_translated_inside_the_summary(self):
+        text = texts.JOB_SUMMARY(label=texts.MOVE_JOB_TO(count=2, wing="FAX", squad="111"), done=2, total=2)
+
+        self.assertEqual(self.shown(text), "把 2 名成员移到 FAX / 111：已完成 2 / 2。")
+
+    def test_a_label_alone_still_translates(self):
+        self.assertEqual(self.shown(texts.MOVE_JOB_TO(count=2, wing="FAX", squad="111")), "把 2 名成员移到 FAX / 111")
+
+    def test_an_end_with_a_boss_handover_keeps_the_name(self):
+        reason = texts.END_BOSS_HANDOVER(name="Pilot A")
+        text = texts.FLEET_END_PAP(reason=reason, granted=2, multiplier=1)
+
+        found = texts.find(text)
+        self.assertIs(found[0], texts.FLEET_END_PAP)
+        self.assertEqual(found[1]["reason"], reason)
+        self.assertEqual(self.shown(text), "自动结束：舰队 Boss 已移交给 Pilot A。PAP：已发放 2，倍率 1 倍。")
+
+    def test_an_end_with_the_other_reasons_translates(self):
+        for reason in (texts.END_MANUAL(), texts.END_FLEET_GONE(), texts.END_BOSS_HANDOVER_UNKNOWN()):
+            text = texts.FLEET_END_PAP(reason=reason, granted=3, multiplier=2)
+            with self.subTest(reason=reason):
+                shown = self.shown(text)
+                self.assertTrue(shown.endswith("PAP：已发放 3，倍率 2 倍。"), shown)
+                self.assertNotIn("PAP:", shown)
+
+    def test_two_summaries_in_a_row_are_still_two_messages(self):
+        first = texts.JOB_SUMMARY(label=texts.MOVE_JOB(count=2), done=2, total=2)
+        second = texts.JOB_SUMMARY(label=texts.INVITE_JOB(count=1), done=1, total=1)
+
+        self.assertEqual(self.shown(f"{first} {second}"), f"{self.shown(first)} {self.shown(second)}")
+
+    def test_a_summary_followed_by_a_stop_is_still_two_messages(self):
+        text = (
+            texts.JOB_SUMMARY(label=texts.MOVE_JOB(count=2), done=1, total=2)
+            + " "
+            + texts.STOPPED(error=texts.JOB_WORKER_DOWN())
+        )
+
+        shown = self.shown(text)
+        self.assertIn("已完成 1 / 2", shown)
+        self.assertNotIn("done", shown)
+        self.assertNotIn("Stopped", shown)
+
+
 class LanguageHelperTests(SimpleTestCase):
-    def test_outgoing_text_uses_the_site_language(self):
+    def test_outgoing_text_is_english(self):
         with translation.override("zh-hans"):
             with texts.outgoing_language():
-                self.assertEqual(translation.get_language(), "en-us")
+                self.assertEqual(translation.get_language(), "en")
             self.assertEqual(translation.get_language(), "zh-hans")
 
     @override_settings(LANGUAGE_CODE="zh-hans")
-    def test_outgoing_text_follows_a_changed_site_language(self):
-        with translation.override("en"):
-            with texts.outgoing_language():
-                self.assertEqual(translation.get_language(), "zh-hans")
+    def test_outgoing_text_ignores_the_site_language(self):
+        for viewer in ("en", "zh-hans"):
+            with translation.override(viewer):
+                with texts.outgoing_language():
+                    self.assertEqual(translation.get_language(), "en")
+                self.assertEqual(translation.get_language(), viewer)
 
     def test_user_language(self):
         user = SimpleNamespace(profile=SimpleNamespace(language="zh-hans"))

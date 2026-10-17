@@ -905,7 +905,7 @@ class PruneHistoryTests(TestCase):
 
         result = prune_history()
 
-        self.assertEqual(result, {"old_attendance": 1, "left_alliance": 0, "old_events": 1})
+        self.assertEqual(result, {"old_attendance": 1, "left_alliance": 0, "old_events": 1, "old_pings": 0})
         self.assertTrue(self._exists(recent))
         self.assertFalse(self._exists(old))
         self.assertTrue(self._exists(recent_event))
@@ -1054,7 +1054,7 @@ class PruneHistoryTests(TestCase):
 
         result = prune_history(dry_run=True)
 
-        self.assertEqual(result, {"old_attendance": 1, "left_alliance": 1, "old_events": 1})
+        self.assertEqual(result, {"old_attendance": 1, "left_alliance": 1, "old_events": 1, "old_pings": 0})
         for obj in (old, old_event, departed_row):
             self.assertTrue(self._exists(obj))
 

@@ -215,7 +215,7 @@ class RetentionTests(TestCase):
 
         result = prune_history()
 
-        self.assertEqual(result, {"old_attendance": 0, "left_alliance": 0, "old_events": 0})
+        self.assertEqual(result, {"old_attendance": 0, "left_alliance": 0, "old_events": 0, "old_pings": 0})
         self.assertTrue(AttendanceRecord.objects.filter(pk=old.pk).exists())
         self.assertTrue(FleetMemberEvent.objects.filter(pk=event.pk).exists())
 

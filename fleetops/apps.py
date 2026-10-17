@@ -9,3 +9,6 @@ class FleetOpsConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "fleetops"
     verbose_name = pgettext_lazy("FleetOps", "Fleet Operations")
+
+    def ready(self):
+        from fleetops import signals  # noqa: F401 - connects the receivers

@@ -4,6 +4,7 @@
 """Tests for the ping and MOTD texts: default templates, variables, exact mentions and length checks."""
 
 import importlib
+import uuid
 from datetime import datetime, timedelta, timezone as dt_timezone
 from unittest import mock
 from zoneinfo import ZoneInfo
@@ -14,10 +15,12 @@ from django.utils import timezone, translation
 from fleetops.constants import (
     DEFAULT_MOTD_TEMPLATE,
     DEFAULT_PING_TEMPLATE,
+    DEFAULT_STANDALONE_PING_TEMPLATE,
     MOTD_SOFT_LIMIT,
+    PING_COOLDOWN_SECONDS,
     SCHEDULE_CANCELLED_TEMPLATE,
 )
-from fleetops.models import ChannelPreset, CommsPreset, FleetOperation, MessageTemplate
+from fleetops.models import ChannelPreset, CommsPreset, FleetOperation, MessageTemplate, StandalonePing
 from fleetops.providers import doctrines
 from fleetops.providers.doctrines import FITTINGS_DOCTRINE_SOURCE
 from fleetops.providers.pings import send_discord_webhook
@@ -29,6 +32,8 @@ from fleetops.services.messages import (
     render_cancellation_notice,
     render_messages,
     render_operation_messages,
+    render_standalone_ping,
+    standalone_context,
 )
 
 from . import factories as f
@@ -114,13 +119,48 @@ class MessageTestBase(TestCase):
 class DefaultTemplateTests(TestCase):
     def test_built_in_templates_are_the_copies_in_the_migrations(self):
         upgrade = importlib.import_module("fleetops.migrations.0009_convert_ping_targets_and_presets")
-
         srp = importlib.import_module("fleetops.migrations.0017_srp_data")
+        data = importlib.import_module("fleetops.migrations.0020_b2_data")
 
-        self.assertEqual(DEFAULT_PING_TEMPLATE.encode(), upgrade.NEW_PING.encode())
-        # Migration 0017 added the SRP line to the MOTD; its copy is the current one.
+        # Migration 0020 replaces the 0.2.0b1 defaults (the ones of 0009 and 0017) by the current ones.
+        self.assertEqual(upgrade.NEW_PING.encode(), data.OLD_PING.encode())
+        self.assertEqual(data.NEW_PING.encode(), DEFAULT_PING_TEMPLATE.encode())
+        # Migration 0017 added the SRP line to the MOTD; 0020 made the FC and the form-up place links.
         self.assertEqual(upgrade.NEW_MOTD.encode(), srp.OLD_MOTD.encode())
-        self.assertEqual(DEFAULT_MOTD_TEMPLATE.encode(), srp.NEW_MOTD.encode())
+        self.assertEqual(srp.NEW_MOTD.encode(), data.OLD_MOTD.encode())
+        self.assertEqual(data.NEW_MOTD.encode(), DEFAULT_MOTD_TEMPLATE.encode())
+
+    def test_the_new_default_motd_only_swaps_the_two_variables(self):
+        data = importlib.import_module("fleetops.migrations.0020_b2_data")
+
+        swapped = data.NEW_MOTD.replace("{{ fc_link }}", "{{ fc }}").replace("{{ formup_link }}", "{{ formup }}")
+
+        self.assertEqual(swapped, data.OLD_MOTD)
+        self.assertEqual(DEFAULT_MOTD_TEMPLATE.count("{{ fc_link }}"), 1)
+        self.assertEqual(DEFAULT_MOTD_TEMPLATE.count("{{ formup_link }}"), 1)
+        self.assertNotIn("{{ fc }}", DEFAULT_MOTD_TEMPLATE)
+        self.assertNotIn("{{ formup }}", DEFAULT_MOTD_TEMPLATE)
+
+    def test_the_new_default_ping_only_adds_the_local_time_and_the_group(self):
+        data = importlib.import_module("fleetops.migrations.0020_b2_data")
+        group = "{% if group %}**Group:** {{ group }}\n{% endif %}"
+
+        restored = data.NEW_PING.replace(group, "").replace(" · {{ fleet_time_local }}", "")
+
+        self.assertEqual(restored, data.OLD_PING)
+        self.assertEqual(DEFAULT_PING_TEMPLATE.count(group), 1)
+        self.assertIn("-# This was a FleetOps broadcast from {{ sender }} to {{ ping_target_label }}", DEFAULT_PING_TEMPLATE)
+        # The footer is the literal English line: there is no variable for it.
+        self.assertNotIn("broadcast_footer", DEFAULT_PING_TEMPLATE)
+
+    def test_the_ping_without_a_fleet_ends_with_its_english_line(self):
+        self.assertTrue(
+            DEFAULT_STANDALONE_PING_TEMPLATE.endswith(
+                "-# FleetOps ping from {{ sender }} to {{ ping_target_label }} at {{ sent_at }} EVE"
+            )
+        )
+        self.assertIn("**Time:** {{ fleet_time_eve }} · {{ fleet_time_local }} ({{ fleet_time_discord }})", DEFAULT_STANDALONE_PING_TEMPLATE)
+        self.assertEqual(PING_COOLDOWN_SECONDS, 60)
 
     def test_default_ping_has_no_logi_or_boost(self):
         self.assertNotIn("logi", DEFAULT_PING_TEMPLATE.lower())
@@ -168,10 +208,28 @@ class DefaultPingTests(MessageTestBase):
             "**PAP Type:** StratOp\n"
             f"**Comms:** [Main Comms]({self.join_url()})\n"
             f"**Doctrine:** [Moa Fleet]({SITE}{DOCTRINE_PATH}) (Moa > Moa > Osprey)\n"
-            "**Fleet Time:** 2026-10-12 19:00 EVE (<t:1791831600:R>)\n"
+            "**Fleet Time:** 2026-10-12 19:00 EVE · <t:1791831600:t> (<t:1791831600:R>)\n"
             "\n"
             "-# This was a FleetOps broadcast from Boss Main to this channel at 2026-10-12 18:30 EVE",
         )
+
+    def test_a_group_fleet_names_its_group(self):
+        operation = self.operation(group_name="Sig A group")
+
+        ping = self.render(operation).ping
+
+        self.assertEqual(
+            ping,
+            "**FC Name:** Boss Alt\n"
+            "**Formup Location:** Jita IV-4\n"
+            "**PAP Type:** StratOp\n"
+            "**Group:** Sig A group\n"
+            "\n"
+            "-# This was a FleetOps broadcast from Boss Main to this channel at 2026-10-12 18:30 EVE",
+        )
+
+    def test_an_alliance_fleet_has_no_group_line(self):
+        self.assertNotIn("Group", self.render(self.operation()).ping)
 
     def test_optional_lines_are_left_out(self):
         operation = self.operation(logi_channel=self.logi, boost_channel=self.boost, scheduled_at=FLEET_TIME)
@@ -318,6 +376,33 @@ class DefaultMotdTests(MessageTestBase):
         self.assertNotIn("<script", motd)
         self.assertIn("&lt;script>alert(1)&lt;/script>", motd)
 
+    def test_the_fc_and_the_form_up_place_are_printed_through_their_links(self):
+        # The built-in MOTD asks for {{ fc_link }} and {{ formup_link }}; until the links are made they read as the names.
+        self.assertIn("FC: {{ fc_link }}<br>Form Up: {{ formup_link }}", DEFAULT_MOTD_TEMPLATE)
+        custom = make_template("{{ fc_link }}|{{ formup_link }}|{{ fc_character_id }}|{{ formup_system_id }}", MessageTemplate.TemplateType.MOTD)
+
+        operation = self.operation(motd_template=custom)
+
+        self.assertEqual(self.render(operation).motd, f"Boss Alt|Jita IV-4|{operation.fc_character_id}|")
+
+    def test_a_name_with_an_apostrophe_reads_as_typed(self):
+        operation = self.operation(formup="O'Brien's Keepstar")
+
+        motd = self.render(operation).motd
+
+        self.assertIn("Form Up: O'Brien's Keepstar", motd)
+        self.assertNotIn("&#x27;", motd)
+        self.assertNotIn("&#39;", motd)
+
+    def test_only_ampersands_and_angle_brackets_are_escaped_in_a_link_text(self):
+        operation = self.operation(formup="Jita & <Amarr>")
+
+        values = build_context(operation, now=SENT)
+
+        self.assertEqual(values["formup"], "Jita & <Amarr>")
+        self.assertEqual(values["formup_link"], "Jita &amp; &lt;Amarr&gt;")
+        self.assertEqual(values["fc_link"], "Boss Alt")
+
 
 class ContextTests(MessageTestBase):
     def context(self, operation, **kwargs):
@@ -338,17 +423,22 @@ class ContextTests(MessageTestBase):
         self.assertEqual(values["fleet_time_eve"], "2026-10-12 19:00 EVE")
         self.assertEqual(values["fleet_time_unix"], "1791831600")
         self.assertEqual(values["fleet_time_discord"], "<t:1791831600:R>")
+        # Discord shows this one in the time zone of whoever reads it.
+        self.assertEqual(values["fleet_time_local"], "<t:1791831600:t>")
         self.assertEqual(values["fleet_time"], "2026-10-12 19:00 EVE")
         self.assertEqual(values["sent_at"], "2026-10-12 18:30")
-        self.assertIn("**Fleet Time:** 2026-10-12 19:00 EVE (<t:1791831600:R>)\n", rendered.ping)
+        self.assertIn("**Fleet Time:** 2026-10-12 19:00 EVE · <t:1791831600:t> (<t:1791831600:R>)\n", rendered.ping)
         self.assertTrue(rendered.ping.endswith(" at 2026-10-12 18:30 EVE"))
 
     def test_no_fleet_time(self):
         values = self.context(self.operation())
 
         self.assertEqual(
-            [values[key] for key in ("fleet_time_eve", "fleet_time_unix", "fleet_time_discord", "fleet_time")],
-            ["", "", "", "Now"],
+            [
+                values[key]
+                for key in ("fleet_time_eve", "fleet_time_unix", "fleet_time_discord", "fleet_time_local", "fleet_time")
+            ],
+            ["", "", "", "", "Now"],
         )
         self.assertIs(values["is_pre_ping"], False)
         self.assertIs(self.context(self.operation(), pre_ping=True)["is_pre_ping"], True)
@@ -665,6 +755,41 @@ class LengthTests(MessageTestBase):
                 )
 
 
+class MotdLengthTests(MessageTestBase):
+    def motd(self, content, **extra):
+        template = make_template(content, MessageTemplate.TemplateType.MOTD)
+        return self.render(self.operation(motd_template=template, **extra))
+
+    def test_the_visible_length_leaves_the_tags_out(self):
+        rendered = self.motd('<font color="#bfffffff"><b>ab</b><br>cd</font>')
+
+        self.assertEqual(rendered.motd_length, len('<font color="#bfffffff"><b>ab</b><br>cd</font>'))
+        # "ab", one line break, "cd".
+        self.assertEqual(rendered.motd_visible_length, 5)
+
+    def test_a_line_break_and_an_entity_count_once(self):
+        rendered = self.motd("a<br>b<br/>c<br />d &gt; e")
+
+        self.assertEqual(rendered.motd_visible_length, len("a\nb\nc\nd > e"))
+
+    def test_the_limit_is_the_setting(self):
+        f.settings(motd_warning_length=1234)
+
+        self.assertEqual(self.motd("x").motd_limit, 1234)
+
+    def test_the_default_limit_is_two_thousand(self):
+        self.assertEqual(self.motd("x").motd_limit, 2000)
+
+    def test_a_ping_has_no_motd_lengths(self):
+        ping = StandalonePing(
+            request_id=uuid.uuid4(), channel_name="STR", sender_name="Boss Main", additional_message="Go"
+        )
+
+        rendered = render_standalone_ping(ping, actor=self.fc, now=SENT)
+
+        self.assertEqual((rendered.motd, rendered.motd_length, rendered.motd_visible_length), ("", 0, 0))
+
+
 class SiteUrlWarningTests(MessageTestBase):
     warning = "SITE_URL is not set, so the comms and doctrine links in the messages are incomplete."
 
@@ -732,3 +857,188 @@ class CompatibilityTests(MessageTestBase):
         MessageTemplate.objects.filter(name="Default Ping").update(content="STORED {{ sender }}")
 
         self.assertEqual(self.render(self.operation()).ping, "STORED Boss Main")
+
+
+class StandalonePingTests(MessageTestBase):
+    """A ping sent without a fleet: same variables as a fleet's, its own built-in template."""
+
+    def ping(self, **extra):
+        values = dict(
+            request_id=uuid.uuid4(),
+            channel_name="STR",
+            sender_name="Boss Main",
+            additional_message="Gate camp now",
+        )
+        values.update(extra)
+        return StandalonePing(**values)
+
+    def render(self, ping, **kwargs):
+        kwargs.setdefault("now", SENT)
+        kwargs.setdefault("actor", self.fc)
+        with fittings_reverse():
+            return render_standalone_ping(ping, **kwargs)
+
+    def test_it_has_the_variables_of_a_fleet(self):
+        with fittings_reverse():
+            fleet_keys = set(build_context(self.full_operation(), actor=self.fc, now=SENT))
+            ping_keys = set(standalone_context(self.ping(), actor=self.fc, now=SENT))
+
+        self.assertEqual(ping_keys, fleet_keys)
+
+    def test_the_key_sets_match_for_a_ping_with_everything_set(self):
+        ping = self.ping(
+            comms=self.comms,
+            formup="Jita IV-4",
+            doctrine_name="Moa Fleet",
+            doctrine_source=FITTINGS_DOCTRINE_SOURCE,
+            doctrine_external_id="12",
+            fleet_time=FLEET_TIME,
+            group_name="Sig A group",
+            mention_mode=Mode.ROLES,
+            mention_roles=TWO_ROLES,
+        )
+
+        with fittings_reverse():
+            values = standalone_context(ping, actor=self.fc, now=SENT)
+            fleet_keys = set(build_context(self.full_operation(), actor=self.fc, now=SENT))
+
+        self.assertEqual(set(values), fleet_keys)
+        for key, value in values.items():
+            with self.subTest(key=key):
+                self.assertIsInstance(value, bool if key == "is_pre_ping" else str)
+
+    def test_the_fleet_only_variables_are_empty(self):
+        values = standalone_context(self.ping(), actor=self.fc, now=SENT)
+
+        for key in ("operation_id", "fleet_type", "srp_url", "logi_channel", "logi_channel_link", "boost_channel",
+                    "boost_channel_link", "doctrine_fits"):
+            with self.subTest(key=key):
+                self.assertEqual(values[key], "")
+
+    def test_the_sender_is_the_main_of_the_user_sending(self):
+        lead = f.create_user(perms=f.FC_LEAD_PERMS, main_name="Lead Main")
+
+        values = standalone_context(self.ping(), actor=lead, now=SENT)
+
+        self.assertEqual((values["sender"], values["fc"], values["fc_main"]), ("Lead Main",) * 3)
+        self.assertEqual(values["fc_character_id"], str(f.main_of(lead).character_id))
+
+    def test_the_sender_falls_back_to_the_name_stored_with_the_ping(self):
+        values = standalone_context(self.ping(sender_name="Boss Main"), actor=None, now=SENT)
+
+        self.assertEqual(values["sender"], "Boss Main")
+        self.assertEqual(values["fc_character_id"], "")
+
+    def test_the_group_and_the_channel_are_named(self):
+        values = standalone_context(self.ping(group_name="Sig A group"), actor=self.fc, now=SENT)
+
+        self.assertEqual((values["group"], values["ping_channel"]), ("Sig A group", "STR"))
+
+    def test_a_fleet_time_makes_it_a_pre_ping(self):
+        values = standalone_context(self.ping(fleet_time=FLEET_TIME), actor=self.fc, now=SENT)
+
+        self.assertIs(values["is_pre_ping"], True)
+        self.assertEqual(values["fleet_time_local"], "<t:1791831600:t>")
+        self.assertIs(standalone_context(self.ping(), actor=self.fc, now=SENT)["is_pre_ping"], False)
+
+    def test_the_built_in_text(self):
+        ping = self.ping(
+            mention_mode=Mode.EVERYONE,
+            group_name="Sig A group",
+            formup="Jita IV-4",
+            comms=self.comms,
+            doctrine_name="Moa Fleet",
+            fleet_time=FLEET_TIME,
+        )
+
+        rendered = self.render(ping)
+
+        self.assertEqual(
+            rendered.ping,
+            "@everyone\n"
+            "Gate camp now\n"
+            "\n"
+            "**Group:** Sig A group\n"
+            "**Formup Location:** Jita IV-4\n"
+            f"**Comms:** [Main Comms]({self.join_url()})\n"
+            "**Doctrine:** Moa Fleet\n"
+            "**Time:** 2026-10-12 19:00 EVE · <t:1791831600:t> (<t:1791831600:R>)\n"
+            "\n"
+            "-# FleetOps ping from Boss Main to all at 2026-10-12 18:30 EVE",
+        )
+        self.assertEqual(rendered.motd, "")
+        self.assertEqual(rendered.errors, [])
+
+    def test_the_built_in_text_of_a_bare_ping(self):
+        rendered = self.render(self.ping())
+
+        self.assertTrue(rendered.ping.startswith("Gate camp now\n"))
+        self.assertTrue(rendered.ping.endswith("-# FleetOps ping from Boss Main to this channel at 2026-10-12 18:30 EVE"))
+        self.assertNotIn("Group", rendered.ping)
+        self.assertNotIn("Time:", rendered.ping)
+
+    def test_the_stored_template_of_the_type_is_used(self):
+        MessageTemplate.objects.create(
+            name="Default Ping without fleet",
+            template_type=MessageTemplate.TemplateType.STANDALONE,
+            content="STANDALONE {{ sender }}: {{ additional_message }}",
+            is_default=True,
+        )
+        make_template("A fleet ping, not for this", MessageTemplate.TemplateType.PING)
+
+        self.assertEqual(self.render(self.ping()).ping, "STANDALONE Boss Main: Gate camp now")
+
+    def test_a_template_of_the_ping_itself_beats_the_default(self):
+        template = make_template("CHOSEN {{ ping_target_label }}", MessageTemplate.TemplateType.STANDALONE)
+
+        self.assertEqual(self.render(self.ping(template=template)).ping, "CHOSEN this channel")
+
+    def test_a_broken_template_falls_back_to_the_built_in_one(self):
+        broken = make_template("{% if %}", MessageTemplate.TemplateType.STANDALONE)
+
+        rendered = self.render(self.ping(template=broken))
+
+        self.assertTrue(rendered.ping.startswith("Gate camp now"))
+        self.assertEqual(len(rendered.errors), 1)
+
+    def test_only_the_mention_of_the_ping_can_notify(self):
+        template = make_template("@everyone @here {{ ping_mention }} {{ additional_message }}", MessageTemplate.TemplateType.STANDALONE)
+
+        rendered = self.render(self.ping(template=template, mention_mode=Mode.HERE, additional_message="@everyone"))
+
+        self.assertEqual(rendered.ping.count("@here"), 1)
+        self.assertNotIn("@everyone", rendered.ping)
+        self.assertIn(f"@{ZWSP}everyone", rendered.ping)
+
+    def test_role_mentions_are_sent_as_ids_and_read_as_names(self):
+        rendered = self.render(self.ping(mention_mode=Mode.ROLES, mention_roles=TWO_ROLES))
+
+        self.assertTrue(rendered.ping.startswith("<@&111> <@&222>\n"))
+        self.assertTrue(rendered.ping_display.startswith("@Sig A @Sig B\n"))
+
+    def test_a_missing_mention_is_a_warning(self):
+        template = make_template("No mention here", MessageTemplate.TemplateType.STANDALONE)
+
+        rendered = self.render(self.ping(template=template, mention_mode=Mode.EVERYONE))
+
+        self.assertEqual(rendered.warnings, [str(MISSING_MENTION_WARNING)])
+
+    def test_a_ping_over_the_limit_blocks(self):
+        rendered = self.render(self.ping(additional_message="x" * 2100))
+
+        self.assertEqual(len(rendered.blocking), 1)
+        self.assertEqual(rendered.blocking, [ping_too_long_message(rendered.ping_length)])
+
+    def test_the_template_may_use_the_group(self):
+        template = make_template("{% if group %}G:{{ group }}{% else %}alliance{% endif %}", MessageTemplate.TemplateType.STANDALONE)
+
+        self.assertEqual(self.render(self.ping(template=template, group_name="Sig A group")).ping, "G:Sig A group")
+        self.assertEqual(self.render(self.ping(template=template)).ping, "alliance")
+
+    def test_an_unsaved_ping_renders_like_a_saved_one(self):
+        channel = f.ping_channel("STR", allow_everyone=True)
+        unsaved = self.ping(channel=channel, mention_mode=Mode.EVERYONE)
+        saved = self.ping(channel=channel, mention_mode=Mode.EVERYONE)
+        saved.save()
+
+        self.assertEqual(self.render(unsaved).ping, self.render(saved).ping)

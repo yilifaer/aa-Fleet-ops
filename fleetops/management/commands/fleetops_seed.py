@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 
-from fleetops.constants import DEFAULT_MOTD_TEMPLATE, DEFAULT_PING_TEMPLATE
+from fleetops.constants import DEFAULT_MOTD_TEMPLATE, DEFAULT_PING_TEMPLATE, DEFAULT_STANDALONE_PING_TEMPLATE
 from fleetops.fleet_defaults import seed_ship_functions, seed_structure_templates
 from fleetops.models import (
     FleetOpsSettings,
@@ -47,6 +47,11 @@ class Command(BaseCommand):
         for template_type, name, content in (
             (MessageTemplate.TemplateType.PING, "Default Ping", DEFAULT_PING_TEMPLATE),
             (MessageTemplate.TemplateType.MOTD, "Default MOTD", DEFAULT_MOTD_TEMPLATE),
+            (
+                MessageTemplate.TemplateType.STANDALONE,
+                "Default Ping without fleet",
+                DEFAULT_STANDALONE_PING_TEMPLATE,
+            ),
         ):
             has_default = MessageTemplate.objects.filter(template_type=template_type, is_default=True).exists()
             MessageTemplate.objects.get_or_create(

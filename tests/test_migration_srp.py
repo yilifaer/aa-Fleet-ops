@@ -21,6 +21,7 @@ from fleetops.models import FleetOpsSettings, MessageTemplate, SrpSettings
 schema = importlib.import_module("fleetops.migrations.0016_srp_schema")
 upgrade = importlib.import_module("fleetops.migrations.0017_srp_data")
 motd_0009 = importlib.import_module("fleetops.migrations.0009_convert_ping_targets_and_presets")
+data_0020 = importlib.import_module("fleetops.migrations.0020_b2_data")
 
 NEW_CODENAMES = ("request_srp", "manage_srp")
 SRP_LINE = '{% if srp_url %}<br>SRP: <a href="{{ srp_url }}">Request SRP</a>{% endif %}'
@@ -53,7 +54,9 @@ class MigrationModuleTests(TestCase):
 
     def test_copied_motd_templates_match_the_app(self):
         self.assertEqual(upgrade.OLD_MOTD, motd_0009.NEW_MOTD)
-        self.assertEqual(upgrade.NEW_MOTD, DEFAULT_MOTD_TEMPLATE)
+        # Migration 0020 made the FC and the form-up place links; its copy of the old default is this one.
+        self.assertEqual(upgrade.NEW_MOTD, data_0020.OLD_MOTD)
+        self.assertEqual(data_0020.NEW_MOTD, DEFAULT_MOTD_TEMPLATE)
         # The SRP line comes before the additional message and nothing else differs.
         self.assertEqual(upgrade.NEW_MOTD.count(SRP_LINE), 1)
         self.assertEqual(upgrade.NEW_MOTD.replace(SRP_LINE, ""), upgrade.OLD_MOTD)

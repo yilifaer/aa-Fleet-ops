@@ -23,6 +23,7 @@ from fleetops.models import (
     FleetStartPreset,
     FleetStructureTemplate,
     FleetType,
+    GroupAccess,
     IncentivePeriod,
     MessageTemplate,
     MonthlyFCStatistic,
@@ -44,6 +45,7 @@ from fleetops.models import (
     SrpKillmail,
     SrpPayoutRule,
     SrpSettings,
+    StandalonePing,
     StatisticsTarget,
 )
 from fleetops.services.audit import audit, cascaded_config_rows
@@ -263,6 +265,23 @@ class DiscordWebhookAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
     form = DiscordWebhookForm
     list_display = ("name", "is_active", "allow_everyone", "allow_here", "sort_order")
     filter_horizontal = ("allowed_roles",)
+    # Who may use a channel is set on the FleetOps pages only, where every change is audited and checked.
+    exclude = ("allowed_groups", "fcs_allowed")
+    readonly_fields = ("group_access",)
+
+    @admin.display(description=_("Group access"))
+    def group_access(self, obj):
+        if obj is None or obj.pk is None:
+            return "-"
+        groups = ", ".join(obj.allowed_groups.order_by("name").values_list("name", flat=True))
+        # A channel without a group is open to every FC, whatever the stored switch says.
+        if not groups:
+            return _("Groups: none · Alliance FCs: yes. Change this in FleetOps Administration, Ping Channels.")
+        if obj.fcs_allowed:
+            text = _("Groups: %(groups)s · Alliance FCs: yes. Change this in FleetOps Administration, Ping Channels.")
+        else:
+            text = _("Groups: %(groups)s · Alliance FCs: no. Change this in FleetOps Administration, Ping Channels.")
+        return text % {"groups": groups}
 
     def get_fields(self, request, obj=None):
         fields = super().get_fields(request, obj)
@@ -307,7 +326,8 @@ class FleetOperationAdmin(admin.ModelAdmin):
     list_display = ("uuid", "status", "fc_character_name", "fleet_type", "esi_fleet_id", "started_at", "ended_at")
     list_filter = ("status", "fleet_type", "tracking_enabled")
     search_fields = ("fc_character_name", "fc_main_character_name", "esi_fleet_id", "uuid")
-    readonly_fields = ("uuid", "created_at", "updated_at")
+    # Who manages a group fleet follows its group, so the group is not edited here.
+    readonly_fields = ("uuid", "created_at", "updated_at", "group", "group_name")
 
 
 @admin.register(PapLink)
@@ -357,6 +377,31 @@ class SrpReadOnlyAdmin(ReadOnlyAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+class RecordAdmin(ReadOnlyAdmin):
+    """Records that change only through the audited FleetOps pages, never in the admin."""
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(GroupAccess)
+class GroupAccessAdmin(RecordAdmin):
+    """Group access is set on the FleetOps Administration pages, where every change is checked and audited."""
+
+    list_display = ("group", "mode", "srp_enabled", "is_active", "updated_at")
+    list_filter = ("mode", "is_active")
+    search_fields = ("group__name",)
+
+
+@admin.register(StandalonePing)
+class StandalonePingAdmin(RecordAdmin):
+    """Pings without a fleet are records of what was sent; they are never edited."""
+
+    list_display = ("created_at", "channel_name", "group_name", "sender_name", "status")
+    list_filter = ("status",)
+    search_fields = ("channel_name", "group_name", "sender_name")
 
 
 @admin.register(SrpFleetLink)

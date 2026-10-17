@@ -62,6 +62,11 @@ def pending_attendance():
     return AttendanceRecord.objects.filter(review_status=ReviewStatus.PENDING)
 
 
+def pending_approval_counts() -> dict:
+    """Fleets and PAP rows waiting for an approver, counted apart: ``{"fleets": n, "pap": m}``."""
+    return {"fleets": pending_operations().count(), "pap": pending_attendance().count()}
+
+
 def pending_approval_count() -> int:
     """Fleets and PAP rows waiting for an approver."""
-    return pending_operations().count() + pending_attendance().count()
+    return sum(pending_approval_counts().values())

@@ -32,7 +32,7 @@ warning while the first two are missing.
 | `APPS_WITH_PUBLIC_VIEWS` | Add `"fleetops"` so pilots who are not logged in can open the comms join page. |
 | `ESI_USER_CONTACT_EMAIL` | The line already exists in `local.py` (empty in the template): fill it in, do not add a second one. Sent in the User-Agent of ESI requests (django-esi requires it) and of zKillboard requests (`SITE_URL` is the fallback there). |
 | `DISCORD_GUILD_ID` | Needed by the Alliance Auth Discord service for **Sync roles from Discord**. |
-| `LANGUAGE_CODE` | The site language. Pings and MOTDs are written in it. |
+| `LANGUAGE_CODE` | The site language. FleetOps pages follow each user's Alliance Auth language; pings and MOTDs are always English. |
 
 ## General settings
 
@@ -49,7 +49,7 @@ reaches fleets that already started.
 | Auto end missing count | 3 | Unreadable polls in a row before the automatic end (at least 2). Before ending, FleetOps reads the fleet once more and calls the end off if that read works. A successful read resets the count. |
 | Incentive enabled | off | Turns the FC incentive pages on. See [FC incentives](#fc-incentives). |
 | Incentive minimum fleets | 3 | Default for the minimum number of counted fleets of a new incentive period. |
-| Data retention days | 365 | How long PAP history and member events are kept. 365 to 36500. `fleetops_prune_history` and the daily beat task remove older rows. |
+| Data retention days | 365 | How long PAP history, member events and the texts of pings sent without a fleet are kept. 365 to 36500. `fleetops_prune_history` and the daily beat task remove older rows. |
 | SRP auto create | on | Create an SRP link for every fleet when it starts. |
 | SRP provider | Automatic | Which SRP app gets the link. See [SRP providers](srp-providers.md). |
 
@@ -124,6 +124,12 @@ squads: two ESI calls). The live refresh adds two more calls per refresh with th
 120 calls per 15 minutes at 15 seconds, out of the 1800 that ESI allows per character. However many managers
 watch, a fleet is read once per interval, and users with only `view_all_fleets` never cause reads. The **Live**
 switch is remembered per browser.
+
+### Messages
+
+| Setting | Default | Meaning |
+|---|---|---|
+| MOTD warning length | 2000 | The start preview warns when the MOTD, tags included, is longer than this many characters. The game's limit is not documented; MOTDs of about 1,700 characters are known to work. 0 means no warning. At most 100000. |
 
 ## Fleet Types
 
@@ -291,7 +297,7 @@ so other `@everyone`, `@here` or `<@&id>` text in the ping notifies nobody.
 
 ## Message Templates
 
-The Ping and MOTD texts. Variables, the built-in templates and the rules are in
+The Ping, MOTD and Ping without fleet texts. Variables, the built-in templates and the rules are in
 [message templates](message-templates.md).
 
 ## Ship functions and rules
@@ -452,7 +458,8 @@ corporation.
 ## History and retention
 
 `python manage.py fleetops_prune_history` removes PAP older than **Data retention days**, PAP of members who
-left the alliances in **Member alliance IDs**, and old member events; add `--dry-run` to see the counts first.
+left the alliances in **Member alliance IDs**, old member events and the old texts of pings sent without a fleet
+(their audit entries stay); add `--dry-run` to see the counts first.
 The daily beat task `fleetops.tasks.prune_attendance_history` does the same and also deletes SRP killmails
 nobody claimed. `python manage.py fleetops_refresh_names` rewrites ship and solar system names of fleet member
 records in English from the SDE (`--dry-run` available). Ship and solar system names are English everywhere.

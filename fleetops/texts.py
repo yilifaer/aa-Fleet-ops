@@ -29,6 +29,10 @@ Rules for a message:
 * Several declared messages in a row, joined by a space after a full stop or by ``"; "``, are translated one by
   one (``" ".join(errors)``, a note appended to a result, a list of skipped names).
 * A count in a message is written as a pair, ``StoredPlural(singular, plural)``, so both English wordings stay.
+* A placeholder that only ever holds a whole number is listed in ``numbers``: it matches digits only and calling the
+  message with anything else raises ``TypeError``. A message whose fixed words end like another message ("%(label)s:
+  %(done)s of %(total)s done.") is declared with ``priority=True``, which needs at least one number and makes it the
+  first message tried; the digits keep such a message from claiming text that only ends alike.
 
 Pages also pass text that a person typed (a withdraw reason, a note) through :func:`translate_stored`, so the
 search is bounded: a text longer than ``MAX_TEXT_LENGTH`` is not searched, messages inside messages are
@@ -37,7 +41,8 @@ is shown as written.
 
 ``STEP_LABELS`` and ``FLEET_ROLE_LABELS`` are not stored text: they are lazy labels for the codes that are
 stored (the step of a fleet, a position in a fleet). :func:`outgoing_language` and :func:`user_language`
-choose the language of text that is sent out rather than shown.
+choose the language of text that is sent out rather than shown: what goes to Discord or into the game is always
+English, whatever the site or the viewer language is.
 """
 
 import contextlib
@@ -52,6 +57,10 @@ from django.utils import translation
 from django.utils.translation import gettext, gettext_lazy, gettext_noop, pgettext_lazy
 
 _PLACEHOLDER = re.compile(r"%\((\w+)\)s")
+_DIGITS = re.compile(r"[0-9]+")
+# What a placeholder matches in a stored text: digits only for a number, else as little as fits.
+_NUMBER = r"\d+"
+_ANYTHING = r".*?"
 # Where one message ends and the next begins in a text that joins several: a space after a full stop
 # (or another sentence end), or the "; " of a list.
 _SEPARATOR = re.compile(r"(?<=[.!?]) |; ")
@@ -83,14 +92,28 @@ def _split(msgid):
     return [piece.replace("%%", "%") for piece in pieces], names
 
 
+def _is_whole_number(value):
+    """Whether ``value`` can fill a number placeholder: an integer or its digits (a flag is no number)."""
+    if isinstance(value, bool):
+        return False
+    return isinstance(value, int) or (isinstance(value, str) and _DIGITS.fullmatch(value) is not None)
+
+
 class StoredText:
     """One message: calling it returns the English text to store, and the registry finds it again."""
 
-    def __init__(self, msgid, *, nested=()):
+    def __init__(self, msgid, *, nested=(), numbers=(), priority=False):
         literals, names = _split(msgid)
         unknown = set(nested) - set(names)
         if unknown:
             raise ValueError(f"nested names {sorted(unknown)} are not placeholders of {msgid!r}")
+        unknown = set(numbers) - set(names)
+        if unknown:
+            raise ValueError(f"number names {sorted(unknown)} are not placeholders of {msgid!r}")
+        if set(numbers) & set(nested):
+            raise ValueError(f"A placeholder cannot be a number and a nested message: {msgid!r}")
+        if priority and not numbers:
+            raise ValueError(f"A message with priority needs a number placeholder: {msgid!r}")
         weight = sum(len(piece) for piece in literals)
         if names and not weight:
             raise ValueError(f"A stored text needs words around its placeholders: {msgid!r}")
@@ -100,6 +123,9 @@ class StoredText:
         self.literals = tuple(literals)
         self.params = tuple(dict.fromkeys(names))
         self.nested = tuple(nested)
+        # Placeholders that hold whole numbers, and whether the message is tried before every other one.
+        self.numbers = tuple(dict.fromkeys(numbers))
+        self.priority = bool(priority)
         # How specific the message is: the number of characters that do not vary.
         self.weight = weight
         # Fixed text without a single letter or digit ("%(name)s: %(error)s") fits far too much text to be
@@ -113,13 +139,17 @@ class StoredText:
         if names:
             parts, seen = [re.escape(literals[0])], set()
             for name, literal in zip(names, literals[1:]):
-                parts.append(f"(?P={name})" if name in seen else f"(?P<{name}>.*?)")
+                if name in seen:
+                    parts.append(f"(?P={name})")
+                else:
+                    parts.append(f"(?P<{name}>{_NUMBER if name in self.numbers else _ANYTHING})")
                 seen.add(name)
                 parts.append(re.escape(literal))
             self.pattern = re.compile("".join(parts), re.DOTALL)
             _PATTERNS.append(self)
-            # The most specific message wins when several fit; equal weights keep their declaration order.
-            _PATTERNS.sort(key=lambda entry: -entry.weight)
+            # A message with priority comes first. Of the others the most specific message wins when several
+            # fit; equal weights keep their declaration order.
+            _PATTERNS.sort(key=lambda entry: (not entry.priority, -entry.weight))
         else:
             _CONSTANTS[msgid % {}] = self
         _ENTRIES.append(self)
@@ -130,6 +160,9 @@ class StoredText:
         """The English text with ``params`` filled in."""
         if set(params) != set(self.params):
             raise TypeError(f"{self.msgid!r} takes {sorted(self.params)}, got {sorted(params)}")
+        for name in self.numbers:
+            if not _is_whole_number(params[name]):
+                raise TypeError(f"{name} of {self.msgid!r} is a whole number, got {params[name]!r}")
         return self.msgid % {name: str(value) for name, value in params.items()}
 
     def __str__(self):
@@ -170,10 +203,16 @@ class StoredPlural:
     out ("Move its member first.").
     """
 
-    def __init__(self, singular, plural, *, count="count", nested=()):
+    def __init__(self, singular, plural, *, count="count", nested=(), numbers=(), priority=False):
         self.count = count
-        self.singular = StoredText(singular, nested=nested)
-        self.plural = StoredText(plural, nested=nested)
+
+        def wording(msgid):
+            # The singular may leave a number out, and a wording without a number cannot have priority.
+            present = [name for name in numbers if name in _split(msgid)[1]]
+            return StoredText(msgid, nested=nested, numbers=present, priority=priority and bool(present))
+
+        self.singular = wording(singular)
+        self.plural = wording(plural)
         if count not in self.plural.params:
             raise ValueError(f"The plural wording needs %({count})s: {plural!r}")
 
@@ -182,6 +221,8 @@ class StoredPlural:
         unknown = set(params) - set(self.singular.params) - set(self.plural.params)
         if self.count not in params or unknown:
             raise TypeError(f"{self!r} takes {sorted(self.plural.params)}, got {sorted(params)}")
+        if self.count in self.plural.numbers and not _is_whole_number(params[self.count]):
+            raise TypeError(f"{self.count} of {self.plural.msgid!r} is a whole number, got {params[self.count]!r}")
         entry = self.singular if int(params[self.count]) == 1 else self.plural
         return entry(**{name: value for name, value in params.items() if name in entry.params})
 
@@ -404,12 +445,17 @@ def _translated(language, text, depth):
         return _render(entry, {}, text)
     if depth < 0:
         return text
-    series = _series(text, depth)
-    if series is not None:
-        return "".join(
-            _translated(language, part, depth) if number % 2 == 0 else part for number, part in enumerate(series)
-        )
     found = _find(text, depth)
+    # A message with priority that fits the whole text with single messages inside is that message, even when the
+    # text could also be cut into messages after a full stop ("...handed over to Pilot A. PAP: 2 granted at 1x.").
+    if found is None or not (
+        found[0].priority and all(_single(found[1][name], depth - 1) for name in found[0].nested)
+    ):
+        series = _series(text, depth)
+        if series is not None:
+            return "".join(
+                _translated(language, part, depth) if number % 2 == 0 else part for number, part in enumerate(series)
+            )
     if found is None:
         return text
     entry, stored = found
@@ -420,11 +466,13 @@ def _translated(language, text, depth):
 
 
 def outgoing_language():
-    """Context manager for text that goes to Discord or the game: always the site language.
+    """Context manager for text that goes to Discord or the game: always English.
 
-    Pings and MOTDs are read by many people, so they never follow the language of whoever clicked.
+    Whatever the site or the viewer language is: pings and MOTDs are read by many people, so they follow neither
+    the language of whoever clicked nor the site language. FleetOps's own words in them are plain English; text
+    that admins write in a template is sent as written.
     """
-    return translation.override(settings.LANGUAGE_CODE)
+    return translation.override("en")
 
 
 def stored_language():
@@ -645,7 +693,10 @@ END_BOSS_HANDOVER_UNKNOWN = StoredText(
 PAP_GRANTED = StoredText(gettext_noop("PAP: %(granted)s granted at %(multiplier)sx."))
 PAP_MULTIPLIER_PENDING = StoredText(gettext_noop("The multiplier choice is pending."))
 FLEET_END_PAP = StoredText(
-    gettext_noop("%(reason)s. PAP: %(granted)s granted at %(multiplier)sx."), nested=("reason",)
+    gettext_noop("%(reason)s. PAP: %(granted)s granted at %(multiplier)sx."),
+    nested=("reason",),
+    numbers=("granted", "multiplier"),
+    priority=True,
 )
 
 # Tracking: why a fleet could not be read.
@@ -707,9 +758,14 @@ JOB_NOT_STARTED = StoredText(gettext_noop("The background worker did not start t
 JOB_WORKER_DOWN = StoredText(gettext_noop("The background worker is not available. Try again later."))
 JOB_FLEET_MISSING = StoredText(gettext_noop("The fleet no longer exists."))
 JOB_NOT_ALLOWED = StoredText(gettext_noop("You can no longer change this fleet."))
-JOB_SUMMARY = StoredText(gettext_noop("%(label)s: %(done)s of %(total)s done."), nested=("label",))
+JOB_SUMMARY = StoredText(
+    gettext_noop("%(label)s: %(done)s of %(total)s done."), nested=("label",), numbers=("done", "total"), priority=True
+)
 JOB_SUMMARY_FAILED = StoredText(
-    gettext_noop("%(label)s: %(done)s of %(total)s done, %(failed)s failed."), nested=("label",)
+    gettext_noop("%(label)s: %(done)s of %(total)s done, %(failed)s failed."),
+    nested=("label",),
+    numbers=("done", "total", "failed"),
+    priority=True,
 )
 STOPPED = StoredText(gettext_noop("Stopped: %(error)s"), nested=("error",))
 
@@ -1131,6 +1187,20 @@ SRP_BAD_KILLMAIL_ID = StoredText(gettext_noop("This killmail ID is not valid."))
 SRP_TEXT_TOO_LONG = StoredText(gettext_noop("That text is too long. Paste only the killmail link."))
 SRP_INCOMPLETE_KILLMAIL = StoredText(gettext_noop("ESI returned an incomplete killmail. Try again later."))
 
+# Group pings and group fleets: why a ping channel or a fleet is refused.
+CHANNEL_NOT_ALLOWED = StoredText(gettext_noop("You may not post to the ping channel %(name)s."))
+GROUP_NOT_LED = StoredText(gettext_noop("You no longer lead the group %(group)s in FleetOps."))
+GROUP_CHANNEL_NOT_ASSIGNED = StoredText(gettext_noop("%(name)s is not a ping channel of the group %(group)s."))
+GROUP_NO_FLEETS = StoredText(gettext_noop("The leaders of %(group)s may only send pings."))
+GROUP_FLEET_TYPE_NOT_ALLOWED = StoredText(gettext_noop("Fleet type %(type)s is not allowed for the group %(group)s."))
+GROUP_REQUIRED = StoredText(gettext_noop("Choose the group this fleet belongs to."))
+GROUP_NO_PRE_PING = StoredText(
+    gettext_noop(
+        "Group fleets cannot be pre pinged. Send the fleet time with Send Ping and start the fleet when it is due."
+    )
+)
+GROUP_NO_SRP = StoredText(gettext_noop("Group fleets of %(group)s get no SRP link."))
+
 # Display labels of the codes stored with a fleet (not stored text: they are translated lazily).
 # One entry for every code that is written to OperationAction.action.
 STEP_LABELS = {
@@ -1162,3 +1232,24 @@ FLEET_ROLE_LABELS = {
     "squad_commander": pgettext_lazy("fleet position", "Squad Commander"),
     "squad_member": pgettext_lazy("fleet position", "Squad Member"),
 }
+
+# Each lane of the 0.2.0b2 work declares its new messages between its own markers, so the lanes merge without
+# conflicts.
+
+# --- 0.2.0b2 lane A: start and messages ---
+# --- end lane A ---
+
+# --- 0.2.0b2 lane B: fleet page ---
+# --- end lane B ---
+
+# --- 0.2.0b2 lane C: records and incentives ---
+# --- end lane C ---
+
+# --- 0.2.0b2 lane D: statistics ---
+# --- end lane D ---
+
+# --- 0.2.0b2 lane E: SRP and administration ---
+# --- end lane E ---
+
+# --- 0.2.0b2 lane F: group pings ---
+# --- end lane F ---
