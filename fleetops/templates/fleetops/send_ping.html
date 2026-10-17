@@ -1,9 +1,128 @@
 {% extends "fleetops/base.html" %}
-{% load i18n %}
+{% load i18n static fleetops_i18n fleetops_messages fleetops_ui %}
 {% block fleetops_content %}
-<div class="mb-3" id="send-ping">
-  <h2 class="mb-1">{% translate "Send Ping" %}</h2>
-  <div class="text-muted">{% translate "Posts a Discord ping without a fleet. Nothing is tracked and no PAP is given." %}</div>
+<div class="fo-send-ping" id="send-ping">
+<div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+  <div>
+    <h2 class="mb-1">{% translate "Send Ping" %}</h2>
+    <div class="text-muted">{% translate "Posts a Discord ping without a fleet. Nothing is tracked and no PAP is given." %}</div>
+  </div>
 </div>
-<p id="send-ping-unavailable">{% translate "Sending pings without a fleet is not available yet." %}</p>
+{% translate "Group" context "FleetOps" as group_label %}
+<form method="post" id="send-ping-form" data-preview-url="{% url 'fleetops:preview_ping' %}" data-ping-limit="{{ ping_limit }}">{% csrf_token %}
+  {{ form.request_id }}
+  {% include "fleetops/partials/form_errors.html" with errors=form.non_field_errors %}
+  {% if not form.has_channels %}<div class="alert alert-warning" role="status" id="send-ping-no-channel">{% translate "No ping channel is open to you yet. An administrator assigns channels under FleetOps Administration → Ping Channels." %}</div>{% endif %}
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="card mb-3" id="send-ping-target"><div class="card-header">{% translate "Ping" %}</div><div class="card-body">
+        {% if form.group %}
+        <div class="mb-3" id="send-ping-group">
+          {% if form.fixed_group %}
+          <span class="form-label d-block">{{ form.group.label }}</span>
+          {{ form.group }}{% pill "neutral" form.fixed_group.group_name class="fo-pill-group" icon="users" title=group_label id="send-ping-group-pill" %}
+          {% elif form.group.field.widget.input_type == "radio" %}
+          <span class="form-label d-block" id="send-ping-group-label">{{ form.group.label }}</span>
+          <div class="fo-seg fo-ping-seg" role="radiogroup" aria-labelledby="send-ping-group-label">{% for radio in form.group %}{{ radio.tag }}<label for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label>{% endfor %}</div>
+          {% else %}
+          <label class="form-label" for="{{ form.group.id_for_label }}">{{ form.group.label }}</label>{{ form.group }}
+          {% endif %}
+          {{ form.group.errors }}
+        </div>
+        {% endif %}
+        <div class="mb-3">
+          <label class="form-label" for="{{ form.ping_channel.id_for_label }}">{{ form.ping_channel.label }}</label>{{ form.ping_channel }}
+          {{ form.ping_channel.errors }}
+          <div class="form-text">{% translate "Only the channels you may post to are listed." %}</div>
+        </div>
+        <fieldset class="mb-3">
+          <legend class="form-label fs-6 mb-1">{{ form.ping_mentions.label }}</legend>
+          <div id="ping-mentions">{% for box in form.ping_mentions %}<div class="form-check form-check-inline">{{ box.tag }} <label class="form-check-label" for="{{ box.id_for_label }}">{{ box.choice_label }}</label></div>{% endfor %}</div>
+          {{ form.ping_mentions.errors }}
+          <div class="form-text">{% translate "No ping, @everyone and @here stand alone; several roles can be combined. Options the channel does not allow are disabled." %}</div>
+        </fieldset>
+        <div class="mb-0">
+          <label class="form-label" for="{{ form.ping_template.id_for_label }}">{{ form.ping_template.label }}</label>{{ form.ping_template }}
+          {{ form.ping_template.errors }}
+        </div>
+      </div></div>
+      <div class="card" id="send-ping-message"><div class="card-header">{{ form.additional_message.label }}</div><div class="card-body">
+        <label class="visually-hidden" for="{{ form.additional_message.id_for_label }}">{{ form.additional_message.label }}</label>{{ form.additional_message }}
+        {{ form.additional_message.errors }}
+        <div class="form-text">{% translate "Discord formatting works. The targets are mentioned at the start; @everyone and @here written in the message notify nobody." %}</div>
+        <details class="mt-3 fo-ping-more" id="send-ping-more"{% if form.more_settings_open %} open{% endif %}>
+          <summary>{% translate "More settings" %}</summary>
+          <div class="pt-3">
+            <div class="mb-3"><label class="form-label" for="{{ form.formup.id_for_label }}">{{ form.formup.label }}</label>{{ form.formup }}{{ form.formup.errors }}</div>
+            <div class="mb-3"><label class="form-label" for="{{ form.doctrine_choice.id_for_label }}">{{ form.doctrine_choice.label }}</label>{{ form.doctrine_choice }}{{ form.doctrine_choice.errors }}</div>
+            <div class="mb-3" id="custom-doctrine-wrap"><label class="form-label" for="{{ form.custom_doctrine.id_for_label }}">{{ form.custom_doctrine.label }}</label>{{ form.custom_doctrine }}{{ form.custom_doctrine.errors }}</div>
+            <div class="mb-3"><label class="form-label" for="{{ form.comms.id_for_label }}">{{ form.comms.label }}</label>{{ form.comms }}{{ form.comms.errors }}</div>
+            <fieldset class="mb-0" id="send-ping-time">
+              <legend class="form-label fs-6 mb-1">{% translate "Fleet Time" context "FleetOps" %}</legend>
+              <div class="form-text mt-0 mb-2">{% blocktranslate trimmed with now=eve_now|eve_time:"%H:%M" %}EVE time (UTC), not your local time. Current EVE time <strong id="eve-clock">{{ now }}</strong>{% endblocktranslate %}</div>
+              <div class="row g-2 align-items-end">
+                <div class="col-sm-5"><label class="form-label" for="{{ form.fleet_date.id_for_label }}">{{ form.fleet_date.label }}</label>{{ form.fleet_date }}</div>
+                <div class="col-sm-3"><label class="form-label" for="{{ form.fleet_clock.id_for_label }}">{{ form.fleet_clock.label }}</label>{{ form.fleet_clock }}</div>
+                <div class="col-sm-4"><div class="btn-group btn-group-sm" role="group" aria-label="{% translate 'Quick fleet times' %}">
+                  <button type="button" class="btn btn-outline-secondary" data-offset="30">{% translate "+30 min" %}</button>
+                  <button type="button" class="btn btn-outline-secondary" data-offset="60">{% translate "+1 h" %}</button>
+                  <button type="button" class="btn btn-outline-secondary" data-offset="120">{% translate "+2 h" %}</button>
+                </div></div>
+              </div>
+              {{ form.fleet_date.errors }}{{ form.fleet_clock.errors }}
+              <div class="form-text" id="fleet-time-relative"></div>
+              <div class="form-text">{% translate "Optional. The ping shows the time in EVE time and in each reader's own time zone." %}</div>
+            </fieldset>
+          </div>
+        </details>
+      </div></div>
+    </div>
+    <div class="col-lg-5">
+      <div class="card fo-ping-preview" id="send-ping-preview"><div class="card-header d-flex justify-content-between align-items-center gap-2"><span>{% translate "Preview" %}</span><button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy="#ping-preview">{% translate "Copy Ping" %}</button></div><div class="card-body">
+        {% include "fleetops/partials/discord_preview.html" with prefix="ping" %}
+        <div class="d-none mt-3" id="preview-missing"><div class="alert alert-info mb-0" role="status"></div></div>
+        <div class="d-none mt-3" id="preview-blocking"><div class="alert alert-danger mb-0" role="alert"></div></div>
+        <div class="d-none mt-3" id="preview-warnings"><div class="alert alert-warning mb-0" role="status"></div></div>
+      </div></div>
+    </div>
+  </div>
+  <div class="fo-actionbar fo-ping-actionbar" id="send-ping-actionbar">
+    <span class="fo-ping-summary" id="send-ping-summary" data-none="{% translate 'No ping' %}"></span>
+    <a class="fo-pill fo-pill-bad d-none" id="preview-blocking-pill" href="#preview-blocking">{% translate "Cannot post: see the preview" %}</a>
+    <button class="btn btn-primary ms-auto" id="send-ping-submit" type="submit">{% translate "Send ping" %}</button>
+  </div>
+</form>
+{{ channel_rules|json_script:"ping-channel-rules" }}
+{{ group_rules|json_script:"ping-group-rules" }}
+
+<div class="card mt-4" id="recent-pings">
+  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <span>{% translate "Recent pings" %}</span>
+    {% if can_see_all %}
+    <nav class="fo-seg" aria-label="{% translate 'Recent pings' %}">
+      <a href="?pings=all"{% if not mine_only %} aria-current="page"{% endif %}>{% translate "All pings" %}</a>
+      <a href="?pings=mine"{% if mine_only %} aria-current="page"{% endif %}>{% translate "My pings" %}</a>
+    </nav>
+    {% endif %}
+  </div>
+  {% if recent %}
+  <ul class="fo-ping-list" id="recent-pings-list">
+    {% for row in recent %}
+    <li class="fo-ping-row" data-ping="{{ row.ping.uuid }}" data-status="{{ row.ping.status }}">
+      <div class="fo-ping-row-main">
+        <div class="fo-ping-row-head">{% pill row.tone row.label %}<span class="fo-ping-channel">{{ row.ping.channel_name }}</span>{% if row.ping.group_name %}{% pill "neutral" row.ping.group_name class="fo-pill-group" icon="users" title=group_label %}{% endif %}<span class="fo-ping-when">{% eve_when row.ping.created_at %}</span></div>
+        <div class="fo-ping-row-text">{{ row.ping.additional_message|truncatechars:160 }}</div>
+        <div class="fo-ping-row-meta">{{ row.ping.sender_name }} · {{ row.targets }}{% if row.result %} · <span class="fo-ping-result">{{ row.result|truncatechars:200 }}</span>{% endif %}</div>
+      </div>
+      <a class="btn btn-sm btn-outline-secondary fo-ping-again" href="?again={{ row.ping.uuid }}">{% translate "Use again" %}</a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="fo-empty" id="recent-pings-empty"><i class="fa-solid fa-bullhorn" aria-hidden="true"></i><div>{% translate "No pings yet." %}</div></div>
+  {% endif %}
+</div>
+</div>
+<script src="{% static 'fleetops/preview.js' %}?v={% fleetops_version %}"></script>
+<script src="{% static 'fleetops/send_ping.js' %}?v={% fleetops_version %}"></script>
 {% endblock %}

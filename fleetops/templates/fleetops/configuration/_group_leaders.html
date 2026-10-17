@@ -1,1 +1,30 @@
-{% comment %}Leaders of the group from Alliance Auth: a read-only side card of the group edit page.{% endcomment %}
+{% load i18n fleetops_ui %}{% comment %}Leaders of the group from Alliance Auth: a read-only side card of the group edit page.
+The rows come from forms_groups.group_list_prepare([object]).{% endcomment %}
+<div class="card fo-group-leaders" id="group-leaders">
+  <div class="card-header">{% translate "Leaders from Alliance Auth" %}</div>
+  <div class="card-body">
+    {% if object %}
+      {% if object.fleetops_leaders %}
+        {% translate "no FleetOps access" as no_access %}
+        {% if object.fleetops_direct_leaders %}
+        <div class="fo-group-leaders-head">{% translate "Group leaders" %}</div>
+        <ul class="fo-group-leaders-list" id="group-leaders-direct">
+          {% for row in object.fleetops_direct_leaders %}<li>{{ row.name }}{% if not row.has_access %} {% pill "warn" no_access %}{% endif %}</li>{% endfor %}
+        </ul>
+        {% endif %}
+        {% for leader_group, rows in object.fleetops_leader_groups %}
+        <div class="fo-group-leaders-head">{% blocktranslate trimmed with group=leader_group %}Members of the leader group {{ group }}{% endblocktranslate %}</div>
+        <ul class="fo-group-leaders-list">
+          {% for row in rows %}<li>{{ row.name }}{% if not row.has_access %} {% pill "warn" no_access %}{% endif %}</li>{% endfor %}
+        </ul>
+        {% endfor %}
+      {% else %}
+        <div class="fo-empty py-3" id="group-leaders-empty"><i class="fa-solid fa-user-slash" aria-hidden="true"></i><div>{% translate "No leaders in Alliance Auth" %}</div></div>
+      {% endif %}
+    {% else %}
+      <p class="mb-2" id="group-leaders-new">{% translate "The leaders of the group are shown here once it is saved." %}</p>
+    {% endif %}
+    <p class="form-text mb-0">{% translate "Leaders are set in Alliance Auth: the group leaders and the members of the leader groups. Holding the group management permission alone makes nobody a leader." %}</p>
+    {% if object and object.fleetops_admin_url and request.user.is_staff %}<a class="btn btn-sm btn-outline-secondary mt-2" href="{{ object.fleetops_admin_url }}">{% translate "Edit the leaders in Alliance Auth" %}</a>{% endif %}
+  </div>
+</div>
