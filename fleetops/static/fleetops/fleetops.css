@@ -651,4 +651,55 @@ button.fo-live { cursor: pointer; }
 /* end 6.E */
 
 /* 6.F pings and groups */
+/* Group pill: the group's name with a people icon instead of the dot (fleets, pings, lists) */
+.fo-pill-group { gap: .4em; }
+.fo-pill-group::before { display: none; }
+/* Send Ping: quiet card headers, labels above the fields, the "More settings" disclosure */
+.fo-send-ping .card-header { background: transparent; border-bottom-color: var(--fo-divider); font-weight: 600; }
+.fo-send-ping .form-label { font-weight: 600; }
+.fo-send-ping details > summary { cursor: pointer; font-weight: 600; }
+.fo-send-ping textarea { min-height: 7.5rem; }
+/* A field the keyboard brings into view never ends up under the sticky action bar */
+.fo-send-ping :is(input, select, textarea, label, button, summary, a) { scroll-margin-bottom: 6rem; }
+/* The group choice: segments share the row and wrap; on phones they stand one under the other */
+.fleetops .fo-seg.fo-ping-seg { display: flex; width: 100%; }
+.fleetops .fo-seg.fo-ping-seg > label { flex: 1 1 0; min-width: 0; white-space: normal; text-align: center; }
+@media (max-width: 575.98px) {
+  .fleetops .fo-seg.fo-ping-seg { flex-direction: column; }
+  .fleetops .fo-seg.fo-ping-seg > label { justify-content: flex-start; text-align: start; }
+}
+/* Preview: placeholder lines and notes take the whole width of the Discord look */
+.fo-send-ping .fo-discord > :is(.fo-skeleton, .fo-ping-note) { grid-column: 1 / -1; }
+.fo-ping-note { color: var(--fo-text-2); }
+/* Action bar: where the ping goes, then the one primary button */
+.fo-ping-summary { min-width: 0; color: var(--fo-text-2); font-weight: 600; overflow-wrap: anywhere; }
+/* The pill that leads to the blocking problem is a link, and keeps the colours of its tone */
+.fo-send-ping a.fo-pill-bad, .fo-send-ping a.fo-pill-bad:hover { color: var(--fo-bad); }
+.fo-send-ping a.fo-pill-bad:hover { text-decoration: underline; }
+.fo-ping-actionbar .btn-primary { min-width: 10rem; }
+@media (max-width: 575.98px) {
+  .fo-ping-actionbar .fo-ping-summary { flex: 1 1 100%; }
+  .fo-ping-actionbar .btn-primary { width: 100%; margin-left: 0 !important; }
+}
+/* Recent pings: one row per ping (a card on phones), "Use again" at the end */
+.fo-ping-list { list-style: none; margin: 0; padding: 0; }
+.fo-ping-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--fo-space-2) var(--fo-space-3); padding: var(--fo-space-3) var(--fo-space-4); border-bottom: 1px solid var(--fo-divider); }
+.fo-ping-row:last-child { border-bottom: 0; }
+.fo-ping-row-main { flex: 1 1 18rem; min-width: 0; display: flex; flex-direction: column; gap: var(--fo-space-1); }
+.fo-ping-row-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fo-space-1) var(--fo-space-2); }
+.fo-ping-channel { font-weight: 600; }
+.fo-ping-channel::before { content: "#"; color: var(--fo-text-2); }
+.fo-ping-when { font-size: .875rem; color: var(--fo-text-2); }
+.fo-ping-row-text { overflow-wrap: anywhere; white-space: pre-line; }
+.fo-ping-row-meta { font-size: .875rem; color: var(--fo-text-2); overflow-wrap: anywhere; }
+.fo-ping-result { color: var(--fo-bad); }
+.fo-ping-again { flex: 0 0 auto; align-self: center; }
+@media (max-width: 575.98px) { .fo-ping-again { width: 100%; } }
+/* Administration, Groups: the leaders card of a group */
+.fo-group-leaders .card-header { font-weight: 600; }
+.fo-group-leaders-head { margin: var(--fo-space-2) 0 var(--fo-space-1); font-size: .875rem; font-weight: 600; color: var(--fo-text-2); }
+.fo-group-leaders-head:first-child { margin-top: 0; }
+.fo-group-leaders-list { list-style: none; margin: 0 0 var(--fo-space-3); padding: 0; }
+.fo-group-leaders-list > li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fo-space-2); padding: var(--fo-space-1) 0; border-bottom: 1px solid var(--fo-divider); }
+.fo-group-leaders-list > li:last-child { border-bottom: 0; }
 /* end 6.F */

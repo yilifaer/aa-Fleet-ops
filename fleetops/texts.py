@@ -1273,4 +1273,13 @@ SRP_TRY_AGAIN = StoredText(gettext_noop("Try again in a minute."))
 # --- end lane E ---
 
 # --- 0.2.0b2 lane F: group pings ---
+# Send Ping: why a ping without a fleet was not posted.
+PING_COOLDOWN = StoredText(
+    gettext_noop("%(name)s received a ping %(seconds)s seconds ago. Wait %(wait)s seconds."),
+    numbers=("seconds", "wait"),
+)
+PING_CHANNEL_GONE = StoredText(gettext_noop("The ping channel %(name)s no longer exists."))
+PING_REQUEST_USED = StoredText(gettext_noop("This form was already sent. Reload the page to send another ping."))
+# The audit entry of an Alliance Auth group that was deleted while FleetOps used it.
+AUDIT_GROUP_DELETED = StoredText(gettext_noop("The Alliance Auth group was deleted."))
 # --- end lane F ---
