@@ -35,6 +35,7 @@ from fleetops.services.tracking import UnreadableFleet
 from fleetops.tasks import POLL_SLACK_SECONDS, schedule_active_fleet_tracking, track_operation
 
 from . import factories as f
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 
 Status = FleetOperation.Status
 ActionStatus = OperationAction.Status

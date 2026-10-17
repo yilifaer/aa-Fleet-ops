@@ -27,6 +27,7 @@ from fleetops.services.operations import (
 from fleetops.tasks import schedule_active_fleet_tracking
 
 from . import factories as f
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 from .static_files import static_source
 from .test_operations_tracking import FLEET_ID, FakeESIMixin
 

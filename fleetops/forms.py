@@ -2,8 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-only
 
 import uuid
+from functools import cached_property
 
 from django import forms
+from django.contrib.auth.models import Group
 from django.db.models import Q
 from django.utils import timezone
 from django.utils.translation import pgettext_lazy
@@ -60,6 +62,7 @@ from fleetops.services.mentions import (
     validate_for_channel,
 )
 from fleetops.services.periods import EVE_CLOCK_PATTERN, format_eve, parse_eve_datetime
+from fleetops.texts import translate_stored
 
 PING_NOW = "now"
 PRE_PING = "pre_ping"
@@ -171,7 +174,12 @@ class FleetSettingsForm(forms.Form):
         widget=forms.Textarea(attrs={"rows": 4}),
     )
 
+    # Fields the start page keeps in "More settings": the FC rarely changes them.
+    MORE_SETTINGS = ("logi_channel", "boost_channel", "ping_template", "motd_template")
+
     def __init__(self, *args, user=None, **kwargs):
+        # Labels stand above their fields without a colon.
+        kwargs.setdefault("label_suffix", "")
         super().__init__(*args, **kwargs)
         self.user = user
         self.fields["fleet_type"].queryset = start_fleet_types(user)
@@ -191,24 +199,42 @@ class FleetSettingsForm(forms.Form):
         self.fields["doctrine_choice"].choices = doctrines
         _style(self.fields)
 
-    def group_rules(self):
-        """The fleet types and channels of each group the user may start fleets for, for the page's scripts.
+    @property
+    def more_settings_open(self):
+        """Whether "More settings" starts open: one of its fields has an error or a value other than the default."""
+        return any(self.errors.get(name) or self[name].value() for name in self.MORE_SETTINGS)
 
-        Empty until the start page offers group fleets.
+    def group_rules(self):
+        """The fleet types and channels each kind of fleet may use, for the page's scripts.
+
+        Empty here: only the start form offers group fleets.
         """
         return {}
 
     def channel_rules(self):
-        """Mentions each ping channel allows, keyed by channel pk; ``roles`` None allows every active role."""
+        """Mentions each ping channel allows, keyed by channel pk; ``roles`` None allows every active role.
+
+        ``groups`` lists the groups the channel is assigned to and ``alliance`` says whether the user may use it
+        for an alliance fleet, so the page can offer the channels that fit the fleet being started.
+        """
+        alliance = self._alliance_channel_ids()
         rules = {}
-        for channel in self.fields["ping_channel"].queryset.prefetch_related("allowed_roles"):
+        for channel in self.fields["ping_channel"].queryset.prefetch_related("allowed_roles", "allowed_groups"):
             roles = [role.pk for role in channel.allowed_roles.all()]
             rules[str(channel.pk)] = {
                 "everyone": channel.allow_everyone,
                 "here": channel.allow_here,
                 "roles": roles or None,
+                "groups": sorted(group.pk for group in channel.allowed_groups.all()),
+                "alliance": channel.pk in alliance,
             }
         return rules
+
+    def _alliance_channel_ids(self):
+        """The channels the user may use for alliance fleets (FCs only)."""
+        if not _can_start_alliance_fleets(self.user):
+            return set()
+        return set(group_access.alliance_channels(self.user).values_list("pk", flat=True))
 
     def clean_fleet_clock(self):
         # The format is checked with the date, and only when the fleet has a fleet time.
@@ -273,11 +299,30 @@ class FleetSettingsForm(forms.Form):
                 self.add_error("ping_mentions", message)
 
 
+# A group choice with this many options or fewer is a row of segmented buttons, more is a list.
+GROUP_BUTTONS_MAX = 4
+
+
+class TimingSelect(forms.RadioSelect):
+    """Ping now / pre ping, with the options the user can never use shown as disabled."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.disabled_values = frozenset()
+
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex=subindex, attrs=attrs)
+        if value in self.disabled_values:
+            option["attrs"]["disabled"] = True
+        return option
+
+
 class StartFleetForm(FleetSettingsForm):
     field_order = [
         "request_id",
         "operation_mode",
         "fleet_timing",
+        "fleet_group",
         "fc_character_id",
         "fleet_type",
         "doctrine_choice",
@@ -300,13 +345,106 @@ class StartFleetForm(FleetSettingsForm):
         choices=[(PING_NOW, _("Ping now")), (PRE_PING, _("Pre ping"))],
         initial=PING_NOW,
         required=False,
-        widget=forms.RadioSelect,
+        widget=TimingSelect,
+    )
+    # The group a fleet is started for; only leaders of a group that runs fleets have this field.
+    fleet_group = forms.ModelChoiceField(
+        label=_("Fleet for"),
+        queryset=Group.objects.none(),
+        required=False,
+        empty_label=_("Alliance fleet"),
     )
     fc_character_id = forms.ChoiceField(label=_("FC Character / Fleet Boss"))
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, user=user, **kwargs)
         self.fields["fc_character_id"].choices = character_choices(user)
+        self._set_up_group_field()
+        if not _can_start_alliance_fleets(user):
+            # Only an alliance fleet can be pre pinged, and only FCs start those.
+            self.fields["fleet_timing"].widget.disabled_values = frozenset({PRE_PING})
+        # Mode and timing are rows of segmented buttons: the radio inputs sit inside them, without a box.
+        for name in ("operation_mode", "fleet_timing"):
+            self.fields[name].widget.attrs["class"] = "fo-seg-input"
+
+    def _fleet_grants(self):
+        return group_access.leader_access(self.user).fleet_grants if self.user is not None else ()
+
+    def _set_up_group_field(self):
+        """"Fleet for": the groups the user leads that run fleets, and "Alliance fleet" for FCs.
+
+        Pure FCs have no such field. A leader without ``start_fleet`` must pick a group (one group: it is fixed);
+        the field is not "required" for Django, so a missing group gets the server's own message from
+        ``fleet_start_refusal``.
+        """
+        grants = self._fleet_grants()
+        if not grants:
+            del self.fields["fleet_group"]
+            return
+        field = self.fields["fleet_group"]
+        alliance = _can_start_alliance_fleets(self.user)
+        options = len(grants) + (1 if alliance else 0)
+        if options <= GROUP_BUTTONS_MAX:
+            field.widget = forms.RadioSelect(attrs={"class": "fo-seg-input"})
+        else:
+            field.widget = forms.Select(attrs={"class": "form-select"})
+        # A radio list hides the empty choice unless it is asked for by name.
+        field.empty_label = _("Alliance fleet") if alliance else None
+        # The queryset setter hands the choices to the widget, so it comes after the widget.
+        field.queryset = Group.objects.filter(pk__in=[grant.group_id for grant in grants]).order_by("name", "pk")
+
+    @cached_property
+    def fixed_group(self):
+        """The one group a leader without ``start_fleet`` and with a single group starts fleets for, else None."""
+        grants = self._fleet_grants()
+        if len(grants) == 1 and not _can_start_alliance_fleets(self.user) and "fleet_group" in self.fields:
+            return Group.objects.filter(pk=grants[0].group_id).first()
+        return None
+
+    def group_rules(self):
+        """The fleet types and channels of each kind of fleet, for the scripts of the start page.
+
+        ``""`` is an alliance fleet (FCs only), every other key a group id. The page offers only these; the
+        server checks the choice again.
+        """
+        if "fleet_group" not in self.fields:
+            return {}
+        channels = self.fields["ping_channel"].queryset.prefetch_related("allowed_groups")
+        by_group = {}
+        for channel in channels:
+            for group in channel.allowed_groups.all():
+                by_group.setdefault(group.pk, []).append(channel.pk)
+        rules = {}
+        if _can_start_alliance_fleets(self.user):
+            rules[""] = {
+                "name": "",
+                "fleet_types": sorted(start_fleet_types(self.user).values_list("pk", flat=True)),
+                "channels": sorted(self._alliance_channel_ids()),
+            }
+        for grant in self._fleet_grants():
+            rules[str(grant.group_id)] = {
+                "name": grant.group_name,
+                "fleet_types": sorted(grant.fleet_type_ids),
+                "channels": sorted(by_group.get(grant.group_id, [])),
+            }
+        return rules
+
+    def _clean_group(self, data, *, full_mode, pre_ping):
+        """``group`` and the server's rules for who may start which fleet; the message goes to its field."""
+        group = data.get("fleet_group")
+        data["group"] = group
+        if any(name in self.errors for name in ("fleet_group", "fleet_type", "ping_channel")):
+            return
+        field, message = group_access.fleet_start_refusal(
+            self.user,
+            group_id=group.pk if group is not None else None,
+            fleet_type=data.get("fleet_type"),
+            channel=data.get("ping_channel") if full_mode else None,
+            sends=full_mode,
+            pre_ping=pre_ping,
+        )
+        if message:
+            self.add_error(field if field in self.fields else None, translate_stored(message))
 
     def clean(self):
         data = super().clean()
@@ -317,6 +455,7 @@ class StartFleetForm(FleetSettingsForm):
             self.add_error("fleet_timing", PRE_PING_NEEDS_DISCORD)
         self._clean_fleet_time(data, pre_ping)
         self._clean_mentions(data, sends=full_mode)
+        self._clean_group(data, full_mode=full_mode, pre_ping=pre_ping)
         return data
 
 

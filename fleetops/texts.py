@@ -1240,6 +1240,9 @@ FLEET_ROLE_LABELS = {
 # conflicts.
 
 # --- 0.2.0b2 lane A: start and messages ---
+SYSTEM_NAMES_LOOKUP_FAILED = StoredText(
+    gettext_noop("Could not look up solar system names: %(detail)s"), nested=("detail",)
+)
 # --- end lane A ---
 
 # --- 0.2.0b2 lane B: fleet page ---

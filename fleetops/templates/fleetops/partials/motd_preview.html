@@ -1,0 +1,17 @@
+{% load i18n %}{% comment %}A MOTD as the game shows it: {% include "fleetops/partials/motd_preview.html" with prefix="motd" %}.
+The ids are #<prefix>-look (the in-game look, filled by FleetOpsPreview.motd), #<prefix>-preview (the raw text with its
+tags) and #<prefix>-length (the counter, left out with without_length=True when the page shows it elsewhere).{% endcomment %}
+<div class="fo-preview" id="{{ prefix }}-box" data-fo-preview="ingame">
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+    <div class="fo-seg" role="radiogroup" aria-label="{% translate 'Preview' %}">
+      <input type="radio" name="{{ prefix }}-view" id="{{ prefix }}-view-look" value="look" checked>
+      <label for="{{ prefix }}-view-look">{% translate "In game" %}</label>
+      <input type="radio" name="{{ prefix }}-view" id="{{ prefix }}-view-raw" value="raw">
+      <label for="{{ prefix }}-view-raw">{% translate "Raw text" %}</label>
+    </div>
+    {% if not without_length %}<span class="small text-muted" id="{{ prefix }}-length"></span>{% endif %}
+  </div>
+  <div class="fo-ingame" id="{{ prefix }}-look" data-ui-check-skip="user colours"></div>
+  <div class="form-text">{% translate "Close to the game's look; fonts differ." %}</div>
+  <pre class="preview-box mb-0 mt-2" id="{{ prefix }}-preview" hidden>{% translate "Complete the form to render a preview." %}</pre>
+</div>

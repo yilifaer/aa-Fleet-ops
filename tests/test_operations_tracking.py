@@ -68,6 +68,8 @@ from fleetops import tasks as tasks_module
 from fleetops.tasks import schedule_active_fleet_tracking, track_operation
 
 from . import factories as f
+from .link_fakes import character_link
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 
 FLEET_ID = 1_045_000_000_001
 # A fleet boss Alliance Auth does not know.
@@ -381,7 +383,13 @@ class StartFleetFullModeTests(StartFleetTestBase):
             self.assertNotIn(unexpected, operation.ping_text)
         self.assertTrue(operation.ping_text.startswith("@everyone\n"))
         self.assertTrue(operation.motd_text.startswith('<font color="#bfffffff"><b>StratOp</b>'))
-        for expected in ("FC: Boss Main", "Form Up: Jita IV-4", "Doctrine: Ferox Fleet", "Logi: logi-chan", "Boost: boost-chan"):
+        for expected in (
+            f"FC: {character_link(operation.fc_character_id, 'Boss Main')}",
+            "Form Up: Jita IV-4",
+            "Doctrine: Ferox Fleet",
+            "Logi: logi-chan",
+            "Boost: boost-chan",
+        ):
             self.assertIn(expected, operation.motd_text)
 
     def test_sends_discord_ping_to_configured_webhook(self):
