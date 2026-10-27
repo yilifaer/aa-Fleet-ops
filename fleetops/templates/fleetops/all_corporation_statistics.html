@@ -1,6 +1,7 @@
 {% extends "fleetops/base.html" %}
-{% load i18n fleetops_stats %}
+{% load i18n fleetops_stats fleetops_ui %}
 {% block fleetops_content %}
+{% translate "Alliance row: the total is every counted PAP of the month, the Other corporations row included; the average is the PAP of the current mains divided by the mains." as alliance_row_note %}{% translate "Corporation rows: PAP is every PAP flown for the corporation that month, including pilots who registered later; Mains and the average count only members registered before the month ended." as corporation_rows_note %}
 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
   <div>
     <h2 class="mb-1">{% translate "All Corporations" %}</h2>
@@ -18,8 +19,8 @@
 </div>
 {% endif %}
 {% if overview.target.rule is None %}
-<div class="alert alert-secondary">
-  {% blocktranslate trimmed with minimum=overview.target.minimum %}No monthly target applies to this month, so corporations have no status and members are listed below a minimum of {{ minimum }} PAP.{% endblocktranslate %}
+<div class="alert alert-secondary" id="no-target-notice">
+  {% translate "No monthly target applies to this month, so corporations and members are not assessed." %}
   {% if perms.fleetops.manage_configuration %}{% url 'fleetops:configuration_list' 'statistics-targets' as targets_url %}{% blocktranslate trimmed with url=targets_url %}<a href="{{ url }}">Set monthly targets</a>.{% endblocktranslate %}{% endif %}
 </div>
 {% endif %}
@@ -35,16 +36,16 @@
 
 <div class="card">
   <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0">
+    <table class="table table-hover align-middle mb-0 fo-table-pin">
       <thead><tr>
-        <th><a class="text-decoration-none" href="{% querystring sort=sort_links.name %}">{% translate "Corporation" context "FleetOps" %}{% if sort == "name" %} &#9650;{% elif sort == "-name" %} &#9660;{% endif %}</a></th>
-        <th class="text-end"><a class="text-decoration-none" href="{% querystring sort=sort_links.mains %}">{% translate "Mains" context "FleetOps" %}{% if sort == "mains" %} &#9650;{% elif sort == "-mains" %} &#9660;{% endif %}</a></th>
+        <th><a class="fo-sort" href="{% querystring sort=sort_links.name %}">{% translate "Corporation" context "FleetOps" %}{% if sort == "name" %} &#9650;{% elif sort == "-name" %} &#9660;{% endif %}</a></th>
+        <th class="text-end"><a class="fo-sort" href="{% querystring sort=sort_links.mains %}">{% translate "Mains" context "FleetOps" %}{% if sort == "mains" %} &#9650;{% elif sort == "-mains" %} &#9660;{% endif %}</a></th>
         <th class="text-end">{% translate "Mains with PAP" %}</th>
         <th class="text-end">{% translate "Below minimum" %}</th>
-        <th class="text-end"><a class="text-decoration-none" href="{% querystring sort=sort_links.total %}">{% translate "Total PAP" %}{% if sort == "total" %} &#9650;{% elif sort == "-total" %} &#9660;{% endif %}</a></th>
-        <th class="text-end"><a class="text-decoration-none" href="{% querystring sort=sort_links.average %}">{% translate "Average" %}{% if sort == "average" %} &#9650;{% elif sort == "-average" %} &#9660;{% endif %}</a></th>
+        <th class="text-end" title="{{ corporation_rows_note }}"><a class="fo-sort" href="{% querystring sort=sort_links.total %}">{% translate "Total PAP" %}{% if sort == "total" %} &#9650;{% elif sort == "-total" %} &#9660;{% endif %}</a></th>
+        <th class="text-end" title="{{ corporation_rows_note }}"><a class="fo-sort" href="{% querystring sort=sort_links.average %}">{% translate "Average" %}{% if sort == "average" %} &#9650;{% elif sort == "-average" %} &#9660;{% endif %}</a></th>
         <th class="text-end">{% translate "Target" context "monthly target" %}</th>
-        <th><a class="text-decoration-none" href="{% querystring sort=sort_links.status %}">{% translate "Status" %}{% if sort == "status" %} &#9650;{% elif sort == "-status" %} &#9660;{% endif %}</a></th>
+        <th><a class="fo-sort" href="{% querystring sort=sort_links.status %}">{% translate "Status" %}{% if sort == "status" %} &#9650;{% elif sort == "-status" %} &#9660;{% endif %}</a></th>
         <th>{% translate "Fleet types" %}</th>
         <th></th>
       </tr></thead>
@@ -63,11 +64,11 @@
         <td class="text-end">{% if row.is_other %}&mdash;{% else %}<strong>{{ row.average }}</strong>{% endif %}</td>
         <td class="text-end">{% if entry.target_pap is not None %}{{ overview.target.average|floatformat:2 }}<div class="small text-muted">{{ entry.target_pap|floatformat:"-2" }} PAP</div>{% else %}&mdash;{% endif %}</td>
         <td>{% include "fleetops/statistics/_status_badge.html" with status=row.status %}</td>
-        <td>{% for fleet_type, pap in entry.types %}{% if pap %}<span class="badge text-bg-secondary me-1">{{ fleet_type }} {{ pap }}</span>{% endif %}{% endfor %}</td>
-        <td class="text-end text-nowrap">{% if not row.is_other %}<a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:corporation_statistics_detail' row.corporation_id %}?year={{ year }}&amp;month={{ month }}">{% translate "Details" context "FleetOps" %}</a> <a class="btn btn-sm btn-outline-secondary" href="{% url 'fleetops:corporation_members_detail' row.corporation_id %}?year={{ year }}&amp;month={{ month }}">{% translate "Members" %}</a>{% endif %}</td>
+        <td>{% for fleet_type, pap in entry.types %}{% if pap %}<span class="fo-pill fo-pill-type fo-type-{{ fleet_type|type_tone }} me-1">{{ fleet_type }} <strong>{{ pap }}</strong></span>{% endif %}{% endfor %}</td>
+        <td class="text-end">{% if not row.is_other %}<div class="fo-row-buttons"><a class="btn btn-sm btn-outline-secondary" href="{% url 'fleetops:corporation_statistics_detail' row.corporation_id %}?year={{ year }}&amp;month={{ month }}">{% translate "Details" context "FleetOps" %}</a><a class="btn btn-sm btn-outline-secondary" href="{% url 'fleetops:corporation_members_detail' row.corporation_id %}?year={{ year }}&amp;month={{ month }}">{% translate "Members" %}</a></div>{% endif %}</td>
       </tr>
       {% endwith %}{% empty %}
-      <tr><td colspan="10" class="text-muted p-4">{% translate "No corporations with main characters found." %}</td></tr>
+      <tr><td colspan="10"><div class="fo-empty"><i class="fa-solid fa-building" aria-hidden="true"></i><span>{% translate "No corporations with main characters found." %}</span></div></td></tr>
       {% endfor %}
       </tbody>
       {% if table %}
@@ -76,8 +77,8 @@
         <td class="text-end">{{ overview.mains }}</td>
         <td class="text-end">{{ overview.mains_with_pap }}</td>
         <td class="text-end">{{ below_total }}</td>
-        <td class="text-end">{{ overview.alliance_pap }}</td>
-        <td class="text-end">{{ overview.average }}</td>
+        <td class="text-end fo-note-cell" title="{{ alliance_row_note }}">{{ overview.alliance_pap }}<div class="small text-muted fw-normal">{% translate "all counted PAP" %}</div></td>
+        <td class="text-end fo-note-cell" title="{{ alliance_row_note }}">{{ overview.average }}<div class="small text-muted fw-normal">{% translate "current mains only" %}</div></td>
         <td></td><td></td><td></td><td></td>
       </tr></tfoot>
       {% endif %}
@@ -85,6 +86,8 @@
   </div>
 </div>
 <div class="text-muted small mt-3">
+  <p class="mb-1" id="alliance-row-note">{{ alliance_row_note }}</p>
+  <p class="mb-1" id="corporation-rows-note">{{ corporation_rows_note }}</p>
   {% translate "Total PAP counts the PAP earned while the main was in the corporation; mains and their numbers are the corporation's current mains (alts are not counted), and the average is the total PAP divided by the mains." %}{% if month_ref.is_finished %} {% translate "Members who registered after this month are not counted in it." %}{% endif %}
   {% translate "Green: the target is reached. Amber: not reached yet while the month runs. Red: a finished month below the target." %}
 </div>

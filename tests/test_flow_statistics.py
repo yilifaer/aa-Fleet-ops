@@ -208,22 +208,22 @@ class StatisticsFlow:
         march = self.html(self.statsmgr, "all_corporation_statistics", month=MARCH)
         alpha, beta, third = (table_row(march, name) for name in (ALPHA, BETA, THIRD))
         self.assertIn("fleetops-status-row-missed", alpha)
-        self.assertIn("text-bg-danger", alpha)
+        self.assertIn("fo-pill-bad", alpha)
         self.assertIn("Below target", alpha)
         self.assertIn("fleetops-status-row-met", beta)
-        self.assertIn("text-bg-success", beta)
+        self.assertIn("fo-pill-ok", beta)
         self.assertIn("Target met", beta)
         self.assertIn("Below target", third)
-        self.assertNotIn("text-bg-warning", march)
+        self.assertNotIn("fo-pill-warn", march)
 
         april = self.html(self.statsmgr, "all_corporation_statistics", month=APRIL)
         alpha, beta, third = (table_row(april, name) for name in (ALPHA, BETA, THIRD))
-        self.assertIn("text-bg-warning", alpha)
+        self.assertIn("fo-pill-warn", alpha)
         self.assertIn("Not reached yet", alpha)
-        self.assertIn("text-bg-success", beta)
+        self.assertIn("fo-pill-ok", beta)
         self.assertIn("Target met", beta)
         self.assertIn("Not reached yet", third)
-        self.assertNotIn("text-bg-danger", april)
+        self.assertNotIn("fo-pill-bad", april)
 
     def test_a_month_before_the_first_target_has_no_status(self):
         page = self.html(self.statsmgr, "all_corporation_statistics", month=FEBRUARY)
@@ -283,30 +283,30 @@ class StatisticsFlow:
         march = self.html(self.statsmgr, "alliance_members", month=MARCH, status="inactive")
         for name in ("Alpha Three", "Alpha Manager", "Stats Manager", "Fleet Lead", "Flow FC", "Mover"):
             row = table_row(march, name)
-            self.assertIn("text-bg-danger", row, name)
+            self.assertIn("fo-pill-bad", row, name)
             self.assertIn("Below minimum", row, name)
             self.assertNotIn("so far", row, name)
         self.assertNotIn("Alpha One", march)
         self.assertNotIn("Beta Two", march)
-        self.assertNotIn("text-bg-warning", march)
+        self.assertNotIn("fo-pill-warn", march)
 
         april = self.html(self.statsmgr, "alliance_members", month=APRIL, status="inactive")
         for name in ("Alpha Three", "Alpha Manager", "Stats Manager", "Fleet Lead", "Flow FC", "Mover"):
             row = table_row(april, name)
-            self.assertIn("text-bg-warning", row, name)
+            self.assertIn("fo-pill-warn", row, name)
             self.assertIn("Below minimum so far", row, name)
-        self.assertNotIn("text-bg-danger", april)
+        self.assertNotIn("fo-pill-bad", april)
         # Reaching the minimum is green: a member with exactly 2 PAP in March.
         everyone = self.html(self.statsmgr, "alliance_members", month=MARCH)
-        self.assertIn("text-bg-success", table_row(everyone, "Alpha 二"))
+        self.assertIn("fo-pill-ok", table_row(everyone, "Alpha 二"))
 
     def test_the_corporation_manager_sees_the_inactive_list_of_the_own_corporation_only(self):
         table = self.page(self.corpmgr, "corporation_members", month=MARCH, status="inactive").context["table"]
         self.assertEqual(sorted(row.main_character_name for row in table.rows), ["Alpha Manager", "Alpha Three"])
         self.assertTrue(all(row.corporation_id == f.DEFAULT_CORP[0] for row in table.rows))
-        # Nothing of the alliance or of another corporation.
-        for route, args in (("alliance_members", ()), ("corporation_members_detail", (f.OTHER_CORP[0],))):
-            self.page(self.corpmgr, route, *args, month=MARCH, expect=403)
+        # Nothing of the alliance or of another corporation (that one answers 404 with the reason).
+        self.page(self.corpmgr, "alliance_members", month=MARCH, expect=403)
+        self.page(self.corpmgr, "corporation_members_detail", f.OTHER_CORP[0], month=MARCH, expect=404)
         # The nav of the corporation manager lists no alliance pages.
         page = self.html(self.corpmgr, "corporation_members", month=MARCH)
         self.assertIsNone(re.search(rf'href="{re.escape(reverse("fleetops:alliance_members"))}(\?[^"]*)?"', page))
@@ -454,7 +454,7 @@ class StatisticsFlow:
         fleets = self.page(self.lead, "member_detail", self.a1.pk, month=MARCH).context["detail"].fleets
         rows = self.file_rows(self.lead, "member-fleets", user=self.a1.pk, year=2026, month=3)
         self.assertEqual(len(rows) - 1, len(fleets))
-        self.assertEqual(sum(int(line[7]) for line in rows[1:]), 5)
+        self.assertEqual(sum(int(line[8]) for line in rows[1:]), 5)
         self.assertEqual(sorted(line[0] for line in rows[1:]), ["2026-03-01 00:30", "2026-03-12 19:00", "2026-03-31 23:30"])
         self.download(self.corpmgr, "member-fleets", expect=404, user=self.b1.pk, year=2026, month=3)
 
@@ -468,12 +468,12 @@ class StatisticsFlow:
         page = self.page(self.statsmgr, "attendance_history_alliance", month=MARCH)
         rows = self.file_rows(self.statsmgr, "attendance", scope="alliance", year=2026, month=3)
         self.assertEqual(len(rows) - 1, page.context["page"].paginator.count)
-        self.assertEqual(sum(int(line[9]) for line in rows[1:]), page.context["total"])
+        self.assertEqual(sum(int(line[10]) for line in rows[1:]), page.context["total"])
         self.assertEqual(page.context["total"], 12)
-        self.assertNotIn("Departed Pilot", {line[6] for line in rows[1:]})
+        self.assertNotIn("Departed Pilot", {line[7] for line in rows[1:]})
         self.assertEqual(max(line[0] for line in rows[1:]), "2026-03-31 23:30")
         mine = self.file_rows(self.a1, "attendance", scope="me", year=2026, month=3)
-        self.assertEqual(sum(int(line[9]) for line in mine[1:]), 5)
+        self.assertEqual(sum(int(line[10]) for line in mine[1:]), 5)
 
     def test_downloads_are_audited_and_named_by_month(self):
         response = self.download(self.statsmgr, "corporations", "xlsx", year=2026, month=3)
@@ -553,7 +553,7 @@ class StatisticsFlow:
         page = self.page(self.corpmgr, "attendance_history_corporation", month=MARCH)
         self.assertEqual(page.context["total"], 7)
         rows = self.file_rows(self.corpmgr, "attendance", scope="corporation", year=2026, month=3)
-        self.assertEqual({line[7] for line in rows[1:]}, {ALPHA})
+        self.assertEqual({line[8] for line in rows[1:]}, {ALPHA})
         self.page(self.corpmgr, "attendance_history_alliance", month=MARCH, expect=403)
         self.download(self.corpmgr, "attendance", expect=403, scope="alliance", year=2026, month=3)
 

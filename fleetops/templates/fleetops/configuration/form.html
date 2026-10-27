@@ -5,10 +5,11 @@
   <div class="small"><a href="{% url 'fleetops:configuration_list' section %}">{{ config.title }}</a></div>
   <h2>{% if object %}{% translate "Edit" %}{% else %}{% translate "Add" context "FleetOps" %}{% endif %} {{ config.title }}</h2>
 </div>
-<div class="card"><div class="card-body">
+{% if edit_include %}<div class="row g-3"><div class="col-lg-8">{% endif %}
+<div class="card{% if not edit_include %} fo-form-card{% endif %}"><div class="card-body">
 <form method="post">
   {% csrf_token %}
-  {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+  {% include "fleetops/partials/form_errors.html" with errors=form.non_field_errors %}
   {% for field in form %}
     {% if field.field.widget.input_type == 'checkbox' and field.field.widget.allow_multiple_selected %}
       <fieldset class="mb-3">
@@ -29,6 +30,7 @@
   <div class="d-flex gap-2"><button class="btn btn-primary">{% translate "Save" %}</button><a class="btn btn-outline-secondary" href="{% url 'fleetops:configuration_list' section %}">{% translate "Cancel" %}</a></div>
 </form>
 </div></div>
+{% if edit_include %}</div><div class="col-lg-4">{% include edit_include %}</div></div>{% endif %}
 {% if section == "structure-templates" %}
 <script src="{% static 'fleetops/structure_layout.js' %}?v={% fleetops_version %}"></script>
 <script>

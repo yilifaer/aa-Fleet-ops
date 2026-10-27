@@ -1,0 +1,13 @@
+{% extends "fleetops/base.html" %}
+{% load i18n %}
+{% block fleetops_content %}
+<h2 class="mb-3">{{ error_title }}</h2>
+<div class="card" id="fo-denied" data-status="{{ error_status }}">
+  <div class="card-body fo-empty">
+    <i class="fas {% if error_status == 404 %}fa-circle-question{% else %}fa-lock{% endif %}" aria-hidden="true"></i>
+    <p class="mb-0" id="fo-denied-reason">{{ error_reason }}</p>
+    {% if error_permission %}<p class="small text-muted mb-0">{% translate "Permission" %}: <code>{{ error_permission }}</code></p>{% endif %}
+    <a class="btn btn-outline-secondary" href="{% url 'fleetops:dashboard' %}">{% translate "Back to the dashboard" %}</a>
+  </div>
+</div>
+{% endblock %}

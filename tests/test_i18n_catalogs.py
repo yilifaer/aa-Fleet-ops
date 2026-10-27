@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 from django.apps import apps
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, tag
 
 from . import i18n_extract as extract
 from . import i18n_utils as po
@@ -225,6 +225,7 @@ class ShippedCatalogTests(SimpleTestCase):
             self.assertIn(mo.with_suffix(".po"), sources)
 
 
+@tag("catalog")
 class CatalogMatchesCodeTests(SimpleTestCase):
     """The catalog holds the messages of the code and nothing else: a forgotten ``makemessages`` fails here."""
 

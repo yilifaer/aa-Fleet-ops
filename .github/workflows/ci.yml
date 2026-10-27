@@ -135,3 +135,6 @@ jobs:
 
       - name: Check the links in the documentation
         run: python tools/check_docs.py
+
+      - name: Check interface rules
+        run: python tools/check_ui.py --strict

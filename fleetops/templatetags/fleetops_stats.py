@@ -6,18 +6,11 @@ from django.http import QueryDict
 from django.urls import reverse
 
 from fleetops.services.assessment import status_label as label_for_status
+from fleetops.ui import STATISTICS_TONES, tone_class, tone_for
 
 register = template.Library()
 
-# Colour is never the only signal: every badge shows the label of its status as text too.
-BADGE_CLASSES = {
-    "met": "text-bg-success",
-    "ok": "text-bg-success",
-    "missed": "text-bg-danger",
-    "below": "text-bg-danger",
-    "in_progress": "text-bg-warning",
-    "below_so_far": "text-bg-warning",
-}
+# Colour is never the only signal: every pill shows the label of its status as text too.
 ROW_CLASSES = {
     "met": "fleetops-status-row-met",
     "ok": "fleetops-status-row-met",
@@ -36,7 +29,8 @@ def status_label(status):
 
 @register.filter
 def status_badge_class(status):
-    return BADGE_CLASSES.get(status, "text-bg-secondary")
+    """The classes of the pill of a status: green when reached, amber while open, red when missed, grey otherwise."""
+    return tone_class(tone_for(STATISTICS_TONES, status))
 
 
 @register.filter

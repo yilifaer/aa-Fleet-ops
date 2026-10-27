@@ -18,7 +18,7 @@ from django.utils import timezone
 from django.utils.translation import gettext, gettext_lazy
 
 from fleetops.constants import CAPSULE_TYPE_IDS, MAX_ISK  # noqa: F401 - CAPSULE_TYPE_IDS is part of the interface
-from fleetops.models import SrpCorporationLimit, SrpPayoutRule, SrpSettings, srp_doctrine_key
+from fleetops.models import SrpClaim, SrpCorporationLimit, SrpPayoutRule, SrpSettings, srp_doctrine_key
 from fleetops.srp import display
 from fleetops.srp.types import (
     CORPORATION_CAP_DEFAULT,
@@ -155,10 +155,13 @@ def corporation_cap(corporation_id, srp, overrides=None) -> tuple[int | None, st
     return srp.corporation_monthly_cap, CORPORATION_CAP_DEFAULT
 
 
-def current_policy(*, corporation_id: int | None, rule=None, settings_obj=None) -> PolicySnapshot:
-    """The SRP settings as a snapshot, with the corporation's cap (override or default) and ``rule``."""
+def current_policy(*, corporation_id: int | None, rule=None, settings_obj=None, overrides=None) -> PolicySnapshot:
+    """The SRP settings as a snapshot, with the corporation's cap (override or default) and ``rule``.
+
+    ``overrides`` is ``{corporation_id: monthly_cap}`` for callers that snapshot many claims at once.
+    """
     srp = settings_obj or SrpSettings.get_solo()
-    corporation_monthly_cap, cap_source = corporation_cap(corporation_id, srp)
+    corporation_monthly_cap, cap_source = corporation_cap(corporation_id, srp, overrides)
     return PolicySnapshot(
         value_source=srp.value_source,
         percentage=display.to_decimal(srp.percentage) or Decimal("0"),
@@ -344,3 +347,60 @@ def eligibility(*, km, user, scope: str, link, settings_obj, now=None, operation
         if not names_capsule(rule):
             blockers.append(str(BLOCK_CAPSULE))
     return blockers
+
+
+# The settings a claim is calculated with; the version of the snapshot and the rule are compared separately.
+_POLICY_FIELDS = (
+    "value_source",
+    "percentage",
+    "in_fleet_loss_cap",
+    "out_of_fleet_loss_cap",
+    "personal_monthly_cap",
+    "personal_cap_includes_in_fleet",
+    "corporation_monthly_cap",
+    "corporation_cap_source",
+    "corporation_cap_includes_in_fleet",
+    "over_limit_action",
+    "capsules_need_rule",
+    "claim_deadline_days",
+)
+
+
+def outdated_pending_claims(settings_obj=None) -> list[int]:
+    """The IDs of the pending claims that were calculated with other SRP settings than the current ones.
+
+    A claim keeps the policy of its submission (a snapshot of the settings, the corporation's cap and the payout
+    rule it matched); only a recalculation applies new settings. A claim is outdated when any setting of its
+    snapshot differs from the current one, or when its payout rule has been deleted, switched off or has another
+    amount since. A rule added later that would match the claim more closely is not detected: the reviewer can
+    always recalculate. Three queries (the claims, the corporation limits, the rules), whatever the number of
+    claims.
+    """
+    srp = settings_obj or SrpSettings.get_solo()
+    pending = list(SrpClaim.objects.filter(status=SrpClaim.Status.PENDING).values_list("pk", "corporation_id", "policy"))
+    if not pending:
+        return []
+    overrides = dict(SrpCorporationLimit.objects.values_list("corporation_id", "monthly_cap"))
+    current_by_corporation: dict = {}
+    snapshots = {pk: PolicySnapshot.from_json(policy) for pk, _corporation, policy in pending}
+    rule_ids = {snapshot.rule.id for snapshot in snapshots.values() if snapshot.rule is not None and snapshot.rule.id}
+    rules = dict(SrpPayoutRule.objects.filter(pk__in=rule_ids, is_active=True).values_list("pk", "amount"))
+    outdated = []
+    for pk, corporation_id, _policy in pending:
+        stored = snapshots[pk]
+        if corporation_id not in current_by_corporation:
+            current_by_corporation[corporation_id] = current_policy(
+                corporation_id=corporation_id, settings_obj=srp, overrides=overrides
+            )
+        current = current_by_corporation[corporation_id]
+        changed = any(getattr(stored, name) != getattr(current, name) for name in _POLICY_FIELDS)
+        if not changed and stored.rule is not None and stored.rule.id:
+            changed = rules.get(stored.rule.id) != stored.rule.amount
+        if changed:
+            outdated.append(pk)
+    return outdated
+
+
+def outdated_pending_claim_count(settings_obj=None) -> int:
+    """How many pending claims were calculated with SRP settings that have changed since."""
+    return len(outdated_pending_claims(settings_obj))

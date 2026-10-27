@@ -1,5 +1,5 @@
 {% extends "fleetops/base.html" %}
-{% load i18n %}
+{% load i18n fleetops_ui %}
 {% block fleetops_content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div><h2 class="mb-0">{% translate "My Presets" %}</h2><div class="text-muted">{% translate "Saved Fleet Start settings. Save new ones from the Start Fleet page." %}</div></div>
@@ -10,7 +10,7 @@
   <tbody>
   {% for row in rows %}{% with preset=row.preset %}
   <tr id="preset-{{ preset.pk }}">
-    <td><a href="{% url 'fleetops:start_fleet' %}?preset={{ preset.pk }}">{{ preset.name }}</a>{% if preset.is_default %} <span class="badge bg-primary">{% translate "Default" context "default preset" %}</span>{% endif %}</td>
+    <td><a href="{% url 'fleetops:start_fleet' %}?preset={{ preset.pk }}">{{ preset.name }}</a>{% if preset.is_default %} {% translate "Default" context "default preset" as default_label %}{% pill "info" default_label %}{% endif %}</td>
     <td class="small text-muted">{{ row.summary|default:"—" }}</td>
     <td>
       <form method="post" action="{% url 'fleetops:preset_rename' preset.pk %}" class="d-flex gap-2">{% csrf_token %}
@@ -21,22 +21,17 @@
     <td class="text-end text-nowrap">
       <form method="post" action="{% url 'fleetops:preset_default' preset.pk %}" class="d-inline">{% csrf_token %}
         <input type="hidden" name="is_default" value="{% if preset.is_default %}0{% else %}1{% endif %}">
-        <button class="btn btn-sm btn-outline-primary">{% if preset.is_default %}{% translate "Unset default" %}{% else %}{% translate "Set as default" %}{% endif %}</button>
+        <button class="btn btn-sm btn-outline-secondary">{% if preset.is_default %}{% translate "Unset default" %}{% else %}{% translate "Set as default" %}{% endif %}</button>
       </form>
-      <form method="post" action="{% url 'fleetops:preset_delete' preset.pk %}" class="d-inline" data-confirm="{% blocktranslate trimmed with name=preset.name %}Delete the preset {{ name }}?{% endblocktranslate %}">{% csrf_token %}
+      <form method="post" action="{% url 'fleetops:preset_delete' preset.pk %}" class="d-inline" data-fo-confirm="{% blocktranslate trimmed with name=preset.name %}Delete the preset {{ name }}?{% endblocktranslate %}" data-fo-confirm-label="{% translate 'Delete' %}">{% csrf_token %}
         <button class="btn btn-sm btn-outline-danger">{% translate "Delete" %}</button>
       </form>
     </td>
   </tr>
   {% endwith %}{% empty %}
-  <tr><td colspan="4" class="text-muted">{% translate 'No presets saved. Use "Save as preset…" on the Start Fleet page.' %}</td></tr>
+  <tr><td colspan="4"><div class="fo-empty"><i class="fa-regular fa-bookmark" aria-hidden="true"></i><span>{% translate 'No presets saved. Use "Save as preset…" on the Start Fleet page.' %}</span><a class="btn btn-sm btn-outline-secondary" href="{% url 'fleetops:start_fleet' %}">{% translate "Start Fleet" %}</a></div></td></tr>
   {% endfor %}
   </tbody>
 </table></div></div>
 <p class="form-text mt-2">{% translate "The default preset fills the Start Fleet page when it opens. Presets never keep the fleet time." %}</p>
-<script>
-document.querySelectorAll('form[data-confirm]').forEach(form => form.addEventListener('submit', event => {
-  if(!confirm(form.dataset.confirm)){ event.preventDefault(); }
-}));
-</script>
 {% endblock %}

@@ -21,6 +21,7 @@ from fleetops.models import (
     SrpFleetLink,
     SrpSettings,
 )
+from fleetops.services import group_access
 from fleetops.services import links as site_links
 from fleetops.services.audit import audit
 from fleetops.srp import access, summaries
@@ -184,6 +185,8 @@ def operation_srp_context(operation: FleetOperation, user) -> dict:
         and link is None
         and not has_other_link
         and _uses_fleetops_srp(operation, srp_settings)
+        # Group fleets get a link only when their group allows it (one query, group fleets only).
+        and group_access.group_srp_allowed(operation)
     )
     if link is None and not can_create:
         return {}

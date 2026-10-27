@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.shortcuts import resolve_url
-from django.test import TestCase
+from django.test import TestCase, tag
 from django.urls import reverse
 
 import fleetops
@@ -116,6 +116,7 @@ class ScriptCatalogTests(TestCase):
     def setUpTestData(cls):
         cls.member = f.create_user("member", perms=f.MEMBER_PERMS)
 
+    @tag("catalog")
     def test_the_catalog_holds_the_messages_of_the_scripts_and_nothing_else(self):
         found = {}
         for path in extract.script_files():

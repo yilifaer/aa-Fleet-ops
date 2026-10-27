@@ -35,6 +35,7 @@ from fleetops.providers.srp import (
 from fleetops.services.operations import retry_srp
 
 from . import factories as f
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 from .test_integrations_roles import PatchedStartFleetMixin, model_field
 
 FLEET_TIME = datetime(2026, 10, 12, 19, 5, tzinfo=dt_timezone.utc)

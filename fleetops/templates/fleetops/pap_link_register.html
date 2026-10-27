@@ -1,6 +1,10 @@
 {% extends "fleetops/base.html" %}
-{% load i18n fleetops_messages %}
+{% load i18n fleetops_messages fleetops_ui %}
 {% block fleetops_content %}
+{% translate "Main" as main_label %}
+{% translate "Ready" as ready_label %}
+{% translate "Login needed" as login_needed_label %}
+{% translate "Registered" as registered_label %}
 <div class="mb-3"><h2 class="mb-1">{% translate "PAP Link" %}</h2><div class="text-muted">{% blocktranslate trimmed with fleet_type=operation.fleet_type fc=operation.fc_character_name %}{{ fleet_type }} · FC {{ fc }}{% endblocktranslate %}{% if operation.formup %} · {% blocktranslate trimmed with formup=operation.formup %}Form up {{ formup }}{% endblocktranslate %}{% endif %}{% if operation.doctrine_name %} · {{ operation.doctrine_name }}{% endif %}</div></div>
 {% if pending_review %}<div class="alert alert-info" id="pap-link-review">{% translate "This fleet is waiting for FC lead approval; its PAP counts once it is approved." %}</div>
 {% elif rejected_review %}<div class="alert alert-warning" id="pap-link-review">{% translate "An FC lead rejected this fleet, so its PAP does not count." %}</div>{% endif %}
@@ -12,15 +16,14 @@
 
 <div class="card"><div class="card-header"><strong>{% translate "Your characters" %}</strong></div><div class="card-body">
   <form method="post" id="pap-register-form">{% csrf_token %}
-    <div class="table-responsive"><table class="table table-sm align-middle">
-      <thead><tr><th></th><th>{% translate "Character" %}</th><th>{% translate "Corporation" context "FleetOps" %}</th><th>{% translate "ESI login" %}</th><th>{% translate "Status" %}</th></tr></thead>
+    <div class="table-responsive"><table class="table table-sm align-middle fo-table-pin">
+      <thead><tr><th>{% translate "Character" %}</th><th>{% translate "Corporation" context "FleetOps" %}</th><th>{% translate "ESI login" %}</th><th>{% translate "Status" %}</th></tr></thead>
       <tbody>{% for c in characters %}<tr>
-        <td>{% if c.eligible %}<input class="form-check-input" type="checkbox" name="character_ids" value="{{ c.id }}" id="pap-character-{{ c.id }}">{% endif %}</td>
-        <td><label for="pap-character-{{ c.id }}">{{ c.name }}</label>{% if c.is_main %} <span class="badge bg-secondary">{% translate "Main" %}</span>{% endif %}</td>
+        <td><div class="d-flex align-items-center gap-2">{% if c.eligible %}<label class="fo-check-cell"><input class="form-check-input" type="checkbox" name="character_ids" value="{{ c.id }}" id="pap-character-{{ c.id }}" aria-label="{% blocktranslate trimmed with name=c.name %}Select {{ name }}{% endblocktranslate %}"></label><label for="pap-character-{{ c.id }}" class="mb-0">{{ c.name }}</label>{% else %}<span>{{ c.name }}</span>{% endif %}{% if c.is_main %}{% pill "neutral" main_label %}{% endif %}</div></td>
         <td>{{ c.corporation|default:"—" }}</td>
-        <td>{% if c.has_token %}<span class="badge bg-success">{% translate "Ready" %}</span>{% else %}<span class="badge bg-warning text-dark">{% translate "Login needed" %}</span>{% endif %}</td>
-        <td>{% if c.registered %}<span class="badge bg-success">{% translate "Registered" %}</span>{% elif not c.has_token %}<span class="small text-muted">{% translate "Use Add a character to log in with it." %}</span>{% endif %}</td>
-      </tr>{% empty %}<tr><td colspan="5" class="text-muted">{% translate "You have no characters in Alliance Auth yet." %}</td></tr>{% endfor %}</tbody>
+        <td>{% if c.has_token %}{% pill "ok" ready_label %}{% else %}{% pill "warn" login_needed_label %}{% endif %}</td>
+        <td>{% if c.registered %}{% pill "ok" registered_label %}{% elif not c.has_token %}<span class="small text-muted">{% translate "Use Add a character to log in with it." %}</span>{% endif %}</td>
+      </tr>{% empty %}<tr><td colspan="4"><div class="fo-empty"><i class="fa-solid fa-user-slash" aria-hidden="true"></i><span>{% translate "You have no characters in Alliance Auth yet." %}</span></div></td></tr>{% endfor %}</tbody>
     </table></div>
     {% if link_open %}
     <div class="d-flex gap-2 flex-wrap">

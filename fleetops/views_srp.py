@@ -4,9 +4,9 @@
 """FleetOps SRP: the member pages for starting a claim, the fleet SRP link and the claim page."""
 
 from datetime import timedelta
+from functools import partial
 
 from django.contrib import messages
-from django.contrib.auth.decorators import permission_required
 from django.core.paginator import Paginator
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
@@ -15,6 +15,7 @@ from django.utils.translation import gettext_lazy, gettext_noop
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from fleetops import __version__, texts
+from fleetops.decorators import fleetops_permission_required
 from fleetops.forms_srp import (
     ApproveForm,
     ClaimInputForm,
@@ -45,11 +46,11 @@ OUT_OF_FLEET_OFF = gettext_lazy("Only losses in FleetOps fleets are covered.")
 # recheck) is just a button.
 DECISION_FORMS = {
     "approve": ApproveForm,
-    "reject": ReasonForm,
-    "revoke": ReasonForm,
+    "reject": partial(ReasonForm, what="reason for the rejection"),
+    "revoke": partial(ReasonForm, what="reason for revoking the approval"),
     "paid": PaidForm,
-    "unpaid": ReasonForm,
-    "reopen": ReasonForm,
+    "unpaid": partial(ReasonForm, what="reason for undoing the payment"),
+    "reopen": partial(ReasonForm, what="reason for reopening the claim"),
     "reclassify": ReclassifyForm,
     "note": NoteForm,
 }
@@ -66,7 +67,7 @@ REASON_ACTIONS = {
     "reject": (
         gettext_lazy("Reject claim"),
         gettext_lazy("Reject"),
-        "btn-danger",
+        "btn-outline-danger",
         gettext_lazy("The pilot sees the reason."),
     ),
     "revoke": (
@@ -89,6 +90,13 @@ REASON_ACTIONS = {
         "btn-outline-primary",
         gettext_lazy("The claim is calculated again with the current rules and waits for a decision."),
     ),
+}
+# The questions the dialog asks before these decisions are sent (the required reason is not the confirmation).
+# Reopening a claim is not asked: it only puts the claim back in the queue.
+REASON_CONFIRMATIONS = {
+    "reject": gettext_lazy("Reject this claim? The pilot sees the reason."),
+    "revoke": gettext_lazy("Revoke the approval?"),
+    "unpaid": gettext_lazy("Undo the payment? The claim goes back to approved."),
 }
 # Fleets a claim can be moved into: open links of fleets that started shortly before the loss.
 LINK_CANDIDATE_WINDOW = timedelta(hours=24)
@@ -168,7 +176,7 @@ def home_context(request, year, month, claim_form, settings_obj):
 
 
 @require_GET
-@permission_required(REQUEST_SRP, raise_exception=True)
+@fleetops_permission_required(REQUEST_SRP)
 def srp_home(request):
     """My SRP: this month's allowance, the out-of-fleet form, recent fleets with SRP and my claims."""
     year, month = _year_month(request)
@@ -203,7 +211,7 @@ def check_loss(request, form, *, link=None):
 
 
 @require_POST
-@permission_required(REQUEST_SRP, raise_exception=True)
+@fleetops_permission_required(REQUEST_SRP, page=False)
 def srp_check(request):
     """Check an out-of-fleet loss: the preview, or the home page again with what is wrong with the input."""
     settings_obj = SrpSettings.get_solo()
@@ -225,7 +233,7 @@ def srp_check(request):
 
 
 @require_http_methods(["GET", "POST"])
-@permission_required(REQUEST_SRP, raise_exception=True)
+@fleetops_permission_required(REQUEST_SRP)
 def srp_link(request, code):
     """The SRP page of one fleet; a POST checks the pasted loss and shows the preview.
 
@@ -249,7 +257,7 @@ def srp_link(request, code):
 
 
 @require_POST
-@permission_required(REQUEST_SRP, raise_exception=True)
+@fleetops_permission_required(REQUEST_SRP, page=False)
 def srp_submit(request):
     """Submit a previewed loss. A token that does not check out goes back to My SRP with a message; a claim
     that was created (or already existed) opens its page."""
@@ -431,7 +439,15 @@ def claim_page_context(request, claim, *, bound=None, settings_obj=None):
                     "forms": forms,
                     "limit_reason": translate_stored(within_limit_reason(claim)),
                     "reason_actions": [
-                        {"action": action, "title": title, "button": button, "css": css, "help": text, "form": forms[action]}
+                        {
+                            "action": action,
+                            "title": title,
+                            "button": button,
+                            "css": css,
+                            "help": text,
+                            "form": forms[action],
+                            "confirm": REASON_CONFIRMATIONS.get(action, ""),
+                        }
                         for action, (title, button, css, text) in REASON_ACTIONS.items()
                         if action in actions
                     ],
@@ -451,7 +467,7 @@ def claim_response(request, claim, *, bound=None, settings_obj=None):
 
 
 @require_GET
-@permission_required(BASIC_ACCESS, raise_exception=True)
+@fleetops_permission_required(BASIC_ACCESS)
 def srp_claim_detail(request, claim_uuid):
     """A claim. Who may open it is decided by ``access.can_view_claim``; everyone else gets a 404.
 
@@ -464,7 +480,7 @@ def srp_claim_detail(request, claim_uuid):
 
 
 @require_POST
-@permission_required(REQUEST_SRP, raise_exception=True)
+@fleetops_permission_required(REQUEST_SRP, page=False)
 def srp_claim_withdraw(request, claim_uuid):
     """Withdraw a pending claim; only the claimant. A claim in another state is left as it is, with a message."""
     claim = get_claim(claim_uuid)
@@ -486,7 +502,7 @@ def srp_claim_withdraw(request, claim_uuid):
 
 
 @require_POST
-@permission_required(REQUEST_SRP, raise_exception=True)
+@fleetops_permission_required(REQUEST_SRP, page=False)
 def srp_claim_resubmit(request, claim_uuid):
     """Resubmit a withdrawn claim; only the claimant. A claim in another state is left as it is, with a message."""
     claim = get_claim(claim_uuid)

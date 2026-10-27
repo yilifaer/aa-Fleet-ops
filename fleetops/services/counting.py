@@ -93,6 +93,7 @@ def set_stats_mode(operation, mode, *, actor, note):
 
     Excluding needs a reason. Who may choose which mode is checked by the caller.
     """
+    from fleetops.services import incentives
     from fleetops.services.audit import audit
 
     if mode not in StatsMode.values:
@@ -120,4 +121,6 @@ def set_stats_mode(operation, mode, *, actor, note):
             {"stats_mode": mode, "counts_for_stats": operation.counts_for_stats, "stats_note": note},
             reason=note,
         )
+    # Whether the fleet counts decides its FC points.
+    incentives.refresh_months_after_commit(*incentives.months_of(operation), actor=actor)
     return operation

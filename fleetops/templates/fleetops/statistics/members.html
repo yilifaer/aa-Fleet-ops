@@ -51,10 +51,10 @@
   {% blocktranslate trimmed count counter=counts.all with with_pap=counts.with_pap %}<strong>{{ counter }}</strong> member &middot; <strong>{{ with_pap }}</strong> with PAP{% plural %}<strong>{{ counter }}</strong> members &middot; <strong>{{ with_pap }}</strong> with PAP{% endblocktranslate %}{% if target.minimum %} {% blocktranslate trimmed with inactive=counts.inactive %}&middot; <strong>{{ inactive }}</strong> below minimum{% endblocktranslate %}{% endif %}
   {% if page_obj.paginator.count != counts.all %}<span class="text-muted">{% blocktranslate trimmed with shown=page_obj.paginator.count %}&middot; {{ shown }} shown{% endblocktranslate %}</span>{% endif %}
 </div>
-{% if not target.minimum and not month_ref.is_future %}
+{% if target.rule is None %}
+<div class="alert alert-info py-2" id="no-target-notice">{% translate "No target for this month: nobody is assessed or listed as inactive. Set a monthly target first." %}{% if perms.fleetops.manage_configuration %} {% url 'fleetops:configuration_list' 'statistics-targets' as targets_url %}{% blocktranslate trimmed with url=targets_url %}<a href="{{ url }}">Set monthly targets</a>.{% endblocktranslate %}{% endif %}</div>
+{% elif not target.minimum and not month_ref.is_future %}
 <div class="alert alert-info py-2">{% translate "The member minimum is 0 for this month, so nobody is listed as inactive." %}</div>
-{% elif not target.rule %}
-<div class="small text-muted mb-2">{% blocktranslate trimmed with minimum=target.minimum %}No monthly target is set, so a member needs at least {{ minimum }} PAP.{% endblocktranslate %}{% if perms.fleetops.manage_configuration %} {% url 'fleetops:configuration_list' 'statistics-targets' as targets_url %}{% blocktranslate trimmed with url=targets_url %}<a href="{{ url }}">Set the Monthly Targets</a>.{% endblocktranslate %}{% endif %}</div>
 {% else %}
 <div class="small text-muted mb-2">{% if month_ref.is_current %}{% blocktranslate trimmed with minimum=target.minimum effective_from=target.rule.effective_from %}A member needs at least {{ minimum }} PAP in the month (rule from {{ effective_from }}). The month is still running, so members below it are shown as &ldquo;Below minimum so far&rdquo;.{% endblocktranslate %}{% else %}{% blocktranslate trimmed with minimum=target.minimum effective_from=target.rule.effective_from %}A member needs at least {{ minimum }} PAP in the month (rule from {{ effective_from }}).{% endblocktranslate %}{% endif %}</div>
 {% endif %}

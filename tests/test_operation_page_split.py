@@ -85,7 +85,7 @@ class OperationPageSplitTests(FleetOpsViewTestCase):
                 "The PAP multiplier is chosen when the fleet ends.",
                 'id="pap-preview"',
                 "Assign Role",
-                'Special Roles <span class="badge bg-secondary">1</span>',
+                'Special Roles <span class="fo-count">1</span>',
                 'id="ping-snapshot"',
                 "Ping channel: None (copy only) · Mention: No ping",
                 'id="ping-text"',
@@ -109,7 +109,7 @@ class OperationPageSplitTests(FleetOpsViewTestCase):
                 "Member events are shown once the fleet has closed.",
                 "While the fleet is open you see the PAP of your own characters.",
                 "<td>member Main</td>",
-                'Special Roles <span class="badge bg-secondary">1</span>',
+                'Special Roles <span class="fo-count">1</span>',
             ],
         )
         self.assertNoneContained(

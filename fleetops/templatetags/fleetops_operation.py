@@ -4,8 +4,9 @@
 from django import template
 from django.utils.translation import gettext as _
 
-from fleetops.models import FleetOperation
+from fleetops.models import FleetOperation, OperationAction
 from fleetops.services.mentions import mention_text, selection_from_operation
+from fleetops.templatetags.fleetops_i18n import step_label
 
 register = template.Library()
 
@@ -38,6 +39,34 @@ MEMBER_STEPS = {
     "fleet_move",
     "fleet_invite",
 }
+
+
+# The steps a fleet start runs; the others are jobs of the Fleet tab and the end of the fleet.
+START_STEPS = (
+    "fleet_detection",
+    "message_render",
+    "discord_ping",
+    "motd_update",
+    "tracking_start",
+    "srp_link",
+    "manual_fleet",
+    "pap_link_fleet",
+)
+
+
+@register.simple_tag
+def failed_start_steps(operation, actions):
+    """The names of the start steps that failed, while the fleet is open and so can still be put right.
+
+    A closed fleet keeps its history in the steps list; it does not ask for attention any more.
+    """
+    if operation.status not in FleetOperation.OPEN_STATUSES:
+        return []
+    return [
+        step_label(step.action)
+        for step in actions or ()
+        if step.action in START_STEPS and step.status == OperationAction.Status.FAILED
+    ]
 
 
 @register.filter

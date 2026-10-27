@@ -17,6 +17,7 @@ from fleetops.models import ChannelPreset, CommsPreset, FleetOperation, MessageT
 from fleetops.services.messages import render_messages
 
 from . import factories as f
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 
 upgrade = importlib.import_module("fleetops.migrations.0009_convert_ping_targets_and_presets")
 

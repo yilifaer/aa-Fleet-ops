@@ -53,6 +53,7 @@ from fleetops.services.messages import render_operation_messages
 from fleetops.services.operations import start_fleet
 
 from . import factories as f
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 
 ACTIVE = FleetOperation.Status.ACTIVE
 CLOSED = FleetOperation.Status.CLOSED
@@ -730,7 +731,7 @@ class ObjectIsolationTests(StartFleetPatchesMixin, TestCase):
         f.add_attendance(self.op_b_closed, outsider)
         self.client.force_login(manager)
         self.assertEqual(
-            self.client.get(reverse("fleetops:corporation_statistics_detail", args=[f.OTHER_CORP[0]])).status_code, 403
+            self.client.get(reverse("fleetops:corporation_statistics_detail", args=[f.OTHER_CORP[0]])).status_code, 404
         )
         self.assertEqual(self.client.get(reverse("fleetops:all_corporation_statistics")).status_code, 403)
         self.assertEqual(self.client.get(reverse("fleetops:attendance_history_alliance")).status_code, 403)
@@ -852,10 +853,11 @@ class MassAssignmentTests(StartFleetPatchesMixin, TestCase):
         )
         self.assertEqual(response.status_code, 302)
         period = IncentivePeriod.objects.get(year=2026, month=5)
-        self.assertEqual(period.status, IncentivePeriod.Status.OPEN)
+        # A new period is calculated at once, so it is in review: the forged status is ignored all the same.
+        self.assertEqual(period.status, IncentivePeriod.Status.REVIEW)
         self.assertIsNone(period.finalized_by)
         self.assertIsNone(period.finalized_at)
-        self.assertEqual(period.policy_snapshot, {})
+        self.assertNotIn("forged", period.policy_snapshot)
 
     def test_manual_fleet_ignores_owner_and_tracking_fields(self):
         response = self.client.post(

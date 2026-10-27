@@ -15,44 +15,45 @@
 {% include "fleetops/operation/_srp.html" %}
 
 <ul class="nav nav-tabs" role="tablist" id="operation-tabs">
-  {% if show_fleet_tab %}<li class="nav-item"><button class="nav-link{% if fleet_tab_default %} active{% endif %}" data-bs-toggle="tab" data-bs-target="#fleet" id="fleet-tab">{% if operation.status == 'closed' %}{% translate "Composition" %}{% else %}{% translate "Fleet" %}{% endif %}</button></li>{% endif %}
-  <li class="nav-item"><button class="nav-link{% if not fleet_tab_default %} active{% endif %}" data-bs-toggle="tab" data-bs-target="#members">{% translate "Members" %}</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#map">{% translate "3-Jump Map" %}</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#events">{% translate "Events" %}</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#attendance">PAP</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#roles">{% translate "Special Roles" %} <span class="badge bg-secondary">{{ role_rows|length }}</span></button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#messages">{% translate "Ping / MOTD" %}</button></li>
+  {% if show_fleet_tab %}<li class="nav-item" role="presentation"><button type="button" role="tab" aria-controls="fleet" aria-selected="{% if default_tab == 'fleet' %}true{% else %}false{% endif %}" class="nav-link{% if default_tab == 'fleet' %} active{% endif %}" data-bs-toggle="tab" data-bs-target="#fleet" id="fleet-tab">{% if operation.status == 'closed' %}{% translate "Composition" %}{% else %}{% translate "Fleet" %}{% endif %}</button></li>{% endif %}
+  <li class="nav-item" role="presentation"><button type="button" role="tab" aria-controls="members" aria-selected="false" class="nav-link" data-bs-toggle="tab" data-bs-target="#members">{% translate "Members" %}</button></li>
+  <li class="nav-item" role="presentation"><button type="button" role="tab" aria-controls="map" aria-selected="false" class="nav-link" data-bs-toggle="tab" data-bs-target="#map">{% translate "3-Jump Map" %}</button></li>
+  <li class="nav-item" role="presentation"><button type="button" role="tab" aria-controls="events" aria-selected="false" class="nav-link" data-bs-toggle="tab" data-bs-target="#events">{% translate "Events" %}</button></li>
+  <li class="nav-item" role="presentation"><button type="button" role="tab" aria-controls="attendance" aria-selected="{% if default_tab != 'fleet' %}true{% else %}false{% endif %}" class="nav-link{% if default_tab != 'fleet' %} active{% endif %}" data-bs-toggle="tab" data-bs-target="#attendance">PAP</button></li>
+  <li class="nav-item" role="presentation"><button type="button" role="tab" aria-controls="roles" aria-selected="false" class="nav-link" data-bs-toggle="tab" data-bs-target="#roles">{% translate "Special Roles" %} <span class="fo-count">{{ role_rows|length }}</span></button></li>
+  <li class="nav-item" role="presentation"><button type="button" role="tab" aria-controls="messages" aria-selected="false" class="nav-link" data-bs-toggle="tab" data-bs-target="#messages">{% translate "Ping / MOTD" %}</button></li>
 </ul>
-<div class="tab-content border border-top-0 rounded-bottom p-3">
+<div class="tab-content pt-3">
   {% if show_fleet_tab %}
-  <div class="tab-pane fade{% if fleet_tab_default %} show active{% endif %}" id="fleet">
+  <div role="tabpanel" class="tab-pane fade{% if default_tab == 'fleet' %} show active{% endif %}" id="fleet">
     {% include "fleetops/operation/_fleet.html" %}
   </div>
   {% endif %}
 
-  <div class="tab-pane fade{% if not fleet_tab_default %} show active{% endif %}" id="members">
+  <div role="tabpanel" class="tab-pane fade" id="members">
     <div id="members-fragment">{% include "fleetops/operation/_members.html" %}</div>
   </div>
 
-  <div class="tab-pane fade" id="map">
+  <div role="tabpanel" class="tab-pane fade" id="map">
     {% include "fleetops/operation/_map.html" %}
   </div>
 
-  <div class="tab-pane fade" id="events">
+  <div role="tabpanel" class="tab-pane fade" id="events">
     {% include "fleetops/operation/_events.html" %}
   </div>
 
-  <div class="tab-pane fade" id="attendance">
+  <div role="tabpanel" class="tab-pane fade{% if default_tab != 'fleet' %} show active{% endif %}" id="attendance">
     {% include "fleetops/operation/_attendance_manual.html" %}
     {% include "fleetops/operation/_multiplier.html" %}
+    {% include "fleetops/operation/_pap_limit.html" %}
     <div id="pap-preview-fragment">{% include "fleetops/operation/_attendance_table.html" %}</div>
   </div>
 
-  <div class="tab-pane fade" id="roles">
+  <div role="tabpanel" class="tab-pane fade" id="roles">
     {% include "fleetops/operation/_roles.html" %}
   </div>
 
-  <div class="tab-pane fade" id="messages">
+  <div role="tabpanel" class="tab-pane fade" id="messages">
     {% include "fleetops/operation/_messages.html" %}
   </div>
 </div>
@@ -60,7 +61,6 @@
 
 {% translate "Ending…" as ending_label %}
 <script>
-document.querySelectorAll('.copy').forEach(b=>b.addEventListener('click',()=>navigator.clipboard.writeText(document.getElementById(b.dataset.id).textContent)));
 document.querySelectorAll('.end-fleet-form').forEach(form=>form.addEventListener('submit',event=>{
   // One click is enough: the end runs in the background and a second submit would only wait for it.
   if(form.dataset.submitted){ event.preventDefault(); return; }
@@ -68,6 +68,23 @@ document.querySelectorAll('.end-fleet-form').forEach(form=>form.addEventListener
   const button=form.querySelector('button:not([data-bs-dismiss])');
   if(button){ button.disabled=true; button.textContent='{{ ending_label|escapejs }}'; }
 }));
+// The command bar of a manager sticks right under the navbar: its offset in the page area is measured, because a
+// menu that wraps makes the navbar taller than the one line the area is padded for.
+(function(){
+  const bar=document.getElementById('fleet-command-bar');
+  if(!bar || !bar.classList.contains('is-sticky')){ return; }
+  function place(){
+    const navbar=document.querySelector('nav.navbar.fixed-top');
+    let area=bar.parentElement;
+    while(area && area!==document.body && !/(auto|scroll)/.test(getComputedStyle(area).overflowY)){ area=area.parentElement; }
+    const areaTop=area && area!==document.body ? area.getBoundingClientRect().top : 0;
+    const navBottom=navbar ? navbar.getBoundingClientRect().bottom : 0;
+    bar.style.setProperty('--fleet-bar-top',`${Math.max(0,Math.round(navBottom-areaTop))}px`);
+  }
+  document.addEventListener('DOMContentLoaded',place);
+  window.addEventListener('load',place);
+  window.addEventListener('resize',place);
+})();
 // A tab named in the address (#fleet, #members, …) opens on load; the open tab is kept in the address.
 (function(){
   const tabs=document.getElementById('operation-tabs');

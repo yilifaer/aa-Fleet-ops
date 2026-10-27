@@ -472,7 +472,7 @@ class ExportLinkTests(HistoryTestCase):
                 rows = self.download(user, self.export_links(response)["CSV"])
 
                 self.assertEqual(rows[0][0], "Fleet start (EVE)")
-                exported = sorted((row[10], row[5], row[9]) for row in rows[1:])
+                exported = sorted((row[11], row[6], row[10]) for row in rows[1:])
                 self.assertEqual(exported, page_rows)
 
     def test_the_download_is_audited_with_the_month(self):

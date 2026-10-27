@@ -24,16 +24,9 @@
     const api = fleet();
     if (api && typeof api.flash === 'function') {
       api.flash(message, level);
-      return;
+    } else if (window.FleetOps && typeof window.FleetOps.toast === 'function') {
+      window.FleetOps.toast(message, level);
     }
-    const box = document.getElementById('fleet-flash');
-    if (!box) {
-      return;
-    }
-    const alert = document.createElement('div');
-    alert.className = `alert alert-${level === 'error' ? 'danger' : level || 'info'} py-2`;
-    alert.textContent = message;
-    box.replaceChildren(alert);
   }
 
   function setBusy(key, on) {
@@ -214,7 +207,7 @@
       }
       const wingButtons = single ? [targetButton(gettext('Wing commander'), 'wing_commander', wingId, '', rows)] : [];
       const wingLine = targetLine(nodeName(wing) || interpolate(gettext('Wing %(id)s'), { id: wingId }, true), wingButtons, false);
-      wingLine.classList.add('fw-semibold', 'border-top');
+      wingLine.classList.add('fw-semibold', 'fo-divider-top');
       lines.push(wingLine);
       wing.querySelectorAll('li.fleet-node[data-node="squad"]').forEach((squad) => {
         const squadId = squad.dataset.squadId;
@@ -365,38 +358,56 @@
     return target;
   }
 
-  // Marks the places the dragged members can go. An empty squad has no rows to drop on, so its
-  // member list gets some height while the drag lasts.
+  // Marks the places the dragged members can go. An empty squad has no rows to drop on; its list keeps the
+  // height the server gave it (fleet-members-empty), so the drag only draws an outline and nothing below it moves.
   function markDropTargets(ids) {
     root.querySelectorAll('[data-drop-role]').forEach((target) => {
       if (!dropRole(target, ids)) {
         return;
       }
       target.classList.add('fleet-drop-target');
-      if (target.tagName === 'UL' && !target.children.length) {
-        target.style.minHeight = '1.75rem';
-        target.style.outline = '1px dashed var(--bs-secondary-color, #6c757d)';
-        target.dataset.fleetDropSized = '1';
+      if (target.tagName === 'UL' && target.classList.contains('fleet-members-empty')) {
+        target.classList.add('fleet-drop-empty');
       }
     });
   }
 
   function clearDropMarks() {
-    root.querySelectorAll('.fleet-drop-over, .fleet-drop-target').forEach((element) => {
-      element.classList.remove('fleet-drop-over', 'fleet-drop-target');
-    });
-    root.querySelectorAll('[data-fleet-drop-sized]').forEach((element) => {
-      element.style.minHeight = '';
-      element.style.outline = '';
-      delete element.dataset.fleetDropSized;
+    root.querySelectorAll('.fleet-drop-over, .fleet-drop-target, .fleet-drop-empty').forEach((element) => {
+      element.classList.remove('fleet-drop-over', 'fleet-drop-target', 'fleet-drop-empty');
     });
   }
 
+  // The label that follows the pointer: the member's name, or how many members are dragged. It is built when
+  // the drag starts, kept off screen and taken as the drag image by the browser, so the dragged rows are not
+  // copied into the picture.
+  let dragLabel = null;
+
+  function removeDragLabel() {
+    if (dragLabel) {
+      dragLabel.remove();
+      dragLabel = null;
+    }
+  }
+
+  function makeDragLabel(row, ids) {
+    removeDragLabel();
+    const text = ids.length === 1
+      ? row.dataset.characterName || memberName(row)
+      : interpolate(gettext('%(count)s selected'), { count: ids.length }, true);
+    dragLabel = document.createElement('div');
+    dragLabel.className = 'fleet-drag-label';
+    dragLabel.textContent = text;
+    document.body.appendChild(dragLabel);
+    return dragLabel;
+  }
+
   function endDrag() {
+    removeDragLabel();
     if (!drag) {
       return;
     }
-    drag.rows.forEach((row) => row.classList.remove('opacity-50'));
+    drag.rows.forEach((row) => row.classList.remove('fleet-dragging'));
     drag = null;
     clearDropMarks();
     setBusy('drag', false);
@@ -414,13 +425,18 @@
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = 'move';
       event.dataTransfer.setData('text/plain', ids.join(','));
+      if (typeof event.dataTransfer.setDragImage === 'function') {
+        event.dataTransfer.setDragImage(makeDragLabel(row, ids), 12, 12);
+      }
     }
     setBusy('drag', true);
     // After the browser took the drag image, so the image shows the row as it was.
     const current = drag;
     setTimeout(() => {
+      // The browser has taken the picture of the label by now.
+      removeDragLabel();
       if (drag === current) {
-        current.rows.forEach((member) => member.classList.add('opacity-50'));
+        current.rows.forEach((member) => member.classList.add('fleet-dragging'));
         markDropTargets(ids);
       }
     }, 0);

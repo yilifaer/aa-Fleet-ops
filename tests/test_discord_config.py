@@ -479,3 +479,143 @@ class PingChannelConfigurationTests(TestCase):
         self.assertNotContains(index, "Ping Targets")
         self.assertNotContains(index, "Legacy Target")
         self.assertNotContains(index, "/configuration/ping-targets/")
+
+
+class PingChannelGroupTests(TestCase):
+    """Which groups' leaders may use a channel, and whether alliance FCs still may (owner decision 5-7)."""
+
+    def setUp(self):
+        self.admin = f.create_user(perms=CONFIG_PERMS)
+        self.client.force_login(self.admin)
+        self.group = f.aa_group("Example Fleet Group")
+        f.group_access(self.group)
+        self.unconfigured = f.aa_group("Example Unconfigured")
+
+    def payload(self, **extra):
+        data = {
+            "name": "Group Pings",
+            "webhook_url": "https://discord.com/api/webhooks/1/token",
+            "is_active": "on",
+            "sort_order": "5",
+        }
+        data.update(extra)
+        return data
+
+    def test_the_form_offers_configured_groups_and_explains_the_switch(self):
+        form = DiscordWebhookForm()
+
+        self.assertEqual([label for _, label in form.fields["allowed_groups"].choices], ["Example Fleet Group"])
+        self.assertEqual(
+            str(form.fields["fcs_allowed"].help_text),
+            "Only applies while the channel is assigned to at least one group. FC leads (manage_fleets) can always "
+            "use it.",
+        )
+        channel = f.group_channel("Old Group Pings", groups=[self.unconfigured])
+        labels = [label for _, label in DiscordWebhookForm(instance=channel).fields["allowed_groups"].choices]
+        self.assertEqual(labels, ["Example Fleet Group", "Example Unconfigured (not configured)"])
+
+    def test_both_fields_are_saved_and_audited_without_the_webhook_url(self):
+        response = self.client.post(
+            reverse("fleetops:configuration_add", args=["ping-channels"]),
+            self.payload(allowed_groups=[str(self.group.pk)]),
+        )
+
+        self.assertRedirects(response, reverse("fleetops:configuration_list", args=["ping-channels"]))
+        channel = DiscordWebhook.objects.get()
+        self.assertEqual(list(channel.allowed_groups.all()), [self.group])
+        self.assertFalse(channel.fcs_allowed)
+        entry = AuditLog.objects.get(action="configuration.create")
+        self.assertEqual(entry.new_value["allowed_groups"], [self.group.pk])
+        self.assertEqual(entry.new_value["fcs_allowed"], False)
+        self.assertEqual(entry.new_value["webhook_url"], "***redacted***")
+        self.assertNotIn("token", str(entry.new_value))
+
+    def test_without_a_group_the_channel_is_open_to_fcs_whatever_was_posted(self):
+        self.client.post(reverse("fleetops:configuration_add", args=["ping-channels"]), self.payload())
+
+        self.assertTrue(DiscordWebhook.objects.get().fcs_allowed)
+
+    def test_a_group_channel_still_open_to_fcs_warns(self):
+        response = self.client.post(
+            reverse("fleetops:configuration_add", args=["ping-channels"]),
+            self.payload(allowed_groups=[str(self.group.pk)], fcs_allowed="on"),
+            follow=True,
+        )
+
+        self.assertContains(response, "Alliance FCs can still use this channel.")
+        self.assertTrue(DiscordWebhook.objects.get().fcs_allowed)
+
+    def test_the_list_shows_groups_and_whether_fcs_may_use_the_channel(self):
+        f.group_channel("Group Pings", groups=[self.group])
+        f.ping_channel("Alliance Pings", fcs_allowed=False)
+
+        response = self.client.get(reverse("fleetops:configuration_list", args=["ping-channels"]))
+
+        rows = {row["object"].name: dict(row["values"]) for row in response.context["rows"]}
+        self.assertEqual(rows["Group Pings"]["Groups"], "Example Fleet Group")
+        self.assertFalse(rows["Group Pings"]["FCs"])
+        # A channel without a group is an alliance channel, whatever its stored switch says.
+        self.assertEqual(rows["Alliance Pings"]["Groups"], "")
+        self.assertTrue(rows["Alliance Pings"]["FCs"])
+
+    def test_the_list_query_count_does_not_grow_with_groups(self):
+        url = reverse("fleetops:configuration_list", args=["ping-channels"])
+        f.group_channel("Group Pings", groups=[self.group])
+        self.client.get(url)
+        small = self._queries(url)
+        for number in range(3):
+            group = f.aa_group(f"Example Extra {number}")
+            f.group_channel(f"Extra Pings {number}", groups=[group, self.group])
+
+        self.assertEqual(self._queries(url), small)
+
+    def _queries(self, url):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        with CaptureQueriesContext(connection) as captured:
+            self.client.get(url)
+        return len(captured)
+
+
+class GroupSectionTests(TestCase):
+    """The Groups section of FleetOps Administration and its hooks."""
+
+    def setUp(self):
+        self.admin = f.create_user(perms=CONFIG_PERMS)
+        self.client.force_login(self.admin)
+        self.group = f.aa_group("Example Fleet Group")
+        self.access = f.group_access(self.group)
+
+    def test_the_section_lists_its_rows(self):
+        response = self.client.get(reverse("fleetops:configuration_list", args=["groups"]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([row["object"] for row in response.context["rows"]], [self.access])
+        labels = [label for label, _value in response.context["rows"][0]["values"]]
+        self.assertEqual(
+            [str(label) for label in labels],
+            ["Group", "Leaders may", "Fleet types", "Ping channels", "Leaders (from Alliance Auth)", "SRP", "Active"],
+        )
+
+    def test_the_hooks_are_called_on_the_list_and_on_the_edit_page(self):
+        from fleetops import views_config
+
+        prepare = mock.Mock()
+        with mock.patch.dict(views_config.CONFIG_SECTIONS["groups"], {"prepare": prepare}):
+            self.client.get(reverse("fleetops:configuration_list", args=["groups"]))
+            response = self.client.get(reverse("fleetops:configuration_edit", args=["groups", self.access.pk]))
+
+        self.assertEqual([call.args[0] for call in prepare.call_args_list], [[self.access], [self.access]])
+        self.assertEqual(response.context["edit_include"], "fleetops/configuration/_group_leaders.html")
+        add = self.client.get(reverse("fleetops:configuration_add", args=["groups"]))
+        self.assertEqual(add.context["edit_include"], "fleetops/configuration/_group_leaders.html")
+        other = self.client.get(reverse("fleetops:configuration_add", args=["fleet-types"]))
+        self.assertEqual(other.context["edit_include"], "")
+
+    def test_only_administrators_open_the_section(self):
+        leader = f.create_user("leader", perms=f.MEMBER_PERMS)
+        self.group.authgroup.group_leaders.add(leader.pk)
+        self.client.force_login(leader)
+
+        self.assertEqual(self.client.get(reverse("fleetops:configuration_list", args=["groups"])).status_code, 403)

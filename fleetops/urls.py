@@ -19,6 +19,7 @@ from fleetops import (
     views_links,
     views_members,
     views_pap,
+    views_pings,
     views_presets,
     views_records,
     views_srp,
@@ -83,11 +84,17 @@ urlpatterns += [
 
 urlpatterns += [
     path("operations/<uuid:operation_uuid>/pap/recalculate/", views_pap.recalculate_pap_view, name="recalculate_pap"),
+    path("operations/<uuid:operation_uuid>/pap/limit/", views_pap.set_pap_limit_view, name="set_pap_limit"),
     path("operations/<uuid:operation_uuid>/statistics-inclusion/", views_pap.set_stats_mode_view, name="set_stats_mode"),
     path("api/me/live-pap/", views_pap.live_pap_partial, name="live_pap"),
     path("approvals/", views_records.approval_queue, name="approval_queue"),
     path("approvals/operations/<uuid:operation_uuid>/", views_records.review_operation_view, name="review_operation"),
     path("approvals/attendance/", views_records.review_attendance_view, name="review_attendance"),
+    path(
+        "approvals/operations/<uuid:operation_uuid>/resubmit/",
+        views_records.resubmit_operation_view,
+        name="resubmit_operation",
+    ),
     path("attendance/<uuid:operation_uuid>/roster/", views_records.roster_import_view, name="roster_import"),
     path("pap/<slug:code>/", views_links.pap_link_register, name="pap_link_register"),
     path("pap/<slug:code>/authorize/", views_links.pap_link_authorize, name="pap_link_authorize"),
@@ -157,6 +164,12 @@ urlpatterns += [
     ),
     path("srp/summary/fc/", views_srp_summary.fc_summary, name="srp_summary_own_fc"),
     path("srp/summary/fc/<int:user_id>/", views_srp_summary.fc_summary, name="srp_summary_fc"),
+]
+
+# Send Ping: pings without a fleet, for FCs and group leaders.
+urlpatterns += [
+    path("ping/", views_pings.send_ping_view, name="send_ping"),
+    path("ping/preview/", views_pings.preview_ping, name="preview_ping"),
 ]
 
 # Translations for the JavaScript of the FleetOps pages. The page asks for it with the language and the

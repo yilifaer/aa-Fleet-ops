@@ -4,12 +4,16 @@
 import json
 import logging
 from dataclasses import dataclass
+from datetime import timedelta
 from http import HTTPStatus
 from importlib import import_module
 from typing import Any
 
 import requests
 from allianceauth.services.hooks import get_extension_logger
+from django.db.models import Q
+from django.utils import timezone
+from esi import app_settings as esi_settings
 from esi.exceptions import ESIBucketLimitException, ESIErrorLimitException, HTTPNotModified
 from esi.models import Token
 from esi.openapi_clients import ESIClientProvider
@@ -29,6 +33,7 @@ from fleetops.texts import (
     ESI_NO_TOKEN,
     ESI_RATE_LIMIT,
     ESI_TIMEOUT,
+    ESI_TOKEN_REFRESH_FAILED,
     ESI_UNEXPECTED,
     INVITE_CHARACTER_FAILED,
     INVITE_FAILED,
@@ -55,6 +60,7 @@ from fleetops.texts import (
     SQUAD_DELETE_FAILED,
     SQUAD_NO_ID,
     SQUAD_RENAME_FAILED,
+    SYSTEM_NAMES_LOOKUP_FAILED,
     WING_CREATE_FAILED,
     WING_DELETE_FAILED,
     WING_NO_ID,
@@ -92,6 +98,7 @@ esi = ESIClientProvider(
         "GetCharactersCharacterIdLocation",
         "GetCharactersCharacterIdShip",
         "PostUniverseIds",
+        "GetCharactersCharacterId",
         *KILLMAIL_OPERATIONS,
     ],
 )
@@ -291,7 +298,7 @@ def as_dict(value: Any) -> dict:
         "solar_system_id", "role_name", "takes_fleet_warp", "is_free_move", "join_time",
         "is_registered", "is_voice_enabled", "motd", "id", "name", "category", "corporation_id",
         "alliance_id", "faction_id", "online", "station_id", "structure_id", "ship_name", "ship_item_id",
-        "squads",
+        "squads", "bloodline_id",
     ):
         if hasattr(value, key):
             result[key] = getattr(value, key)
@@ -306,15 +313,27 @@ def _field(value: Any, name: str, default=None):
 
 
 def get_token(user, character_id: int, write: bool = False):
+    """A valid fleet token of ``user`` for the character; an expired one is refreshed with EVE SSO first.
+
+    A token that EVE SSO refuses to refresh is removed by django-esi and reads as no token. Any other failure
+    of the refresh (EVE SSO cannot be reached, for example) is a ``FleetESIError``, so the pages show it like
+    every other ESI problem. Only the class of the error is logged, never a token.
+    """
     scopes = [FLEET_READ_SCOPE]
     if write:
         scopes.append(FLEET_WRITE_SCOPE)
-    token = (
-        Token.objects.filter(user=user, character_id=character_id)
-        .require_scopes(scopes)
-        .require_valid()
-        .first()
-    )
+    try:
+        token = (
+            Token.objects.filter(user=user, character_id=character_id)
+            .require_scopes(scopes)
+            .require_valid()
+            .first()
+        )
+    except Exception as exc:  # django-esi lets network errors of the refresh through
+        _log_esi_failure("Could not refresh the ESI token", exc)
+        raise FleetESIError(
+            "TOKEN_REFRESH_FAILED", ESI_TOKEN_REFRESH_FAILED(error_type=type(exc).__name__)
+        ) from exc
     if token is None:
         raise FleetESIError(
             "MISSING_WRITE_SCOPE" if write else "MISSING_READ_SCOPE",
@@ -323,12 +342,39 @@ def get_token(user, character_id: int, write: bool = False):
     return token
 
 
+def fleet_token_flags(user, character_ids) -> dict:
+    """``{character_id: (read, write)}``: whether ``user`` has a fleet token for each character that can work.
+
+    From the database only, for pages that show the token state: nothing is refreshed with EVE SSO and nothing
+    is deleted (django-esi's ``require_valid`` would do both while the page is drawn). A token can work while
+    its access token has not expired or it has a refresh token. One query, whatever the number of characters.
+    """
+    ids = [int(character_id) for character_id in character_ids]
+    flags = dict.fromkeys(ids, (False, False))
+    if user is None or not ids:
+        return flags
+    valid_since = timezone.now() - timedelta(seconds=getattr(esi_settings, "ESI_TOKEN_VALID_DURATION", 1170))
+    rows = (
+        Token.objects.filter(user=user, character_id__in=ids, scopes__name__in=[FLEET_READ_SCOPE, FLEET_WRITE_SCOPE])
+        .filter(Q(refresh_token__isnull=False) | Q(created__gt=valid_since))
+        .values_list("pk", "character_id", "scopes__name")
+    )
+    scopes = {}
+    for token_id, character_id, scope in rows:
+        scopes.setdefault((token_id, character_id), set()).add(scope)
+    for (_token_id, character_id), names in scopes.items():
+        read, write = flags[character_id]
+        flags[character_id] = (
+            read or FLEET_READ_SCOPE in names,
+            write or {FLEET_READ_SCOPE, FLEET_WRITE_SCOPE} <= names,
+        )
+    return flags
+
+
 def has_scope_token(user, character_id: int, write: bool = False) -> bool:
-    try:
-        get_token(user, character_id, write=write)
-        return True
-    except FleetESIError:
-        return False
+    """Whether ``user`` has a fleet token for the character that can work (database only, see above)."""
+    read, can_write = fleet_token_flags(user, [character_id])[int(character_id)]
+    return can_write if write else read
 
 
 def detect_character_fleet(user, character_id: int, fresh: bool = False) -> FleetDetectionResult:
@@ -365,6 +411,20 @@ def detect_character_fleet(user, character_id: int, fresh: bool = False) -> Flee
         wing_id=payload.get("wing_id"),
         fleet_boss_id=int(boss_id) if boss_id else None,
     )
+
+
+def character_bloodline(character_id: int) -> int | None:
+    """The bloodline ID of a character from ESI's public character information; None when it cannot be read.
+
+    No token is involved. Every failure is logged without detail beyond the status and request id.
+    """
+    try:
+        payload = as_dict(_read(esi.client.Character.GetCharactersCharacterId(character_id=int(character_id))))
+    except Exception as exc:
+        _log_esi_failure("Could not read a character's bloodline", exc, level=logging.INFO)
+        return None
+    bloodline = payload.get("bloodline_id")
+    return int(bloodline) if bloodline else None
 
 
 def get_fleet_info(user, character_id: int, fleet_id: int) -> dict:
@@ -766,6 +826,15 @@ def universe_type_ids(names) -> dict[str, tuple[int, str]]:
     Used to turn the ship name of a payout rule into its type ID. Any failed call raises FleetESIError.
     """
     return _universe_lookup(names, "inventory_types", "TYPE_IDS_ERROR", ITEM_NAMES_LOOKUP_FAILED)
+
+
+def universe_system_ids(names) -> dict[str, tuple[int, str]]:
+    """Solar system IDs of exact system names, in the same shape as ``universe_ids``.
+
+    Used for the clickable form-up place of the MOTD when the SDE is not installed. Any failed call raises
+    FleetESIError.
+    """
+    return _universe_lookup(names, "systems", "SYSTEM_IDS_ERROR", SYSTEM_NAMES_LOOKUP_FAILED)
 
 
 # Alias for name entry and the roster import.

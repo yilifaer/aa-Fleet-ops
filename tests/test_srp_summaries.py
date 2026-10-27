@@ -578,7 +578,9 @@ class SummaryPageTests(SummaryData):
     def test_a_corporation_manager_cannot_open_another_corporation(self):
         response = self.get(self.corp_manager, "srp_summary_corporation", f.OTHER_CORP[0])
 
-        self.assertEqual(response.status_code, 403)
+        # Another corporation by ID is not found, with the reason; the alliance summary is not allowed.
+        self.assertEqual(response.status_code, 404)
+        self.assertContains(response, "You can only open the statistics of your own corporation.", status_code=404)
         self.assertEqual(self.get(self.corp_manager, "srp_summary").status_code, 403)
 
     def test_the_other_corporation_sees_only_its_own_numbers(self):
@@ -608,7 +610,8 @@ class SummaryPageTests(SummaryData):
         self.assertNotContains(response, reverse("fleetops:export", args=["srp-claims"]))
 
     def test_an_fc_cannot_open_another_fc(self):
-        self.assertEqual(self.get(self.fc1, "srp_summary_fc", self.fc2.pk).status_code, 403)
+        self.assertEqual(self.get(self.fc1, "srp_summary_fc", self.fc2.pk).status_code, 404)
+        self.assertEqual(self.get(self.fc1, "srp_summary_fc", self.fc1.pk).status_code, 200)
         self.assertEqual(self.get(self.manager, "srp_summary_fc", self.fc2.pk).status_code, 200)
 
     def test_internal_notes_are_nowhere_on_the_summaries(self):

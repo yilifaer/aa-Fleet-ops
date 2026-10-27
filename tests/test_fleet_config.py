@@ -87,6 +87,8 @@ class FakeModel:
             return str(getattr(row, key[: -len("__iexact")], "") or "").lower() == str(value).lower()
         if key == "category_id":
             return row.category_id == value
+        if key == "published":
+            return getattr(row, "published", True) == value
         if key == "group__category_id":
             return row.group.category_id == value
         raise FieldError(key)
@@ -392,15 +394,15 @@ class SettingsTests(ConfigTestCase):
         self.assertContains(response, "Use 0 to turn the live refresh off, or at least 10 seconds.")
 
     def test_bridge_exclusions_are_ship_group_ids(self):
-        response = self.post(bridge_excluded_group_ids="30, abc")
+        response = self.post(bridge_groups=["30"], bridge_other_ids="abc")
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "&quot;abc&quot; is not a valid ID. Separate IDs with commas.")
 
-        self.post(bridge_excluded_group_ids="30; 485 4594")
+        self.post(bridge_groups=["30"], bridge_other_ids="485; 4594")
         settings = FleetOpsSettings.get_solo()
         self.assertEqual(settings.bridge_excluded_groups, {30, 485, 4594})
         entry = AuditLog.objects.filter(action="configuration.update", object_type="FleetOpsSettings").latest("pk")
-        self.assertEqual(entry.new_value["bridge_excluded_group_ids"], "30; 485 4594")
+        self.assertEqual(entry.new_value["bridge_excluded_group_ids"], "30,485,4594")
 
     def test_bridge_exclusions_by_name(self):
         # Q4: the titan bridge rule leaves out capitals, supercapitals, Rorquals, freighters, jump freighters and

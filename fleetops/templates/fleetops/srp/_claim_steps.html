@@ -1,0 +1,14 @@
+{% load i18n fleetops_srp fleetops_messages %}{% comment %}The progress of a claim: submitted, checked, decided and paid. Context: claim.{% endcomment %}
+{% srp_steps claim as steps %}
+<div class="card mb-3" id="srp-claim-steps">
+  <div class="card-body">
+    <ol class="fo-steps" aria-label="{% translate 'Progress of the claim' %}">
+      {% for step in steps %}
+      <li class="fo-step is-{{ step.state }}" data-step="{{ step.key }}"{% if step.state == "current" %} aria-current="step"{% endif %}>
+        <div class="fw-semibold">{{ step.label }}</div>
+        {% if step.time %}<div class="small">{% eve_when step.time %}</div>{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+  </div>
+</div>

@@ -11,7 +11,7 @@
 //   applyState(state)         apply a state payload (poller answer or the "state" of an action answer)
 //   request(url, formData)    POST with the CSRF token; resolves to the JSON answer and applies its state
 //   getJSON(url)              GET a JSON answer of a Fleet tab route
-//   flash(message, level)     show a message above the tree (level: success, info, warning, error)
+//   flash(message, level)     show a notification (level: success, info, warning, error); the shared toast of fleetops.js
 //   isBusy() / setBusy(key, on)  swaps wait while something is busy (drag, open menu or modal, typing)
 //   onRender(fn)              fn(state) runs after every swap; returns a function that removes it
 //   selected()                the checked members as a Set of character ids (strings)
@@ -39,8 +39,7 @@
   const LEVELS = { success: 'success', info: 'info', warning: 'warning', error: 'danger' };
   const REQUEST_TIMEOUT = 45000;
   const MAX_DELAY_SECONDS = 60;
-  const FLASH_SECONDS = 8;
-  const FLASHES_SHOWN = 3;
+  const FLASH_SECONDS = 5;
   const SESSION_ENDED = gettext('Your session has expired — reload the page.');
   const STILL_WAITING = gettext('Still waiting for ESI — the result will show after the next refresh.');
   const NOT_SENT = gettext('The request did not reach the server. Check your connection and try again.');
@@ -87,6 +86,7 @@
   let stopped = false;
   let inFlight = false;
   let again = false;
+  let ended = false;
   let timer = null;
   let activeFunction = null;
   const busy = new Set();
@@ -162,6 +162,7 @@
       stale.classList.toggle('d-none', !state.stale);
     }
     tick();
+    updateLiveState();
   }
 
   // Tabs and hints
@@ -273,6 +274,30 @@
     }
   }
 
+  // The live indicator (#fleet-live-state) shows one of four states; the words of each are in the page.
+  function liveState() {
+    if (ended || failures) {
+      return 'error';
+    }
+    const stale = document.getElementById('fleet-stale');
+    if (stale && !stale.classList.contains('d-none')) {
+      return 'stale';
+    }
+    const toggle = document.getElementById('fleet-live-toggle');
+    if (canManage && toggle && !toggle.disabled && !toggle.checked) {
+      return 'paused';
+    }
+    return 'live';
+  }
+
+  function updateLiveState() {
+    const indicator = document.getElementById('fleet-live-state');
+    const state = liveState();
+    if (indicator && indicator.dataset.state !== state) {
+      indicator.dataset.state = state;
+    }
+  }
+
   function restore(selection) {
     applyCollapsed();
     root.querySelectorAll('input.fleet-select').forEach((box) => {
@@ -280,6 +305,7 @@
     });
     applyHighlight();
     applyLiveToggle();
+    updateLiveState();
   }
 
   // Keyboard focus inside a swapped fragment moves to the same control in the new HTML: the control
@@ -477,6 +503,7 @@
     }
     element.textContent = interpolate(gettext('No connection to the server — trying again in %(seconds)s s.'), { seconds: Math.round(nextDelay() / 1000) }, true);
     element.classList.remove('d-none');
+    updateLiveState();
   }
 
   function clearPollProblem() {
@@ -485,23 +512,18 @@
       element.textContent = '';
       element.classList.add('d-none');
     }
+    updateLiveState();
   }
 
   function sessionEnded() {
     stop();
     pending = null;
-    const alert = flash(SESSION_ENDED, 'warning', { sticky: true });
-    if (alert) {
-      const link = document.createElement('a');
-      link.href = '';
-      link.className = 'alert-link ms-1';
-      link.textContent = gettext('Reload');
-      link.addEventListener('click', (event) => {
-        event.preventDefault();
-        window.location.reload();
-      });
-      alert.insertBefore(link, alert.lastChild);
-    }
+    ended = true;
+    updateLiveState();
+    flash(SESSION_ENDED, 'warning', {
+      sticky: true,
+      action: { label: gettext('Reload'), onClick: () => window.location.reload() },
+    });
     showReloadHint(gettext('Session expired — reload page'));
   }
 
@@ -618,32 +640,24 @@
     return answerOf(response);
   }
 
+  // A notification in the stack of the fleet page (#fleet-flash, or the page's own): success and information go
+  // away after FLASH_SECONDS, a warning or an error stays until it is closed so the reason can be read.
   function flash(message, level, options) {
-    const area = document.getElementById('fleet-flash');
-    if (!area || !message) {
+    if (!message || !window.FleetOps || typeof window.FleetOps.toast !== 'function') {
       return null;
     }
     const kind = LEVELS[level] ? level : 'info';
-    const alert = document.createElement('div');
-    alert.className = `alert alert-${LEVELS[kind]} alert-dismissible py-2 mb-2`;
-    alert.setAttribute('role', kind === 'error' || kind === 'warning' ? 'alert' : 'status');
-    const text = document.createElement('span');
-    text.textContent = message;
-    alert.appendChild(text);
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.className = 'btn-close';
-    close.setAttribute('aria-label', gettext('Close'));
-    close.addEventListener('click', () => alert.remove());
-    alert.appendChild(close);
-    area.prepend(alert);
-    while (area.children.length > FLASHES_SHOWN) {
-      area.lastElementChild.remove();
-    }
-    if (!(options && options.sticky) && (kind === 'success' || kind === 'info')) {
-      window.setTimeout(() => alert.remove(), FLASH_SECONDS * 1000);
-    }
-    return alert;
+    const extra = options || {};
+    return window.FleetOps.toast(message, LEVELS[kind], {
+      sticky: Boolean(extra.sticky),
+      seconds: FLASH_SECONDS,
+      action: extra.action,
+    });
+  }
+
+  // What an answer tells the person: the message, and for a failure the next step (answer.hint).
+  function answerText(answer) {
+    return answer.hint ? `${answer.message} ${answer.hint}` : answer.message;
   }
 
   function confirmAction(text) {
@@ -721,7 +735,7 @@
     try {
       const answer = await request(form.action, data);
       if (answer && answer.message) {
-        flash(answer.message, answer.level || (answer.ok ? 'success' : 'error'));
+        flash(answerText(answer), answer.level || (answer.ok ? 'success' : 'error'));
       }
       document.dispatchEvent(new CustomEvent('fleetops:answer', { detail: { form, answer } }));
     } catch (error) {
@@ -793,6 +807,20 @@
       applyCollapsed();
       return;
     }
+    const indicator = event.target.closest('#fleet-live-state');
+    if (indicator && root.contains(indicator)) {
+      const state = indicator.dataset.state;
+      const toggle = document.getElementById('fleet-live-toggle');
+      if (ended) {
+        window.location.reload();
+      } else if (state === 'paused' && toggle && !toggle.disabled) {
+        toggle.checked = true;
+        toggle.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
+        schedule(0);
+      }
+      return;
+    }
     const row = event.target.closest('.fleet-function-row[role="button"]');
     if (row && !event.target.closest('a, button, form')) {
       activeFunction = activeFunction === row.dataset.functionFilter ? null : row.dataset.functionFilter;
@@ -811,6 +839,7 @@
   root.addEventListener('change', (event) => {
     if (event.target.id === 'fleet-live-toggle') {
       storage.set(liveKey, event.target.checked ? '1' : '0');
+      updateLiveState();
       if (event.target.checked) {
         schedule(0);
       }

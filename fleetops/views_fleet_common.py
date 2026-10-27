@@ -10,6 +10,7 @@ from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.cache import add_never_cache_headers
 from django.utils.translation import gettext as _
+from django.utils.translation import gettext_lazy
 
 from fleetops.models import MAX_DATABASE_ID
 from fleetops.services.fleet_access import FleetManageError, can_view_fleet_tab
@@ -18,8 +19,6 @@ from fleetops.services.fleet_rules import NO_UNIT
 from fleetops.services.fleet_view import state_payload
 from fleetops.texts import translate_stored
 from fleetops.views import _database_id, _operation_for_user
-
-MANAGE_PERMISSIONS = ("fleetops.manage_own_fleet", "fleetops.manage_fleets")
 
 MESSAGE_LEVELS = {
     "success": messages.success,
@@ -105,6 +104,27 @@ def invalid(message) -> FleetActionResult:
     return FleetActionResult(False, message, level="error", status=400)
 
 
+# The next step for a failed action, by HTTP status (UI text in the language of the viewer, never stored).
+# 400 (a rule refused the change) and 429 (the message already names the wait) get none.
+HINTS = {
+    502: gettext_lazy("Nothing was changed. Try again in a moment."),
+    409: gettext_lazy("Reload the page to see the fleet as it is now."),
+    404: gettext_lazy("The fleet is being read again; check the tree and try again."),
+}
+
+
+# A failure of ESI's limits says how long to wait ("ESI error limit reached; try again in 60 seconds."), whatever
+# the HTTP status of the answer is.
+LIMIT_MESSAGES = ("ESI error limit reached", "ESI rate limit reached")
+
+
+def failure_hint(status, ok=False, message="") -> str:
+    """What to do after a failed action with this HTTP status; "" after a success or when the message is enough."""
+    if ok or any(marker in str(message) for marker in LIMIT_MESSAGES):
+        return ""
+    return str(HINTS.get(status, ""))
+
+
 def _answer(result):
     """``(answer, HTTP status)`` of a FleetActionResult or a FleetManageError."""
     if isinstance(result, FleetManageError):
@@ -113,17 +133,23 @@ def _answer(result):
         ok, data = bool(result.ok), dict(result.data or {})
         message, status, level = result.message, result.status or 200, result.level
     # Messages that services store or raise are English; the page shows them in the viewer's language.
+    stored = message
     message = translate_stored(message)
     if level not in MESSAGE_LEVELS or (level == "success" and not ok):
         level = "success" if ok else "error"
-    return {"ok": ok, "message": message, "level": level, "data": data}, status
+    answer = {"ok": ok, "message": message, "level": level, "data": data}
+    hint = failure_hint(status, ok, stored)
+    if hint:
+        answer["hint"] = hint
+    return answer, status
 
 
-def fleet_response(request, operation, result):
+def fleet_response(request, operation, result, *, anchor="fleet"):
     """Answer a fleet action: JSON for the Fleet tab's scripts, a message and the fleet page for forms.
 
     ``result`` is the action's FleetActionResult or the FleetManageError it raised. The JSON
-    answer carries the Fleet tab's new state for viewers who may see the tab.
+    answer carries the Fleet tab's new state for viewers who may see the tab. A form post comes back to the
+    tab ``anchor`` of the fleet page.
     """
     answer, status = _answer(result)
     if wants_json(request):
@@ -134,7 +160,7 @@ def fleet_response(request, operation, result):
     if answer["message"]:
         MESSAGE_LEVELS[answer["level"]](request, answer["message"])
     url = reverse("fleetops:operation_detail", kwargs={"operation_uuid": operation.uuid})
-    return no_store(redirect(f"{url}#fleet"))
+    return no_store(redirect(f"{url}#{anchor}"))
 
 
 def run_fleet_action(request, operation, action, *args, **kwargs):

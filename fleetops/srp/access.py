@@ -8,8 +8,9 @@ Members see their own claims. ``view_all_stats`` sees every SRP summary and clai
 fleets they led, and SRP managers (``manage_srp``) everything. Only managers see internal notes and only
 managers decide, and by default not on their own claims.
 
-Failures on a single object (a claim, a corporation) are answered with ``Http404`` by the views, as elsewhere
-in FleetOps; a missing permission is a 403.
+A single object out of scope (a claim, a corporation, another FC's summary) is answered by the views with the
+FleetOps 404 page, the same for an ID that exists and one that does not; a corporation manager's own corporation
+by ID is their own summary. A missing permission is the FleetOps 403 page with its reason (``fleetops.views_errors``).
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from __future__ import annotations
 from django.db.models import Q
 
 from fleetops.models import SrpClaim, SrpFleetLink, SrpSettings
+from fleetops.services import group_access
 from fleetops.services.stats_access import VIEW_ALL_STATS, VIEW_CORP_STATS, own_corporation
 
 REQUEST_SRP = "fleetops.request_srp"
@@ -144,15 +146,47 @@ def led_fleets(user) -> bool:
     return _signed_in(user) and SrpFleetLink.objects.filter(fc_user=user).exists()
 
 
+def has_fc_permission(user) -> bool:
+    """Whether ``user`` holds a permission of people who lead fleets (``FC_PERMISSIONS``)."""
+    return _signed_in(user) and any(user.has_perm(name) for name in FC_PERMISSIONS)
+
+
+def leads_srp_group(user) -> bool:
+    """Whether ``user`` leads a group that runs fleets and has "SRP link for group fleets" on.
+
+    Such a leader is the FC of their group fleets as far as SRP goes: the fleets get a link and the leader
+    sees the claims and totals of them. Read from the request's cached ``leader_access``, which the page
+    already needs, so it costs no extra query.
+    """
+    return _signed_in(user) and any(
+        grant.runs_fleets and grant.srp_enabled for grant in group_access.leader_access(user).grants
+    )
+
+
+def leads_fleets(user) -> bool:
+    """Whether ``user`` has a "My fleets" summary: FCs always have one, even before a fleet of theirs has an
+    SRP link; so do leaders of SRP-enabled groups and anyone who led a fleet with an SRP link."""
+    return has_fc_permission(user) or leads_srp_group(user) or led_fleets(user)
+
+
 def summary_access(user) -> dict:
     """The summaries ``user`` may open.
 
     ``alliance``, ``corporations`` (any corporation) and ``fcs`` (any FC) are True for managers and
     ``view_all_stats``. ``own_corporation`` is the ``(id, name)`` of the user's corporation when its summary
-    is allowed, ``own_fc`` whether the user is the FC of fleets with an SRP link.
+    is allowed, ``own_fc`` whether the user has a "My fleets" page (see ``leads_fleets``) and ``manager``
+    whether the user decides on claims, so the alliance summary points them to the review page instead of
+    calling itself read only.
     """
     if not _signed_in(user):
-        return {"alliance": False, "corporations": False, "fcs": False, "own_corporation": None, "own_fc": False}
+        return {
+            "alliance": False,
+            "corporations": False,
+            "fcs": False,
+            "own_corporation": None,
+            "own_fc": False,
+            "manager": False,
+        }
     everything = sees_everything(user)
     corporation = own_corporation(user) if (everything or user.has_perm(VIEW_CORP_STATS)) else None
     return {
@@ -160,7 +194,8 @@ def summary_access(user) -> dict:
         "corporations": everything,
         "fcs": everything,
         "own_corporation": corporation,
-        "own_fc": led_fleets(user),
+        "own_fc": leads_fleets(user),
+        "manager": is_manager(user),
     }
 
 
@@ -169,8 +204,10 @@ def srp_nav(user) -> dict:
 
     ``enabled`` is the SRP switch, ``request`` whether "My SRP" is offered (permission and enabled),
     ``review`` the queue and payments for managers, ``pending_count`` the pending claims a manager can still
-    decide (one query, managers only) and ``summary`` whether any summary opens. ``visible`` is True when the
-    menu has an entry. Users without any SRP-related permission cost no query.
+    decide (one query, managers only) and ``summary`` whether any summary opens. ``own_fleets`` is whether the
+    menu has "My fleets": for every FC, whether or not a fleet of theirs has an SRP link yet, and for the leaders
+    of groups with SRP on. ``visible`` is True when the menu has an entry. Users without any SRP-related
+    permission cost no query beyond the group lookup every page makes for people who are not FCs.
     """
     hidden = {
         "enabled": False,
@@ -178,6 +215,7 @@ def srp_nav(user) -> dict:
         "review": False,
         "pending_count": 0,
         "summary": False,
+        "own_fleets": False,
         "visible": False,
     }
     if not _signed_in(user):
@@ -186,14 +224,13 @@ def srp_nav(user) -> dict:
     manager = user.has_perm(MANAGE_SRP)
     everything = manager or user.has_perm(VIEW_ALL_STATS)
     corporation_stats = user.has_perm(VIEW_CORP_STATS)
-    is_fc = any(user.has_perm(name) for name in FC_PERMISSIONS)
-    if not (wants_request or everything or corporation_stats or is_fc):
+    is_fc = has_fc_permission(user)
+    own_fleets = is_fc or leads_srp_group(user)
+    if not (wants_request or everything or corporation_stats or own_fleets):
         return hidden
 
     srp_settings = SrpSettings.get_solo()
-    summary = everything or (corporation_stats and own_corporation(user) is not None)
-    if not summary and is_fc:
-        summary = led_fleets(user)
+    summary = everything or own_fleets or (corporation_stats and own_corporation(user) is not None)
     pending_count = 0
     if manager:
         pending = SrpClaim.objects.filter(status=SrpClaim.Status.PENDING)
@@ -207,5 +244,6 @@ def srp_nav(user) -> dict:
         "review": manager,
         "pending_count": pending_count,
         "summary": bool(summary),
+        "own_fleets": own_fleets,
         "visible": request or manager or bool(summary),
     }

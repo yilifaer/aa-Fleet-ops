@@ -1,4 +1,9 @@
-{% load i18n %}
+{% load i18n fleetops_ui %}
+{% translate "Disabled role" as disabled_role_label %}
+{% translate "Yes" context "FleetOps" as yes_label %}
+{% translate "No" context "FleetOps" as no_label %}
+{% translate "Assigned before approval" as before_approval_label %}
+{% translate "Special roles with FC credit can be assigned once an FC lead has approved the fleet." as before_approval_title %}
 <div class="row g-3">
   <div class="col-lg-7">
     <div class="table-responsive"><table class="table table-sm align-middle">
@@ -6,15 +11,15 @@
       <tbody>
       {% for role in role_rows %}
         <tr>
-          <td><span class="badge bg-info text-dark">{{ role.role_label }}</span>{% if role.special_role and not role.special_role.is_active %} <span class="badge bg-secondary">{% translate "Disabled role" %}</span>{% endif %}</td>
+          <td>{% pill "neutral" role.role_label %}{% if role.special_role and not role.special_role.is_active %} {% pill "neutral" disabled_role_label %}{% endif %}</td>
           <td>{{ role.character_name }}</td>
           <td>{{ role.main_character_name|default:"—" }}</td>
           <td>{{ role.corporation_name|default:"—" }}</td>
-          <td>{% if role.grants_fc_credit %}<span class="badge bg-success">{% translate "Yes" context "FleetOps" %}</span>{% else %}<span class="badge bg-secondary">{% translate "No" context "FleetOps" %}</span>{% endif %}</td>
+          <td>{% if role.grants_fc_credit %}{% pill "ok" yes_label %}{% if operation.review_status != 'approved' %} {% pill "warn" before_approval_label title=before_approval_title class="fo-before-approval" %}{% endif %}{% else %}{% pill "neutral" no_label %}{% endif %}</td>
           <td>{{ role.notes|default:"—" }}</td>
           <td>{% if can_manage %}<form method="post" action="{% url 'fleetops:delete_operation_role' role.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">{% translate "Remove" context "FleetOps" %}</button></form>{% endif %}</td>
         </tr>
-      {% empty %}<tr><td colspan="7" class="text-muted">{% translate "No special roles assigned." %}</td></tr>{% endfor %}
+      {% empty %}<tr><td colspan="7"><div class="fo-empty"><i class="fa-solid fa-user-tag" aria-hidden="true"></i><div>{% translate "No special roles assigned." %}</div></div></td></tr>{% endfor %}
       </tbody>
     </table></div>
   </div>
@@ -25,6 +30,7 @@
       {% elif not has_active_roles %}<div class="text-muted">{% translate "No special roles are enabled. They are set up under Configuration, Special Roles." %}</div>
       {% elif role_assignment_form.character_id.field.choices %}
       <form method="post" action="{% url 'fleetops:add_operation_role' operation.uuid %}">{% csrf_token %}
+        {% if role_assignment_form.credit_after_approval %}<div class="alert alert-info small" id="roles-after-approval">{% translate "Special roles with FC credit can be assigned once an FC lead has approved the fleet." %}</div>{% endif %}
         <div class="mb-2">{{ role_assignment_form.role.label_tag }}{{ role_assignment_form.role }}</div>
         <div class="mb-2">{{ role_assignment_form.character_id.label_tag }}{{ role_assignment_form.character_id }}</div>
         <div class="mb-2">{{ role_assignment_form.notes.label_tag }}{{ role_assignment_form.notes }}</div>

@@ -22,7 +22,7 @@ from allianceauth.eveonline.models import EveCharacter
 
 from fleetops import texts
 from fleetops.models import SrpSettings
-from fleetops.services import links
+from fleetops.services import group_access, links
 from fleetops.services.periods import format_eve
 from fleetops.srp.links import ensure_fleet_link, link_path
 
@@ -329,6 +329,11 @@ def get_srp_provider(key: str = "auto") -> SRPProvider | None:
 
 
 def create_srp_link(operation, provider_key: str = "auto") -> SRPLinkResult:
+    # Group fleets get an SRP link only when their group allows it.
+    if not group_access.group_srp_allowed(operation):
+        return SRPLinkResult(
+            (provider_key or "auto").strip() or "auto", message=texts.GROUP_NO_SRP(group=operation.group_name)
+        )
     provider = get_srp_provider(provider_key)
     if provider is None:
         key = (provider_key or "auto").strip() or "auto"

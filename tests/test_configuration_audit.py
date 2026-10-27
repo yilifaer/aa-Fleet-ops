@@ -25,6 +25,7 @@ from fleetops.models import (
     FleetOpsSettings,
     FleetStructureTemplate,
     FleetType,
+    GroupAccess,
     MessageTemplate,
     MultiplierTier,
     OperationAction,
@@ -45,6 +46,7 @@ from fleetops.services.messages import render_operation_messages
 from fleetops.services.operations import retry_ping
 
 from . import factories as f
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 
 WEBHOOK_SECRET = "Zq7-hunter2-webhook-token-0d9c"
 WEBHOOK_URL = f"https://discord.com/api/webhooks/112233445566/{WEBHOOK_SECRET}"
@@ -74,6 +76,8 @@ FLEET_SECTION_MODELS = {
 }
 # Sections of FleetOps SRP; tests/test_srp_config.py covers their pages.
 SRP_SECTION_MODELS = {"srp-rules": SrpPayoutRule, "srp-corporation-limits": SrpCorporationLimit}
+# The Groups section; tests/test_discord_config.py covers its hooks.
+GROUP_SECTION_MODELS = {"groups": GroupAccess}
 
 
 def create_sample_objects():
@@ -150,7 +154,10 @@ def settings_payload(**overrides):
         "leaderboard_size": "20",
         "leaderboard_visibility": "members",
         "fleet_live_refresh_seconds": "15",
-        "bridge_excluded_group_ids": DEFAULT_BRIDGE_EXCLUDED_GROUP_IDS,
+        # The ticked ship groups without bridge (the default list) and the IDs the list does not offer.
+        "bridge_groups": DEFAULT_BRIDGE_EXCLUDED_GROUP_IDS.split(","),
+        "bridge_other_ids": "",
+        "motd_warning_length": "2000",
     }
     data.update(overrides)
     return {key: value for key, value in data.items() if value is not None}
@@ -250,6 +257,7 @@ class ConfigurationAccessTests(TestCase):
             **STATISTICS_SECTION_MODELS,
             **FLEET_SECTION_MODELS,
             **SRP_SECTION_MODELS,
+            **GROUP_SECTION_MODELS,
         }
         self.assertEqual(set(cards), set(models))
         for section, model in models.items():
@@ -408,8 +416,9 @@ class ConfigurationCrudTests(TestCase):
 
         response = self.client.get(reverse("fleetops:configuration_list", args=["fleet-types"]))
 
-        self.assertContains(response, "<td>2.50</td>")
-        self.assertContains(response, "<td>5</td>")
+        # Figures are right aligned.
+        self.assertContains(response, '<td class="text-end">2.50</td>')
+        self.assertContains(response, '<td class="text-end">5</td>')
 
     def test_list_does_not_render_numeric_one_and_zero_as_booleans(self):
         FleetType.objects.create(name="Standard", point_weight=Decimal("1.00"), sort_order=1)
@@ -417,13 +426,16 @@ class ConfigurationCrudTests(TestCase):
 
         response = self.client.get(reverse("fleetops:configuration_list", args=["fleet-types"]))
 
-        self.assertContains(response, "<td>1.00</td>")
-        self.assertContains(response, "<td>0.00</td>")
+        self.assertContains(response, '<td class="text-end">1.00</td>')
+        self.assertContains(response, '<td class="text-end">0.00</td>')
 
     def test_empty_list_renders(self):
         response = self.client.get(reverse("fleetops:configuration_list", args=["comms"]))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "No items configured yet.")
+        # The empty list names its section and offers the main action.
+        self.assertContains(response, "No Comms Presets yet.")
+        self.assertContains(response, 'class="fo-empty"')
+        self.assertContains(response, reverse("fleetops:configuration_add", args=["comms"]))
 
     def test_edit_form_is_prefilled(self):
         objects = create_sample_objects()
@@ -1093,7 +1105,7 @@ class WebhookSecretTests(TestCase):
         )
 
         with mock.patch("fleetops.providers.pings.requests.post", side_effect=error) as post:
-            action = retry_ping(operation)
+            action = retry_ping(operation, actor=operation.fc_user)
 
         post.assert_called_once()
         self.assertEqual(action.status, OperationAction.Status.FAILED)
@@ -1272,7 +1284,8 @@ class AuditLogPageTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "configuration.update")
         self.assertContains(response, self.auditor.username)
-        self.assertContains(response, f"FleetType #{fleet_type.pk}")
+        # The object is named as FleetOps names it, with its ID (FB15.4).
+        self.assertContains(response, f"Fleet type #{fleet_type.pk}")
         self.assertContains(response, "Raised weight")
         self.assertContains(response, "System")
 
@@ -1325,7 +1338,7 @@ class AuditLogPageTests(TestCase):
         response = self.client.get(self.url)
 
         self.assertContains(response, "configuration.create")
-        self.assertContains(response, f"CommsPreset #{comms.pk}")
+        self.assertContains(response, f"Comms preset #{comms.pk}")
 
     def test_old_entries_are_reachable_through_pagination(self):
         fleet_type = f.fleet_type()

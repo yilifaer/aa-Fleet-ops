@@ -325,7 +325,7 @@ class CompositionFlowTests(FleetTabFlowTestCase):
         self.assertIn("1 ship without a known mass (not in the SDE).", html)
         self.assertIn('id="fleet-unclassified"', html)
         self.assertIn(f'data-type-id="{NEW_HULL}"', html)
-        self.assertIn('class="badge bg-info text-dark" title="The FC character is in this system">FC</span>', html)
+        self.assertIn('class="fo-pill fo-pill-info" title="The FC character is in this system">FC</span>', html)
         self.assertIn("1 docked", html)
 
         # A configuration manager counts the new hull as Cyno straight from the panel.
@@ -349,7 +349,7 @@ class CompositionFlowTests(FleetTabFlowTestCase):
 
     def test_the_bridge_setting_names_its_groups(self):
         form = FleetOpsSettingsForm(instance=f.settings())
-        self.assertIn("Now: Titan (30), Dreadnought (485), Freighter (513)", form.fields["bridge_excluded_group_ids"].help_text)
+        self.assertEqual(form.bridge_now[:3], [(30, "Titan"), (485, "Dreadnought"), (513, "Freighter")])
 
 
 class VisibilityFlowTests(FleetTabFlowTestCase):

@@ -12,13 +12,14 @@ from django.utils import timezone
 
 from fleetops import texts
 from fleetops.models import AttendanceRecord, FleetOperation, ReviewStatus
-from fleetops.services import pap
+from fleetops.services import incentives, pap
 from fleetops.services.audit import audit
 
 # Stored messages (English); the pages show them through ``translate_stored``.
 REJECTION_NOTE_REQUIRED = texts.APPROVAL_REASON_REQUIRED()
 ALREADY_APPROVED = texts.APPROVAL_ALREADY_APPROVED()
 NOT_PENDING = texts.APPROVAL_NOT_PENDING()
+NOT_REJECTED = texts.APPROVAL_RESUBMIT_NOT_REJECTED()
 
 
 def _note(note):
@@ -32,7 +33,10 @@ def _review_rows(rows, status, *, actor, note, now):
         row.reviewed_by = actor
         row.reviewed_at = now
         row.review_note = note
-    AttendanceRecord.objects.bulk_update(rows, ["review_status", "reviewed_by", "reviewed_at", "review_note"])
+        row.updated_at = now
+    AttendanceRecord.objects.bulk_update(
+        rows, ["review_status", "reviewed_by", "reviewed_at", "review_note", "updated_at"]
+    )
 
 
 def _set_operation_review(operation, status, *, actor, note, include_attendance, from_statuses, refusal):
@@ -47,7 +51,11 @@ def _set_operation_review(operation, status, *, actor, note, include_attendance,
         locked.reviewed_by = actor
         locked.reviewed_at = now
         locked.review_note = note
-        locked.save(update_fields=["review_status", "reviewed_by", "reviewed_at", "review_note", "updated_at"])
+        # A decision answers the request to look at the fleet again.
+        locked.review_request_note = ""
+        locked.save(
+            update_fields=["review_status", "reviewed_by", "reviewed_at", "review_note", "review_request_note", "updated_at"]
+        )
         rows = []
         if include_attendance:
             rows = list(
@@ -68,9 +76,11 @@ def _set_operation_review(operation, status, *, actor, note, include_attendance,
             {"review_status": old_status},
             {"review_status": status, "note": note, "attendance_ids": [row.pk for row in rows]},
         )
-    for field in ("review_status", "reviewed_by", "reviewed_at", "review_note"):
+    for field in ("review_status", "reviewed_by", "reviewed_at", "review_note", "review_request_note"):
         setattr(operation, field, getattr(locked, field))
     pap.refresh_after_change(locked, actor=actor, reason=action)
+    # An approved fleet counts for its FC and a rejected one does not.
+    incentives.refresh_months_after_commit(*incentives.months_of(locked), actor=actor)
     return len(rows)
 
 
@@ -107,6 +117,63 @@ def reject_operation(operation, *, actor, note, include_attendance=True):
         from_statuses=(ReviewStatus.PENDING,),
         refusal=NOT_PENDING,
     )
+
+
+def resubmit_operation(operation, *, actor, note="", include_attendance=True):
+    """Send a rejected fleet back for approval, with an optional note for the approvers.
+
+    Only a rejected fleet can be sent back. The rejection reason stays readable; the note is kept on the fleet
+    until it is decided on again. With ``include_attendance`` the PAP rows that were rejected together with the
+    fleet (at the same moment) wait for approval again; rows rejected on their own stay rejected. Returns how
+    many rows went back.
+    """
+    note = _note(note)
+    with transaction.atomic():
+        locked = FleetOperation.objects.select_for_update().get(pk=operation.pk)
+        if locked.review_status != ReviewStatus.REJECTED:
+            raise ValueError(NOT_REJECTED)
+        old = {"review_status": locked.review_status, "review_note": locked.review_note}
+        rejected_at = locked.reviewed_at
+        locked.review_status = ReviewStatus.PENDING
+        locked.reviewed_by = None
+        locked.reviewed_at = None
+        locked.review_request_note = note
+        locked.save(
+            update_fields=["review_status", "reviewed_by", "reviewed_at", "review_request_note", "updated_at"]
+        )
+        rows = []
+        if include_attendance and rejected_at is not None:
+            rows = list(
+                AttendanceRecord.objects.select_for_update()
+                .filter(
+                    operation=locked,
+                    source__in=AttendanceRecord.USER_SOURCES,
+                    review_status=ReviewStatus.REJECTED,
+                    reviewed_at=rejected_at,
+                )
+                .order_by("pk")
+            )
+            now = timezone.now()
+            for row in rows:
+                row.review_status = ReviewStatus.PENDING
+                row.reviewed_by = None
+                row.reviewed_at = None
+                row.updated_at = now
+            AttendanceRecord.objects.bulk_update(
+                rows, ["review_status", "reviewed_by", "reviewed_at", "updated_at"]
+            )
+        audit(
+            actor,
+            "approval.operation_resubmit",
+            locked,
+            old,
+            {"review_status": locked.review_status, "note": note, "attendance_ids": [row.pk for row in rows]},
+        )
+    for field in ("review_status", "reviewed_by", "reviewed_at", "review_request_note"):
+        setattr(operation, field, getattr(locked, field))
+    pap.refresh_after_change(locked, actor=actor, reason="approval.operation_resubmit")
+    incentives.refresh_months_after_commit(*incentives.months_of(locked), actor=actor)
+    return len(rows)
 
 
 def _set_attendance_review(records, status, *, actor, note, from_statuses):

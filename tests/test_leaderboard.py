@@ -436,7 +436,7 @@ class LeaderboardPageTests(PageTestCase):
         page = self.get(self.stats, corporation=str(f.OTHER_CORP[0])).content.decode()
 
         self.assertIn('<input type="hidden" name="corporation" value="%d">' % f.OTHER_CORP[0], page)
-        previous = re.search(r'href="([^"]*)"[^>]*>‹ Previous month', html.unescape(page))
+        previous = re.search(r'href="([^"]*)"[^>]*aria-label="Previous month: ', html.unescape(page))
         self.assertIn(f"corporation={f.OTHER_CORP[0]}", previous.group(1))
 
     def test_a_month_older_than_the_retention_window_is_noted(self):

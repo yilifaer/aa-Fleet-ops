@@ -369,6 +369,7 @@ def page_stamp(operation) -> list:
     seen = _iso(members["seen"])
     return [
         operation.pap_minimum_minutes,
+        operation.pap_character_limit,
         members["count"],
         seen[:16] if seen else None,
         attendance["count"],

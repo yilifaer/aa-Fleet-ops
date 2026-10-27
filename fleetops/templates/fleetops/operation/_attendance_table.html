@@ -1,28 +1,41 @@
-{% load i18n fleetops_pap fleetops_messages %}
+{% load i18n fleetops_pap fleetops_messages fleetops_ui %}
+{% translate "Pending approval" as pending_label %}
+{% translate "Rejected" context "FleetOps" as rejected_label %}
+{% translate "Granted" as granted_label %}
+{% translate "Replaced" as replaced_label %}
+{% translate "Capped (limit)" as capped_label %}
+{% translate "Below minimum" as below_minimum_label %}
+{% translate "Not in Alliance Auth" as not_in_auth_label %}
+{% translate "Delete this manual PAP row? The tracked PAP of the character is calculated again." as delete_question %}
+{% translate "Delete" as delete_label %}
 {% if operation.status == 'active' or operation.status == 'ending' %}
+{% translate "Not needed" as not_needed_label %}
+{% translate "Reached" as reached_label %}
+{% translate "Not reached" as not_reached_label %}
+{% translate "Over the character limit" as over_limit_label %}
 <div class="d-flex justify-content-between align-items-end flex-wrap gap-2 mb-2">
   <h5 class="mb-0">{% translate "PAP preview" %}</h5>
   <div class="small text-muted">{% translate "PAP is granted when the fleet closes." %} {% if pap_minimum_seconds %}{% blocktranslate trimmed with time=pap_minimum_seconds|minutes %}Minimum time {{ time }}{% endblocktranslate %}{% else %}{% blocktranslate trimmed with time=pap_minimum_seconds|minutes %}Minimum time {{ time }} (any presence){% endblocktranslate %}{% endif %} · {% if pap_limit %}{% blocktranslate trimmed count counter=pap_limit %}{{ counter }} character per player{% plural %}{{ counter }} characters per player{% endblocktranslate %}{% else %}{% translate "no character limit" %}{% endif %}</div>
 </div>
 {% if not show_composition %}<div class="small text-muted mb-2">{% translate "While the fleet is open you see the PAP of your own characters." %}</div>{% endif %}
-<div class="table-responsive"><table class="table table-sm align-middle" id="pap-preview">
-  <thead><tr><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th>{% translate "Corp" context "FleetOps" %}</th><th>{% translate "Source" %}</th><th>{% translate "Time in fleet" %}</th><th>{% translate "Minimum" %}</th><th>{% translate "If the fleet closed now" %}</th></tr></thead>
+<div class="table-responsive"><table class="table table-sm align-middle fo-table-pin" id="pap-preview">
+  <thead><tr><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th>{% translate "Corp" context "FleetOps" %}</th><th>{% translate "Source" %}</th><th class="text-end">{% translate "Time in fleet" %}</th><th>{% translate "Minimum" %}</th><th>{% translate "If the fleet closed now" %}</th></tr></thead>
   <tbody>{% for c in pap_preview %}<tr>
     <td>{{ c.character_name }}{% if c.state and not c.state.is_active %} <span class="small text-muted">{% translate "left" context "left the fleet" %}</span>{% endif %}</td>
     <td>{{ c.identity.main_character_name|default:"—" }}</td>
     <td>{{ c.identity.corporation_name|default:"—" }}</td>
     <td>{% if c.state %}{% translate "Tracked" %}{% if c.registration %} · {% translate "PAP link" %}{% endif %}{% else %}{% translate "PAP link" %}{% endif %}</td>
-    <td>{{ c.tracked_seconds|minutes }}</td>
-    <td>{% if c.registration %}<span class="badge bg-info text-dark">{% translate "Not needed" %}</span>{% elif c.qualifies %}<span class="badge bg-success">{% translate "Reached" %}</span>{% else %}<span class="badge bg-secondary">{% translate "Not reached" %}</span>{% endif %}</td>
-    <td>{% if c.selected %}<span class="badge bg-success">PAP</span>{% elif c.capped %}<span class="badge bg-warning text-dark">{% translate "Over the character limit" %}</span>{% else %}<span class="badge bg-secondary">{% translate "Below minimum" %}</span>{% endif %}</td>
-  </tr>{% empty %}<tr><td colspan="7">{% translate "No tracked or registered characters yet." %}</td></tr>{% endfor %}
-  {% for character_id, name in pap_unregistered %}<tr class="text-muted"><td>{{ name }}</td><td colspan="5"><span class="badge bg-light text-dark border">{% translate "Not in Alliance Auth" %}</span></td><td>{% translate "No PAP" %}</td></tr>{% endfor %}</tbody>
+    <td class="text-end">{{ c.tracked_seconds|minutes }}</td>
+    <td>{% if c.registration %}{% pill "info" not_needed_label %}{% elif c.qualifies %}{% pill "ok" reached_label %}{% else %}{% pill "neutral" not_reached_label %}{% endif %}</td>
+    <td>{% if c.selected %}{% pill "ok" "PAP" %}{% elif c.capped %}{% pill "bad" over_limit_label %}{% else %}{% pill "neutral" below_minimum_label %}{% endif %}</td>
+  </tr>{% empty %}<tr><td colspan="7"><div class="fo-empty"><i class="fa-solid fa-users" aria-hidden="true"></i><div>{% translate "No tracked or registered characters yet." %}</div></div></td></tr>{% endfor %}
+  {% for character_id, name in pap_unregistered %}<tr><td>{{ name }}</td><td colspan="5">{% pill "neutral" not_in_auth_label %}</td><td>{% translate "No PAP" %}</td></tr>{% endfor %}</tbody>
 </table></div>
 {% if attendance_rows %}
 <h6 class="mt-3">{% translate "Manual PAP" %}</h6>
-<div class="table-responsive"><table class="table table-sm align-middle">
-  <thead><tr><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th>{% translate "Source" %}</th><th>{% translate "Value" context "PAP value" %}</th><th>{% translate "Correction" %}</th><th>{% translate "Status" %}</th><th></th></tr></thead>
-  <tbody>{% for r in attendance_rows %}<tr><td>{{ r.character_name }}</td><td>{{ r.main_character_name|default:"—" }}</td><td>{{ r.get_source_display }}</td><td>{{ r.attendance_value }}</td><td>{{ r.get_correction_display }}</td><td>{% if r.review_status == 'pending' %}<span class="badge bg-warning text-dark">{% translate "Pending approval" %}</span>{% elif r.review_status == 'rejected' %}<span class="badge bg-danger" title="{{ r.review_note }}">{% translate "Rejected" context "FleetOps" %}</span>{% else %}<span class="badge bg-light text-dark">{% translate "Applied at close" %}</span>{% endif %}</td><td>{% if r.pk in deletable_row_ids %}<form method="post" action="{% url 'fleetops:delete_manual_attendance' r.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">{% translate "Delete" %}</button></form>{% endif %}</td></tr>{% endfor %}</tbody>
+<div class="table-responsive"><table class="table table-sm align-middle fo-table-pin">
+  <thead><tr><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th>{% translate "Source" %}</th><th class="text-end">{% translate "Value" context "PAP value" %}</th><th>{% translate "Correction" %}</th><th>{% translate "Status" %}</th><th></th></tr></thead>
+  <tbody>{% for r in attendance_rows %}<tr><td>{{ r.character_name }}</td><td>{{ r.main_character_name|default:"—" }}</td><td>{{ r.get_source_display }}</td><td class="text-end">{{ r.attendance_value }}</td><td>{{ r.get_correction_display }}</td><td>{% if r.review_status == 'pending' %}{% pill "warn" pending_label %}{% elif r.review_status == 'rejected' %}{% pill "bad" rejected_label title=r.review_note %}{% else %}{% translate "Applied at close" as applied_label %}{% pill "neutral" applied_label %}{% endif %}</td><td>{% if r.pk in deletable_row_ids %}<form method="post" action="{% url 'fleetops:delete_manual_attendance' r.pk %}" data-fo-confirm="{{ delete_question }}" data-fo-confirm-label="{{ delete_label }}">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">{% translate "Delete" %}</button></form>{% endif %}</td></tr>{% endfor %}</tbody>
 </table></div>
 {% endif %}
 {% else %}
@@ -31,16 +44,16 @@
   {% if can_recalculate_pap %}<form method="post" action="{% url 'fleetops:recalculate_pap' operation.uuid %}" id="recalculate-pap">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary" title="{% translate 'Grant PAP again from the tracked time, the PAP links and the approved corrections, for example after an alt was added to Alliance Auth.' %}">{% translate "Recalculate PAP" %}</button></form>{% endif %}
 </div>
 {% if not show_composition %}<div class="small text-muted mb-2">{% translate "While the fleet is open you see the PAP of your own characters." %}</div>{% endif %}
-<div class="table-responsive"><table class="table table-sm align-middle">
-  <thead><tr><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th>{% translate "Corp" context "FleetOps" %}</th><th>{% translate "Source" %}</th><th>{% translate "Value" context "PAP value" %}</th><th>{% translate "Status" %}</th><th>{% translate "Time in fleet" %}</th><th>{% translate "First" %}</th><th>{% translate "Last" %}</th><th></th></tr></thead>
+<div class="table-responsive"><table class="table table-sm align-middle fo-table-pin">
+  <thead><tr><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th>{% translate "Corp" context "FleetOps" %}</th><th>{% translate "Source" %}</th><th class="text-end">{% translate "Value" context "PAP value" %}</th><th>{% translate "Status" %}</th><th class="text-end">{% translate "Time in fleet" %}</th><th>{% translate "First" %}</th><th>{% translate "Last" %}</th><th></th></tr></thead>
   <tbody>{% for r in attendance_rows %}<tr>
     <td>{{ r.character_name }}</td><td>{{ r.main_character_name|default:"—" }}</td><td>{{ r.corporation_name|default:"—" }}</td>
     <td>{{ r.get_source_display }}{% if r.correction != 'keep' %}<div class="small text-muted">{{ r.get_correction_display }}</div>{% endif %}</td>
-    <td>{{ r.attendance_value }}</td>
-    <td>{% if r.review_status == 'pending' %}<span class="badge bg-warning text-dark">{% translate "Pending approval" %}</span>{% elif r.review_status == 'rejected' %}<span class="badge bg-danger" title="{{ r.review_note }}">{% translate "Rejected" context "FleetOps" %}</span>{% elif r.granted %}<span class="badge bg-success">{% translate "Granted" %}</span>{% if r.extra_value %} <span class="badge bg-info text-dark">{% blocktranslate trimmed with extra=r.extra_value %}Merged (+{{ extra }}){% endblocktranslate %}</span>{% endif %}{% elif r.replaced %}<span class="badge bg-secondary">{% translate "Replaced" %}</span>{% elif r.capped %}<span class="badge bg-warning text-dark">{% translate "Capped (limit)" %}</span>{% elif r.below_minimum %}<span class="badge bg-secondary">{% translate "Below minimum" %}</span>{% elif r.correction == 'merge' %}<span class="badge bg-info text-dark">{% translate "Merged into tracked PAP" %}</span>{% else %}<span class="badge bg-secondary">{% translate "Not granted" %}</span>{% endif %}</td>
-    <td>{{ r.tracked_seconds|minutes|default:"—" }}</td>
+    <td class="text-end">{{ r.attendance_value }}</td>
+    <td>{% if r.review_status == 'pending' %}{% pill "warn" pending_label %}{% elif r.review_status == 'rejected' %}{% pill "bad" rejected_label title=r.review_note %}{% elif r.granted %}{% pill "ok" granted_label %}{% if r.extra_value %} {% blocktranslate trimmed with extra=r.extra_value asvar merged_label %}Merged (+{{ extra }}){% endblocktranslate %}{% pill "info" merged_label %}{% endif %}{% elif r.replaced %}{% pill "neutral" replaced_label %}{% elif r.capped %}{% pill "bad" capped_label %}{% elif r.below_minimum %}{% pill "neutral" below_minimum_label %}{% elif r.correction == 'merge' %}{% translate "Merged into tracked PAP" as merged_into_label %}{% pill "info" merged_into_label %}{% else %}{% translate "Not granted" as not_granted_label %}{% pill "neutral" not_granted_label %}{% endif %}</td>
+    <td class="text-end">{{ r.tracked_seconds|minutes|default:"—" }}</td>
     <td>{{ r.first_seen|eve_time|default:"—" }}</td><td>{{ r.last_seen|eve_time|default:"—" }}</td>
-    <td>{% if r.pk in deletable_row_ids %}<form method="post" action="{% url 'fleetops:delete_manual_attendance' r.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">{% translate "Delete" %}</button></form>{% endif %}</td>
-  </tr>{% empty %}<tr><td colspan="10">{% translate "No PAP records." %}</td></tr>{% endfor %}</tbody>
+    <td>{% if r.pk in deletable_row_ids %}<form method="post" action="{% url 'fleetops:delete_manual_attendance' r.pk %}" data-fo-confirm="{{ delete_question }}" data-fo-confirm-label="{{ delete_label }}">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">{% translate "Delete" %}</button></form>{% endif %}</td>
+  </tr>{% empty %}<tr><td colspan="10"><div class="fo-empty"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i><div>{% translate "No PAP records." %}</div></div></td></tr>{% endfor %}</tbody>
 </table></div>
 {% endif %}

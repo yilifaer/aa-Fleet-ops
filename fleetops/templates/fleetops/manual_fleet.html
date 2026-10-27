@@ -1,5 +1,5 @@
 {% extends "fleetops/base.html" %}
-{% load i18n static fleetops_i18n tz %}
+{% load i18n tz %}
 {% block fleetops_content %}
 <div class="d-flex justify-content-between align-items-start mb-3 gap-2 flex-wrap">
   <div><h2 class="mb-1">{% translate "Add Manual Fleet" %}</h2><div class="text-muted">{% translate "Create a historical fleet record without ESI tracking or a Discord ping." %}</div></div>
@@ -9,7 +9,7 @@
 {% if needs_approval %}<div class="alert alert-warning" id="manual-fleet-approval">{% translate "A manual fleet and its PAP count in statistics and incentives once an FC lead approves them." %}</div>{% endif %}
 <div class="card"><div class="card-body">
 <form method="post" id="manual-fleet-form">{% csrf_token %}
-  {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+  {% include "fleetops/partials/form_errors.html" with errors=form.non_field_errors %}
   <div class="row g-3">
     <div class="col-md-4">{{ form.fleet_type.label_tag }}{{ form.fleet_type }}{{ form.fleet_type.errors }}</div>
     <div class="col-md-4">{{ form.doctrine_name.label_tag }}{{ form.doctrine_name }}{{ form.doctrine_name.errors }}</div>
@@ -22,6 +22,10 @@
       <div class="form-check">{{ form.confirm_long_fleet }} <label class="form-check-label" for="{{ form.confirm_long_fleet.id_for_label }}">{{ form.confirm_long_fleet.label }}</label></div>
       {{ form.confirm_long_fleet.errors }}
     </div>
+    <div class="col-12{% if not form.confirm_old_fleet.errors and not form.confirm_old_fleet.value %} d-none{% endif %}" id="confirm-old-fleet-wrap">
+      <div class="form-check">{{ form.confirm_old_fleet }} <label class="form-check-label" for="{{ form.confirm_old_fleet.id_for_label }}">{{ form.confirm_old_fleet.label }}</label></div>
+      {{ form.confirm_old_fleet.errors }}
+    </div>
     <div class="col-12">{{ form.notes.label_tag }}{{ form.notes }}{{ form.notes.errors }}</div>
   </div>
   <button class="btn btn-primary mt-3">{% translate "Create Manual Fleet" %}</button>
@@ -30,7 +34,6 @@
 {% translate "End Time must be after Start Time." as end_before_start_text %}
 {% blocktranslate trimmed asvar duration_text with duration="%(duration)s" %}Duration: {{ duration }}{% endblocktranslate %}
 {% blocktranslate trimmed asvar duration_long_text with duration="%(duration)s" %}Duration: {{ duration }} — longer than 6 hours, please confirm below.{% endblocktranslate %}
-<script src="{% static 'fleetops/fleetops.js' %}?v={% fleetops_version %}"></script>
 <script>
 (() => {
  const started = document.getElementById('{{ form.started_at.id_for_label }}');
@@ -38,8 +41,11 @@
  const duration = document.getElementById('manual-fleet-duration');
  const confirmWrap = document.getElementById('confirm-long-fleet-wrap');
  const confirmBox = document.getElementById('{{ form.confirm_long_fleet.id_for_label }}');
+ const oldWrap = document.getElementById('confirm-old-fleet-wrap');
+ const oldBox = document.getElementById('{{ form.confirm_old_fleet.id_for_label }}');
  const now = document.getElementById('eve-time-now');
  const LONG_FLEET_MINUTES = 6 * 60;
+ const OLD_FLEET_MS = 365 * 24 * 60 * 60 * 1000;
  const TEXT = {
    endBeforeStart: '{{ end_before_start_text|escapejs }}',
    duration: '{{ duration_text|escapejs }}',
@@ -48,6 +54,12 @@
  // The inputs hold EVE time, so they are read as UTC whatever the browser's time zone is.
  function asUtc(value){ return value ? Date.parse(value.length === 16 ? `${value}:00Z` : `${value}Z`) : NaN; }
  function showNow(){ now.textContent = new Date().toISOString().slice(0, 16).replace('T', ' '); }
+ // A start more than a year back needs a confirmation (the server decides; this only shows the box in time).
+ function showOld(){
+   const old = asUtc(started.value) < Date.now() - OLD_FLEET_MS;
+   if(!old){ oldBox.checked = false; }
+   oldWrap.classList.toggle('d-none', !old);
+ }
  function showDuration(){
    const minutes = Math.round((asUtc(ended.value) - asUtc(started.value)) / 60000);
    duration.className = 'form-text';
@@ -65,7 +77,8 @@
    }
  }
  [started, ended].forEach(input => input.addEventListener('input', showDuration));
- showNow(); setInterval(showNow, 30000); showDuration();
+ started.addEventListener('input', showOld);
+ showNow(); setInterval(showNow, 30000); showDuration(); showOld();
 })();
 </script>
 {% endblock %}

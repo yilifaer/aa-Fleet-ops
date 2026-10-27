@@ -240,6 +240,16 @@ class FleetOpsSettings(models.Model):
             "(seconds). 0 = only the tracking interval and the Refresh button."
         ),
     )
+    motd_warning_length = models.PositiveIntegerField(
+        _("MOTD warning length"),
+        default=2000,
+        validators=[MaxValueValidator(100000)],
+        help_text=_(
+            "Warn in the start preview when the MOTD, tags included, is longer than this many characters. "
+            "The game's limit is not documented; MOTDs of about 1,700 characters are known to work. "
+            "0 = no warning."
+        ),
+    )
 
     class Meta:
         verbose_name = _("FleetOps setting")
@@ -453,6 +463,21 @@ class DiscordWebhook(models.Model):
         related_name="channels",
         help_text=_("Leave empty to allow every active role."),
     )
+    fcs_allowed = models.BooleanField(
+        verbose_name=_("Alliance FCs can use this channel"),
+        default=True,
+        help_text=_(
+            "Untick to reserve the channel for the leaders of the groups below. FC leads (manage_fleets) can "
+            "always use it. Only applies while the channel is assigned to at least one group."
+        ),
+    )
+    allowed_groups = models.ManyToManyField(
+        "auth.Group",
+        verbose_name=pgettext_lazy("FleetOps", "Groups"),
+        blank=True,
+        related_name="fleetops_ping_channels",
+        help_text=_("Leaders of these groups may send pings here."),
+    )
     sort_order = models.PositiveIntegerField(verbose_name=_("Sort order"), default=0)
 
     class Meta:
@@ -491,6 +516,7 @@ class MessageTemplate(models.Model):
     class TemplateType(models.TextChoices):
         PING = "ping", _("Ping")
         MOTD = "motd", _("MOTD")
+        STANDALONE = "standalone", _("Ping without fleet")
 
     name = models.CharField(verbose_name=pgettext_lazy("FleetOps", "Name"), max_length=100)
     template_type = models.CharField(verbose_name=_("Template type"), max_length=20, choices=TemplateType.choices)
@@ -662,6 +688,17 @@ class FleetOperation(models.Model):
         related_name="fleetops_operations",
     )
     ping_channel_name = models.CharField(verbose_name=_("Ping channel name"), max_length=100, blank=True)
+    # The group a group fleet belongs to; empty for alliance fleets. The name is a snapshot that stays when the
+    # Alliance Auth group is deleted.
+    group = models.ForeignKey(
+        "auth.Group",
+        verbose_name=pgettext_lazy("FleetOps", "Group"),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fleetops_operations",
+    )
+    group_name = models.CharField(verbose_name=_("Group name"), max_length=150, blank=True)
     ping_mention_mode = models.CharField(
         verbose_name=_("Ping mention mode"),
         max_length=10,
@@ -753,6 +790,7 @@ class FleetOperation(models.Model):
     )
     reviewed_at = models.DateTimeField(verbose_name=_("Reviewed at"), null=True, blank=True)
     review_note = models.CharField(verbose_name=_("Review note"), max_length=255, blank=True)
+    review_request_note = models.CharField(verbose_name=_("Resubmission note"), max_length=255, blank=True)
 
     stats_mode = models.CharField(
         verbose_name=_("Stats mode"),
@@ -1527,6 +1565,7 @@ class IncentivePeriod(models.Model):
         validators=[MinValueValidator(1)],
     )
     policy_snapshot = models.JSONField(verbose_name=_("Policy snapshot"), default=dict, blank=True)
+    calculated_at = models.DateTimeField(verbose_name=_("Calculated at"), null=True, blank=True)
     finalized_at = models.DateTimeField(verbose_name=_("Finalized at"), null=True, blank=True)
     finalized_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -1921,7 +1960,7 @@ class SrpPayoutRule(models.Model):
         super().clean()
         self.doctrine_key = self.compute_doctrine_key()
         if not self.ship_type_id and not self.doctrine_key:
-            raise ValidationError(_("Choose a ship type, a doctrine, or both."))
+            raise ValidationError(_("Choose a ship type, a doctrine, or both."), code="no_target")
 
     def validate_constraints(self, exclude=None):
         # The key is derived, never a form field, but a duplicate rule must still be refused.
@@ -2332,3 +2371,138 @@ class SrpClaimEvent(models.Model):
 
     def __str__(self):
         return f"{self.claim_id}: {self.action}"
+
+
+class GroupAccess(models.Model):
+    """What the leaders of one Alliance Auth group may do in FleetOps. The leaders are read from Alliance Auth."""
+
+    class Mode(models.TextChoices):
+        PING = "ping", _("Ping only")
+        FLEETS = "fleets", _("Pings and fleets with PAP")
+
+    group = models.OneToOneField(
+        "auth.Group",
+        verbose_name=pgettext_lazy("FleetOps", "Group"),
+        on_delete=models.CASCADE,
+        related_name="fleetops_access",
+    )
+    mode = models.CharField(_("Leaders may"), max_length=10, choices=Mode.choices, default=Mode.PING)
+    # Kept when the mode is switched back to "ping", so switching is reversible.
+    fleet_types = models.ManyToManyField(
+        FleetType,
+        verbose_name=_("Fleet types"),
+        blank=True,
+        related_name="group_accesses",
+        help_text=_("Fleet types the leaders may start. Only used for pings and fleets with PAP."),
+    )
+    srp_enabled = models.BooleanField(
+        _("SRP link for group fleets"),
+        default=False,
+        help_text=_("Group fleets get an SRP link like alliance fleets."),
+    )
+    is_active = models.BooleanField(verbose_name=_("Is active"), default=True)
+    note = models.CharField(verbose_name=_("Note"), max_length=255, blank=True)
+    created_at = models.DateTimeField(verbose_name=_("Created at"), auto_now_add=True)
+    updated_at = models.DateTimeField(verbose_name=_("Updated at"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("group access")
+        verbose_name_plural = _("group accesses")
+        ordering = ["group__name"]
+
+    def __str__(self):
+        return self.group.name
+
+
+class StandalonePing(models.Model):
+    """A ping sent from the Send Ping page, without a fleet. The webhook URL is never stored here."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", pgettext_lazy("FleetOps", "Pending")
+        SENT = "sent", pgettext_lazy("FleetOps", "Sent")
+        FAILED = "failed", _("Failed")
+
+    uuid = models.UUIDField(verbose_name=_("UUID"), default=uuid.uuid4, unique=True, editable=False)
+    # Guards against a double submit of the same form.
+    request_id = models.UUIDField(verbose_name=_("Request ID"), unique=True, editable=False)
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("Sender"),
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="fleetops_pings",
+    )
+    # The main character of the sender at send time.
+    sender_name = models.CharField(verbose_name=_("Sender name"), max_length=255, blank=True)
+    group = models.ForeignKey(
+        "auth.Group",
+        verbose_name=pgettext_lazy("FleetOps", "Group"),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fleetops_pings",
+    )
+    # Empty for an alliance ping sent by an FC.
+    group_name = models.CharField(verbose_name=_("Group name"), max_length=150, blank=True)
+    channel = models.ForeignKey(
+        DiscordWebhook,
+        verbose_name=_("Ping channel"),
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="standalone_pings",
+    )
+    channel_name = models.CharField(verbose_name=_("Ping channel name"), max_length=100)
+    template = models.ForeignKey(
+        MessageTemplate,
+        verbose_name=_("Template"),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    mention_mode = models.CharField(
+        verbose_name=_("Ping mention mode"),
+        max_length=10,
+        choices=FleetOperation.MentionMode.choices,
+        default=FleetOperation.MentionMode.NONE,
+    )
+    # Snapshot like FleetOperation.ping_roles: [{"id": "<role id>", "name": "Sig A"}].
+    mention_roles = models.JSONField(verbose_name=_("Ping roles"), default=list, blank=True)
+    fleet_time = models.DateTimeField(verbose_name=_("Fleet time"), null=True, blank=True)
+    formup = models.CharField(verbose_name=_("Formup"), max_length=255, blank=True)
+    doctrine_name = models.CharField(verbose_name=_("Doctrine name"), max_length=255, blank=True)
+    doctrine_source = models.CharField(verbose_name=_("Doctrine source"), max_length=50, blank=True)
+    doctrine_external_id = models.CharField(verbose_name=_("Doctrine external ID"), max_length=255, blank=True)
+    comms = models.ForeignKey(
+        CommsPreset,
+        verbose_name=_("Comms"),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    additional_message = models.TextField(verbose_name=_("Additional message"))
+    # The ping as posted (<@&id>) and as people read it (@Name).
+    text = models.TextField(verbose_name=_("Ping text"), blank=True)
+    display_text = models.TextField(verbose_name=_("Ping text as read"), blank=True)
+    status = models.CharField(
+        verbose_name=_("Status"),
+        max_length=10,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+    # PingResult.message, which is already scrubbed of the webhook address.
+    result_message = models.TextField(verbose_name=_("Result"), blank=True)
+    http_status = models.PositiveSmallIntegerField(verbose_name=_("HTTP status"), null=True, blank=True)
+    created_at = models.DateTimeField(verbose_name=_("Created at"), default=timezone.now, db_index=True)
+    sent_at = models.DateTimeField(verbose_name=_("Sent at"), null=True, blank=True)
+
+    class Meta:
+        verbose_name = _("ping without fleet")
+        verbose_name_plural = _("pings without fleet")
+        ordering = ["-created_at", "-pk"]
+        indexes = [models.Index(fields=["channel", "created_at"], name="fleetops_ping_channel_time_idx")]
+
+    def __str__(self):
+        return f"{self.channel_name} — {self.sender_name} ({self.uuid})"

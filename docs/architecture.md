@@ -23,12 +23,15 @@ Administrators want the [configuration reference](configuration.md) instead.
 | `models.py`, `admin.py`, `apps.py`, `auth_hooks.py`, `charlink_hook.py` | Models and their validators, the Django admin, the Alliance Auth menu and URL hooks, the CharLink import |
 | `views.py`, `views_*.py` | Pages and JSON endpoints, split by area: fleet start and page (`views.py`), configuration, PAP rules, records and approvals, PAP links, controls (kicks), presets, the Fleet tab (`views_fleet_*`), statistics, members, exports, history, SRP (`views_srp*`) |
 | `forms.py`, `forms_*.py` | Forms of the same areas |
-| `services/` | Business rules: `operations` (start and end), `tracking`, `pap`, `multipliers`, `counting`, `statistics`, `population`, `assessment`, `incentives`, `messages` and `mentions` (ping and MOTD), `scheduling`, `fleet_*` (Fleet tab), `composition`, `names`, `periods` (EVE time), `audit` |
+| `services/` | Business rules: `operations` (start and end), `tracking`, `pap`, `multipliers`, `counting`, `statistics`, `population`, `assessment`, `incentives`, `messages` and `mentions` (ping and MOTD), `eve_links` (the in-game links of the MOTD), `group_access` (who leads which group and what the group may do), `standalone_pings` (Send Ping), `scheduling`, `fleet_*` (Fleet tab), `composition`, `names`, `periods` (EVE time), `audit` |
+| `decorators.py`, `views_errors.py` | The access decorators and the FleetOps 403 and 404 pages (the reason a page is closed, one neutral 404) |
+| `ui.py`, `ui_notices.py`, `forms_common.py`, `forms_operation.py` | The interface components (pills, tones, the confirmation text), notices for Alliance Auth messages, form helpers shared by the forms, and the fleet-record forms |
+| `signals.py` | Reacts to the deletion of an Alliance Auth group (audit entry, channels become alliance channels again) |
 | `srp/` | FleetOps SRP: claims, policy, loss values, monthly limits, presence check, review, summaries, access rules, the fleet SRP link, notifications and the value sweep |
 | `providers/` | `esi` (fleet reads and writes), `esi_killmails`, `zkillboard`, `pings` (Discord webhook), `doctrines` (Fittings), `srp` (SRP provider registry) |
 | `tasks.py` | Celery tasks |
 | `texts.py` | Stored messages and their translation ([stored texts](#stored-texts-and-languages)) |
-| `templates/fleetops/`, `static/fleetops/` | Templates (with `operation/`, `statistics/`, `srp/`, `configuration/` folders) and the JavaScript and CSS of the pages |
+| `templates/fleetops/`, `static/fleetops/` | Templates (with `operation/`, `statistics/`, `srp/`, `configuration/` folders) and the JavaScript and CSS of the pages (`preview.js` renders the Discord and in-game previews; `send_ping.js` is the Send Ping page) |
 | `templatetags/` | Filters and tags, including `fleetops_i18n` |
 | `locale/` | Translation catalogs |
 | `management/commands/` | `fleetops_seed`, `fleetops_prune_history`, `fleetops_refresh_names` |
@@ -52,16 +55,21 @@ FleetOperation
     ping channel name and mentioned roles, ping text, MOTD text
 
 IncentivePeriod ── MonthlyFCStatistic           FC incentives per month
+
+GroupAccess ── fleet types                      what the leaders of an Alliance Auth group may do
+StandalonePing                                  a ping sent without a fleet (Send Ping)
 ```
 
 Configuration lives in `FleetOpsSettings` and `SrpSettings` (one row each), `FleetType`, `MultiplierTier`,
-`StatisticsTarget`, `SpecialRole`, `CommsPreset`, `ChannelPreset`, `DiscordWebhook` (a ping channel),
+`StatisticsTarget`, `SpecialRole`, `CommsPreset`, `ChannelPreset`, `DiscordWebhook` (a ping channel, with the groups that may use it),
 `PingRole`, `MessageTemplate`, `ShipFunction`, `ShipFunctionRule`, `FleetStructureTemplate`, `SrpPayoutRule`
 and `SrpCorporationLimit`. `AuditLog` records privileged actions with the old and new values. `EveEntityName`
 and `CharacterAffiliation` cache what ESI said about characters Alliance Auth does not know.
 
 Rules that change over time are copied onto the fleet when it starts (fleet type weight, PAP minimum time,
-PAP character limit), so a later change of a setting never rewrites a fleet that already happened. Usage of the
+PAP character limit), so a later change of a setting never rewrites a fleet that already happened. The character
+limit starts as the FC chose it for that fleet (`services/pap_limit.py`: the setting is the default and the ceiling
+of everybody but FC leads) and can change while the fleet runs, and after it closed by FC leads. Usage of the
 SRP monthly limits is never stored: it is the sum of the approved and paid claims of the month.
 
 ## Fleet lifecycle
@@ -128,8 +136,9 @@ need care:
   `translate_stored()` (the `stored_text` template filter) recognises the text again and returns it in the
   language of the viewer. Unknown text, such as old rows, user text and ESI text, is returned unchanged.
   `STEP_LABELS` and `FLEET_ROLE_LABELS` translate the codes behind steps and fleet positions.
-- **Pings and MOTDs** are rendered inside `outgoing_language()`, the site language, so every reader gets the same
-  text whoever clicked.
+- **Pings and MOTDs** are rendered inside `outgoing_language()`, which is always English (the site language and the
+  viewer do not matter), so every reader gets the same text whoever clicked and FleetOps's own words in them are
+  never marked for translation.
 
 JavaScript uses Django's `JavaScriptCatalog` at `/fleetops/jsi18n/`; `base.html` loads it with the language and
 the version in the query string and keeps a small English fallback if the request fails. The catalogs are in

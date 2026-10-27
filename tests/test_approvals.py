@@ -285,13 +285,19 @@ class ApprovalQueueViewTests(ApprovalTestCase):
         self.assertContains(response, "Late login")
         self.assertContains(response, reverse("fleetops:review_operation", args=[waiting.uuid]))
         self.assertNotContains(response, reverse("fleetops:review_operation", args=[approved.uuid]))
-        # The navigation counts both waiting fleets and waiting rows.
-        self.assertContains(response, f'href="{reverse("fleetops:approval_queue")}">Approvals (3)</a>')
+        # The navigation counts waiting fleets and waiting rows apart.
+        self.assertEqual(response.context["pending_approvals"], {"fleets": 1, "pap": 2})
+        self.assertContains(response, f'href="{reverse("fleetops:approval_queue")}">Approvals <span')
+        self.assertContains(response, '>1 fleet · 2 PAP rows</span><span class="fo-count-short" aria-hidden="true">1 · 2</span></span></a>')
+        self.assertContains(response, 'class="fo-count fo-count-nav" title="Fleets and PAP rows waiting for approval."')
 
     def test_empty_queue(self):
         response = self.get(self.lead, reverse("fleetops:approval_queue"))
 
-        self.assertContains(response, "No fleets are waiting for approval.")
+        # Nothing waits at all: one sentence with the way to the fleets list, and the empty list of PAP rows.
+        self.assertContains(response, "Nothing waits for approval.")
+        self.assertContains(response, 'id="approvals-empty"')
+        self.assertContains(response, reverse("fleetops:fleet_operations"))
         self.assertContains(response, "No manual PAP is waiting for approval.")
 
     def test_approve_and_reject_a_fleet_from_the_queue(self):
@@ -404,8 +410,10 @@ class FleetPageReviewTests(ApprovalTestCase):
         member_page = self.page(self.pilot, operation)
 
         self.assertContains(fc_page, "Rejected by an FC lead</strong>: Wrong date")
-        self.assertContains(fc_page, "Correct the fleet with Edit Operation to send it back for approval.")
+        self.assertContains(fc_page, "Edit the fleet first if something was wrong, then resubmit it.")
+        self.assertContains(fc_page, "Resubmit for approval")
         self.assertContains(lead_page, "Approve fleet")
+        self.assertNotContains(lead_page, "Resubmit for approval")
         self.assertNotContains(lead_page, "Reject fleet")
         self.assertContains(member_page, "Rejected by an FC lead")
         self.assertNotContains(member_page, "Wrong date")
@@ -500,7 +508,7 @@ class EditReviewTests(ApprovalTestCase):
         tracked.refresh_from_db()
         self.assertEqual(tracked.review_status, APPROVED)
 
-    def test_link_only_and_rejected_fleets_go_back_to_review(self):
+    def test_link_only_fleets_go_back_to_review_but_rejected_fleets_stay_rejected(self):
         link_only = f.create_operation(
             self.fc, status=Status.CLOSED, link_only=True, esi_fleet_id=None, started_at=self.start
         )
@@ -512,7 +520,8 @@ class EditReviewTests(ApprovalTestCase):
 
         link_only.refresh_from_db()
         rejected.refresh_from_db()
-        self.assertEqual((link_only.review_status, rejected.review_status), (PENDING, PENDING))
+        # An edit never sends a rejected fleet back: "Resubmit for approval" does (tests.test_resubmit).
+        self.assertEqual((link_only.review_status, rejected.review_status), (PENDING, REJECTED))
 
     def test_time_changes_evaluate_the_statistics_rule(self):
         with mock.patch("fleetops.views.evaluate_stats_inclusion") as evaluate:
@@ -617,13 +626,19 @@ class TrackedTimeEditTests(TestCase):
         operation.refresh_from_db()
         self.assertEqual((operation.attendance_multiplier, operation.review_status), (3, PENDING))
 
-    def test_fc_leads_edit_times_without_review_or_lowering(self):
+    def test_fc_leads_edit_times_without_review_but_the_multiplier_follows_the_duration(self):
         operation = self.tracked(200, attendance_multiplier=3, multiplier_source="fc")
 
-        self.edit(self.lead, operation, ended_at=self.start + timedelta(minutes=60))
+        response = self.edit(self.lead, operation, ended_at=self.start + timedelta(minutes=60))
 
         operation.refresh_from_db()
-        self.assertEqual((operation.attendance_multiplier, operation.review_status), (3, APPROVED))
+        # No new review for an FC lead; the multiplier is lowered like for everybody (owner decision 1c-3).
+        self.assertEqual((operation.attendance_multiplier, operation.review_status), (1, APPROVED))
+        self.assertIn(
+            "PAP multiplier lowered to 1x: the new times do not allow more. "
+            "As FC lead you can set a higher multiplier with a reason on the PAP tab.",
+            message_texts(response),
+        )
 
     def test_a_start_moved_back_on_a_running_fleet_needs_an_fc_lead(self):
         operation = f.create_operation(self.fc, started_at=timezone.now() - timedelta(minutes=40))
@@ -719,8 +734,21 @@ class ManualRowDeleteTests(ApprovalTestCase):
 
         self.assertEqual(len(response.context["recent_manual"]), 2)
         self.assertContains(response, "Never in fleet")
-        self.assertContains(response, '<span class="badge bg-warning text-dark">Pending</span>')
+        self.assertContains(response, '<span class="fo-pill fo-pill-warn">Pending</span>')
         self.assertContains(response, "Manual PAP you add here counts once an FC lead approves it.")
+
+
+class ManualPapEmptyStateTests(TestCase):
+    def test_the_manual_pap_list_offers_to_add_a_row(self):
+        fc = f.create_user("fc", perms=f.FC_PERMS)
+        self.client.force_login(fc)
+
+        response = self.client.get(reverse("fleetops:manual_attendance"))
+
+        self.assertContains(response, 'id="manual-pap-empty"')
+        self.assertContains(response, "No manual PAP rows.")
+        self.assertContains(response, 'href="#manual-pap-form"')
+        self.assertContains(response, 'id="manual-pap-form"')
 
 
 class ReviewOnCreateTests(TestCase):

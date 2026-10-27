@@ -1,26 +1,28 @@
-{% load i18n fleetops_srp fleetops_messages %}{# The fleet page card for the FleetOps SRP link of the fleet. #}
+{% load i18n fleetops_srp fleetops_messages fleetops_ui %}{# The fleet page card for the FleetOps SRP link of the fleet. #}
 {% if srp_card %}
 {% translate "Close the SRP link? Members can no longer submit losses of this fleet through it. Claims already made stay." as close_confirm %}
+{% translate "Link open" as link_open_label %}
+{% translate "Link closed" as link_closed_label %}
 <div class="card mb-3" id="srp-card">
   <div class="card-header d-flex justify-content-between align-items-center">
     <strong>{% translate "FleetOps SRP" %}</strong>
-    {% if srp_card.link %}{% if srp_card.is_open %}<span class="badge bg-success">{% translate "Link open" %}</span>{% else %}<span class="badge bg-secondary">{% translate "Link closed" %}</span>{% endif %}{% endif %}
+    {% if srp_card.link %}{% if srp_card.is_open %}{% pill "ok" link_open_label %}{% else %}{% pill "neutral" link_closed_label %}{% endif %}{% endif %}
   </div>
   <div class="card-body">
   {% if srp_card.link %}
     {% if not srp_card.enabled %}<div class="alert alert-info py-2">{% translate "FleetOps SRP is not enabled, so members cannot submit claims through this link." %}</div>{% endif %}
     {% if srp_card.can_copy %}
-    <div class="input-group input-group-sm mb-2">
-      <span class="input-group-text">{% translate "SRP link" %}</span>
-      <code class="form-control text-break" id="srp-link-url">{{ srp_card.link_url }}</code>
-      <button type="button" class="btn btn-outline-secondary copy" data-id="srp-link-url">{% translate "Copy" %}</button>
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-2 fleet-srp-link">
+      <span class="small text-muted">{% translate "SRP link" %}</span>
+      <code class="text-break flex-grow-1" id="srp-link-url">{{ srp_card.link_url }}</code>
+      <button type="button" class="btn btn-sm btn-outline-secondary copy" data-id="srp-link-url">{% translate "Copy" %}</button>
     </div>
     {% endif %}
     <div class="d-flex flex-wrap gap-2 align-items-center">
-      {% if srp_card.can_request %}<a class="btn btn-sm btn-success" href="{{ srp_card.link_path }}">{% translate "Request SRP for this fleet" %}</a>{% endif %}
+      {% if srp_card.can_request %}<a class="btn btn-sm btn-primary" href="{{ srp_card.link_path }}">{% translate "Request SRP for this fleet" %}</a>{% endif %}
       {% if srp_card.can_toggle %}
         {% if srp_card.is_open %}
-        <form method="post" action="{% url 'fleetops:srp_link_close' srp_card.link.code %}" onsubmit="return confirm('{{ close_confirm|escapejs }}');">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary">{% translate "Close SRP link" %}</button></form>
+        <form method="post" action="{% url 'fleetops:srp_link_close' srp_card.link.code %}" data-fo-confirm="{{ close_confirm }}" data-fo-confirm-label="{% translate 'Close SRP link' %}" data-fo-confirm-danger="false">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary">{% translate "Close SRP link" %}</button></form>
         {% else %}
         <form method="post" action="{% url 'fleetops:srp_link_open' srp_card.link.code %}">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary">{% translate "Open SRP link" %}</button></form>
         {% endif %}
@@ -49,11 +51,11 @@
       </tr>{% endfor %}</tbody>
     </table></div>
     {% if srp_card.claims_hidden %}<div class="small text-muted mt-1">{% blocktranslate trimmed count counter=srp_card.claims_hidden %}and {{ counter }} more claim; the SRP summary lists them all.{% plural %}and {{ counter }} more claims; the SRP summary lists them all.{% endblocktranslate %}</div>{% endif %}
-    {% else %}<div class="text-muted small">{% translate "No claims for this fleet yet." %}</div>{% endif %}
+    {% else %}<div class="fo-empty"><i class="fa-solid fa-file-invoice" aria-hidden="true"></i><span>{% translate "No claims for this fleet yet." %}</span></div>{% endif %}
     {% endif %}
   {% elif srp_card.can_create %}
     <div class="text-muted mb-2">{% translate "This fleet has no SRP link yet, so members cannot claim their losses of it." %}</div>
-    <form method="post" action="{% url 'fleetops:retry_srp' operation.uuid %}">{% csrf_token %}<button class="btn btn-sm btn-success">{% translate "Create SRP link" %}</button></form>
+    <form method="post" action="{% url 'fleetops:retry_srp' operation.uuid %}">{% csrf_token %}<button class="btn btn-sm btn-primary">{% translate "Create SRP link" %}</button></form>
   {% endif %}
   </div>
 </div>

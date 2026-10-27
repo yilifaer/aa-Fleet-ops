@@ -1,9 +1,15 @@
-{% load i18n fleetops_srp fleetops_messages %}{# A table of claims. Context: claims (SrpClaim list); selectable (a tick box on the pending claims the viewer may decide on, claim.reviewable); mine (the pilot's own view: fewer columns); page (a Paginator page: adds the page links). #}
-<div class="table-responsive">
-  <table class="table table-sm table-hover align-middle mb-0 fleetops-srp-claims">
+{% load i18n fleetops_srp fleetops_messages fleetops_ui %}{# A table of claims. Context: claims (SrpClaim list); selectable (a tick box on the pending claims the viewer may decide on, claim.reviewable); mine (the pilot's own view: fewer columns, and loss cards instead of the table on a phone); page (a Paginator page: adds the page links); form_anchor (the id of the claim form of the page, for the empty state of mine); filters_active (the review queue is filtered). #}
+{% if mine and claims %}
+<div class="fo-loss-grid d-md-none p-3" id="srp-loss-cards">
+  {% for claim in claims %}{% include "fleetops/srp/_loss_card.html" %}{% endfor %}
+</div>
+{% endif %}
+{% if claims %}
+<div class="table-responsive{% if mine %} d-none d-md-block{% endif %}">
+  <table class="table table-sm table-hover align-middle mb-0 fleetops-srp-claims fo-table-pin">
     <thead>
       <tr>
-        {% if selectable %}<th scope="col" class="fleetops-srp-check"><input type="checkbox" class="form-check-input" data-srp-select-all aria-label="{% translate 'Select all claims on this page' %}"></th>{% endif %}
+        {% if selectable %}<th scope="col" class="fleetops-srp-check"><label class="fo-check-cell"><input type="checkbox" class="form-check-input" data-srp-select-all aria-label="{% translate 'Select all claims on this page' %}"></label></th>{% endif %}
         <th scope="col">{% translate "Claim" %}</th>
         <th scope="col">{% translate "Loss (EVE)" %}</th>
         {% if not mine %}<th scope="col">{% translate "Pilot" %}</th>{% endif %}
@@ -17,12 +23,12 @@
     <tbody>
       {% for claim in claims %}
       <tr class="{{ claim|srp_row_class }}">
-        {% if selectable %}<td class="fleetops-srp-check">{% if claim.reviewable and claim.status == "pending" %}<input type="checkbox" class="form-check-input" name="claim" value="{{ claim.uuid }}" data-srp-select aria-label="{% blocktranslate trimmed with reference=claim.reference %}Select {{ reference }}{% endblocktranslate %}"><input type="hidden" name="shown-{{ claim.uuid }}" value="{{ claim.suggested_amount }}">{% elif claim.status == "pending" %}<span class="text-muted" title="{% translate 'Your own claim: another SRP manager has to decide on it.' %}">{% translate "own" %}</span>{% endif %}</td>{% endif %}
+        {% if selectable %}<td class="fleetops-srp-check">{% if claim.reviewable and claim.status == "pending" %}<label class="fo-check-cell"><input type="checkbox" class="form-check-input" name="claim" value="{{ claim.uuid }}" data-srp-select aria-label="{% blocktranslate trimmed with reference=claim.reference %}Select {{ reference }}{% endblocktranslate %}"></label><input type="hidden" name="shown-{{ claim.uuid }}" value="{{ claim.suggested_amount }}">{% elif claim.status == "pending" %}<span class="text-muted" title="{% translate 'Your own claim: another SRP manager has to decide on it.' %}">{% translate "own" %}</span>{% endif %}</td>{% endif %}
         <td class="text-nowrap"><a href="{% url 'fleetops:srp_claim' claim.uuid %}">{{ claim.reference }}</a>{% if not mine %}<div class="small text-muted" title="{% translate 'Submitted (EVE time)' %}">{{ claim.submitted_at|eve_time }}</div>{% endif %}</td>
         <td class="text-nowrap">{{ claim.killmail_time|eve_time }}</td>
         {% if not mine %}<td>{{ claim.main_character_name|default:claim.character_name }}{% if claim.main_character_name and claim.character_name != claim.main_character_name %}<div class="small text-muted">{{ claim.character_name }}</div>{% endif %}<div class="small text-muted">{{ claim.corporation_ticker }}</div></td>{% endif %}
-        <td>{{ claim.ship_type_name|default:claim.ship_type_id }}</td>
-        {% if not mine %}<td class="text-end text-nowrap">{% if claim.loss_value is None %}<span class="text-muted">&ndash;</span>{% else %}{{ claim.loss_value|isk_short }}{% endif %}{% if claim.value_source == "esi_estimate" %} <span class="badge text-bg-warning">{% translate "est." %}</span>{% endif %}</td>{% endif %}
+        <td>{% if mine %}<span class="fleetops-srp-ship-cell"><img class="fo-render" src="{% ship_render_url claim.ship_type_id 32 %}" width="32" height="32" alt="" loading="lazy"><span>{{ claim.ship_type_name|default:claim.ship_type_id }}</span></span>{% else %}{{ claim.ship_type_name|default:claim.ship_type_id }}{% endif %}</td>
+        {% if not mine %}<td class="text-end text-nowrap">{% if claim.loss_value is None %}<span class="text-muted">&ndash;</span>{% else %}{{ claim.loss_value|isk_short }}{% endif %}{% if claim.value_source == "esi_estimate" %} {% pill "warn" _("est.") %}{% endif %}</td>{% endif %}
         <td>{% if claim.scope == "in_fleet" %}<span class="small">{{ claim.fleet_label|default:_("In fleet") }}</span>{% else %}<span class="text-muted">{% translate "Out of fleet" %}</span>{% endif %}</td>
         {% if mine %}
         <td class="text-end text-nowrap">{% if claim.status == "approved" or claim.status == "paid" %}<strong>{{ claim.approved_amount|isk }}</strong>{% elif claim.status == "rejected" or claim.status == "withdrawn" %}<span class="text-muted">&ndash;</span>{% else %}{{ claim.limited_amount|isk }}{% endif %}</td>
@@ -36,19 +42,22 @@
         {% endif %}
         <td>{{ claim|srp_status_badge }}</td>
       </tr>
-      {% empty %}
-      <tr><td colspan="12" class="text-muted p-4">{% translate "No claims." %}</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+{% else %}
+{% if mine %}{% translate "You have no SRP claims yet." as empty_text %}{% translate "Request SRP" as empty_label %}{% if form_anchor %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-inbox" href=form_anchor label=empty_label %}{% else %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-inbox" %}{% endif %}
+{% elif filters_active %}{% translate "No claims match these filters." as empty_text %}{% translate "Reset" as empty_label %}{% url 'fleetops:srp_review' as reset_url %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-filter" href=reset_url label=empty_label %}
+{% else %}{% translate "No claims wait for review." as empty_text %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-circle-check" %}{% endif %}
+{% endif %}
 {% if page.paginator.num_pages > 1 %}
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2 p-2">
   <span class="small text-muted">{% blocktranslate trimmed with start=page.start_index end=page.end_index total=page.paginator.count %}Claims {{ start }}&ndash;{{ end }} of {{ total }}{% endblocktranslate %}</span>
-  <div class="btn-group btn-group-sm" role="group" aria-label="{% translate 'Pages' %}">
-    {% if page.has_previous %}<a class="btn btn-outline-secondary" href="{% querystring page=1 %}">{% translate "First" %}</a><a class="btn btn-outline-secondary" href="{% querystring page=page.previous_page_number %}">{% translate "Previous" %}</a>{% endif %}
-    <span class="btn btn-outline-secondary disabled">{% blocktranslate trimmed with number=page.number pages=page.paginator.num_pages %}Page {{ number }} of {{ pages }}{% endblocktranslate %}</span>
-    {% if page.has_next %}<a class="btn btn-outline-secondary" href="{% querystring page=page.next_page_number %}">{% translate "Next" %}</a><a class="btn btn-outline-secondary" href="{% querystring page=page.paginator.num_pages %}">{% translate "Last" %}</a>{% endif %}
+  <div class="d-flex flex-wrap align-items-center gap-2" role="group" aria-label="{% translate 'Pages' %}">
+    {% if page.has_previous %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=1 %}">{% translate "First" %}</a><a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.previous_page_number %}">{% translate "Previous" %}</a>{% endif %}
+    <span class="small text-muted">{% blocktranslate trimmed with number=page.number pages=page.paginator.num_pages %}Page {{ number }} of {{ pages }}{% endblocktranslate %}</span>
+    {% if page.has_next %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.next_page_number %}">{% translate "Next" %}</a><a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.paginator.num_pages %}">{% translate "Last" %}</a>{% endif %}
   </div>
 </div>
 {% endif %}

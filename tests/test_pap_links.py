@@ -215,6 +215,26 @@ class CreateAndRevokeTests(PapLinkTestCase):
         self.assertIn(LEGACY_FLEET, message_texts(response))
         self.assertFalse(legacy.pap_links.exists())
 
+    def test_the_card_of_an_old_fleet_says_why_in_the_page_language(self):
+        legacy = f.create_operation(self.fc, status=Status.CLOSED, pap_rules=FleetOperation.PapRules.LEGACY)
+
+        page = self.detail(self.fc, legacy).content.decode()
+
+        self.assertEqual(page.split('id="pap-links-unavailable">', 1)[1].split("</div>", 1)[0], LEGACY_FLEET)
+
+    @override_settings(LANGUAGE_CODE="zh-hans")
+    def test_the_card_of_an_old_fleet_is_chinese_on_a_chinese_page(self):
+        # FB06.1: the sentence is a stored text, shown through translate_stored like the refusal of the POST.
+        legacy = f.create_operation(self.fc, status=Status.CLOSED, pap_rules=FleetOperation.PapRules.LEGACY)
+        self.client.force_login(self.fc)
+
+        page = self.client.get(
+            reverse("fleetops:operation_detail", args=[legacy.uuid]), HTTP_ACCEPT_LANGUAGE="zh-hans"
+        ).content.decode()
+
+        card = page.split('id="pap-links-unavailable">', 1)[1].split("</div>", 1)[0]
+        self.assertEqual(card, "在 PAP 按在队时长发放之前就已结束的舰队不能使用 PAP 登记链接；请改为补录 PAP。")
+
     def test_validity_outside_the_limits_is_refused(self):
         self.client.force_login(self.fc)
         url = reverse("fleetops:create_pap_link", args=[self.operation.uuid])
@@ -541,6 +561,30 @@ class RegistrationPageTests(PapLinkTestCase):
         page = self.get(f.pap_link(self.operation, require_online=False))
 
         self.assertNotContains(page, "Characters must be logged in to the game when they register.")
+
+    def test_states_are_pills_and_the_name_travels_with_its_check_box(self):
+        f.add_alt(self.pilot, "Fresh Alt")
+        f.registration(self.operation, self.alt, link=self.link)
+
+        html = self.get().content.decode()
+
+        self.assertNotIn('class="badge', html)
+        for pill in (
+            'fo-pill fo-pill-neutral">Main<',
+            'fo-pill fo-pill-ok">Ready<',
+            'fo-pill fo-pill-warn">Login needed<',
+            'fo-pill fo-pill-ok">Registered<',
+        ):
+            with self.subTest(pill=pill):
+                self.assertIn(pill, html)
+        # The check box of a character that can register sits in a label of its own (a 44 px target) with the name.
+        self.assertIn(
+            '<label class="fo-check-cell"><input class="form-check-input" type="checkbox" name="character_ids"', html
+        )
+        self.assertIn(f'<label for="pap-character-{self.main.character_id}" class="mb-0">Pilot Main</label>', html)
+        # Characters that cannot register have no box and no label.
+        self.assertNotIn(f'pap-character-{self.alt.character_id}', html)
+        self.assertIn("fo-table-pin", html)
 
     def test_closed_links_show_why_and_no_form(self):
         cases = (

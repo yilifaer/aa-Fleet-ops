@@ -37,7 +37,9 @@ stays available and FleetOps continues normally.
 The app label is `eve_sde`. FleetOps reads names and ship data from it:
 
 - Ship and solar system names are stored in English whatever language the viewer or the worker uses, and shown
-  in English everywhere.
+  in English everywhere. The names of solar systems also let the in-game MOTD link the form-up place.
+- The **ship groups** list of the general settings (**Ship groups without bridge**) is checked against the SDE: an
+  ID that is not a ship group is refused.
 - The fleet **composition** classifies ships by ship function: ship classes, and the mass that a titan bridge
   can carry (the **Ship groups without bridge** setting). Rules can be entered by exact English name.
 - The **3-Jump Map** tab shows active fleet members in systems up to three jumps from the FC's system, built
@@ -49,6 +51,15 @@ read, the Map tab says that routing data is unavailable. Install it with
 `pip install "aa-fleetops[sde]"`. After you add the SDE to a site with older fleets, run
 `python manage.py fleetops_refresh_names --dry-run` and then without `--dry-run` to rewrite stored names in
 English.
+
+## ESI endpoints without a token
+
+Besides the fleet endpoints that use the FC's token, FleetOps reads two public ESI endpoints for the default MOTD:
+a character's bloodline (`GET /characters/{id}/`, to make the right in-game link to the character; 30 days of
+cache, a failure is cached for ten minutes and the link then uses a default character type) and the ID of a solar
+system by name (`POST /universe/ids/`, only when the form-up text is a name the SDE does not know; found names are
+cached 30 days, unknown ones one day). Both never block a start: when ESI does not answer, the MOTD carries the
+plain name. Pings without a fleet make no such request.
 
 ## SRP apps
 

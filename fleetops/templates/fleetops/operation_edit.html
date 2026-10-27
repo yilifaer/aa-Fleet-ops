@@ -1,12 +1,12 @@
 {% extends "fleetops/base.html" %}
-{% load i18n static fleetops_i18n fleetops_messages %}
+{% load i18n fleetops_messages %}
 {% block fleetops_content %}
 <div class="d-flex justify-content-between align-items-start mb-3"><div><h2 class="mb-1">{% translate "Edit Fleet Operation" %}</h2><div class="text-muted">{{ operation.fleet_type }} · {{ operation.fc_character_name }} · {{ operation.started_at|eve_time }} EVE</div></div><a class="btn btn-outline-secondary" href="{% url 'fleetops:operation_detail' operation.uuid %}">{% translate "Cancel" %}</a></div>
 <div class="alert alert-info">{% translate "This edits FleetOps metadata/history only. It does not recreate the fleet, resend the ping, or retroactively change ESI tracking events. Retry Ping and Retry MOTD resend the stored text; use Regenerate &amp; Push MOTD to apply a changed MOTD template. A changed ping template is only recorded on the fleet." %}</div>
 <div class="card"><div class="card-body"><form method="post" id="operation-edit-form" data-stored-start="{{ stored_started_at|eve_time:'%Y-%m-%dT%H:%M' }}" data-stored-end="{{ stored_ended_at|eve_time:'%Y-%m-%dT%H:%M' }}">{% csrf_token %}
-  {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+  {% include "fleetops/partials/form_errors.html" with errors=form.non_field_errors %}
   <div class="row g-3">
-    <div class="col-md-4">{{ form.fleet_type.label_tag }}{{ form.fleet_type }}{{ form.fleet_type.errors }}</div>
+    <div class="col-md-4">{{ form.fleet_type.label_tag }}{{ form.fleet_type }}{{ form.fleet_type.errors }}{% if form.fleet_type.help_text %}<div class="form-text" id="fleet-type-help">{{ form.fleet_type.help_text }}</div>{% endif %}</div>
     <div class="col-md-4">{{ form.doctrine_name.label_tag }}{{ form.doctrine_name }}{{ form.doctrine_name.errors }}{% if operation.doctrine_fits %}<div class="form-text">{% translate "Changing the doctrine name turns it into a custom doctrine without its Fittings fits." %}</div>{% endif %}</div>
     <div class="col-md-4">{{ form.formup.label_tag }}{{ form.formup }}{{ form.formup.errors }}</div>
     <div class="col-md-4">{{ form.comms.label_tag }}{{ form.comms }}{{ form.comms.errors }}</div>
@@ -21,6 +21,10 @@
       <div class="form-check">{{ form.confirm_long_fleet }} <label class="form-check-label" for="{{ form.confirm_long_fleet.id_for_label }}">{{ form.confirm_long_fleet.label }}</label></div>
       {{ form.confirm_long_fleet.errors }}
     </div>
+    <div class="col-12{% if not form.confirm_old_fleet.errors and not form.confirm_old_fleet.value %} d-none{% endif %}" id="confirm-old-fleet-wrap">
+      <div class="form-check">{{ form.confirm_old_fleet }} <label class="form-check-label" for="{{ form.confirm_old_fleet.id_for_label }}">{{ form.confirm_old_fleet.label }}</label></div>
+      {{ form.confirm_old_fleet.errors }}
+    </div>
     <div class="col-12">{{ form.additional_message.label_tag }}{{ form.additional_message }}{{ form.additional_message.errors }}</div>
   </div>
   <div class="d-flex gap-2 mt-3"><button class="btn btn-primary" type="submit">{% translate "Save Changes" %}</button><a class="btn btn-outline-secondary" href="{% url 'fleetops:fleet_operations' %}">{% translate "Fleet Archive" %}</a></div>
@@ -28,7 +32,6 @@
 {% translate "End Time must be after Start Time." as end_before_start_text %}
 {% blocktranslate trimmed asvar duration_text with duration="%(duration)s" %}Duration: {{ duration }}{% endblocktranslate %}
 {% blocktranslate trimmed asvar duration_long_text with duration="%(duration)s" %}Duration: {{ duration }} — longer than 6 hours, please confirm below.{% endblocktranslate %}
-<script src="{% static 'fleetops/fleetops.js' %}?v={% fleetops_version %}"></script>
 <script>
 (() => {
  const form = document.getElementById('operation-edit-form');
@@ -37,8 +40,11 @@
  const duration = document.getElementById('operation-duration');
  const confirmWrap = document.getElementById('confirm-long-fleet-wrap');
  const confirmBox = document.getElementById('{{ form.confirm_long_fleet.id_for_label }}');
+ const oldWrap = document.getElementById('confirm-old-fleet-wrap');
+ const oldBox = document.getElementById('{{ form.confirm_old_fleet.id_for_label }}');
  const now = document.getElementById('eve-time-now');
  const LONG_FLEET_MINUTES = 6 * 60;
+ const OLD_FLEET_MS = 365 * 24 * 60 * 60 * 1000;
  const TEXT = {
    endBeforeStart: '{{ end_before_start_text|escapejs }}',
    duration: '{{ duration_text|escapejs }}',
@@ -47,6 +53,12 @@
  // The inputs hold EVE time, so they are read as UTC whatever the browser's time zone is.
  function asUtc(value){ return value ? Date.parse(value.length === 16 ? `${value}:00Z` : `${value}Z`) : NaN; }
  function showNow(){ now.textContent = new Date().toISOString().slice(0, 16).replace('T', ' '); }
+ // Only a start that was changed and lies more than a year back needs the confirmation (the server decides).
+ function showOld(){
+   const old = started.value !== form.dataset.storedStart && asUtc(started.value) < Date.now() - OLD_FLEET_MS;
+   if(!old){ oldBox.checked = false; }
+   oldWrap.classList.toggle('d-none', !old);
+ }
  function showDuration(){
    const minutes = Math.round((asUtc(ended.value) - asUtc(started.value)) / 60000);
    duration.className = 'form-text';
@@ -65,7 +77,8 @@
    }
  }
  [started, ended].forEach(input => input.addEventListener('input', showDuration));
- showNow(); setInterval(showNow, 30000); showDuration();
+ started.addEventListener('input', showOld);
+ showNow(); setInterval(showNow, 30000); showDuration(); showOld();
 })();
 </script>
 {% endblock %}

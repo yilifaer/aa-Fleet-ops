@@ -13,12 +13,15 @@ the translated Alliance Auth pages.
 
 Some texts do not follow the viewer:
 
-- **Discord pings and in-game MOTDs** are written in the site language (`LANGUAGE_CODE` in the Alliance Auth
-  settings), so that everybody reads the same text and the preview equals what is sent.
+- **Discord pings and in-game MOTDs** are always English, whatever `LANGUAGE_CODE` of the Alliance Auth settings
+  says: FleetOps's own words in them are never translated, and text that administrators write in the templates
+  is sent as written. Everybody reads the same text and the preview equals what is sent. Translators do not
+  translate anything that only goes into a ping or a MOTD.
 - **Messages that code stores for later** (results of start steps, why a fleet ended, ESI errors, automatic SRP
   decisions) are stored in English and translated when they are shown, in the language of whoever looks at them.
   Text written before a message was known to FleetOps, text typed by users and text that came from ESI is shown
-  as it was stored.
+  as it was stored. The step texts of fleets recorded by 0.1.0a6 and earlier are converted to the stored forms
+  when the site is upgraded, so they are translated like newer ones.
 - **Not translated at all**: data that administrators enter (fleet types, presets, templates, role names),
   Django permission names, log lines, the output of management commands, ship and solar system names, and the
   audit action codes.
@@ -165,7 +168,11 @@ The Simplified Chinese translation follows these rules, and so do the Chinese do
 | Manual fleet / Manual PAP | 补录舰队 / 补录 PAP | EVE time | EVE 时间 |
 | Pending review / Approve / Reject | 待审核 / 通过 / 拒绝 | Dashboard | 总览 |
 | SRP / Claim / Paid | SRP / 补损申请 / 已付款 | Killmail | KM |
+| Group / Group leader | 小组 / 组长 | Send Ping | 发送 Ping |
+| Group fleet / Alliance fleet | 小组舰队 / 联盟舰队 | Resubmit for approval | 重新提交审批 |
+| Command deck | 指挥台 | PAP multiplier "%(multiplier)sx" | %(multiplier)s 倍 |
 | Ended manually | 手动结束 | Fleet boss handed over | 因 Boss 移交而结束 |
 | Fleet no longer exists or the FC left it | 舰队已解散或 FC 已离队 | Webhook / Template | Webhook / 模板 |
 
-Ship names and solar system names stay in English.
+Ship names and solar system names stay in English. Lists are separated with "、", and relative times have no space
+before 后 and 前 ("3 小时后").

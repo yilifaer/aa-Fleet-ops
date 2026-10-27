@@ -446,8 +446,9 @@ class OverviewQueryBudgetTests(TestCase):
         small = self.count(page)
         self.add_corporations(fc, strat, 2, 4, 9)
         self.assertEqual(small, self.count(page))
-        # Alliance Auth's own page chrome (login state, user, permissions, menu) takes about 16 of these.
-        self.assertLessEqual(small, 28)
+        # Alliance Auth's own page chrome (login state, user, permissions, menu) takes about 16 of these; the menu's
+        # group lookup for viewers without start_fleet one more.
+        self.assertLessEqual(small, 29)
 
     def test_corporation_page(self):
         corporation = (2_100_000, "Budget Corp 0")
@@ -470,7 +471,8 @@ class OverviewQueryBudgetTests(TestCase):
             f.add_attendance(f.closed_operation(fc, utc(2026, 3, 22, 18), type_obj=strat), user)
         self.assertEqual(self.client.get(url, {"year": 2026, "month": 3}).context["stats"]["main_character_count"], 16)
         self.assertEqual(small, self.count(page))
-        self.assertLessEqual(small, 28)
+        # One more than before for the menu's group lookup (the manager has no start_fleet).
+        self.assertLessEqual(small, 29)
 
     def test_corporation_statistics(self):
         fc = f.member("fc", perms=f.FC_PERMS)
@@ -530,7 +532,16 @@ class CorporationStatisticsDataTests(AllianceFixtureMixin, TestCase):
         self.assertEqual(stats["status"], "none")
         self.assertIsNone(stats["target_pap"])
         self.assertEqual(stats["missing_pap"], 0)
-        # The default minimum of one PAP: the FC has none.
+        # A month without a target is not assessed: nobody is below a minimum.
+        self.assertEqual(stats["mains_below_minimum"], 0)
+        self.assertEqual(stats["target"].minimum, 0)
+
+    def test_with_a_minimum_of_one_the_idle_main_is_below(self):
+        f.statistics_target(2026, 1, minimum=1)
+
+        stats = corporation_statistics(f.DEFAULT_CORP[0], *MARCH)
+
+        # The FC has no PAP.
         self.assertEqual(stats["mains_below_minimum"], 1)
 
     def test_a_corporation_without_members(self):
@@ -544,6 +555,7 @@ class CorporationStatisticsDataTests(AllianceFixtureMixin, TestCase):
         self.assertEqual((stats["mains_with_pap"], stats["mains_below_minimum"]), (0, 0))
 
     def test_members_without_pap_are_below_the_minimum(self):
+        f.statistics_target(2026, 1, minimum=1)
         for index in range(3):
             f.member(f"idle{index}")
 
@@ -621,8 +633,8 @@ class OverviewPageTests(AllianceFixtureMixin, TestCase):
 
         self.assertContains(response, "Below target")
         self.assertContains(response, "Target met")
-        self.assertContains(response, "text-bg-danger")
-        self.assertContains(response, "text-bg-success")
+        self.assertContains(response, "fo-pill-bad")
+        self.assertContains(response, "fo-pill-ok")
         self.assertContains(response, "fleetops-status-row-missed")
         self.assertContains(response, "fleetops-status-row-met")
         self.assertNotContains(response, "Not reached yet")
@@ -633,10 +645,10 @@ class OverviewPageTests(AllianceFixtureMixin, TestCase):
         response = self.get(self.lead, now=utc(2026, 3, 20, 12))
 
         self.assertContains(response, "Not reached yet")
-        self.assertContains(response, "text-bg-warning")
+        self.assertContains(response, "fo-pill-warn")
         self.assertContains(response, "fleetops-status-row-progress")
         self.assertNotContains(response, "Below target")
-        self.assertNotContains(response, "text-bg-danger")
+        self.assertNotContains(response, "fo-pill-bad")
         self.assertContains(response, "Month in progress")
 
     def test_no_status_without_a_target(self):
@@ -644,7 +656,36 @@ class OverviewPageTests(AllianceFixtureMixin, TestCase):
 
         self.assertNotContains(response, "Target met")
         self.assertNotContains(response, "Below target")
-        self.assertContains(response, "No monthly target applies")
+        self.assertContains(response, "No monthly target applies to this month, so corporations and members are not assessed.")
+        self.assertNotContains(response, "fleetops-status-row")
+        self.assertNotContains(response, "fo-pill-bad")
+        self.assertNotContains(response, "fo-pill-warn")
+        self.assertEqual(response.context["below_total"], 0)
+
+    def test_the_footer_and_the_notes_explain_the_alliance_and_the_corporation_rows(self):
+        response = self.get(self.lead)
+        page = response.content.decode()
+
+        alliance = (
+            "Alliance row: the total is every counted PAP of the month, the Other corporations row included; "
+            "the average is the PAP of the current mains divided by the mains."
+        )
+        corporation = (
+            "Corporation rows: PAP is every PAP flown for the corporation that month, including pilots who "
+            "registered later; Mains and the average count only members registered before the month ended."
+        )
+        self.assertIn(f'<p class="mb-1" id="alliance-row-note">{alliance}</p>', page)
+        self.assertIn(f'<p class="mb-1" id="corporation-rows-note">{corporation}</p>', page)
+        # The footer cells say what their figures are.
+        footer = page.split("<tfoot>")[1].split("</tfoot>")[0]
+        self.assertIn("all counted PAP", footer)
+        self.assertIn("current mains only", footer)
+        self.assertIn(f'title="{alliance}"', footer)
+        # The headers of the two corporation columns carry the explanation of the corporation rows.
+        header = page.split("<thead>")[1].split("</thead>")[0]
+        self.assertEqual(header.count(f'title="{corporation}"'), 2)
+        # The numbers did not change.
+        self.assertEqual(response.context["overview"].alliance_pap, 8)
 
     def test_only_a_configuration_manager_is_offered_the_targets(self):
         targets = reverse("fleetops:configuration_list", args=["statistics-targets"])
@@ -678,6 +719,7 @@ class OverviewPageTests(AllianceFixtureMixin, TestCase):
         self.assertEqual(response.context["not_counted_total"], 2)
 
     def test_links_to_the_corporation_pages_and_member_lists(self):
+        f.statistics_target(2026, 1, minimum=1)
         response = self.get(self.lead)
 
         detail = reverse("fleetops:corporation_statistics_detail", args=[f.DEFAULT_CORP[0]])

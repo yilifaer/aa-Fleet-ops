@@ -8,11 +8,13 @@
 </div>
 <form method="post">
   {% csrf_token %}
-  {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+  {% include "fleetops/partials/form_errors.html" with errors=form.non_field_errors %}
   {% for group in form.field_groups %}{% with title=group.0 text=group.1 fields=group.2 %}
   <div class="card mb-3" id="settings-{{ group.key }}"><div class="card-header"><strong>{{ title }}</strong>{% if text %}<div class="small text-muted">{{ text }}</div>{% endif %}</div><div class="card-body">
     {% for field in fields %}
-      {% if field.field.widget.input_type == 'checkbox' %}
+      {% if field.name == 'bridge_groups' %}{% include "fleetops/configuration/_bridge_groups.html" %}
+      {% elif field.name == 'bridge_other_ids' or field.name == 'bridge_restore_default' %}{# drawn with the ship group list #}
+      {% elif field.field.widget.input_type == 'checkbox' %}
         <div class="form-check mb-3">{{ field }} <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}<div class="text-danger small">{{ field.errors }}</div></div>
       {% else %}
         <div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}<div class="text-danger small">{{ field.errors }}</div></div>

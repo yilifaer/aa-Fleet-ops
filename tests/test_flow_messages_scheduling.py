@@ -131,7 +131,7 @@ class PrePingToClosedFleetTests(FlowTestBase):
         self.assertTrue(content.startswith(f"<@&{ROLE_ID}>\n"))
         self.assertIn("Bring @​everyone and @​here", content)
         unix = int(when.timestamp())
-        self.assertIn(f"**Fleet Time:** {when:%Y-%m-%d %H:%M} EVE (<t:{unix}:R>)", content)
+        self.assertIn(f"**Fleet Time:** {when:%Y-%m-%d %H:%M} EVE · <t:{unix}:t> (<t:{unix}:R>)", content)
         self.assertIn("-# This was a FleetOps broadcast from Plan FC to Sig A at ", content)
         self.assertEqual(AuditLog.objects.filter(action="fleet.schedule").count(), 1)
 

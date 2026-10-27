@@ -46,6 +46,7 @@ from fleetops.services.history import prune_history, retention_cutoff
 from fleetops.services.messages import render_operation_messages
 
 from . import factories as f
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 
 WEBHOOK_TOKEN = "Qp4-validation-webhook-token"
 WEBHOOK_URL = f"https://discord.com/api/webhooks/445566778899/{WEBHOOK_TOKEN}"
@@ -215,7 +216,7 @@ class RetentionTests(TestCase):
 
         result = prune_history()
 
-        self.assertEqual(result, {"old_attendance": 0, "left_alliance": 0, "old_events": 0})
+        self.assertEqual(result, {"old_attendance": 0, "left_alliance": 0, "old_events": 0, "old_pings": 0})
         self.assertTrue(AttendanceRecord.objects.filter(pk=old.pk).exists())
         self.assertTrue(FleetMemberEvent.objects.filter(pk=event.pk).exists())
 
@@ -466,10 +467,11 @@ class ConfigurationListRenderingTests(TestCase):
         response = self.client.get(reverse("fleetops:configuration_list", args=["fleet-types"]))
 
         content = response.content.decode()
-        for cell in ("<td>1.00</td>", "<td>0.00</td>", "<td>1</td>", "<td>0</td>"):
+        # Figures are right aligned; a number is never turned into a Yes or a No.
+        for cell in ('<td class="text-end">1.00</td>', '<td class="text-end">0.00</td>', '<td class="text-end">1</td>', '<td class="text-end">0</td>'):
             self.assertIn(cell, content)
-        self.assertEqual(content.count('<span class="badge bg-success">Yes</span>'), 1)
-        self.assertEqual(content.count('<span class="badge bg-secondary">No</span>'), 1)
+        self.assertEqual(content.count('<span class="fo-pill fo-pill-ok">Yes</span>'), 1)
+        self.assertEqual(content.count('<span class="fo-pill fo-pill-neutral">No</span>'), 1)
         self.assertIn('<td><span class="text-muted">—</span></td>', content)
 
 
@@ -497,7 +499,8 @@ class OperationEditFormTests(TestCase):
                 self.assertEqual(form.errors["ended_at"], ["End Time must be after Start Time."])
 
     def test_later_end_and_open_end_are_accepted(self):
-        start = timezone.now()
+        # A fleet record cannot end in the future (FB16.4), so the whole fleet lies in the past.
+        start = timezone.now() - timedelta(hours=4)
         for ended in (start + timedelta(minutes=1), start + timedelta(hours=2), None):
             with self.subTest(ended=ended):
                 self.assertTrue(self._form(start, ended).is_valid())

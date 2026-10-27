@@ -44,7 +44,7 @@ class ConfigurationSectionTests(TestCase):
         response = self.client.get(reverse("fleetops:configuration_list", args=["multiplier-tiers"]))
 
         self.assertContains(response, "Longer than (minutes)")
-        self.assertContains(response, "<td>180</td>", html=False)
+        self.assertContains(response, '<td class="text-end">180</td>', html=False)
 
     def test_adding_a_tier_is_audited(self):
         response = self.client.post(
@@ -130,8 +130,10 @@ class NavigationAndPageTests(TestCase):
         )
 
         response = self.get(self.lead, reverse("fleetops:dashboard"))
-        self.assertContains(response, f'href="{approvals}">Approvals (1)</a>')
+        self.assertContains(response, f'href="{approvals}">Approvals <span')
+        self.assertContains(response, '>1 fleet</span><span class="fo-count-short" aria-hidden="true">1</span></span></a>')
         self.assertEqual(response.context["pending_approval_count"], 1)
+        self.assertEqual(response.context["pending_approvals"], {"fleets": 1, "pap": 0})
 
     def test_fcs_do_not_see_the_approvals_item(self):
         response = self.get(self.fc, reverse("fleetops:dashboard"))

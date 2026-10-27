@@ -1,11 +1,11 @@
-{% load i18n fleetops_i18n fleetops_messages %}
+{% load i18n fleetops_i18n fleetops_messages fleetops_ui %}
 {% if operation.review_status == 'pending' or operation.review_status == 'rejected' %}
 <div class="alert {% if operation.review_status == 'pending' %}alert-warning{% else %}alert-danger{% endif %}" id="fleet-review">
   {% if operation.review_status == 'pending' %}
     {% blocktranslate trimmed %}<strong>Pending FC lead approval</strong> — this fleet is not counted in statistics and incentives yet.{% endblocktranslate %}
+    {% if operation.review_request_note %}<div class="small mt-1" id="fleet-review-request">{% blocktranslate trimmed with note=operation.review_request_note %}Resubmitted: {{ note }}{% endblocktranslate %}</div>{% endif %}
   {% else %}
     {% if can_review or can_manage %}{% blocktranslate trimmed with note=operation.review_note %}<strong>Rejected by an FC lead</strong>: {{ note }} — this fleet is not counted in statistics and incentives.{% endblocktranslate %}{% else %}{% blocktranslate trimmed %}<strong>Rejected by an FC lead</strong> — this fleet is not counted in statistics and incentives.{% endblocktranslate %}{% endif %}
-    {% if can_manage and not can_review %}<div class="small mt-1">{% translate "Correct the fleet with Edit Operation to send it back for approval." %}</div>{% endif %}
   {% endif %}
   {% if operation.reviewed_at %}<div class="small mt-1">{{ operation.reviewed_by.profile.main_character|default:operation.reviewed_by|default:_("Unknown") }} · {{ operation.reviewed_at|eve_time }} EVE</div>{% endif %}
   {% if can_review %}
@@ -13,27 +13,36 @@
     <input type="hidden" name="next" value="{% url 'fleetops:operation_detail' operation.uuid %}">
     <div class="col-lg-5"><input class="form-control form-control-sm" name="note" maxlength="255" placeholder="{% translate 'Note (required to reject)' %}" aria-label="{% translate 'Review note' %}"></div>
     <div class="col-auto"><div class="form-check"><input class="form-check-input" type="checkbox" name="include_attendance" id="fleet-review-attendance" checked><label class="form-check-label" for="fleet-review-attendance">{% if pending_pap_count %}{% blocktranslate trimmed with count=pending_pap_count %}With its PAP rows waiting for approval ({{ count }}){% endblocktranslate %}{% else %}{% translate "With its PAP rows waiting for approval" %}{% endif %}</label></div></div>
-    <div class="col-auto"><button class="btn btn-sm btn-success" name="action" value="approve">{% translate "Approve fleet" %}</button>{% if operation.review_status == 'pending' %} <button class="btn btn-sm btn-outline-danger" name="action" value="reject">{% translate "Reject fleet" %}</button>{% endif %}</div>
+    <div class="col-auto d-flex gap-2"><button class="btn btn-sm btn-primary" name="action" value="approve">{% translate "Approve fleet" %}</button>{% if operation.review_status == 'pending' %} <button class="btn btn-sm btn-outline-danger" name="action" value="reject" data-fo-confirm="{% translate 'Reject this fleet? The FC sees your note.' %}" data-fo-confirm-label="{% translate 'Reject fleet' %}">{% translate "Reject fleet" %}</button>{% endif %}</div>
+  </form>
+  {% elif can_manage and operation.review_status == 'rejected' %}
+  <form method="post" action="{% url 'fleetops:resubmit_operation' operation.uuid %}" class="row g-2 align-items-center mt-1" id="fleet-resubmit-form">{% csrf_token %}
+    <div class="col-12 small">{% translate "Edit the fleet first if something was wrong, then resubmit it." %}</div>
+    <div class="col-lg-5"><input class="form-control form-control-sm" name="note" maxlength="255" placeholder="{% translate 'Note for the approvers (optional)' %}" aria-label="{% translate 'Note for the approvers (optional)' %}"></div>
+    {% if resubmit_row_count %}<div class="col-auto"><div class="form-check"><input class="form-check-input" type="checkbox" name="include_attendance" id="fleet-resubmit-attendance" checked><label class="form-check-label" for="fleet-resubmit-attendance">{% blocktranslate trimmed with count=resubmit_row_count %}Also send its PAP rows rejected with it back for approval ({{ count }}){% endblocktranslate %}</label></div></div>{% endif %}
+    <div class="col-auto"><button class="btn btn-sm btn-primary">{% translate "Resubmit for approval" %}</button></div>
   </form>
   {% endif %}
 </div>
 {% endif %}
 {% if can_review and review_rows %}
-<details class="card mb-3" id="pap-review"{% if review_rows|length <= 10 %} open{% endif %}><summary class="card-header"><strong>{% translate "Manual PAP waiting for review" %}</strong> <span class="badge bg-warning text-dark">{{ review_rows|length }}</span></summary>
+<details class="card mb-3" id="pap-review"{% if review_rows|length <= 10 %} open{% endif %}><summary class="card-header"><strong>{% translate "Manual PAP waiting for review" %}</strong> <span class="fo-count">{{ review_rows|length }}</span></summary>
+{% translate "Pending" context "FleetOps" as pending_label %}
+{% translate "Rejected" context "FleetOps" as rejected_label %}
 <form method="post" action="{% url 'fleetops:review_attendance' %}">{% csrf_token %}
   <input type="hidden" name="next" value="{% url 'fleetops:operation_detail' operation.uuid %}">
   <div class="table-responsive"><table class="table table-sm align-middle mb-0">
-    <thead><tr><th></th><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th>{% translate "Value" context "PAP value" %}</th><th>{% translate "Correction" %}</th><th>{% translate "Source" %}</th><th>{% translate "Review" %}</th><th>{% translate "Notes" %}</th><th>{% translate "Added by" %}</th></tr></thead>
+    <thead><tr><th></th><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th class="text-end">{% translate "Value" context "PAP value" %}</th><th>{% translate "Correction" %}</th><th>{% translate "Source" %}</th><th>{% translate "Review" %}</th><th>{% translate "Notes" %}</th><th>{% translate "Added by" %}</th></tr></thead>
     <tbody>{% for r in review_rows %}<tr>
-      <td><input class="form-check-input" type="checkbox" name="ids" value="{{ r.pk }}"{% if r.review_status == 'pending' %} checked{% endif %} aria-label="{% blocktranslate trimmed with name=r.character_name %}Select {{ name }}{% endblocktranslate %}"></td>
-      <td>{{ r.character_name }}</td><td>{{ r.main_character_name|default:"—" }}</td><td>{{ r.attendance_value }}</td><td>{{ r.get_correction_display }}</td><td>{{ r.get_source_display }}</td>
-      <td>{% if r.review_status == 'pending' %}<span class="badge bg-warning text-dark">{% translate "Pending" context "FleetOps" %}</span>{% else %}<span class="badge bg-danger">{% translate "Rejected" context "FleetOps" %}</span>{% if r.review_note %}<div class="small text-muted">{{ r.review_note }}</div>{% endif %}{% endif %}</td>
+      <td><label class="fo-check-cell"><input class="form-check-input" type="checkbox" name="ids" value="{{ r.pk }}"{% if r.review_status == 'pending' %} checked{% endif %} aria-label="{% blocktranslate trimmed with name=r.character_name %}Select {{ name }}{% endblocktranslate %}"></label></td>
+      <td>{{ r.character_name }}</td><td>{{ r.main_character_name|default:"—" }}</td><td class="text-end">{{ r.attendance_value }}</td><td>{{ r.get_correction_display }}</td><td>{{ r.get_source_display }}</td>
+      <td>{% if r.review_status == 'pending' %}{% pill "warn" pending_label %}{% else %}{% pill "bad" rejected_label %}{% if r.review_note %}<div class="small text-muted">{{ r.review_note }}</div>{% endif %}{% endif %}</td>
       <td>{{ r.notes|stored_text|default:"—" }}</td><td>{{ r.created_by.profile.main_character|default:r.created_by|default:"—" }}</td>
     </tr>{% endfor %}</tbody>
   </table></div>
   <div class="card-body row g-2 align-items-center">
     <div class="col-lg-5"><input class="form-control form-control-sm" name="note" maxlength="255" placeholder="{% translate 'Note (required to reject)' %}" aria-label="{% translate 'Review note' %}"></div>
-    <div class="col-auto"><button class="btn btn-sm btn-success" name="action" value="approve">{% translate "Approve selected" %}</button> <button class="btn btn-sm btn-outline-danger" name="action" value="reject">{% translate "Reject selected" %}</button></div>
+    <div class="col-auto d-flex gap-2"><button class="btn btn-sm btn-primary" name="action" value="approve">{% translate "Approve selected" %}</button> <button class="btn btn-sm btn-outline-danger" name="action" value="reject" data-fo-confirm="{% translate 'Reject the selected PAP rows?' %}" data-fo-confirm-label="{% translate 'Reject' %}">{% translate "Reject selected" %}</button></div>
   </div>
 </form></details>
 {% elif can_manage_attendance and pending_pap_count or can_manage_attendance and rejected_pap_count %}

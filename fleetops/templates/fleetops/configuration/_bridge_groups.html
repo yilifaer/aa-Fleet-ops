@@ -1,0 +1,29 @@
+{% load i18n %}{% comment %}The ship groups without bridge: a filter, the ticked groups, the groups in force with links to EVE Ref, the IDs the list does not offer and the way back to the default. Context: form (FleetOpsSettingsForm).{% endcomment %}
+<div class="mb-3" id="bridge-groups">
+  <label class="form-label" id="bridge-groups-label" for="bridge-groups-filter">{{ form.bridge_groups.label }}</label>
+  <div class="form-text mb-2">{{ form.bridge_groups.help_text }}</div>
+  {% translate "Filter ship groups" as filter_label %}
+  <input type="search" class="form-control mb-2" id="bridge-groups-filter" data-fo-filter="bridge-groups-list" placeholder="{{ filter_label }}" aria-label="{{ filter_label }}" autocomplete="off">
+  <div class="fo-checklist" id="bridge-groups-list" role="group" aria-labelledby="bridge-groups-label">
+    {% for option in form.bridge_groups %}
+    <div class="form-check" data-fo-filter-item="{{ option.choice_label }}">{{ option.tag }} <label class="form-check-label" for="{{ option.id_for_label }}">{{ option.choice_label }}</label></div>
+    {% endfor %}
+    <div class="text-muted small p-2" data-fo-filter-empty="bridge-groups-list" hidden>{% translate "No ship group matches." %}</div>
+  </div>
+  <div class="text-danger small">{{ form.bridge_groups.errors }}</div>
+  <div class="form-text mt-2 fo-bridge-now" id="bridge-groups-now">
+    {% translate "Now:" %}
+    {% for group_id, name in form.bridge_now %}<a href="https://everef.net/groups/{{ group_id }}" target="_blank" rel="noopener">{{ name }} ({{ group_id }})</a>{% if not forloop.last %}, {% endif %}{% empty %}<span>&mdash;</span>{% endfor %}
+    &middot; <a href="https://everef.net/categories/6" target="_blank" rel="noopener">{% translate "All ship groups on EVE Ref" %}</a>
+  </div>
+</div>
+<div class="mb-3">
+  <label class="form-label" for="{{ form.bridge_other_ids.id_for_label }}">{{ form.bridge_other_ids.label }}</label>
+  {{ form.bridge_other_ids }}
+  {% if form.bridge_other_ids.help_text %}<div class="form-text">{{ form.bridge_other_ids.help_text }}</div>{% endif %}
+  <div class="text-danger small">{{ form.bridge_other_ids.errors }}</div>
+</div>
+<div class="form-check mb-3">
+  {{ form.bridge_restore_default }} <label class="form-check-label" for="{{ form.bridge_restore_default.id_for_label }}">{{ form.bridge_restore_default.label }}</label>
+  {% if form.bridge_restore_default.help_text %}<div class="form-text">{{ form.bridge_restore_default.help_text }}</div>{% endif %}
+</div>

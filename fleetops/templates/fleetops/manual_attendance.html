@@ -1,21 +1,24 @@
 {% extends "fleetops/base.html" %}
-{% load i18n fleetops_messages %}
+{% load i18n fleetops_messages fleetops_ui %}
 {% block fleetops_content %}
+{% translate "Pending" context "FleetOps" as pending_label %}
+{% translate "Rejected" context "FleetOps" as rejected_label %}
+{% translate "Approved" context "FleetOps" as approved_label %}
 <div class="mb-3">
   <h2 class="mb-0">{% translate "Manual PAP" %}</h2>
   <div class="text-muted">{% translate "Add PAP to current or historical fleets. FCs with this permission see their own fleets; fleet managers can manage all fleets." %}</div>
 </div>
 {% if needs_approval %}<div class="alert alert-info">{% translate "Manual PAP you add here counts once an FC lead approves it." %}</div>{% endif %}
-<div class="card mb-3"><div class="card-header"><strong>{% translate "Add PAP" %}</strong></div><div class="card-body">
+<div class="card mb-3" id="manual-pap-form"><div class="card-header"><strong>{% translate "Add PAP" %}</strong></div><div class="card-body">
   <form method="post">{% csrf_token %}
-    {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+    {% include "fleetops/partials/form_errors.html" with errors=form.non_field_errors %}
     <div class="row g-3">
-      <div class="col-lg-6">{{ form.operation.label_tag }}{{ form.operation }}{% if form.operation.errors %}<div class="text-danger small">{{ form.operation.errors|join:" " }}</div>{% endif %}<div class="form-text">{{ form.operation.help_text }}</div></div>
-      <div class="col-lg-3">{{ form.character_name.label_tag }}{{ form.character_name }}{% if form.character_name.errors %}<div class="text-danger small">{{ form.character_name.errors|join:" " }}</div>{% endif %}<div class="form-text">{{ form.character_name.help_text }}</div></div>
-      <div class="col-lg-3">{{ form.character_id.label_tag }}{{ form.character_id }}{% if form.character_id.errors %}<div class="text-danger small">{{ form.character_id.errors|join:" " }}</div>{% endif %}<div class="form-text">{{ form.character_id.help_text }}</div></div>
-      <div class="col-lg-2">{{ form.attendance_value.label_tag }}{{ form.attendance_value }}{% if form.attendance_value.errors %}<div class="text-danger small">{{ form.attendance_value.errors|join:" " }}</div>{% endif %}<div class="form-text">{% translate "Use 2, 3, etc. for multiple credits." %}</div></div>
-      <div class="col-lg-4">{{ form.duplicate_action.label_tag }}{{ form.duplicate_action }}{% if form.duplicate_action.errors %}<div class="text-danger small">{{ form.duplicate_action.errors|join:" " }}</div>{% endif %}</div>
-      <div class="col-lg-6">{{ form.notes.label_tag }}{{ form.notes }}{% if form.notes.errors %}<div class="text-danger small">{{ form.notes.errors|join:" " }}</div>{% endif %}</div>
+      <div class="col-lg-6">{{ form.operation.label_tag }}{{ form.operation }}{{ form.operation.errors }}<div class="form-text">{{ form.operation.help_text }}</div></div>
+      <div class="col-lg-3">{{ form.character_name.label_tag }}{{ form.character_name }}{{ form.character_name.errors }}<div class="form-text">{{ form.character_name.help_text }}</div></div>
+      <div class="col-lg-3">{{ form.character_id.label_tag }}{{ form.character_id }}{{ form.character_id.errors }}<div class="form-text">{{ form.character_id.help_text }}</div></div>
+      <div class="col-lg-2">{{ form.attendance_value.label_tag }}{{ form.attendance_value }}{{ form.attendance_value.errors }}<div class="form-text">{% translate "Use 2, 3, etc. for multiple credits." %}</div></div>
+      <div class="col-lg-4">{{ form.duplicate_action.label_tag }}{{ form.duplicate_action }}{{ form.duplicate_action.errors }}</div>
+      <div class="col-lg-6">{{ form.notes.label_tag }}{{ form.notes }}{{ form.notes.errors }}</div>
     </div>
     <button class="btn btn-primary mt-3">{% translate "Save PAP" %}</button>
   </form>
@@ -23,12 +26,15 @@
 <div class="card mb-3" id="roster-paste"><div class="card-header"><strong>{% translate "Paste a Roster" %}</strong></div><div class="card-body">
   <form method="get" class="row g-2 align-items-end">
     <div class="col-lg-6"><label class="form-label" for="roster-fleet">{% translate "Fleet" %}</label><select class="form-select" name="roster_fleet" id="roster-fleet">{% for op in roster_fleets %}<option value="{{ op.pk }}">{{ op.started_at|eve_time }} · {{ op.fleet_type }} · {{ op.fc_character_name }}</option>{% empty %}<option value="">{% translate "No active or closed fleets" %}</option>{% endfor %}</select></div>
-    <div class="col-auto"><button class="btn btn-outline-primary"{% if not roster_fleets %} disabled{% endif %}>{% translate "Paste roster" %}</button></div>
+    <div class="col-auto"><button class="btn btn-outline-secondary"{% if not roster_fleets %} disabled{% endif %}>{% translate "Paste roster" %}</button></div>
   </form>
   <div class="form-text">{% translate "Credit everybody in a fleet window, a chat channel member list or chat lines copied from the game client." %}</div>
 </div></div>
-<div class="card"><div class="card-header"><strong>{% translate "Recent Manual Entries" %}</strong></div><div class="table-responsive">
-<table class="table table-sm mb-0 align-middle"><thead><tr><th>{% translate "Fleet" %}</th><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th>{% translate "Value" context "PAP value" %}</th><th>{% translate "Source" %}</th><th>{% translate "Review" %}</th><th>{% translate "Added by" %}</th><th>{% translate "Created" %}</th><th></th></tr></thead><tbody>
-{% for r in recent_manual %}<tr><td><a href="{% url 'fleetops:operation_detail' r.operation.uuid %}">{{ r.operation.started_at|eve_time }} · {{ r.operation.fleet_type }}</a></td><td>{{ r.character_name }}</td><td>{{ r.main_character_name|default:"—" }}</td><td>{{ r.attendance_value }}</td><td>{{ r.get_source_display }}</td><td>{% if r.review_status == 'pending' %}<span class="badge bg-warning text-dark">{% translate "Pending" context "FleetOps" %}</span>{% elif r.review_status == 'rejected' %}<span class="badge bg-danger">{% translate "Rejected" context "FleetOps" %}</span>{% if r.review_note %}<div class="small text-muted">{{ r.review_note }}</div>{% endif %}{% else %}<span class="badge bg-success">{% translate "Approved" context "FleetOps" %}</span>{% endif %}</td><td>{{ r.created_by|default:"—" }}</td><td>{{ r.created_at|eve_time }}</td><td>{% if r.pk in deletable_row_ids %}<form method="post" action="{% url 'fleetops:delete_manual_attendance' r.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">{% translate "Delete" %}</button></form>{% endif %}</td></tr>{% empty %}<tr><td colspan="9" class="text-muted p-4">{% translate "No manual PAP entries." %}</td></tr>{% endfor %}
-</tbody></table></div></div>
+<div class="card"><div class="card-header"><strong>{% translate "Recent Manual Entries" %}</strong></div>
+{% if recent_manual %}<div class="table-responsive">
+<table class="table table-sm mb-0 align-middle fo-table-pin" id="manual-pap-table"><thead><tr><th>{% translate "Fleet" %}</th><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th class="text-end">{% translate "Value" context "PAP value" %}</th><th>{% translate "Source" %}</th><th>{% translate "Review" %}</th><th>{% translate "Added by" %}</th><th>{% translate "Created" %}</th><th></th></tr></thead><tbody>
+{% for r in recent_manual %}<tr><td><a href="{% url 'fleetops:operation_detail' r.operation.uuid %}">{{ r.operation.started_at|eve_time }} · {{ r.operation.fleet_type }}</a></td><td>{{ r.character_name }}</td><td>{{ r.main_character_name|default:"—" }}</td><td class="text-end">{{ r.attendance_value }}</td><td>{{ r.get_source_display }}</td><td>{% if r.review_status == 'pending' %}{% pill "warn" pending_label %}{% elif r.review_status == 'rejected' %}{% pill "bad" rejected_label %}{% if r.review_note %}<div class="small text-muted">{{ r.review_note }}</div>{% endif %}{% else %}{% pill "ok" approved_label %}{% endif %}</td><td>{{ r.created_by|default:"—" }}</td><td>{{ r.created_at|eve_time }}</td><td>{% if r.pk in deletable_row_ids %}<form method="post" action="{% url 'fleetops:delete_manual_attendance' r.pk %}" data-fo-confirm="{% translate 'Delete this manual PAP row? The tracked PAP of the character is calculated again.' %}" data-fo-confirm-label="{% translate 'Delete' %}">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">{% translate "Delete" %}</button></form>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>
+{% else %}<div class="fo-empty" id="manual-pap-empty"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i><div>{% translate "No manual PAP rows." %}</div><a class="btn btn-outline-secondary" href="#manual-pap-form">{% translate "Add manual PAP" %}</a></div>{% endif %}
+</div>
 {% endblock %}

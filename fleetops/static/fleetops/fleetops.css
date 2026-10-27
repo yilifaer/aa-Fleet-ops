@@ -1,53 +1,744 @@
 /* SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors */
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-.fleetops .card{box-shadow:0 1px 2px rgba(0,0,0,.08)}
-.preview-box{white-space:pre-wrap;word-break:break-word;min-height:180px;padding:1rem;border:1px solid var(--bs-border-color);border-radius:.375rem;background:rgba(127,127,127,.06)}
-.stat-card{height:100%;padding:1rem;border:1px solid var(--bs-border-color);border-radius:.5rem;display:flex;flex-direction:column;gap:.35rem}.stat-card span{color:var(--bs-secondary-color)}.stat-card strong{font-size:1.35rem}
-.event-row{display:grid;grid-template-columns:180px minmax(160px,1fr) 150px minmax(180px,2fr);gap:1rem;padding:.55rem 0;border-bottom:1px solid var(--bs-border-color)}
-.jump-map{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem}.jump-system{border:1px solid var(--bs-border-color);border-radius:.6rem;padding:1rem;border-left-width:5px}.jump-system>div:first-child{display:flex;justify-content:space-between;gap:.5rem}.jump-system>b{font-size:1.8rem}.jump-system details{margin-top:.5rem;max-height:220px;overflow:auto}
-@media(max-width:768px){.event-row{grid-template-columns:1fr}}
+/*
+ * FleetOps interface.
+ *
+ * 1. Tokens            colours, shape, space and motion; every other rule takes its values from here
+ * 2. Base              type scale, numbers, focus, reduced motion, links, text helpers
+ * 3. Components        pills, counts, metric tiles, segmented controls, toasts, bars, empty states, ...
+ * 4. Bootstrap         buttons, tabs, tables and alerts inside .fleetops, made readable in every AA theme
+ * 5. Page parts        the rules of the earlier pages, kept for old markup and written with the tokens
+ * 6. Page blocks       one anchored block per area (A start, B fleet, C records, D home and statistics,
+ *                      E SRP and administration, F pings and groups); an area adds rules only inside its block
+ *
+ * Colours come from the active Alliance Auth theme (--bs-*) and are mixed into the --fo-* tokens, so light,
+ * dark and third-party themes all follow. The browser's own colour-scheme setting is never consulted: AA
+ * decides light or dark. Text colours are mixes of a status colour with the body colour (4.5:1 or better on every surface
+ * in the five AA themes); the status colour itself is carried by the dot or the bar next to the words.
+ */
 
-/* Dashboard inspired by operational dashboards without coupling FleetOps to a theme. */
-.fleetops-metric{min-height:106px;border-radius:.5rem;padding:1rem 1.15rem;display:flex;align-items:center;gap:1rem;border:1px solid var(--bs-border-color);background:var(--bs-tertiary-bg)}
-.fleetops-metric-value{font-size:2.65rem;line-height:1;font-weight:500;min-width:64px;padding-right:1rem;border-right:3px solid rgba(127,127,127,.35)}
-.fleetops-metric-title{font-size:1.05rem;font-weight:700;margin-bottom:.25rem}
-.fleetops-metric-1{border-top:4px solid #20c997}.fleetops-metric-2{border-top:4px solid #6f42c1}.fleetops-metric-3{border-top:4px solid #adb5bd}.fleetops-metric-4{border-top:4px solid #0d6efd}
-.fleetops-ship-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:1rem;text-align:center}
-.fleetops-ship img{width:100%;max-width:128px;aspect-ratio:1/1;object-fit:cover;border-radius:.45rem;border:1px solid var(--bs-border-color);background:#111}
-.fleetops-ship .fw-semibold{margin-top:.35rem}
-@media(max-width:768px){.fleetops-metric-value{font-size:2rem;min-width:52px}.fleetops-ship-grid{grid-template-columns:repeat(2,minmax(100px,1fr))}}
+/* ===== 1. Tokens ===== */
+/* On :root as well, so the navbar counts, the toasts and the dialogs (outside .fleetops) can use them. */
+:root, .fleetops {
+  /* Surfaces: the page is the theme's --bs-body-bg; layers are translucent body colour on top of it */
+  --fo-surface-1: rgba(var(--bs-body-color-rgb), .04);   /* cards, metric tiles, callout base */
+  --fo-surface-2: rgba(var(--bs-body-color-rgb), .07);   /* groups in cards, selected item, neutral pill */
+  --fo-surface-3: rgba(var(--bs-body-color-rgb), .11);   /* a layer inside a dialog */
+  --fo-hover:     rgba(var(--bs-body-color-rgb), .06);
+  --fo-surface-solid: color-mix(in srgb, var(--bs-body-color) 5%, var(--bs-body-bg)); /* bars that stay on screen */
+  /* Text */
+  --fo-text-1: var(--bs-body-color);
+  --fo-text-2: rgba(var(--bs-body-color-rgb), .85);        /* help text, placeholders, secondary values */
+  --fo-text-disabled: rgba(var(--bs-body-color-rgb), .45); /* disabled controls only, never information */
+  /* Lines */
+  --fo-border:  rgba(var(--bs-body-color-rgb), .14);
+  --fo-divider: rgba(var(--bs-body-color-rgb), .08);
+  --fo-bar:     rgba(var(--bs-body-color-rgb), .45);       /* neutral bar fill (composition, daily activity) */
+  /* Accent and links */
+  --fo-accent:    color-mix(in srgb, var(--bs-primary) 50%, var(--bs-body-color));
+  --fo-accent-bg: rgba(var(--bs-primary-rgb), .12);        /* drop target, selected row */
+  --fo-link:      color-mix(in srgb, var(--bs-link-color) 50%, var(--bs-body-color));
+  --fo-code:      color-mix(in srgb, var(--bs-code-color) 50%, var(--bs-body-color));
+  --fo-highlight-bg: rgba(var(--bs-warning-rgb), .15);     /* search and function highlight */
+  --fo-focus:     color-mix(in srgb, var(--bs-primary) 50%, var(--bs-body-color));
+  /* Status: text and tint; the colour itself is carried by the dot or the bar */
+  --fo-ok:      color-mix(in srgb, var(--bs-success) 35%, var(--bs-body-color));
+  --fo-ok-bg:   rgba(var(--bs-success-rgb), .12);
+  --fo-warn:    color-mix(in srgb, var(--bs-warning) 30%, var(--bs-body-color));
+  --fo-warn-bg: rgba(var(--bs-warning-rgb), .12);
+  --fo-bad:     color-mix(in srgb, var(--bs-danger) 35%, var(--bs-body-color));
+  --fo-bad-bg:  rgba(var(--bs-danger-rgb), .12);
+  --fo-info:    color-mix(in srgb, var(--bs-info) 35%, var(--bs-body-color));
+  --fo-info-bg: rgba(var(--bs-info-rgb), .12);
+  /* Fleet type dots: the theme's palette, chosen by the primary key of the type */
+  --fo-type-1: var(--bs-teal); --fo-type-2: var(--bs-purple); --fo-type-3: var(--bs-orange);
+  --fo-type-4: var(--bs-cyan); --fo-type-5: var(--bs-pink);   --fo-type-6: var(--bs-indigo);
+  /* The in-game MOTD look is a dark panel in every theme */
+  --fo-ingame-bg: var(--bs-body-color);
+  --fo-ingame-fg: var(--bs-body-bg);
+  /* Elevation */
+  --fo-shadow: 0 1px 2px rgba(0, 0, 0, .08); /* ui-allow: shadow */
+  --fo-shadow-raised: 0 .25rem .75rem rgba(0, 0, 0, .2); /* ui-allow: shadow */
+  /* Shape, space and motion */
+  --fo-radius-sm: 6px; --fo-radius: 10px; --fo-radius-lg: 14px;
+  --fo-space-1: 4px; --fo-space-2: 8px; --fo-space-3: 12px; --fo-space-4: 16px; --fo-space-5: 24px; --fo-space-6: 32px;
+  --fo-ease: cubic-bezier(.2, .8, .2, 1); --fo-fast: 150ms; --fo-normal: 200ms;
+  /* Sticky elements sit under AA's fixed navbar; fleetops.js measures its height (this is the fallback) */
+  --fo-sticky-top: 4.5em;
+}
+/* Dark themes: AA's Darkly (data-theme), Bootstrap Dark (data-bs-theme) and any other dark theme that
+   fleetops.js recognises by its page background (data-fo-dark). Shadows vanish on dark surfaces and the
+   in-game panel takes the page colours. */
+:root:is([data-bs-theme=dark], [data-theme=darkly], [data-fo-dark]),
+:root:is([data-bs-theme=dark], [data-theme=darkly], [data-fo-dark]) .fleetops,
+[data-bs-theme=dark] .fleetops {
+  --fo-ingame-bg: var(--bs-body-bg);
+  --fo-ingame-fg: var(--bs-body-color);
+  --fo-shadow: none;
+  --fo-shadow-raised: none;
+}
+/* Browsers without color-mix: text falls back to the body colour (still readable; the dot or bar carries
+   the status colour) and the bars that stay on screen get an opaque page-coloured fill. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  :root, .fleetops {
+    --fo-surface-solid: var(--bs-body-bg);
+    --fo-accent: var(--bs-body-color); --fo-link: var(--bs-body-color); --fo-code: var(--bs-body-color);
+    --fo-focus: var(--bs-body-color);
+    --fo-ok: var(--bs-body-color); --fo-warn: var(--bs-body-color);
+    --fo-bad: var(--bs-body-color); --fo-info: var(--bs-body-color);
+  }
+  .fo-actionbar, .fo-commandbar, .fleetops-srp-paybar, .fo-toast { background: var(--bs-body-bg); }
+}
 
-.fleetops-period-selector{padding:.9rem;border:1px solid var(--bs-border-color);border-radius:.5rem;background:var(--bs-tertiary-bg)}
+/* ===== 2. Base inside .fleetops ===== */
+/* Numbers line up everywhere: every number in FleetOps, in a table or not. The in-game look is the exception. */
+.fleetops, #fo-toasts, .fo-toasts, #fo-confirm { font-variant-numeric: tabular-nums; }
+/* Browsers reset the font of buttons and fields, and that reset includes the number style. */
+.fleetops :is(button, input, select, textarea), #fo-toasts button, .fo-toasts button, #fo-confirm :is(button, input) { font-variant-numeric: inherit; }
+.fleetops .fo-ingame { font-variant-numeric: normal; }
+/* Type scale: page title 28 px (24 px on phones), card and dialog titles 17 px, help text 14 px. The body keeps
+   the size of the Alliance Auth theme. */
+.fleetops h2 { font-size: 1.75rem; font-weight: 600; }
+@media (max-width: 575.98px) { .fleetops h2 { font-size: 1.5rem; } }
+.fleetops :is(.card-header, .card-title, .modal-title), #fo-confirm .modal-title { font-size: 1.0625rem; font-weight: 600; }
+.fleetops .form-text { font-size: .875rem; }
+/* Placeholders keep the field's own text colour at reduced strength: readable on the field's fill in every theme
+   (the themes' own grey is 2.9:1 on Materia and 3.5:1 on Darkly). */
+.fleetops :is(.form-control, .form-select)::placeholder { color: inherit; opacity: .72; }
+
+/* Focus ring: a mix of the theme's primary colour and the text colour, visible on dark themes as well */
+.fleetops :focus-visible, #fo-toasts :focus-visible, .fo-toasts :focus-visible, #fo-confirm :focus-visible {
+  outline: 2px solid var(--fo-focus); outline-offset: 2px;
+}
+/* Inside scrolling or clipping containers the ring is drawn inside plain rows and links; a control with a fill of
+   its own (button, field, check box) keeps the ring outside, where it meets the page and not its own fill. */
+.fleetops :is(.table-responsive, .dropdown-menu, .fo-row-actions, .list-group, .fo-checklist) :focus-visible:not(.btn, .form-control, .form-select, .form-check-input) { outline-offset: -2px; }
+/* Reduced motion: no transitions and no animations, pulses and spinners stand still */
+@media (prefers-reduced-motion: reduce) {
+  .fleetops *, .fleetops *::before, .fleetops *::after,
+  .fo-toasts, .fo-toasts *, #fo-toasts, #fo-toasts *, #fo-confirm, #fo-confirm * {
+    transition: none !important; animation: none !important;
+  }
+}
+/* Links: the theme's link colour mixed with the text colour (Flatly and Materia links are too light on white) */
+.fleetops a:where(:not(.btn, .nav-link, .dropdown-item, .page-link, .list-group-item-action, .fo-sort, .fo-list-row, .fo-icon-btn)) { color: var(--fo-link); }
+/* Menu entries read in the body colour in every theme (Flatly draws them in a pale grey). */
+.fleetops .dropdown-menu .dropdown-item:not(.text-danger, :hover, :focus, .active) { color: var(--fo-text-1); }
+.fleetops a:where(:not(.btn)):hover { color: var(--fo-text-1); }
+.fleetops code { color: var(--fo-code); }
+/* Bootstrap's text colours stay in the markup (and in scripts that toggle them); here they become readable */
+.fleetops .text-muted   { color: var(--fo-text-2) !important; }
+.fleetops .text-danger  { color: var(--fo-bad) !important; }
+.fleetops .text-warning { color: var(--fo-warn) !important; }
+.fleetops .text-success { color: var(--fo-ok) !important; }
+.fleetops .form-text    { color: var(--fo-text-2); }
+/* Field errors: red words with an icon (Django writes non-field errors as "errorlist nonfield") */
+.fleetops .errorlist { list-style: none; padding: 0; margin: .25rem 0 0; color: var(--fo-bad); }
+.fleetops .errorlist:not(.nonfield) li::before {
+  content: "\f06a"; content: "\f06a" / ""; font-family: "Font Awesome 6 Free"; font-weight: 900; margin-inline-end: .4em;
+}
+.fleetops .alert .errorlist li::before { content: none; }
+.fleetops .card { box-shadow: var(--fo-shadow); --bs-card-border-color: var(--fo-border); }
+/* Sticky elements under AA's fixed navbar */
+.fo-sticky-top { position: sticky; top: var(--fo-sticky-top); z-index: 1010; }
+.fo-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* The EVE clock in the brand of the navbar (outside .fleetops) */
+.fo-eve-clock { margin-inline-start: .5em; font-size: .8125rem; font-weight: 400; font-variant-numeric: tabular-nums; opacity: .8; }
+
+/* ===== 3. Components ===== */
+/* Status pill: a short word on a tinted background with a dot. One tone, one meaning (fleetops/ui.py). */
+.fo-pill { display: inline-flex; align-items: center; gap: .35em; max-width: 100%; padding: .15em .6em; border-radius: 999px; font-size: .8125rem; font-weight: 600; line-height: 1.5; white-space: nowrap; vertical-align: middle; }
+.fo-pill::before { content: ""; flex: 0 0 auto; width: .5em; height: .5em; border-radius: 50%; background: var(--fo-dot, currentColor); }
+.fo-pill-icon::before { display: none; }
+.fo-pill > i { flex: 0 0 auto; font-size: .85em; }
+.fo-pill-ok { color: var(--fo-ok); background: var(--fo-ok-bg); --fo-dot: var(--bs-success); }
+.fo-pill-warn { color: var(--fo-warn); background: var(--fo-warn-bg); --fo-dot: var(--bs-warning); }
+.fo-pill-bad { color: var(--fo-bad); background: var(--fo-bad-bg); --fo-dot: var(--bs-danger); }
+.fo-pill-info { color: var(--fo-info); background: var(--fo-info-bg); --fo-dot: var(--bs-info); }
+.fo-pill-neutral { color: var(--fo-text-2); background: var(--fo-surface-2); --fo-dot: var(--fo-text-2); }
+/* Fleet type: neutral words, the type colour only in the dot */
+.fo-pill-type { color: var(--fo-text-2); background: var(--fo-surface-2); --fo-dot: var(--fo-text-2); }
+.fo-pill-type.fo-type-1 { --fo-dot: var(--fo-type-1); }
+.fo-pill-type.fo-type-2 { --fo-dot: var(--fo-type-2); }
+.fo-pill-type.fo-type-3 { --fo-dot: var(--fo-type-3); }
+.fo-pill-type.fo-type-4 { --fo-dot: var(--fo-type-4); }
+.fo-pill-type.fo-type-5 { --fo-dot: var(--fo-type-5); }
+.fo-pill-type.fo-type-6 { --fo-dot: var(--fo-type-6); }
+/* A pill that is a sentence (SRP warnings) wraps instead of running out of its box */
+.fo-pill-wrap { white-space: normal; align-items: flex-start; text-align: start; border-radius: var(--fo-radius-sm); } /* a sentence on several lines is a rounded box, not a capsule */
+.fo-pill-wrap::before { margin-top: .45em; }
+/* Counter (tab counts, tree counts, menu counts): no dot, not a status */
+.fo-count { display: inline-block; min-width: 1.6em; padding: 0 .45em; border-radius: 999px; font-size: .75rem; font-weight: 600; line-height: 1.6; text-align: center; font-variant-numeric: tabular-nums; color: var(--fo-text-2); background: var(--fo-surface-2); }
+/* Menu entries stay on one line; the rarely used pages sit in the More menu */
+.navbar-nav .nav-link { white-space: nowrap; }
+.fo-count-short { display: none; }
+/* Between the width where the menu opens and a wide desktop the entries are closer together and the approval count is short; the title keeps the full words */
+@media (min-width: 992px) and (max-width: 1599.98px) {
+  .navbar-nav .nav-link { padding-left: .4rem; padding-right: .4rem; }
+  .fo-count-nav .fo-count-long { display: none; }
+  .fo-count-nav .fo-count-short { display: inline; }
+}
+.fo-count-nav { color: var(--bs-body-color); background: var(--bs-body-bg); white-space: nowrap; } /* on AA's navbar: body contrast */
+
+/* Metric tile: a big number, its title and a line of context; a dot marks the kind */
+.fo-metric { position: relative; height: 100%; padding: var(--fo-space-4); border-radius: var(--fo-radius); background: var(--fo-surface-1); display: flex; flex-direction: column; gap: var(--fo-space-1); }
+.fo-metric-dot { position: absolute; top: var(--fo-space-3); left: var(--fo-space-3); width: .5rem; height: .5rem; border-radius: 50%; background: var(--fo-dot, var(--fo-text-2)); }
+.fo-metric-dot + .fo-metric-value { margin-top: var(--fo-space-2); }
+.fo-metric-value { font-size: clamp(2.25rem, 9vw, 2.75rem); font-weight: 500; line-height: 1.1; }
+.fo-metric-title { font-size: .9375rem; font-weight: 600; }
+.fo-metric-sub { font-size: .8125rem; color: var(--fo-text-2); }
+/* The small tile of a page header (fleet page): the figure is not a "metric value" of the type scale */
+.fo-metric-sm { padding: var(--fo-space-3); }
+.fo-metric-figure { font-size: 1.5rem; font-weight: 500; line-height: 1.2; }
+
+/* Segmented control: a month selector, a mode or timing choice, Look/Raw. Children are links, buttons,
+   spans, a summary or labels after radio inputs. */
+.fo-seg { position: relative; display: inline-flex; flex-wrap: nowrap; max-width: 100%; padding: 2px; gap: 2px; border: 1px solid var(--fo-border); border-radius: var(--fo-radius); background: var(--fo-surface-1); }
+.fo-seg > a, .fo-seg > button, .fo-seg > span, .fo-seg > summary, .fo-seg > label { display: inline-flex; align-items: center; justify-content: center; min-height: 2.25rem; padding: .25rem .75rem; border: 0; border-radius: calc(var(--fo-radius) - 2px); background: transparent; color: var(--fo-text-1) !important; text-decoration: none; white-space: nowrap; cursor: pointer; }
+.fo-seg > a:hover, .fo-seg > button:hover, .fo-seg > summary:hover, .fo-seg > label:hover { background: var(--fo-hover); }
+.fo-seg > summary { list-style: none; }
+.fo-seg > summary::-webkit-details-marker { display: none; }
+.fo-seg > [aria-current], .fo-seg > .active, .fo-seg > input:checked + label { background: var(--fo-surface-solid); box-shadow: var(--fo-shadow); font-weight: 600; }
+.fo-seg > [aria-disabled="true"] { color: var(--fo-text-disabled) !important; pointer-events: none; cursor: default; }
+.fo-seg > input[type="radio"], .fo-seg > input[type="checkbox"] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.fo-seg > input:focus-visible + label { outline: 2px solid var(--fo-focus); outline-offset: 2px; }
+
+/* Live indicator of the fleet page: a dot and a short sentence; data-state is live, paused, stale or error */
+.fo-live { display: inline-flex; align-items: center; gap: .4em; padding: .1rem .5rem; border: 0; border-radius: 999px; background: var(--fo-surface-2); color: var(--fo-text-1); font-size: .8125rem; }
+button.fo-live { cursor: pointer; }
+.fo-live-dot { width: .55rem; height: .55rem; border-radius: 50%; background: var(--fo-text-2); }
+.fo-live[data-state="live"] .fo-live-dot { background: var(--bs-success); animation: fo-pulse 2s var(--fo-ease) infinite; }
+.fo-live[data-state="stale"] .fo-live-dot { background: var(--bs-warning); }
+.fo-live[data-state="error"] .fo-live-dot { background: var(--bs-danger); }
+@keyframes fo-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+/* Notifications: at the bottom on phones, bottom right from 768 px. Success disappears, failure stays. */
+.fo-toasts { position: fixed; z-index: 1090; left: var(--fo-space-3); right: var(--fo-space-3); bottom: var(--fo-space-3); display: flex; flex-direction: column; gap: var(--fo-space-2); pointer-events: none; }
+@media (min-width: 768px) { .fo-toasts { left: auto; width: min(26rem, calc(100vw - 2 * var(--fo-space-4))); } }
+.fo-toast { pointer-events: auto; display: flex; gap: var(--fo-space-3); align-items: flex-start; padding: var(--fo-space-3) var(--fo-space-4); border-radius: var(--fo-radius); background: var(--fo-surface-solid); color: var(--fo-text-1); border: 1px solid var(--fo-border); border-left: 4px solid var(--fo-alert-bar, var(--fo-border)); box-shadow: var(--fo-shadow-raised); animation: fo-toast-in var(--fo-normal) var(--fo-ease); }
+@keyframes fo-toast-in { from { opacity: 0; transform: translateY(.5rem); } }
+.fo-toast-ok { --fo-alert-bar: var(--bs-success); }
+.fo-toast-warn { --fo-alert-bar: var(--bs-warning); }
+.fo-toast-bad { --fo-alert-bar: var(--bs-danger); }
+.fo-toast-info { --fo-alert-bar: var(--bs-info); }
+.fo-toast-body { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.fo-toast-action { display: inline-block; margin-inline-start: var(--fo-space-2); font-weight: 600; }
+.fo-toast a:where(:not(.btn)), .fo-toast .fo-toast-action { color: var(--fo-link); }
+.fo-toast-close { flex: 0 0 auto; margin: -.25rem -.5rem -.25rem 0; }
+
+/* Bars that stay on screen have an opaque surface */
+.fo-actionbar { position: sticky; bottom: 0; z-index: 1020; display: flex; flex-wrap: wrap; align-items: center; gap: var(--fo-space-2) var(--fo-space-3); margin: var(--fo-space-4) calc(-1 * var(--fo-space-3)) 0; padding: var(--fo-space-3); background: var(--fo-surface-solid); border-top: 1px solid var(--fo-border); box-shadow: var(--fo-shadow-raised); }
+.fo-commandbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fo-space-2) var(--fo-space-4); padding: var(--fo-space-3); border-radius: var(--fo-radius); background: var(--fo-surface-solid); border: 1px solid var(--fo-border); }
+.fo-commandbar.is-sticky { position: sticky; top: var(--fo-sticky-top); z-index: 1015; }
+.fleetops-srp-paybar { position: sticky; bottom: var(--fo-space-3); z-index: 5; background: var(--fo-surface-solid); box-shadow: var(--fo-shadow-raised); }
+
+/* Empty state: an icon, one sentence and the main action the viewer may take. Loading: grey placeholder blocks. */
+.fo-empty { display: flex; flex-direction: column; align-items: center; gap: var(--fo-space-2); padding: var(--fo-space-5) var(--fo-space-4); text-align: center; color: var(--fo-text-2); }
+.fo-empty > i { font-size: 1.5rem; }
+.fo-skeleton { display: block; height: .9em; margin: .35em 0; border-radius: var(--fo-radius-sm); background: var(--fo-surface-2); animation: fo-pulse 1.4s ease-in-out infinite; }
+
+/* Time: "2026-10-16 13:05 EVE" and the relative words next to it */
+.fo-time { white-space: nowrap; }
+.fo-time-rel { color: var(--fo-text-2); margin-inline-start: .35em; }
+
+/* Horizontal bars: ship composition, daily activity */
+.fo-bars { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--fo-space-2); }
+.fo-bars li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px var(--fo-space-2); align-items: center; }
+.fo-bar-track { grid-column: 1 / -1; height: 6px; border-radius: 999px; background: var(--fo-surface-2); overflow: hidden; }
+.fo-bar-fill { height: 100%; border-radius: inherit; background: var(--fo-bar); }
+
+/* Claim steps and history (SRP) */
+.fo-steps { display: flex; flex-direction: column; gap: var(--fo-space-3); list-style: none; margin: 0; padding: 0; }
+@media (min-width: 768px) { .fo-steps { flex-direction: row; } .fo-steps > li { flex: 1 1 0; } }
+.fo-step { position: relative; padding-left: 1.5rem; }
+.fo-step::before { content: ""; position: absolute; left: 0; top: .3em; width: .75rem; height: .75rem; border-radius: 50%; border: 2px solid var(--fo-border); background: var(--bs-body-bg); }
+.fo-step.is-done::before { background: var(--bs-success); border-color: var(--bs-success); }
+.fo-step.is-current::before { border-color: var(--fo-accent); }
+.fo-step.is-bad::before { background: var(--bs-danger); border-color: var(--bs-danger); }
+.fo-timeline { list-style: none; margin: 0; padding: 0 0 0 1.25rem; border-left: 1px solid var(--fo-border); }
+.fo-timeline > li { position: relative; padding: var(--fo-space-2) 0; }
+.fo-timeline > li::before { content: ""; position: absolute; left: calc(-1.25rem - 4px); top: 1em; width: 7px; height: 7px; border-radius: 50%; background: var(--fo-text-2); }
+/* Loss card (SRP): a render, the loss and its status */
+.fo-loss-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--fo-space-3); }
+@media (min-width: 768px) { .fo-loss-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1200px) { .fo-loss-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.fo-loss-card { position: relative; display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: var(--fo-space-3); padding: var(--fo-space-3); border-radius: var(--fo-radius); background: var(--fo-surface-1); }
+.fo-loss-card .fo-pill { position: absolute; top: var(--fo-space-3); right: var(--fo-space-3); }
+
+/* EVE images: ship renders, portraits, icons */
+.fo-render { border-radius: var(--fo-radius-sm); border: 1px solid var(--fo-border); background: #111; } /* ui-allow: ship image backdrop */
+
+/* Icon buttons and 44 px touch targets */
+.fo-icon-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 2rem; min-height: 2rem; padding: 0 .35rem; border: 0; border-radius: var(--fo-radius-sm); background: transparent; color: var(--fo-text-2); }
+.fo-icon-btn:hover { background: var(--fo-hover); color: var(--fo-text-1); }
+.fo-icon-btn.is-danger { color: var(--fo-bad); }
+@media (pointer: coarse) {
+  .fleetops :is(.btn, .page-link, .nav-link, .dropdown-item, .fo-icon-btn, .fo-seg > *, .fleet-toggle), .fo-toast .fo-icon-btn, #fo-confirm .btn { min-height: 44px; }
+  .fleetops :is(.btn, .btn-sm, .fo-icon-btn, .fleet-toggle), .fo-toast .fo-icon-btn { min-width: 44px; }
+  /* Fields, check rows and disclosure rows reach 44 px too: a row's label is the target, the box sits in its middle. */
+  .fleetops :is(.form-select, .form-control:not(textarea, [type=file], [type=range], [type=color])) { min-height: 44px; }
+  .fleetops .form-check-input { width: 1.4em; height: 1.4em; }
+  .fleetops .form-check:not(.form-switch) { padding-left: 1.9em; }
+  .fleetops .form-check:not(.form-switch) .form-check-input { margin-left: -1.9em; }
+  .fleetops .form-switch { padding-left: 3.3em; }
+  .fleetops .form-switch .form-check-input { width: 2.8em; margin-left: -3.3em; }
+  .fleetops .form-check .form-check-input { margin-top: calc((44px - 1.4em) / 2); }
+  .fleetops .form-check-label { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; }
+  :where(.fleetops) summary { min-height: 44px; }
+  :where(.fleetops) summary:not(.card-header, .fo-seg > summary) { padding-block: .6rem; }
+}
+/* A checkbox or radio alone in a table cell (a row selector without a visible label): wrap it in this label. */
+.fo-check-cell { display: inline-flex; align-items: center; justify-content: center; margin: 0; cursor: pointer; }
+@media (pointer: coarse) { .fo-check-cell { min-width: 44px; min-height: 44px; } }
+/* Row actions of the fleet tree: shown on hover or focus, always on touch screens */
+.fo-row-actions { display: inline-flex; gap: 2px; visibility: hidden; }
+.fleet-member:hover .fo-row-actions, .fleet-member:focus-within .fo-row-actions { visibility: visible; }
+@media (hover: none), (pointer: coarse) { .fo-row-actions { visibility: visible; } }
+
+/* Sortable table header: body colour, never the link colour of the theme */
+.fo-sort { color: var(--fo-text-1) !important; text-decoration: none; }
+.fo-sort:hover { text-decoration: underline; }
+
+/* In-game MOTD and Discord look (start page preview) */
+.fo-ingame { padding: var(--fo-space-3); border-radius: var(--fo-radius-sm); border: 1px solid var(--fo-border); background: var(--fo-ingame-bg); color: var(--fo-ingame-fg); font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
+.fo-ingame .fo-ingame-link { text-decoration: underline; cursor: default; }
+.fo-discord { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: var(--fo-space-3); padding: var(--fo-space-3); border-radius: var(--fo-radius-sm); background: var(--fo-surface-1); overflow-wrap: anywhere; }
+.fo-discord-avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--fo-surface-3); display: grid; place-items: center; color: var(--fo-text-2); }
+.fo-discord-sub { font-size: .75rem; color: var(--fo-text-2); }
+.fo-discord-mention { padding: 0 .15em; border-radius: 3px; background: var(--fo-accent-bg); color: var(--fo-accent); font-weight: 500; }
+.fo-discord-time { padding: 0 .2em; border-radius: 3px; background: var(--fo-surface-2); }
+.fo-discord h1, .fo-discord h2, .fo-discord h3 { font-size: 1rem; font-weight: 700; margin: .25rem 0; }
+
+/* Cards that carry a status: a bar on the left edge, in the theme's status colour */
+.fleetops .fo-card-warn { border-left: 4px solid var(--bs-warning); }
+.fleetops .fo-card-info { border-left: 4px solid var(--bs-info); }
+.fleetops .fo-card-bad { border-left: 4px solid var(--bs-danger); }
+/* Group heading rows of a table (approvals) */
+.fleetops .table tr.fo-group-row { --bs-table-bg: var(--fo-surface-2); --bs-table-color: var(--fo-text-1); }
+/* Lists whose whole row is the link (recent fleets) */
+.fo-list { list-style: none; margin: 0; padding: 0; }
+.fo-list-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fo-space-2) var(--fo-space-3); padding: var(--fo-space-3); border-bottom: 1px solid var(--fo-divider); color: var(--fo-text-1); text-decoration: none; }
+.fo-list-row:hover { background: var(--fo-hover); color: var(--fo-text-1); }
+.fo-list > :last-child .fo-list-row, .fo-list-row:last-child { border-bottom: 0; }
+/* Administration cards */
+.fo-admin-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--fo-space-3); }
+@media (min-width: 768px) { .fo-admin-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1200px) { .fo-admin-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.fo-admin-card { position: relative; display: flex; flex-direction: column; gap: var(--fo-space-2); height: 100%; padding: var(--fo-space-4); border-radius: var(--fo-radius); background: var(--fo-surface-1); }
+.fo-admin-card > i:first-child { color: var(--fo-text-2); font-size: 1.25rem; }
+.fo-admin-card .fo-admin-text { flex: 1 1 auto; color: var(--fo-text-2); }
+/* A long list of check boxes with a filter above it */
+.fo-checklist { max-height: 20rem; overflow: auto; border: 1px solid var(--fo-border); border-radius: var(--fo-radius-sm); padding: var(--fo-space-2); }
+/* Dividers and frames without Bootstrap's bright border utilities */
+.fo-divider-top { border-top: 1px solid var(--fo-divider); }
+.fo-divider-bottom { border-bottom: 1px solid var(--fo-divider); }
+.fo-frame { border: 1px solid var(--fo-border); border-radius: var(--fo-radius-sm); }
+/* Wide tables keep their first column in view on phones */
+@media (max-width: 767.98px) {
+  .fo-table-pin > :is(thead, tbody) > tr > :first-child { position: sticky; left: 0; z-index: 1; background-color: var(--fo-surface-solid); background-image: linear-gradient(var(--fo-row-tint, transparent), var(--fo-row-tint, transparent)); } /* ui-allow: flat row tint, not a gradient */
+}
+@media (max-width: 767.98px) {
+  /* A group header spans the table: it scrolls with it instead of being pinned, and a focused control is not hidden under the pinned column */
+  .fo-table-pin tr.fo-group-row > :first-child { position: static; }
+  .table-responsive:has(.fo-table-pin), .fo-table-pin { scroll-padding-left: 9rem; }
+}
+.fo-table-pin .fleetops-srp-over-limit { --fo-row-tint: var(--fo-bad-bg); }
+.fo-table-pin .fleetops-srp-warning { --fo-row-tint: var(--fo-warn-bg); }
+/* The confirmation dialog shows the sentence as it was written, line breaks included */
+#fo-confirm-text { white-space: pre-line; overflow-wrap: anywhere; }
+
+/* ===== 4. Bootstrap inside .fleetops (and the confirmation dialog) ===== */
+/* Callouts: alerts become a tinted block with the text colour of the page and a bar in the status colour.
+   The themes write white text on a solid colour (Flatly warning 2.2:1), which is not readable. */
+.fleetops .alert { --bs-alert-color: var(--fo-text-1); --bs-alert-bg: var(--fo-surface-1); --bs-alert-border-color: transparent; --bs-alert-link-color: var(--fo-link); color: var(--fo-text-1); background: var(--fo-surface-1); border: 0; border-left: 4px solid var(--fo-alert-bar, var(--fo-border)); border-radius: var(--fo-radius-sm); }
+.fleetops .alert-danger { background: var(--fo-bad-bg); --fo-alert-bar: var(--bs-danger); }
+.fleetops .alert-warning { background: var(--fo-warn-bg); --fo-alert-bar: var(--bs-warning); }
+.fleetops .alert-info { background: var(--fo-info-bg); --fo-alert-bar: var(--bs-info); }
+.fleetops .alert-success { background: var(--fo-ok-bg); --fo-alert-bar: var(--bs-success); }
+.fleetops .alert-secondary { background: var(--fo-surface-2); --fo-alert-bar: var(--fo-border); }
+.fleetops .alert :is(h1, h2, h3, h4, h5, h6) { color: inherit; }
+.fleetops .alert a:not(.btn), .fleetops .alert .alert-link { color: var(--fo-link); } /* beats the white links of Materia and Flatly */
+.fleetops .alert code { color: inherit; font-weight: 600; }
+.fleetops .alert .errorlist { color: inherit; margin: 0; }
+
+/* Buttons: Materia writes the colour and the border of .btn itself, so both are set directly as well as
+   through the --bs-btn-* variables. Neutral actions are outlined in the text colour, the one primary action
+   of a region is the theme's solid button, dangerous actions are outlined in red (solid red only inside a dialog). */
+.fleetops .btn-outline-secondary, #fo-confirm .btn-outline-secondary {
+  --bs-btn-color: var(--fo-text-1); --bs-btn-border-color: var(--fo-border);
+  --bs-btn-hover-color: var(--fo-text-1); --bs-btn-hover-bg: var(--fo-hover); --bs-btn-hover-border-color: var(--fo-border);
+  --bs-btn-active-color: var(--fo-text-1); --bs-btn-active-bg: var(--fo-surface-2); --bs-btn-active-border-color: var(--fo-border);
+  --bs-btn-disabled-color: var(--fo-text-disabled); --bs-btn-disabled-bg: transparent; --bs-btn-disabled-border-color: var(--fo-border);
+  color: var(--bs-btn-color); border: var(--bs-border-width) solid var(--bs-btn-border-color);
+}
+.fleetops .btn-outline-primary, #fo-confirm .btn-outline-primary {
+  --bs-btn-color: var(--fo-accent); --bs-btn-border-color: var(--fo-accent);
+  --bs-btn-hover-color: var(--fo-accent); --bs-btn-hover-bg: var(--fo-accent-bg); --bs-btn-hover-border-color: var(--fo-accent);
+  --bs-btn-active-color: var(--fo-accent); --bs-btn-active-bg: var(--fo-accent-bg); --bs-btn-active-border-color: var(--fo-accent);
+  --bs-btn-disabled-color: var(--fo-text-disabled); --bs-btn-disabled-bg: transparent; --bs-btn-disabled-border-color: var(--fo-border);
+  color: var(--bs-btn-color); border: var(--bs-border-width) solid var(--bs-btn-border-color);
+}
+.fleetops .btn-outline-danger, #fo-confirm .btn-outline-danger {
+  --bs-btn-color: var(--fo-bad); --bs-btn-border-color: var(--fo-bad);
+  --bs-btn-hover-color: var(--fo-bad); --bs-btn-hover-bg: var(--fo-bad-bg); --bs-btn-hover-border-color: var(--fo-bad);
+  --bs-btn-active-color: var(--fo-bad); --bs-btn-active-bg: var(--fo-bad-bg); --bs-btn-active-border-color: var(--fo-bad);
+  --bs-btn-disabled-color: var(--fo-text-disabled); --bs-btn-disabled-bg: transparent; --bs-btn-disabled-border-color: var(--fo-border);
+  color: var(--bs-btn-color); border: var(--bs-border-width) solid var(--bs-btn-border-color);
+}
+.fleetops .btn-danger, #fo-confirm .btn-danger { /* the confirm button of a dialog */
+  --bs-btn-color: var(--bs-body-bg); --bs-btn-bg: var(--fo-bad); --bs-btn-border-color: var(--fo-bad);
+  --bs-btn-hover-color: var(--bs-body-bg); --bs-btn-hover-bg: var(--fo-bad); --bs-btn-hover-border-color: var(--fo-bad);
+  --bs-btn-active-color: var(--bs-body-bg); --bs-btn-active-bg: var(--fo-bad); --bs-btn-active-border-color: var(--fo-bad);
+  color: var(--bs-btn-color); background-color: var(--bs-btn-bg); background-image: none; border: var(--bs-border-width) solid var(--bs-btn-border-color);
+}
+.fleetops .btn:disabled, .fleetops .btn.disabled, #fo-confirm .btn:disabled { --bs-btn-disabled-opacity: .75; }
+/* Materia's primary button is white on light blue (2.6 to 3.1:1): its fill is mixed with the text colour */
+[data-theme=materia] .fleetops .btn-primary, [data-theme=materia] #fo-confirm .btn-primary {
+  --bs-btn-color: var(--bs-body-bg); --bs-btn-bg: color-mix(in srgb, var(--bs-primary) 60%, var(--bs-body-color));
+  --bs-btn-border-color: var(--bs-btn-bg); --bs-btn-hover-color: var(--bs-body-bg); --bs-btn-hover-bg: var(--bs-btn-bg);
+  --bs-btn-hover-border-color: var(--bs-btn-bg); --bs-btn-active-color: var(--bs-body-bg); --bs-btn-active-bg: var(--bs-btn-bg);
+  --bs-btn-active-border-color: var(--bs-btn-bg);
+  color: var(--bs-btn-color); background-color: var(--bs-btn-bg); background-image: none;
+}
+
+.fleetops .nav-tabs { --bs-nav-tabs-border-color: var(--fo-border); --bs-nav-tabs-link-active-bg: transparent; --bs-nav-tabs-link-active-border-color: var(--fo-border) var(--fo-border) transparent; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+.fleetops .nav-tabs .nav-link { color: var(--fo-text-2); white-space: nowrap; }
+.fleetops .nav-tabs .nav-link.active { color: var(--fo-text-1); font-weight: 600; }
+.fleetops .table { --bs-table-border-color: var(--fo-divider); --bs-table-hover-bg: var(--fo-hover); --bs-table-active-bg: var(--fo-accent-bg); }
+.fleetops .table-light { --bs-table-bg: var(--fo-surface-2); --bs-table-color: var(--fo-text-1); } /* safety net; group rows use fo-group-row */
+.fleetops :is(.border, .border-top, .border-bottom, .border-start, .border-end) { border-color: var(--fo-border) !important; } /* safety net for old markup */
+.fleetops .list-group { --bs-list-group-border-color: var(--fo-divider); --bs-list-group-bg: transparent; --bs-list-group-color: var(--fo-text-1); }
+.fleetops .progress { --bs-progress-bg: var(--fo-surface-2); --bs-progress-bar-bg: var(--fo-bar); --bs-progress-bar-color: var(--bs-body-bg); }
+.fleetops .progress-bar.is-failed { --bs-progress-bar-bg: var(--bs-warning); }
+
+/* ===== 5. Page parts: the rules of the earlier pages, written with the tokens ===== */
+.preview-box { white-space: pre-wrap; word-break: break-word; min-height: 180px; padding: 1rem; border: 1px solid var(--fo-border); border-radius: var(--fo-radius-sm); background: var(--fo-surface-1); }
+.stat-card { height: 100%; padding: 1rem; border-radius: var(--fo-radius); background: var(--fo-surface-1); display: flex; flex-direction: column; gap: .35rem; }
+.stat-card span { color: var(--fo-text-2); }
+.stat-card strong { font-size: 1.35rem; }
+.event-row { display: grid; grid-template-columns: 180px minmax(160px, 1fr) 150px minmax(180px, 2fr); gap: 1rem; padding: .55rem 0; border-bottom: 1px solid var(--fo-divider); }
+.jump-map { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+.jump-system { border: 1px solid var(--fo-border); border-radius: var(--fo-radius); padding: 1rem; border-left-width: 5px; }
+.jump-system > div:first-child { display: flex; justify-content: space-between; gap: .5rem; }
+.jump-system > b { font-size: 1.8rem; }
+.jump-system details { margin-top: .5rem; max-height: 220px; overflow: auto; }
+@media (max-width: 768px) { .event-row { grid-template-columns: 1fr; } }
+
+.fleetops-ship-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)); gap: 1rem; text-align: center; }
+.fleetops-ship img { width: 100%; max-width: 128px; aspect-ratio: 1 / 1; object-fit: cover; border-radius: var(--fo-radius-sm); border: 1px solid var(--fo-border); background: #111; } /* ui-allow: ship image backdrop */
+.fleetops-ship .fw-semibold { margin-top: .35rem; }
+@media (max-width: 768px) { .fleetops-ship-grid { grid-template-columns: repeat(2, minmax(100px, 1fr)); } }
+
+.fleetops-period-selector { padding: .9rem; border: 1px solid var(--fo-border); border-radius: var(--fo-radius); background: var(--fo-surface-1); }
 /* Bootstrap gives each select of an input group the same 1% width and lets it grow, which cuts "September" and "All retained"; size them by their text. */
 .fleetops-period-selector .input-group>.form-select{width:auto;flex:0 0 auto}
-.fleetops-daily-row{display:flex;align-items:center;gap:1rem;margin:.55rem 0}.fleetops-daily-row>span{width:60px;flex:0 0 60px;font-variant-numeric:tabular-nums}
-.fleetops .table td,.fleetops .table th{vertical-align:middle}
-.fleetops [data-countdown-utc],.fleetops #eve-clock,.fleetops #ping-length,.fleetops #motd-length{font-variant-numeric:tabular-nums}
+.fleetops .table td, .fleetops .table th { vertical-align: middle; }
 
 /* Statistics: a row shows its status in the colour of its left edge; the status text is always shown as well. */
-.fleetops .table>tbody>tr.fleetops-status-row-met>:first-child{border-left:4px solid var(--bs-success)}
-.fleetops .table>tbody>tr.fleetops-status-row-missed>:first-child{border-left:4px solid var(--bs-danger)}
-.fleetops .table>tbody>tr.fleetops-status-row-progress>:first-child{border-left:4px solid var(--bs-warning)}
-.fleetops-rank{display:inline-block;min-width:2.5ch;text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
+.fleetops .table > tbody > tr.fleetops-status-row-met > :first-child { border-left: 4px solid var(--bs-success); }
+.fleetops .table > tbody > tr.fleetops-status-row-missed > :first-child { border-left: 4px solid var(--bs-danger); }
+.fleetops .table > tbody > tr.fleetops-status-row-progress > :first-child { border-left: 4px solid var(--bs-warning); }
+.fleetops-rank { display: inline-block; min-width: 2.5ch; text-align: right; font-weight: 600; }
 
 /* SRP: a claim over a limit is red, one that needs a look is amber; the words are always shown as well. */
-.fleetops .table>tbody>tr.fleetops-srp-over-limit{--bs-table-bg:rgba(var(--bs-danger-rgb),.12);--bs-table-hover-bg:rgba(var(--bs-danger-rgb),.2)}
-.fleetops .table>tbody>tr.fleetops-srp-over-limit>:first-child{border-left:4px solid var(--bs-danger)}
-.fleetops .table>tbody>tr.fleetops-srp-warning{--bs-table-bg:rgba(var(--bs-warning-rgb),.12);--bs-table-hover-bg:rgba(var(--bs-warning-rgb),.2)}
-.fleetops .table>tbody>tr.fleetops-srp-warning>:first-child{border-left:4px solid var(--bs-warning)}
-.fleetops-srp-legend{display:inline-block;padding:.1rem .6rem;margin-right:.5rem;border-radius:.25rem;border-left:4px solid transparent}
-.fleetops-srp-legend.fleetops-srp-over-limit{border-left-color:var(--bs-danger);background:rgba(var(--bs-danger-rgb),.12)}
-.fleetops-srp-legend.fleetops-srp-warning{border-left-color:var(--bs-warning);background:rgba(var(--bs-warning-rgb),.12)}
-.fleetops-srp-claims{font-size:.875rem}
-.fleetops-srp-claims .fleetops-srp-flags{min-width:11rem;max-width:18rem}
+.fleetops .table > tbody > tr.fleetops-srp-over-limit { --bs-table-bg: var(--fo-bad-bg); --bs-table-hover-bg: rgba(var(--bs-danger-rgb), .2); }
+.fleetops .table > tbody > tr.fleetops-srp-over-limit > :first-child { border-left: 4px solid var(--bs-danger); }
+.fleetops .table > tbody > tr.fleetops-srp-warning { --bs-table-bg: var(--fo-warn-bg); --bs-table-hover-bg: rgba(var(--bs-warning-rgb), .2); }
+.fleetops .table > tbody > tr.fleetops-srp-warning > :first-child { border-left: 4px solid var(--bs-warning); }
+.fleetops-srp-legend { display: inline-block; padding: .1rem .6rem; margin-right: .5rem; border-radius: var(--fo-radius-sm); border-left: 4px solid transparent; }
+.fleetops-srp-legend.fleetops-srp-over-limit { border-left-color: var(--bs-danger); background: var(--fo-bad-bg); }
+.fleetops-srp-legend.fleetops-srp-warning { border-left-color: var(--bs-warning); background: var(--fo-warn-bg); }
+.fleetops-srp-claims { font-size: .875rem; }
+.fleetops-srp-claims .fleetops-srp-flags { min-width: 11rem; max-width: 18rem; }
 /* A warning is a sentence: it wraps inside its box instead of running out of it. */
-.fleetops-srp-flags .badge,.fleetops-srp-checks .badge{white-space:normal;text-align:left;font-weight:500;margin:0 .25rem .25rem 0}
-.fleetops-srp-checks .badge{font-size:.85rem}
-.fleetops-srp-check{width:2.25rem}
-.fleetops-srp-ship{width:64px;height:64px;border-radius:.45rem;border:1px solid var(--bs-border-color);background:#111;object-fit:cover}
-.fleetops-srp-paybar{position:sticky;bottom:.75rem;z-index:5;box-shadow:0 .25rem .75rem rgba(0,0,0,.2)}
-.fleetops-srp-timeline .list-group-item{background:transparent}
-.fleetops .errorlist{list-style:none;padding:0;margin:.25rem 0 0;color:var(--bs-danger)}
-.fleetops .stat-card strong{font-variant-numeric:tabular-nums}
-.fleetops-srp-calculation dt{font-weight:500;color:var(--bs-secondary-color)}
+.fleetops-srp-flags .fo-pill, .fleetops-srp-checks .fo-pill { white-space: normal; text-align: left; font-weight: 500; margin: 0 .25rem .25rem 0; }
+.fleetops-srp-checks .fo-pill { font-size: .85rem; }
+.fleetops-srp-check { width: 2.25rem; }
+.fleetops-srp-calculation dt { font-weight: 500; color: var(--fo-text-2); }
+
+/* ===== 6. Page blocks ===== */
+/* 6.A start page */
+/* Segmented choices whose labels are sentences (operation mode, fleet for): they share the row and wrap; on
+   phones they stand one under the other. */
+.fleetops .fo-seg.fo-seg-block { display: flex; width: 100%; }
+.fleetops .fo-seg.fo-seg-block > label { flex: 1 1 0; min-width: 0; white-space: normal; text-align: center; }
+@media (max-width: 575.98px) {
+  .fleetops .fo-seg.fo-seg-block { flex-direction: column; }
+  .fleetops .fo-seg.fo-seg-block > label { justify-content: flex-start; text-align: start; }
+}
+.fleetops .fo-seg > input:disabled + label { color: var(--fo-text-disabled) !important; cursor: default; }
+.fleetops .fo-seg > input:disabled + label:hover { background: transparent; }
+/* The page's cards: a quiet header, a thin divider under it */
+.fo-start .card-header { background: transparent; border-bottom-color: var(--fo-divider); }
+.fo-start .form-label, .fo-start :is(.mb-3, [class*="col-sm"]) > label:not([class]) { font-weight: 600; }
+.fo-start details > summary { cursor: pointer; font-weight: 600; }
+.fo-start #preset-select { min-width: 7rem; }
+/* The pill that leads to the blocking problem is a link, and keeps the colours of its tone */
+.fo-start a.fo-pill-bad, .fo-start a.fo-pill-bad:hover { color: var(--fo-bad); }
+.fo-start a.fo-pill-bad:hover { text-decoration: underline; }
+/* A field the keyboard or a script brings into view never ends up under the sticky action bar */
+.fo-start :is(input, select, textarea, label, button, summary, a) { scroll-margin-bottom: 6rem; }
+/* Action bar: the group of the fleet, the counters and the one primary button */
+.fo-start .fo-bar-counters { display: inline-flex; flex-wrap: wrap; gap: 0 var(--fo-space-4); }
+.fo-start .fo-actionbar .btn-primary { min-width: 12rem; }
+@media (max-width: 575.98px) { .fo-start .fo-actionbar .btn-primary { width: 100%; margin-left: 0 !important; } }
+/* Previews: the Discord look and the in-game look */
+.fo-discord > :is(.fo-skeleton, .fo-preview-note), .fo-ingame > .fo-preview-note { grid-column: 1 / -1; }
+.fo-discord-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--fo-space-2); margin-bottom: 2px; }
+.fo-discord-quote { padding-left: var(--fo-space-2); border-left: 4px solid var(--fo-border); }
+.fo-discord code { padding: .05em .3em; border-radius: 3px; background: var(--fo-surface-2); color: var(--fo-text-1); font-size: .875em; }
+.fo-discord a { color: var(--fo-link); }
+.fo-discord strong, .fo-discord em, .fo-discord u, .fo-discord s { font-variant-numeric: inherit; }
+.fo-ingame b { font-weight: 700; }
+/* end 6.A */
+
+/* 6.B fleet page */
+/* The command bar: the type and the status on the left, the buttons on the right. A manager of an open fleet keeps it
+   under the navbar (is-sticky); on a phone it scrolls away, because three rows of controls would cover the page. */
+.fleetops .fleet-command-bar { justify-content: space-between; align-items: flex-start; }
+.fleetops .fleet-command-main { flex: 1 1 20rem; min-width: 0; }
+.fleetops .fleet-command-main h2 { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; }
+.fleetops .fleet-command-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; }
+.fleetops .fleet-command-actions { flex: 0 0 auto; }
+/* Alliance Auth's page area starts where its one-line navbar ends, so the bar sticks at the top of that area, or lower
+   when a long menu makes the navbar wrap; operation_detail.html measures the difference into --fleet-bar-top. */
+.fleetops .fo-commandbar.is-sticky { top: var(--fleet-bar-top, 0px); }
+@media (max-width: 767.98px) {
+  .fleetops .fo-commandbar.is-sticky { position: static; }
+  .fleetops .fleet-command-actions { width: 100%; }
+  .fleetops .fleet-command-actions > :is(.btn, form) { flex: 1 1 auto; }
+  .fleetops .fleet-command-actions form .btn { width: 100%; }
+}
+/* The figures under the bar: a count or a short text (the form-up place, the time of the last read). */
+.fleetops .fleet-metrics .fo-metric-sm { gap: 2px; }
+.fleetops .fleet-metric-text { font-size: 1.0625rem; font-weight: 600; overflow-wrap: anywhere; }
+/* The live indicator shows the words of its state only. */
+.fleetops .fo-live .fo-live-text { display: none; }
+.fleetops .fo-live[data-state="live"] [data-live-text="live"],
+.fleetops .fo-live[data-state="paused"] [data-live-text="paused"],
+.fleetops .fo-live[data-state="stale"] [data-live-text="stale"],
+.fleetops .fo-live[data-state="error"] [data-live-text="error"] { display: inline; }
+.fleetops .fo-live[data-state="paused"] .fo-live-dot { background: var(--fo-text-2); animation: none; }
+/* The fleet tree */
+.fleetops .fleet-tree-tools { display: flex; align-items: center; gap: var(--fo-space-1); }
+.fleetops .fleet-tree-tools .fo-icon-btn { font-size: .875rem; }
+.fleetops .fleet-member .fo-row-actions { margin-left: auto; align-items: center; }
+.fleetops .fleet-member-menu { display: inline-flex; align-items: center; }
+.fleetops .fleet-select-cell { flex: 0 0 auto; }
+.fleetops .fo-icon-btn[aria-disabled="true"] { color: var(--fo-text-disabled); cursor: default; }
+.fleetops .fleet-actions .fo-icon-btn { font-size: .875rem; }
+/* Composition: a bar per row, the share on a neutral track, the function colour only in its dot */
+.fleetops .fleet-section-title { font-size: .9375rem; font-weight: 600; margin: var(--fo-space-4) 0 var(--fo-space-2); }
+.fleetops .fleet-section-title:first-child { margin-top: 0; }
+.fleetops .fleet-bar-label { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .15rem .4rem; min-width: 0; overflow-wrap: anywhere; }
+.fleetops .fo-bars .fleet-classify { grid-column: 1 / -1; }
+.fleetops .fo-bars .fleet-function-badge { font-weight: 500; }
+.fleetops .fo-bars li.fleet-function-row { padding: var(--fo-space-1) var(--fo-space-2); }
+.fleetops .fleet-invite-chip { align-items: center; }
+.fleetops .fleet-pap-link-cell { min-width: 18rem; }
+.fleetops .fleet-srp-link code { background: var(--fo-surface-2); border-radius: var(--fo-radius-sm); padding: .15rem .5rem; }
+/* end 6.B */
+
+/* 6.C fleet records, PAP, approvals and incentives */
+/* The decision of the approval queue: a note field that takes the room it gets, and the two buttons. */
+.fleetops .fo-decision { min-width: 20rem; }
+.fleetops .fo-decision .form-control { flex: 1 1 12rem; width: auto; }
+.fleetops .fo-resubmitted, .fleetops .fo-credit-roles { margin-top: var(--fo-space-1); }
+/* Pasted roster: why a row cannot be imported stays readable next to its status */
+.fleetops .fo-roster-reason { max-width: 24rem; white-space: normal; }
+/* The manual PAP table scrolls sideways on a phone; its times and names stay on one line */
+.fleetops #manual-pap-table { white-space: nowrap; }
+/* The statistics card of the fleet page: the forms take the room they get and wrap on a phone */
+.fleetops .fo-stats-actions > form .form-control { flex: 1 1 10rem; width: auto; min-width: 0; }
+@media (max-width: 575.98px) { .fleetops .fo-stats-actions { flex: 1 1 100%; } .fleetops .fo-stats-actions > form { flex: 1 1 100%; } }
+/* The PAP multiplier choice of the end dialog and the pending-choice callout */
+.fleetops #end-multiplier-choice .fo-seg { flex-wrap: wrap; }
+.fleetops #multiplier-pending .btn-group { gap: var(--fo-space-2); }
+/* end 6.C */
+
+/* 5-13 PAP characters per player of one fleet: a short number field on the start pages, and the control of the
+   fleet page (the number, the reason of a closed fleet and the button on one row, stacked on a phone) */
+.fleetops .fo-limit-field .form-control { max-width: 10rem; }
+.fleetops .fo-limit-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--fo-space-3); }
+.fleetops .fo-limit-form .fo-limit-reason { flex: 1 1 16rem; min-width: 0; }
+.fleetops .fo-limit-form .fo-limit-reason .form-control { max-width: none; }
+@media (max-width: 575.98px) {
+  .fleetops .fo-limit-form > * { flex: 1 1 100%; }
+  .fleetops .fo-limit-field .form-control { max-width: none; }
+}
+/* end 5-13 */
+
+/* 6.D home and statistics */
+/* Running fleets on the home page: one card per fleet, shown only while a fleet runs. The bar on the left is the
+   theme's success colour (a non-text signal; the card says "Live" in words). */
+.fo-running-title { margin: 0 0 var(--fo-space-2); font-size: 1.0625rem; font-weight: 600; }
+.fo-running-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--fo-space-3); }
+@media (min-width: 768px) { .fo-running-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1200px) { .fo-running-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.fo-running-card { display: flex; flex-direction: column; gap: var(--fo-space-2); min-width: 0; padding: var(--fo-space-4); border-radius: var(--fo-radius); background: var(--fo-surface-1); border-left: 4px solid var(--bs-success); box-shadow: var(--fo-shadow); }
+.fo-running-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fo-space-2); }
+.fo-running-fc { font-size: 1.0625rem; font-weight: 600; overflow-wrap: anywhere; }
+.fo-running-meta { display: flex; flex-wrap: wrap; gap: var(--fo-space-1) var(--fo-space-3); color: var(--fo-text-2); }
+.fo-running-action { margin-top: auto; padding-top: var(--fo-space-1); }
+.fo-running-action .btn { width: 100%; }
+@media (min-width: 768px) { .fo-running-action .btn { width: auto; } }
+.fo-running-more { margin-top: var(--fo-space-2); color: var(--fo-text-2); }
+.fo-running-go { display: none; }
+/* Phones: one short row per fleet, so the metric cards below stay near the top of the page. */
+@media (max-width: 767.98px) {
+  .fo-running { margin-bottom: var(--fo-space-2) !important; }
+  .fo-running-title { font-size: 1rem; margin-bottom: var(--fo-space-1); }
+  .fo-running-grid { gap: var(--fo-space-1); }
+  .fo-running-card { flex-direction: row; flex-wrap: nowrap; align-items: center; gap: var(--fo-space-2); padding: 0 0 0 var(--fo-space-3); }
+  .fo-running-head { flex: 0 0 auto; flex-wrap: nowrap; }
+  .fo-running-head .fo-pill { display: none; }
+  .fo-running-fc { flex: 1 1 0; min-width: 0; font-size: 1rem; }
+  .fo-running-meta { flex: 0 0 auto; flex-wrap: nowrap; white-space: nowrap; }
+  .fo-running-meta > span:not(:first-child) { display: none; }
+  .fo-running-action { display: none; }
+  .fo-running-go { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 44px; min-height: 44px; color: var(--fo-text-2); }
+  .fo-running-more { margin-top: var(--fo-space-1); }
+}
+/* The empty "top ships" message fills the whole grid, not one cell */
+.fleetops-ship-empty { grid-column: 1 / -1; }
+/* Month selector: the neighbours as a segmented control with the month between them. The words next to the
+   arrows only show from 576 px; the arrows keep their full name for screen readers. */
+.fo-period-nav .fo-period-word { display: none; margin-inline: .5rem; }
+@media (min-width: 576px) { .fo-period-nav .fo-period-word { display: inline; } }
+.fo-period-nav .fo-period-current { min-width: 5.5rem; font-variant-numeric: tabular-nums; }
+.fo-period-nav > a { min-width: 2.75rem; }
+/* Materia draws the year select only as wide as its arrow (42 px): give both selects room for a touch */
+.fleetops-period-selector .input-group > .form-select { min-width: 5.5rem; }
+/* Member tables: on phones the name stays in view while the table scrolls sideways, the rank moves into its cell
+   and keeps the colour of the row's status on its left edge. */
+@media (max-width: 767.98px) {
+  .fleetops-member-table .fo-pin-col { position: sticky; left: 0; z-index: 1; background-color: var(--fo-surface-solid); }
+  .fleetops .table > tbody > tr.fleetops-status-row-met > .fo-pin-col { border-left: 4px solid var(--bs-success); }
+  .fleetops .table > tbody > tr.fleetops-status-row-missed > .fo-pin-col { border-left: 4px solid var(--bs-danger); }
+  .fleetops .table > tbody > tr.fleetops-status-row-progress > .fo-pin-col { border-left: 4px solid var(--bs-warning); }
+}
+/* Two small buttons under each other in a table cell (corporation overview) keep the row narrow */
+.fo-row-buttons { display: inline-flex; flex-direction: column; align-items: stretch; gap: var(--fo-space-1); }
+/* A footer cell with a note under its figure ("all counted PAP") gets room for two lines of it */
+.fo-note-cell { min-width: 6.5rem; }
+/* A status pill in the small card of a figure wraps instead of running out of the card */
+.fleetops .stat-card .fo-pill { white-space: normal; }
+/* A figure with a caption in the corner of a card (My FC month) */
+.fleetops .card-body > .fo-metric-value { margin-bottom: var(--fo-space-1); }
+/* end 6.D */
+
+/* 6.E SRP and administration */
+/* The claims tables use the body size of the theme (the earlier 14 px is below the 15 to 16 px of body text) */
+.fleetops .fleetops-srp-claims { font-size: .9375rem; }
+/* The figure of a claim or of a payment: a little larger than the text around it */
+.fo-claim-amount { font-size: 1.5rem; font-weight: 500; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.fo-pay-total { font-size: 1.25rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.fleetops-srp-ship-cell { display: inline-flex; align-items: center; gap: var(--fo-space-2); }
+.fleetops-srp-ship-cell > img { flex: 0 0 auto; width: 32px; height: 32px; object-fit: cover; }
+/* Loss cards (My SRP on a phone): the status pill sits in the corner, the whole card opens the claim */
+.fo-loss-card { align-items: start; }
+.fo-loss-card:hover { background: var(--fo-hover); }
+.fo-loss-card > img { width: 64px; height: 64px; object-fit: cover; }
+.fo-loss-body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fo-loss-body > :first-child { padding-inline-end: 6.5rem; overflow-wrap: anywhere; }
+.fo-loss-amount { font-size: 1.125rem; font-weight: 600; }
+/* The loss check is under way: grey blocks hold the place of the answer */
+.fo-srp-skeleton-render { width: 64px; height: 64px; margin: 0; }
+.fo-srp-skeleton-wide { width: 70%; }
+.fo-srp-skeleton-mid { width: 50%; }
+.fo-srp-skeleton-short { width: 35%; }
+/* Steps of a claim: what is still to come is quieter and its dot is dashed */
+.fo-step.is-todo { color: var(--fo-text-2); }
+.fo-step.is-bad > .fw-semibold { color: var(--fo-bad); }
+.fo-step .fo-time-rel { display: block; margin-inline-start: 0; }
+.fleetops-srp-check { width: 2.75rem; }
+/* A claim link on the red tint of an over-limit row: the theme link colour is below 4.5:1 there (Materia), so the text colour is used and the underline marks the link */
+.fleetops .table > tbody > tr.fleetops-srp-over-limit a:not(.btn) { color: var(--fo-text-1); text-decoration: underline; text-underline-offset: .15em; }
+/* The figures of the SRP summaries: the label is the title, the number is the thing to read */
+.fo-srp-stats .stat-card { gap: var(--fo-space-1); }
+.fo-srp-stats .stat-card > span { font-size: .9375rem; font-weight: 600; color: var(--fo-text-1); }
+.fo-srp-stats .stat-card > strong { font-size: 1.625rem; font-weight: 500; line-height: 1.15; }
+/* The monthly limits become a list of labelled lines on a phone instead of a table that has to scroll */
+@media (max-width: 575.98px) {
+  .fleetops .fleetops-srp-limits thead { display: none; }
+  .fleetops .fleetops-srp-limits tr { display: block; padding: var(--fo-space-2) 0; border-bottom: 1px solid var(--fo-divider); }
+  .fleetops .fleetops-srp-limits tr:last-child { border-bottom: 0; }
+  .fleetops .fleetops-srp-limits :is(th, td) { display: flex; justify-content: space-between; gap: var(--fo-space-3); padding: .15rem var(--fo-space-3); border: 0; text-align: end; }
+  .fleetops .fleetops-srp-limits td::before { content: attr(data-label); flex: 0 0 auto; text-align: start; color: var(--fo-text-2); }
+  .fleetops .fleetops-srp-limits th[scope="row"] { display: block; text-align: start; font-weight: 600; }
+}
+/* Administration: cards of the index and the lists */
+.fo-admin-kicker { display: block; margin-bottom: var(--fo-space-1); font-size: .75rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--fo-text-2); }
+.fo-admin-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--fo-space-2); }
+.fo-admin-head > i { color: var(--fo-text-2); font-size: 1.25rem; }
+.fo-admin-actions { display: flex; flex-wrap: wrap; gap: var(--fo-space-2); }
+.fo-admin-table > tbody > tr > td { overflow-wrap: anywhere; }
+.fo-copy-field { min-width: 16rem; }
+.fo-form-card { max-width: 52rem; }
+.fo-bridge-now a { white-space: nowrap; }
+.fo-checklist .form-check { margin-bottom: 0; }
+/* end 6.E */
+
+/* 6.F pings and groups */
+/* Group pill: the group's name with a people icon instead of the dot (fleets, pings, lists) */
+.fo-pill-group { gap: .4em; }
+.fo-pill-group::before { display: none; }
+/* Send Ping: quiet card headers, labels above the fields, the "More settings" disclosure */
+.fo-send-ping .card-header { background: transparent; border-bottom-color: var(--fo-divider); font-weight: 600; }
+.fo-send-ping .form-label { font-weight: 600; }
+.fo-send-ping details > summary { cursor: pointer; font-weight: 600; }
+.fo-send-ping textarea { min-height: 7.5rem; }
+/* A field the keyboard brings into view never ends up under the sticky action bar */
+.fo-send-ping :is(input, select, textarea, label, button, summary, a) { scroll-margin-bottom: 6rem; }
+/* The group choice: segments share the row and wrap; on phones they stand one under the other */
+.fleetops .fo-seg.fo-ping-seg { display: flex; width: 100%; }
+.fleetops .fo-seg.fo-ping-seg > label { flex: 1 1 0; min-width: 0; white-space: normal; text-align: center; }
+@media (max-width: 575.98px) {
+  .fleetops .fo-seg.fo-ping-seg { flex-direction: column; }
+  .fleetops .fo-seg.fo-ping-seg > label { justify-content: flex-start; text-align: start; }
+}
+/* Preview: placeholder lines and notes take the whole width of the Discord look */
+.fo-send-ping .fo-discord > :is(.fo-skeleton, .fo-ping-note) { grid-column: 1 / -1; }
+.fo-ping-note { color: var(--fo-text-2); }
+/* Action bar: where the ping goes, then the one primary button */
+.fo-ping-summary { min-width: 0; color: var(--fo-text-2); font-weight: 600; overflow-wrap: anywhere; }
+/* The pill that leads to the blocking problem is a link, and keeps the colours of its tone */
+.fo-send-ping a.fo-pill-bad, .fo-send-ping a.fo-pill-bad:hover { color: var(--fo-bad); }
+.fo-send-ping a.fo-pill-bad:hover { text-decoration: underline; }
+.fo-ping-actionbar .btn-primary { min-width: 10rem; }
+@media (max-width: 575.98px) {
+  .fo-ping-actionbar .fo-ping-summary { flex: 1 1 100%; }
+  .fo-ping-actionbar .btn-primary { width: 100%; margin-left: 0 !important; }
+}
+/* Recent pings: one row per ping (a card on phones), "Use again" at the end */
+.fo-ping-list { list-style: none; margin: 0; padding: 0; }
+.fo-ping-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--fo-space-2) var(--fo-space-3); padding: var(--fo-space-3) var(--fo-space-4); border-bottom: 1px solid var(--fo-divider); }
+.fo-ping-row:last-child { border-bottom: 0; }
+.fo-ping-row-main { flex: 1 1 18rem; min-width: 0; display: flex; flex-direction: column; gap: var(--fo-space-1); }
+.fo-ping-row-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fo-space-1) var(--fo-space-2); }
+.fo-ping-channel { font-weight: 600; }
+.fo-ping-channel::before { content: "#"; color: var(--fo-text-2); }
+.fo-ping-when { font-size: .875rem; color: var(--fo-text-2); }
+.fo-ping-row-text { overflow-wrap: anywhere; white-space: pre-line; }
+.fo-ping-row-meta { font-size: .875rem; color: var(--fo-text-2); overflow-wrap: anywhere; }
+.fo-ping-result { color: var(--fo-bad); }
+.fo-ping-again { flex: 0 0 auto; align-self: center; }
+@media (max-width: 575.98px) { .fo-ping-again { width: 100%; } }
+/* Administration, Groups: list cells keep whole words (the admin table may break anywhere); on phones, where the
+   table scrolls sideways, the group name and the fleet type pills keep a readable width */
+.fo-group-cell { display: inline-block; overflow-wrap: normal; }
+.fo-group-mode { min-width: 8rem; overflow-wrap: normal; }
+.fo-group-types { min-width: 9rem; }
+@media (max-width: 575.98px) {
+  .fo-group-name { min-width: 8rem; }
+  .fo-group-types { min-width: 11rem; }
+}
+/* Administration, Groups: the leaders card of a group */
+.fo-group-leaders .card-header { font-weight: 600; }
+.fo-group-leaders-head { margin: var(--fo-space-2) 0 var(--fo-space-1); font-size: .875rem; font-weight: 600; color: var(--fo-text-2); }
+.fo-group-leaders-head:first-child { margin-top: 0; }
+.fo-group-leaders-list { list-style: none; margin: 0 0 var(--fo-space-3); padding: 0; }
+.fo-group-leaders-list > li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fo-space-2); padding: var(--fo-space-1) 0; border-bottom: 1px solid var(--fo-divider); }
+.fo-group-leaders-list > li:last-child { border-bottom: 0; }
+/* end 6.F */

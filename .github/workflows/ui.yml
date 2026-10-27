@@ -1,0 +1,45 @@
+name: Interface check
+
+# Runs the browser check of tools/ui_check on demand, or when a pull request carries the label "ui".
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  interface:
+    name: Interface check (all pages, five modes, three widths)
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ui')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install the site and the browser
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y redis-server fonts-wqy-zenhei
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test]" "allianceauth==5.4.0" "django-esi<10"
+          npm install --no-save playwright@1.49.1
+          npx playwright install --with-deps chromium
+
+      - name: Run the interface check
+        run: node tools/ui_check/run.js --python python --out ui-report
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: interface-report
+          path: ui-report

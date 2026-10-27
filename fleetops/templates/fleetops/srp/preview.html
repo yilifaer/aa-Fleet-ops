@@ -1,5 +1,5 @@
 {% extends "fleetops/base.html" %}
-{% load i18n static fleetops_srp fleetops_messages %}
+{% load i18n static fleetops_i18n fleetops_srp fleetops_messages fleetops_ui %}
 {% block fleetops_content %}
 {% with km=preview.killmail identity=preview.identity calculation=preview.calculation policy=preview.policy %}
 <div class="mb-3">
@@ -10,8 +10,8 @@
 {% if preview.blockers %}
 <div class="alert alert-danger" role="alert">
   <strong>{% translate "This loss cannot be submitted." %}</strong>
-  <ul class="mb-0">{% for blocker in preview.blockers %}<li>{{ blocker }}</li>{% endfor %}</ul>
-  {% if preview.existing_claim and preview.existing_claim.user_id == user.pk %}<div class="mt-2"><a href="{% url 'fleetops:srp_claim' preview.existing_claim.uuid %}">{% blocktranslate trimmed with reference=preview.existing_claim.reference %}Open your claim {{ reference }}{% endblocktranslate %}</a> &middot; {{ preview.existing_claim|srp_status_label }}</div>{% endif %}
+  <ul class="mb-0">{% for blocker in preview.blockers %}<li>{{ blocker|stored_text }}</li>{% endfor %}</ul>
+  {% if preview.existing_claim and preview.existing_claim.user_id == user.pk %}<div class="mt-2"><a href="{% url 'fleetops:srp_claim' preview.existing_claim.uuid %}">{% blocktranslate trimmed with reference=preview.existing_claim.reference %}Open your claim {{ reference }}{% endblocktranslate %}</a> &middot; {{ preview.existing_claim|srp_status_badge }}</div>{% endif %}
 </div>
 {% endif %}
 
@@ -30,8 +30,8 @@
     <div class="card h-100">
       <div class="card-header"><strong>{% translate "Loss" %}</strong></div>
       <div class="card-body d-flex gap-3">
-        <img class="fleetops-srp-ship" src="{% ship_render_url km.ship_type_id 64 %}" width="64" height="64" alt="" loading="lazy">
-        <div>
+        <img class="fo-render" src="{% ship_render_url km.ship_type_id 64 %}" width="64" height="64" alt="" loading="lazy">
+        <div class="min-w-0">
           <h3 class="h5 mb-1">{{ km.ship_type_name|default:km.ship_type_id }}</h3>
           {% if identity %}<div>{{ identity.character_name }}{% if identity.main_character_name and identity.main_character_name != identity.character_name %} <span class="text-muted">{% blocktranslate trimmed with main=identity.main_character_name %}(main {{ main }}){% endblocktranslate %}</span>{% endif %}</div>
           {% if identity.corporation_name %}<div class="small text-muted">{{ identity.corporation_name }}{% if identity.alliance_name %} &middot; {{ identity.alliance_name }}{% endif %}</div>{% endif %}{% endif %}
@@ -43,7 +43,7 @@
   </div>
   {% if calculation %}<div class="col-lg-6">
     <div class="card h-100">
-      <div class="card-header d-flex justify-content-between align-items-center"><strong>{% translate "Calculation" %}</strong><span class="fs-5 fw-semibold">{{ calculation.limited|isk }}</span></div>
+      <div class="card-header d-flex justify-content-between align-items-center"><strong>{% translate "Calculation" %}</strong><span class="fo-claim-amount">{{ calculation.limited|isk }}</span></div>
       <div class="card-body">
         {% include "fleetops/srp/_calculation.html" %}
         {% if calculation.suggested == 0 and calculation.basis == "none" %}<div class="small text-muted mt-2">{% translate "There is no automatic amount for this loss. A reviewer decides what is paid." %}</div>{% endif %}

@@ -3,16 +3,14 @@
 
 """FleetOps SRP: summaries per alliance, corporation and FC, and opening or closing a fleet's SRP link."""
 
-from allianceauth.authentication.decorators import permissions_required
 from django.contrib import messages
 from django.contrib.auth import get_user_model
-from django.contrib.auth.decorators import permission_required
-from django.core.exceptions import PermissionDenied
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_POST
 
+from fleetops.decorators import fleetops_permission_required
 from fleetops.models import SrpClaim, SrpCorporationLimit, SrpFleetLink
 from fleetops.services import population
 from fleetops.services.stats_access import BASIC_ACCESS, VIEW_ALL_STATS, VIEW_CORP_STATS, own_corporation
@@ -20,6 +18,7 @@ from fleetops.srp import access, summaries
 from fleetops.srp.access import MANAGE_SRP
 from fleetops.srp.links import set_link_open
 from fleetops.views import _period_render_context, _year_month
+from fleetops.views_errors import OWN_CORPORATION_STATISTICS_REASON, OWN_FLEETS_SUMMARY_REASON, denied, not_found
 from fleetops.views_srp import srp_render
 
 TEMPLATE = "fleetops/srp/summary.html"
@@ -43,11 +42,6 @@ def _corporation_name(corporation_id):
     return name or str(corporation_id)
 
 
-def _leads_fleets(user) -> bool:
-    """FCs always have their own page, even before a fleet of theirs has an SRP link; so does anyone who led one."""
-    return access.led_fleets(user) or any(user.has_perm(name) for name in access.FC_PERMISSIONS)
-
-
 def _display_name(user) -> str:
     main = getattr(getattr(user, "profile", None), "main_character", None)
     return (main.character_name if main is not None else "") or user.get_username()
@@ -64,7 +58,7 @@ def _page(request, tab, year, month, **context):
 
 
 @require_GET
-@permissions_required((MANAGE_SRP, VIEW_ALL_STATS), raise_exception=True)
+@fleetops_permission_required((MANAGE_SRP, VIEW_ALL_STATS), any_perm=True)
 def alliance_summary(request):
     """The whole alliance: totals, in and out of fleet, the ships lost most and the other summaries."""
     year, month = _year_month(request)
@@ -81,12 +75,13 @@ def alliance_summary(request):
 
 
 @require_GET
-@permissions_required((MANAGE_SRP, VIEW_ALL_STATS, VIEW_CORP_STATS), raise_exception=True)
+@fleetops_permission_required((VIEW_CORP_STATS, MANAGE_SRP, VIEW_ALL_STATS), any_perm=True)
 def corporation_summary(request, corporation_id=None):
     """One corporation's summary and its members' claims.
 
     Without an ID it is the corporation of the user's main (``view_corp_stats`` is enough). With an ID it is
     any corporation, for SRP managers and ``view_all_stats``; a corporation SRP has never heard of is a 404.
+    A corporation manager's own corporation by ID is their own page; any other ID is a 404 with the reason.
     """
     if corporation_id is None:
         corporation = own_corporation(request.user)
@@ -94,9 +89,14 @@ def corporation_summary(request, corporation_id=None):
             raise Http404
         corporation_id, name = corporation
         own = True
+    elif not access.sees_everything(request.user):
+        # A corporation manager opens their own corporation by ID too; every other ID answers the same 404.
+        corporation = own_corporation(request.user)
+        if corporation is None or corporation[0] != corporation_id or not request.user.has_perm(VIEW_CORP_STATS):
+            return not_found(request, OWN_CORPORATION_STATISTICS_REASON)
+        corporation_id, name = corporation
+        own = True
     else:
-        if not access.sees_everything(request.user):
-            raise PermissionDenied
         name = _corporation_name(corporation_id)
         if name is None:
             raise Http404
@@ -122,21 +122,23 @@ def corporation_summary(request, corporation_id=None):
 
 
 @require_GET
-@permission_required(BASIC_ACCESS, raise_exception=True)
+@fleetops_permission_required(BASIC_ACCESS)
 def fc_summary(request, user_id=None):
     """The claims and totals of the fleets one FC led.
 
     Without an ID it is the user's own page, for FCs, for anyone who led a fleet with an SRP link and for SRP
     managers. With an ID it is any FC, for SRP managers and ``view_all_stats``; a user that does not exist is
-    a 404.
+    a 404. Everybody else may use their own ID; any other ID is a 404 with the reason.
     """
-    if user_id is None:
-        if not (access.sees_everything(request.user) or _leads_fleets(request.user)):
-            raise PermissionDenied
+    everything = access.sees_everything(request.user)
+    if not everything and user_id is not None and user_id != request.user.pk:
+        # The same answer whether the user exists or not.
+        return not_found(request, OWN_FLEETS_SUMMARY_REASON)
+    if user_id is None or not everything:
+        if not (everything or access.leads_fleets(request.user)):
+            return denied(request, OWN_FLEETS_SUMMARY_REASON)
         fc_user, own = request.user, True
     else:
-        if not access.sees_everything(request.user):
-            raise PermissionDenied
         fc_user = get_object_or_404(get_user_model().objects.select_related("profile__main_character"), pk=user_id)
         own = fc_user.pk == request.user.pk
     year, month = _year_month(request)
@@ -159,7 +161,7 @@ def fc_summary(request, user_id=None):
 
 
 @require_POST
-@permission_required(MANAGE_SRP, raise_exception=True)
+@fleetops_permission_required(MANAGE_SRP, page=False)
 def link_toggle(request, code, is_open):
     """Open or close a fleet's SRP link; the fleet page shows the result."""
     link = get_object_or_404(SrpFleetLink.objects.select_related("operation"), code=code)

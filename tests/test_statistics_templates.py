@@ -13,6 +13,7 @@ from django.template import Context, Template
 from django.template.loader import render_to_string
 from django.test import RequestFactory, SimpleTestCase, TestCase
 from django.urls import reverse
+from django.utils.timezone import now as timezone_now
 
 from fleetops.services import assessment
 from fleetops.templatetags.fleetops_stats import status_badge_class, status_row_class
@@ -20,13 +21,13 @@ from fleetops.templatetags.fleetops_stats import status_badge_class, status_row_
 from . import factories as f
 
 STATUS_BADGES = {
-    "met": ("text-bg-success", "Target met"),
-    "missed": ("text-bg-danger", "Below target"),
-    "in_progress": ("text-bg-warning", "Not reached yet"),
-    "no_members": ("text-bg-secondary", "No members"),
-    "ok": ("text-bg-success", "OK"),
-    "below": ("text-bg-danger", "Below minimum"),
-    "below_so_far": ("text-bg-warning", "Below minimum so far"),
+    "met": ("fo-pill-ok", "Target met"),
+    "missed": ("fo-pill-bad", "Below target"),
+    "in_progress": ("fo-pill-warn", "Not reached yet"),
+    "no_members": ("fo-pill-neutral", "No members"),
+    "ok": ("fo-pill-ok", "OK"),
+    "below": ("fo-pill-bad", "Below minimum"),
+    "below_so_far": ("fo-pill-warn", "Below minimum so far"),
 }
 
 
@@ -39,7 +40,7 @@ class StatusBadgeTests(SimpleTestCase):
         for status, (css_class, label) in STATUS_BADGES.items():
             with self.subTest(status=status):
                 page = badge(status=status)
-                self.assertIn(f'class="badge {css_class}"', page)
+                self.assertIn(f'class="fo-pill {css_class}"', page)
                 # Colour is never the only signal.
                 self.assertIn(f">{label}</span>", page)
 
@@ -51,13 +52,13 @@ class StatusBadgeTests(SimpleTestCase):
         for status in ("none", "", None):
             with self.subTest(status=status):
                 page = badge(status=status)
-                self.assertNotIn("badge", page)
+                self.assertNotIn("fo-pill", page)
                 self.assertIn("&mdash;", page)
 
     def test_label_can_be_given(self):
         page = badge(status="none", label="No target")
 
-        self.assertIn('class="badge text-bg-secondary">No target</span>', page)
+        self.assertIn('class="fo-pill fo-pill-neutral">No target</span>', page)
         self.assertIn(">Custom</span>", badge(status="met", label="Custom"))
 
     def test_label_is_escaped(self):
@@ -73,14 +74,14 @@ class StatusBadgeTests(SimpleTestCase):
         for status in ("none", "no_members", "", None, "unknown"):
             with self.subTest(status=status):
                 self.assertEqual(status_row_class(status), "")
-        self.assertEqual(status_badge_class("unknown"), "text-bg-secondary")
+        self.assertEqual(status_badge_class("unknown"), "fo-pill fo-pill-neutral")
 
     def test_filters_work_in_a_template(self):
         template = Template('{% load fleetops_stats %}{{ s|status_label }}|{{ s|status_badge_class }}|{{ s|status_row_class }}')
 
         self.assertEqual(
             template.render(Context({"s": "in_progress"})),
-            "Not reached yet|text-bg-warning|fleetops-status-row-progress",
+            "Not reached yet|fo-pill fo-pill-warn|fleetops-status-row-progress",
         )
 
 
@@ -272,3 +273,66 @@ class ExportViewTests(TestCase):
         for params in ({}, {"format": ""}, {"format": "pdf"}, {"format": "CSV"}, {"format": "csv,xlsx"}):
             with self.subTest(params=params):
                 self.assertEqual(self.client.get(self.url, params).status_code, 404)
+
+
+class EmptyStateAndMonthNavigationTests(TestCase):
+    """Pages without rows say so with an icon (UD4.7); the month neighbours are a segmented control."""
+
+    def setUp(self):
+        self.lead = f.create_user("lead", perms=f.FC_LEAD_PERMS, main_name="Example Lead")
+        self.client.force_login(self.lead)
+
+    def get(self, name, *args, **params):
+        response = self.client.get(reverse(f"fleetops:{name}", args=args), params)
+        self.assertEqual(response.status_code, 200)
+        return response.content.decode()
+
+    def test_the_empty_pages_use_the_empty_state(self):
+        for name, sentence in (
+            ("attendance_history_me", "No PAP records for 2026-03."),
+            ("all_fc_statistics", "No FC fleets in this month."),
+            ("my_statistics", "No PAP this month."),
+            ("leaderboard", "Nobody has PAP in this month yet."),
+        ):
+            with self.subTest(page=name):
+                page = self.get(name, year=2026, month=3)
+                self.assertRegex(page, r'<div class="fo-empty">(?:(?!</div>).)*' + re.escape(sentence), re.S)
+                self.assertNotIn("p-4", page.split('id="fo-toasts"')[-1])
+
+    def test_the_month_neighbours_are_a_segmented_control_with_the_month_between(self):
+        page = self.get("my_statistics", year=2026, month=3)
+
+        nav = re.search(r'<nav class="fo-seg fo-period-nav".*?</nav>', page, re.S).group(0)
+        self.assertRegex(nav, r'aria-label="Previous month: 2026-02"')
+        self.assertRegex(nav, r'aria-label="Next month: 2026-04"')
+        self.assertIn('<span class="fo-period-current" aria-current="true">2026-03</span>', nav)
+        self.assertNotIn("btn", nav)
+
+    def test_a_month_without_a_next_month_has_a_disabled_end_and_no_next_link(self):
+        current = f"{timezone_now().year:04d}"
+        page = self.get("my_statistics")
+
+        nav = re.search(r'<nav class="fo-seg fo-period-nav".*?</nav>', page, re.S).group(0)
+        self.assertNotIn("Next month", nav)
+        self.assertIn('<span aria-disabled="true" aria-hidden="true">&rsaquo;</span>', nav)
+        self.assertIn(current, nav)
+
+    def test_the_selector_keeps_its_form_and_ids(self):
+        page = self.get("my_statistics", year=2026, month=3)
+
+        for marker in (
+            'class="row g-2 align-items-end fleetops-period-selector mb-2"',
+            'id="fleetops-period-year"',
+            'id="fleetops-period-month"',
+            '<div class="input-group">',
+            "View Period",
+        ):
+            self.assertIn(marker, page)
+
+    def test_the_history_page_shows_the_neighbours_only_for_a_chosen_month(self):
+        everything = self.get("attendance_history_me")
+        chosen = self.get("attendance_history_me", year=2026, month=3)
+
+        self.assertNotIn("fo-period-nav", everything)
+        self.assertIn("fo-period-nav", chosen)
+        self.assertIn("2026-03</span>", chosen)

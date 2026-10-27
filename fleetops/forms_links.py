@@ -9,7 +9,8 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 from django.utils.translation import pgettext_lazy
 
-from fleetops.forms import _style
+from fleetops.forms_common import style_fields
+from fleetops.forms_pap_limit import PapLimitForm
 from fleetops.models import FleetOpsSettings, FleetType
 from fleetops.providers.doctrines import get_doctrines
 from fleetops.services.identity import owned_characters
@@ -32,7 +33,7 @@ class PapLinkForm(forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["minutes"].initial = FleetOpsSettings.get_solo().pap_link_minutes
-        _style(self.fields)
+        style_fields(self.fields)
 
 
 def _character_choices(user):
@@ -48,7 +49,7 @@ def _character_choices(user):
     return choices
 
 
-class LinkOnlyFleetForm(forms.Form):
+class LinkOnlyFleetForm(PapLimitForm):
     # One per page, so a double click on Start starts one fleet.
     request_id = forms.UUIDField(widget=forms.HiddenInput())
     fc_character_id = forms.TypedChoiceField(label=_("FC character"), coerce=int)
@@ -65,8 +66,7 @@ class LinkOnlyFleetForm(forms.Form):
     )
 
     def __init__(self, *args, user=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.user = user
+        super().__init__(*args, user=user, **kwargs)
         self.fields["request_id"].initial = uuid.uuid4()
         self.fields["fc_character_id"].choices = _character_choices(user)
         self.fields["fleet_type"].queryset = FleetType.objects.filter(is_active=True)
@@ -75,7 +75,7 @@ class LinkOnlyFleetForm(forms.Form):
             for doctrine in get_doctrines(user)
         ]
         self.fields["link_minutes"].initial = FleetOpsSettings.get_solo().pap_link_minutes
-        _style(self.fields)
+        style_fields(self.fields)
 
     def clean(self):
         data = super().clean()

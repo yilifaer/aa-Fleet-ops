@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import itertools
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 
 from allianceauth.authentication.models import CharacterOwnership
 from allianceauth.eveonline.models import EveCharacter
 from allianceauth.tests.auth_utils import AuthUtils
+from django.contrib.auth.models import Group
 from django.utils import timezone
 from esi.models import Scope, Token
 
@@ -29,6 +31,7 @@ from fleetops.models import (
     FleetOpsSettings,
     FleetStructureTemplate,
     FleetType,
+    GroupAccess,
     MessageTemplate,
     MultiplierTier,
     PapLink,
@@ -43,6 +46,7 @@ from fleetops.models import (
     SrpKillmail,
     SrpPayoutRule,
     SrpSettings,
+    StandalonePing,
     StatisticsTarget,
 )
 from fleetops.services.fleet_rules import normalize_wings
@@ -835,3 +839,48 @@ def srp_claim(
 
 def claim_event(claim: SrpClaim, action: str = SrpClaimEvent.Action.NOTE, *, actor=None, **extra) -> SrpClaimEvent:
     return SrpClaimEvent.objects.create(claim=claim, action=action, actor=actor, **extra)
+
+
+def aa_group(name: str | None = None, *, leaders=(), leader_groups=()) -> Group:
+    """An Alliance Auth group with its group leaders and leader groups.
+
+    Leaders are added by primary key: on Alliance Auth 5.4 and later the leader fields point to proxy models
+    and refuse plain ``User``/``Group`` instances.
+    """
+    group = Group.objects.create(name=name or f"Group {next_id()}")
+    group.authgroup.group_leaders.add(*(user.pk for user in leaders))
+    group.authgroup.group_leader_groups.add(*(leader_group.pk for leader_group in leader_groups))
+    return group
+
+
+def group_access(group: Group, mode: str = GroupAccess.Mode.PING, types=(), **extra) -> GroupAccess:
+    """The FleetOps access row of ``group``: ``mode`` and, for fleets, the allowed fleet types."""
+    access = GroupAccess.objects.create(group=group, mode=mode, **extra)
+    if types:
+        access.fleet_types.set(types)
+    return access
+
+
+def group_channel(name: str = "Group Pings", *, groups=(), fcs_allowed: bool = False, **extra) -> DiscordWebhook:
+    """A ping channel assigned to ``groups``; by default reserved for them (alliance FCs may not use it)."""
+    channel = ping_channel(name, fcs_allowed=fcs_allowed, **extra)
+    if groups:
+        channel.allowed_groups.set(groups)
+    return channel
+
+
+def standalone_ping(**fields) -> StandalonePing:
+    """A ping without a fleet as the Send Ping page stores it; ``sender`` and ``channel`` fill their snapshots."""
+    channel = fields.get("channel")
+    sender = fields.get("sender")
+    group = fields.get("group")
+    values = {
+        "request_id": uuid.uuid4(),
+        "channel_name": channel.name if channel is not None else "Example Channel",
+        "sender_name": main_of(sender).character_name if sender is not None and main_of(sender) else "",
+        "group_name": group.name if group is not None else "",
+        "additional_message": "Example message",
+        "status": StandalonePing.Status.SENT,
+    }
+    values.update(fields)
+    return StandalonePing.objects.create(**values)

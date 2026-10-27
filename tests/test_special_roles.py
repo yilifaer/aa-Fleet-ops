@@ -165,7 +165,7 @@ class DisabledRoleTests(SpecialRoleTestCase):
     def test_existing_assignments_stay_visible(self):
         response = self.page(self.fc)
 
-        self.assertContains(response, "Snowflake Member</span> <span class=\"badge bg-secondary\">Disabled role</span>")
+        self.assertContains(response, "Snowflake Member</span> <span class=\"fo-pill fo-pill-neutral\">Disabled role</span>")
 
     def test_no_enabled_roles(self):
         SpecialRole.objects.update(is_active=False)
@@ -197,7 +197,7 @@ class ConfiguredRoleTests(SpecialRoleTestCase):
         self.assertEqual(response.status_code, 302)
         assignment = OperationRoleAssignment.objects.get()
         self.assertEqual((assignment.role, assignment.special_role, assignment.grants_fc_credit), ("fleet_scout", role, True))
-        self.assertContains(page, '<span class="badge bg-info text-dark">Scout</span>')
+        self.assertContains(page, '<span class="fo-pill fo-pill-neutral">Scout</span>')
         self.assertContains(page, "Scout (FC credit)")
         entries = AuditLog.objects.filter(object_type="SpecialRole", object_id=str(role.pk)).order_by("pk")
         self.assertEqual([entry.action for entry in entries], ["configuration.create", "configuration.update"])

@@ -33,6 +33,8 @@ from fleetops.services import operations as operations_module
 from fleetops.services.operations import end_fleet, retry_motd, retry_ping, retry_srp, start_fleet
 
 from . import factories as f
+from .link_fakes import character_link
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 
 Status = FleetOperation.Status
 ActionStatus = OperationAction.Status
@@ -478,7 +480,7 @@ class StartFleetSafetyTests(TestCase):
         legacy = DiscordWebhook.objects.create(name="Legacy", webhook_url="http://127.0.0.1:8080/internal")
 
         operation = self.start(ping_channel=legacy)
-        retried = retry_ping(operation)
+        retried = retry_ping(operation, actor=operation.fc_user)
 
         self.assertActive(operation)
         self.mocks["post"].assert_not_called()
@@ -493,12 +495,12 @@ class StartFleetSafetyTests(TestCase):
             operation = self.start()
         self.assertEqual((operation.ping_text, operation.motd_text), ("", ""))
 
-        ping = retry_ping(operation)
+        ping = retry_ping(operation, actor=operation.fc_user)
         motd = retry_motd(operation)
 
         operation.refresh_from_db()
         self.assertIn("**FC Name:** Start FC", operation.ping_text)
-        self.assertIn("FC: Start FC", operation.motd_text)
+        self.assertIn(f"FC: {character_link(operation.fc_character_id, 'Start FC')}", operation.motd_text)
         self.assertEqual(ping.status, ActionStatus.SUCCESS)
         self.assertEqual(motd.status, ActionStatus.SUCCESS)
         self.mocks["post"].assert_called_once()
@@ -512,7 +514,7 @@ class StartFleetSafetyTests(TestCase):
     def test_retry_sends_nothing_while_the_messages_still_cannot_be_rendered(self):
         with mock.patch("fleetops.services.operations.render_messages", side_effect=RuntimeError("boom")):
             operation = self.start()
-            ping = retry_ping(operation)
+            ping = retry_ping(operation, actor=operation.fc_user)
             motd = retry_motd(operation)
 
         for result in (ping, motd):
@@ -620,7 +622,7 @@ class RetrySafetyTests(TestCase):
                 operation=operation, action=name, status=ActionStatus.SKIPPED, error_message="Skipped at start."
             )
 
-        results = [retry_ping(operation), retry_motd(operation), retry_srp(operation)]
+        results = [retry_ping(operation, actor=operation.fc_user), retry_motd(operation), retry_srp(operation)]
 
         self.post.assert_not_called()
         self.motd.assert_not_called()
@@ -635,7 +637,7 @@ class RetrySafetyTests(TestCase):
     def test_attendance_only_retry_without_a_record_explains_the_skip(self):
         operation = f.create_operation(self.fc, send_ping=False, ping_channel=self.channel, ping_text="quiet")
 
-        result = retry_ping(operation)
+        result = retry_ping(operation, actor=operation.fc_user)
 
         self.assertEqual(result.status, ActionStatus.SKIPPED)
         self.assertIn("PAP-only", result.error_message)
@@ -646,7 +648,7 @@ class RetrySafetyTests(TestCase):
             self.fc, status=Status.CLOSED, send_ping=False, is_manual=True, ping_channel=self.channel, ping_text="late"
         )
 
-        ping = retry_ping(operation)
+        ping = retry_ping(operation, actor=operation.fc_user)
         srp = retry_srp(operation)
 
         self.assertEqual(ping.status, ActionStatus.SKIPPED)
@@ -699,7 +701,7 @@ class RetrySafetyTests(TestCase):
             f"Max retries exceeded with url: /api/webhooks/555000111/{WEBHOOK_TOKEN}"
         )
 
-        result = retry_ping(operation)
+        result = retry_ping(operation, actor=operation.fc_user)
 
         self.assertEqual(result.status, ActionStatus.FAILED)
         self.assertNotIn(WEBHOOK_TOKEN, result.error_message)
@@ -726,7 +728,7 @@ class RetrySafetyTests(TestCase):
         with mock.patch(
             "fleetops.services.operations.send_discord_webhook", side_effect=ValueError(f"bad url {WEBHOOK_URL}")
         ), self.assertLogs(operations_module.logger, "ERROR") as logs:
-            result = retry_ping(operation)
+            result = retry_ping(operation, actor=operation.fc_user)
 
         self.assertEqual(result.status, ActionStatus.FAILED)
         self.assertEqual(result.error_message, "Discord ping failed unexpectedly (ValueError).")
@@ -754,7 +756,7 @@ class RetrySafetyTests(TestCase):
             motd_template=make_template("{# nothing #}", MOTD),
         )
 
-        ping = retry_ping(operation)
+        ping = retry_ping(operation, actor=operation.fc_user)
         motd = retry_motd(operation)
 
         self.assertEqual(ping.status, ActionStatus.FAILED)

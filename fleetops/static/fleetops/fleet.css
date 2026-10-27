@@ -1,7 +1,7 @@
 /* SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors */
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-/* Fleet tab: tree, composition and live status. Theme colours only (var(--bs-…)), so light and dark themes both work. */
+/* Fleet tab: tree, composition and live status. Colours are the tokens of fleetops.css (var(--fo-…)), so light and dark themes both work. */
 
 .fleet-tree,
 .fleet-tree ul {
@@ -14,7 +14,7 @@
 .fleet-tree .fleet-node > .fleet-members {
   margin-left: 0.6rem;
   padding-left: 0.9rem;
-  border-left: 1px solid var(--bs-border-color);
+  border-left: 1px solid var(--fo-border);
 }
 
 .fleet-node-head {
@@ -39,7 +39,7 @@
   border: 0;
   background: none;
   padding: 0 0.15rem;
-  color: var(--bs-secondary-color, var(--bs-secondary));
+  color: var(--fo-text-2);
   line-height: 1;
 }
 
@@ -70,6 +70,11 @@
   min-height: 1.6rem;
 }
 
+/* A squad without members keeps its height (set by the server), so the rows below do not jump during a drag. */
+.fleet-members-empty {
+  min-height: 1.75rem;
+}
+
 .fleet-member {
   display: flex;
   flex-wrap: wrap;
@@ -80,7 +85,7 @@
 }
 
 .fleet-member:hover {
-  background-color: var(--bs-tertiary-bg, var(--bs-light));
+  background-color: var(--fo-hover);
 }
 
 .fleet-member[draggable="true"] {
@@ -91,10 +96,12 @@
   margin-top: 0;
 }
 
+/* The EVE images carry the frame of .fo-render (1 px line, backdrop); here they are small, so the corners are too. */
 .fleet-portrait,
 .fleet-ship-icon {
-  border-radius: 2px;
+  border-radius: 4px;
   vertical-align: middle;
+  object-fit: cover;
 }
 
 .fleet-member-name {
@@ -111,10 +118,16 @@
 }
 
 .fleet-position {
-  background-color: var(--bs-secondary-bg, var(--bs-gray-200));
-  color: var(--bs-emphasis-color, var(--bs-body-color));
-  border: 1px solid var(--bs-border-color);
-  font-size: 0.7em;
+  display: inline-block;
+  background-color: var(--fo-surface-2);
+  color: inherit;
+  border: 1px solid var(--fo-border);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.3;
+  padding: 0.1em 0.4em;
+  border-radius: var(--fo-radius-sm);
+  white-space: nowrap;
 }
 
 .fleet-empty {
@@ -132,7 +145,7 @@
   height: 0.75rem;
   border-radius: 50%;
   vertical-align: middle;
-  border: 1px solid var(--bs-border-color);
+  border: 1px solid var(--fo-border);
 }
 
 .is-pending {
@@ -141,32 +154,54 @@
 
 .fleet-pending-icon {
   font-size: 0.8em;
-  color: var(--bs-secondary-color, var(--bs-secondary));
+  color: var(--fo-text-2);
 }
 
 .fleet-drop-target {
-  border-color: var(--bs-primary-border-subtle, var(--bs-primary));
+  border-color: var(--fo-accent);
 }
 
 .fleet-drop-over {
-  border-color: var(--bs-primary);
-  background-color: var(--bs-primary-bg-subtle, rgba(13, 110, 253, 0.1));
+  border-color: var(--fo-accent);
+  background-color: var(--fo-accent-bg);
 }
 
 /* Member lists have no border of their own; an outline marks them during a drag. */
 .fleet-members.fleet-drop-target {
-  outline: 1px dashed var(--bs-primary-border-subtle, var(--bs-primary));
+  outline: 1px dashed var(--fo-accent);
   outline-offset: -1px;
   border-radius: var(--bs-border-radius-sm, 0.25rem);
 }
 
 .fleet-members.fleet-drop-over {
-  outline: 1px solid var(--bs-primary);
+  outline: 1px solid var(--fo-accent);
+}
+
+/* While a drag lasts, an empty member list shows where it is (its height is set by .fleet-members-empty). */
+.fleet-drop-empty:not(.fleet-drop-over) {
+  outline: 1px dashed var(--fo-border);
+}
+
+/* The label that follows the pointer while members are dragged (its element is created by fleet_actions.js
+   and moved off screen; the browser takes it as the drag image). */
+.fleet-drag-label {
+  position: fixed;
+  top: -1000px;
+  left: -1000px;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: var(--fo-surface-solid);
+  color: var(--fo-text-1);
+  border: 1px solid var(--fo-border);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  box-shadow: var(--fo-shadow-raised);
+  pointer-events: none;
 }
 
 .fleet-node-head.fleet-renaming {
-  background-color: var(--bs-tertiary-bg, var(--bs-light));
-  border-color: var(--bs-border-color);
+  background-color: var(--fo-hover);
+  border-color: var(--fo-border);
 }
 
 /* A new name sent to ESI, shown until the answer redraws the tree. */
@@ -175,11 +210,22 @@
 }
 
 .fleet-member.fleet-highlight {
-  background-color: var(--bs-warning-bg-subtle, rgba(255, 193, 7, 0.2));
+  background-color: var(--fo-highlight-bg);
 }
 
-.fleet-member.fleet-dim {
+/* Other members while a function is highlighted: only the pictures fade, so the text stays readable. */
+.fleet-member.fleet-dim :is(.fleet-portrait, .fleet-ship-icon) {
   opacity: 0.35;
+}
+
+/* The member rows being dragged: a dashed outline and faded pictures instead of fading the text. */
+.fleet-member.fleet-dragging {
+  outline: 1px dashed var(--fo-border);
+  outline-offset: -1px;
+}
+
+.fleet-member.fleet-dragging :is(.fleet-portrait, .fleet-ship-icon) {
+  opacity: 0.4;
 }
 
 .fleet-function-row[role="button"] {
@@ -189,21 +235,24 @@
 }
 
 .fleet-function-row.active {
-  background-color: var(--bs-tertiary-bg, var(--bs-light));
-  outline: 1px solid var(--bs-border-color);
+  background-color: var(--fo-surface-2);
+  outline: 1px solid var(--fo-border);
 }
 
-.fleet-bar {
-  height: 0.4rem;
-  margin-bottom: 0.35rem;
-}
-
-.fleet-classify-cell .form-select {
+.fleet-classify .form-select {
   min-width: 8rem;
 }
 
-#fleet-flash .alert {
-  margin-bottom: 0.5rem;
+/* Touch screens: a row is a 44 px target, and so is a composition row that filters the tree. */
+@media (pointer: coarse) {
+  .fleet-member {
+    min-height: 44px;
+  }
+
+  .fleet-function-row[role="button"] {
+    min-height: 44px;
+    align-content: center;
+  }
 }
 
 @media (max-width: 991.98px) {
@@ -212,5 +261,32 @@
   .fleet-tree .fleet-node > .fleet-members {
     margin-left: 0.3rem;
     padding-left: 0.5rem;
+  }
+}
+
+/* Phones: a row is the name line (portrait, name, links, actions) and a second line with the ship and the system,
+   indented the same under every row, the commander's included. */
+@media (max-width: 575.98px) {
+  .fleet-member::after {
+    content: "";
+    order: 15;
+    flex-basis: 100%;
+    height: 0;
+    margin-top: -0.35rem;
+  }
+
+  .fleet-member > .fleet-ship {
+    order: 20;
+    margin-left: 1.6rem;
+    font-size: 0.875em;
+  }
+
+  .fleet-member > .fleet-system {
+    order: 21;
+    font-size: 0.875em;
+  }
+
+  .fleet-member > .fo-row-actions {
+    order: 10;
   }
 }

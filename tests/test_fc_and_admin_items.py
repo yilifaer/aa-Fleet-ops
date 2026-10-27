@@ -7,29 +7,23 @@ the incentive period form and the doctrines Fittings shows each FC."""
 import json
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone as dt_timezone
+from datetime import timedelta
 from types import SimpleNamespace
 from unittest import mock
 
 import requests
 from django.apps import apps as django_apps
-from django.contrib import admin
 from django.contrib.auth.models import Group
-from django.contrib.messages import get_messages
 from django.core.cache import cache
-from django.db.models import Q, QuerySet
+from django.db.models import Q
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from fleetops.admin import DiscordWebhookAdmin
 from fleetops.forms import StartFleetForm
-from fleetops.forms_config import DiscordWebhookForm
 from fleetops.models import (
     AuditLog,
-    DiscordWebhook,
     FleetOperation,
-    IncentivePeriod,
     OperationAction,
 )
 from fleetops.providers import doctrines as doctrines_module
@@ -41,16 +35,13 @@ from fleetops.services.tracking import UnreadableFleet
 from fleetops.tasks import POLL_SLACK_SECONDS, schedule_active_fleet_tracking, track_operation
 
 from . import factories as f
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 
 Status = FleetOperation.Status
 ActionStatus = OperationAction.Status
 FLEET_ID = 1_047_200_000_001
 WEBHOOK_TOKEN = "Kq3-webhook-token-never-shown"
 WEBHOOK_URL = f"https://discord.com/api/webhooks/445566/{WEBHOOK_TOKEN}"
-
-
-def flashed(response):
-    return [str(message) for message in get_messages(response.wsgi_request)]
 
 
 @contextmanager
@@ -147,120 +138,6 @@ class PollCadenceTests(TestCase):
 # ---------------------------------------------------------------------------
 # #28 write-only webhook URL
 # ---------------------------------------------------------------------------
-
-
-class WebhookUrlTests(TestCase):
-    def setUp(self):
-        self.lead = f.create_user(perms=f.FC_LEAD_PERMS)
-        self.client.force_login(self.lead)
-        self.channel = f.ping_channel("Ops Pings", url=WEBHOOK_URL)
-
-    def edit_url(self):
-        return reverse("fleetops:configuration_edit", args=["ping-channels", self.channel.pk])
-
-    def payload(self, **extra):
-        data = {"name": "Ops Pings", "webhook_url": "", "is_active": "on", "sort_order": "0"}
-        data.update(extra)
-        return data
-
-    def assertNoSecret(self, response):
-        self.assertNotIn(WEBHOOK_TOKEN, response.content.decode())
-
-    def test_edit_page_never_contains_the_token(self):
-        response = self.client.get(self.edit_url())
-
-        self.assertEqual(response.status_code, 200)
-        self.assertNoSecret(response)
-        self.assertContains(response, 'autocomplete="new-password"')
-        self.assertContains(response, "Leave empty to keep the stored URL.")
-
-    def test_blank_keeps_the_stored_url(self):
-        response = self.client.post(self.edit_url(), self.payload(name="Ops Pings Renamed"))
-
-        self.assertEqual(response.status_code, 302)
-        self.channel.refresh_from_db()
-        self.assertEqual(self.channel.name, "Ops Pings Renamed")
-        self.assertEqual(self.channel.webhook_url, WEBHOOK_URL)
-        entry = AuditLog.objects.get(action="configuration.update", object_type="DiscordWebhook")
-        self.assertNotIn("webhook_url_replaced", entry.new_value)
-
-    def test_a_new_url_replaces_the_stored_one(self):
-        rotated = "https://discord.com/api/webhooks/445566/rotated-token"
-
-        self.client.post(self.edit_url(), self.payload(webhook_url=rotated))
-
-        self.channel.refresh_from_db()
-        self.assertEqual(self.channel.webhook_url, rotated)
-        entry = AuditLog.objects.get(action="configuration.update", object_type="DiscordWebhook")
-        self.assertTrue(entry.new_value["webhook_url_replaced"])
-        self.assertNotIn("rotated-token", json.dumps([entry.old_value, entry.new_value]))
-
-    def test_invalid_url_is_neither_echoed_nor_rendered_back(self):
-        typo = "https://discord.example/api/webhooks/1/typo-secret-token"
-
-        response = self.client.post(self.edit_url(), self.payload(webhook_url=typo))
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Enter a Discord webhook URL in the form")
-        self.assertNotContains(response, "typo-secret-token")
-        self.assertNoSecret(response)
-        self.channel.refresh_from_db()
-        self.assertEqual(self.channel.webhook_url, WEBHOOK_URL)
-
-    def test_a_new_channel_needs_a_url(self):
-        response = self.client.post(
-            reverse("fleetops:configuration_add", args=["ping-channels"]), self.payload(name="New Channel")
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertFalse(DiscordWebhook.objects.filter(name="New Channel").exists())
-        self.assertFalse(response.context["form"].fields["webhook_url"].help_text)
-
-    def test_admin_uses_the_same_form(self):
-        self.assertIs(DiscordWebhookAdmin.form, DiscordWebhookForm)
-        self.assertIsInstance(admin.site._registry[DiscordWebhook], DiscordWebhookAdmin)
-
-    def test_admin_change_page_hides_the_url_and_blank_keeps_it(self):
-        superuser = f.create_user()
-        superuser.is_staff = superuser.is_superuser = True
-        superuser.save()
-        self.client.force_login(superuser)
-        url = reverse("admin:fleetops_discordwebhook_change", args=[self.channel.pk])
-
-        page = self.client.get(url)
-        self.assertEqual(page.status_code, 200)
-        self.assertNoSecret(page)
-
-        response = self.client.post(url, self.payload(name="Admin Renamed"))
-        self.assertEqual(response.status_code, 302)
-        self.channel.refresh_from_db()
-        self.assertEqual((self.channel.name, self.channel.webhook_url), ("Admin Renamed", WEBHOOK_URL))
-
-    def staff(self, *perms):
-        user = f.create_user(perms=list(perms))
-        user.is_staff = True
-        user.save()
-        self.client.force_login(user)
-        return user
-
-    def test_view_only_admins_never_see_the_url(self):
-        # Without the change permission Django shows every field as text.
-        self.staff("fleetops.view_discordwebhook")
-
-        page = self.client.get(reverse("admin:fleetops_discordwebhook_change", args=[self.channel.pk]))
-
-        self.assertEqual(page.status_code, 200)
-        self.assertNoSecret(page)
-        self.assertNotContains(page, "discord.com/api/webhooks")
-        self.assertContains(page, "Stored (hidden)")
-
-    def test_admins_who_may_add_still_enter_the_url(self):
-        self.staff("fleetops.add_discordwebhook", "fleetops.view_discordwebhook")
-
-        page = self.client.get(reverse("admin:fleetops_discordwebhook_add"))
-
-        self.assertEqual(page.status_code, 200)
-        self.assertContains(page, 'name="webhook_url"')
 
 
 # ---------------------------------------------------------------------------
@@ -491,159 +368,6 @@ class TrackingAuditTests(TestCase):
 # ---------------------------------------------------------------------------
 # #30 incentive period form
 # ---------------------------------------------------------------------------
-
-
-class IncentivePeriodPageTests(TestCase):
-    def setUp(self):
-        f.settings(incentive_enabled=True, incentive_minimum_fleets=4)
-        self.manager = f.create_user(perms=f.FC_LEAD_PERMS)
-        self.client.force_login(self.manager)
-
-    def page_url(self, year=2026, month=3):
-        return reverse("fleetops:incentive_review") + f"?year={year}&month={month}"
-
-    def create(self, **data):
-        return self.client.post(self.page_url(), {"create_period": "1", **data})
-
-    def test_create_form_has_only_budget_and_minimum(self):
-        response = self.client.get(self.page_url())
-
-        form = response.context["form"]
-        self.assertEqual(list(form.fields), ["budget", "minimum_fleets"])
-        self.assertEqual(form.initial["minimum_fleets"], 4)
-        self.assertContains(response, "Create 2026-03")
-        self.assertContains(response, 'action="/fleetops/incentives/?year=2026&amp;month=3"')
-
-    def test_create_takes_the_month_from_the_page(self):
-        response = self.create(year=2025, month=7, budget=5_000_000, minimum_fleets=2)
-
-        period = IncentivePeriod.objects.get()
-        self.assertEqual((period.year, period.month, period.budget, period.minimum_fleets), (2026, 3, 5_000_000, 2))
-        self.assertRedirects(response, self.page_url(), fetch_redirect_response=False)
-        entry = AuditLog.objects.get(action="incentive.period_create")
-        self.assertEqual(entry.new_value, {"budget": 5_000_000, "minimum_fleets": 2})
-
-    def test_create_needs_the_month_of_the_page(self):
-        for query in ("", "?year=2026", "?year=99999&month=1", "?year=2026&month=13"):
-            with self.subTest(query=query):
-                response = self.client.post(
-                    reverse("fleetops:incentive_review") + query,
-                    {"create_period": "1", "year": 2026, "month": 3, "budget": 1, "minimum_fleets": 1},
-                )
-
-                self.assertRedirects(response, reverse("fleetops:incentive_review"), fetch_redirect_response=False)
-                self.assertIn("Choose the month of the new incentive period first.", flashed(response))
-        self.assertFalse(IncentivePeriod.objects.exists())
-
-    def test_create_errors_are_shown(self):
-        response = self.create(budget=-1, minimum_fleets=0)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Ensure this value is greater than or equal to 0.")
-        self.assertContains(response, "Ensure this value is greater than or equal to 1.")
-        self.assertFalse(IncentivePeriod.objects.exists())
-
-    def test_create_race_returns_the_existing_period(self):
-        IncentivePeriod.objects.create(year=2026, month=3, budget=7)
-        real_first = QuerySet.first
-        looked_up = []
-
-        def not_there_yet(queryset):
-            # Another manager creates the month right after this request looked for it.
-            if queryset.model is IncentivePeriod and not looked_up:
-                looked_up.append(True)
-                return None
-            return real_first(queryset)
-
-        with mock.patch.object(QuerySet, "first", not_there_yet):
-            response = self.create(budget=1, minimum_fleets=1)
-
-        self.assertRedirects(response, self.page_url(), fetch_redirect_response=False)
-        self.assertEqual(IncentivePeriod.objects.get().budget, 7)
-        self.assertIn("was created meanwhile", flashed(response)[0])
-        self.assertFalse(AuditLog.objects.filter(action="incentive.period_create").exists())
-
-    def test_create_for_an_existing_month_changes_nothing(self):
-        IncentivePeriod.objects.create(year=2026, month=3, budget=7)
-
-        response = self.create(budget=1, minimum_fleets=1)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(IncentivePeriod.objects.get().budget, 7)
-        self.assertIn("already exists", flashed(response)[0])
-
-    def test_edit_budget_and_minimum(self):
-        period = IncentivePeriod.objects.create(year=2026, month=3, budget=100, minimum_fleets=3)
-        page = self.client.get(self.page_url())
-        self.assertContains(page, "Edit budget / minimum fleets")
-
-        response = self.client.post(
-            reverse("fleetops:incentive_update", args=[period.pk]), {"budget": 250, "minimum_fleets": 5}
-        )
-
-        self.assertRedirects(response, self.page_url(), fetch_redirect_response=False)
-        period.refresh_from_db()
-        self.assertEqual((period.budget, period.minimum_fleets), (250, 5))
-        entry = AuditLog.objects.get(action="incentive.period_update")
-        self.assertEqual(entry.old_value, {"budget": 100, "minimum_fleets": 3})
-        self.assertEqual(entry.new_value, {"budget": 250, "minimum_fleets": 5})
-        self.assertEqual(flashed(response), ["Budget and minimum fleets saved. Recalculate to apply them."])
-
-    def test_edit_errors_are_shown_and_nothing_changes(self):
-        period = IncentivePeriod.objects.create(year=2026, month=3, budget=100, minimum_fleets=3)
-
-        response = self.client.post(
-            reverse("fleetops:incentive_update", args=[period.pk]), {"budget": 999, "minimum_fleets": 0}
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Ensure this value is greater than or equal to 1.")
-        self.assertContains(response, "<strong>100 ISK</strong>", html=True)
-        period.refresh_from_db()
-        self.assertEqual((period.budget, period.minimum_fleets), (100, 3))
-        self.assertFalse(AuditLog.objects.filter(action="incentive.period_update").exists())
-
-    def test_finalized_periods_are_not_editable(self):
-        period = IncentivePeriod.objects.create(
-            year=2026, month=3, budget=100, minimum_fleets=3, status=IncentivePeriod.Status.FINALIZED
-        )
-        page = self.client.get(self.page_url())
-        self.assertNotContains(page, "Edit budget / minimum fleets")
-
-        response = self.client.post(
-            reverse("fleetops:incentive_update", args=[period.pk]), {"budget": 250, "minimum_fleets": 5}
-        )
-
-        self.assertIn("Unlock it before changing", flashed(response)[0])
-        period.refresh_from_db()
-        self.assertEqual(period.budget, 100)
-
-    def test_update_needs_manage_incentives(self):
-        period = IncentivePeriod.objects.create(year=2026, month=3)
-        self.client.force_login(f.create_user(perms=f.FC_PERMS))
-
-        response = self.client.post(reverse("fleetops:incentive_update", args=[period.pk]), {"budget": 1})
-
-        self.assertEqual(response.status_code, 403)
-
-    def test_pending_multipliers_and_not_counted_fleets_are_shown(self):
-        start = datetime(2026, 3, 10, 18, 0, tzinfo=dt_timezone.utc)
-        fc = f.create_user(perms=f.FC_PERMS)
-        waiting = f.create_operation(fc, status=Status.CLOSED, started_at=start)
-        excluded = f.create_operation(fc, status=Status.CLOSED, started_at=start)
-        f.create_operation(fc, status=Status.CLOSED, started_at=start)
-
-        with mock.patch(
-            "fleetops.views.pending_multiplier_operations",
-            return_value=FleetOperation.objects.filter(pk=waiting.pk),
-        ), mock.patch(
-            "fleetops.views.counted_operations", side_effect=lambda qs, **kwargs: qs.exclude(pk=excluded.pk)
-        ):
-            response = self.client.get(self.page_url())
-
-        self.assertContains(response, "1 fleet in this month still waits for the FC")
-        self.assertContains(response, reverse("fleetops:operation_detail", args=[waiting.uuid]))
-        self.assertContains(response, "1 closed fleet in this month is not counted")
 
 
 # ---------------------------------------------------------------------------

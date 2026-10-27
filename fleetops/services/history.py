@@ -15,6 +15,7 @@ from fleetops.models import (
     AttendanceRecord,
     FleetMemberEvent,
     FleetOpsSettings,
+    StandalonePing,
 )
 
 
@@ -85,15 +86,19 @@ def apply_current_membership_filter(qs, settings_obj=None):
 def prune_history(*, dry_run: bool = False) -> dict:
     settings_obj = FleetOpsSettings.get_solo()
     cutoff = retention_cutoff(settings_obj.data_retention_days)
-    result = {"old_attendance": 0, "left_alliance": 0, "old_events": 0}
+    result = {"old_attendance": 0, "left_alliance": 0, "old_events": 0, "old_pings": 0}
 
     old_attendance = AttendanceRecord.objects.none()
     old_events = FleetMemberEvent.objects.none()
+    old_pings = StandalonePing.objects.none()
     if cutoff is not None:
         old_attendance = AttendanceRecord.objects.filter(operation__started_at__lt=cutoff)
         old_events = FleetMemberEvent.objects.filter(created_at__lt=cutoff)
+        # The text of a ping sent without a fleet; the audit entry (who, where, when, status) stays.
+        old_pings = StandalonePing.objects.filter(created_at__lt=cutoff)
     result["old_attendance"] = old_attendance.count()
     result["old_events"] = old_events.count()
+    result["old_pings"] = old_pings.count()
 
     profiles = current_member_profiles(settings_obj)
     left_qs = AttendanceRecord.objects.none()
@@ -107,6 +112,7 @@ def prune_history(*, dry_run: bool = False) -> dict:
     if not dry_run:
         old_attendance.delete()
         old_events.delete()
+        old_pings.delete()
         if profiles is not None:
             left_qs.delete()
     return result

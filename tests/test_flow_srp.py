@@ -1001,7 +1001,7 @@ class VisibilityFlowTests(SrpFlowBase):
     def test_a_member_sees_their_own_claims_only(self):
         for route, args in (("srp_summary", ()), ("srp_summary_own_corporation", ()), ("srp_summary_own_fc", ())):
             self.page(self.p1, route, *args, expect=403)
-        self.page(self.p1, "srp_summary_fc", self.fc.pk, expect=403)
+        self.page(self.p1, "srp_summary_fc", self.fc.pk, expect=404)
         self.page(self.p1, "srp_review", expect=403)
         self.page(self.p1, "srp_payments", expect=403)
         self.claim_page(self.p1, self.a1)
@@ -1024,7 +1024,7 @@ class VisibilityFlowTests(SrpFlowBase):
         self.claim_page(self.fc, self.a2, expect=404)
         self.page(self.fc, "srp_summary", expect=403)
         self.page(self.fc, "srp_summary_own_corporation", expect=403)
-        self.page(self.fc, "srp_summary_fc", self.fc2.pk, expect=403)
+        self.page(self.fc, "srp_summary_fc", self.fc2.pk, expect=404)
         self.page(self.fc, "srp_review", expect=403)
         # The fleet page lists the claims of the fleet for its FC.
         fleet_page = self.page(self.fc, "operation_detail", self.fleet.uuid)
@@ -1039,9 +1039,9 @@ class VisibilityFlowTests(SrpFlowBase):
         self.assertEqual((page.context["corporation"].totals.claims, page.context["corporation"].totals.approved), (2, 10 * M))
         self.claim_page(self.corpmgr, self.a2)
         self.claim_page(self.corpmgr, self.b1, expect=404)
-        self.page(self.corpmgr, "srp_summary_corporation", f.OTHER_CORP[0], expect=403)
+        self.page(self.corpmgr, "srp_summary_corporation", f.OTHER_CORP[0], expect=404)
         self.page(self.corpmgr, "srp_summary", expect=403)
-        self.page(self.corpmgr, "srp_summary_fc", self.fc.pk, expect=403)
+        self.page(self.corpmgr, "srp_summary_fc", self.fc.pk, expect=404)
         self.page(self.corpmgr, "srp_review", expect=403)
 
     def test_view_all_stats_sees_every_summary_read_only(self):

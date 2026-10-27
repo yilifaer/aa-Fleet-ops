@@ -1,19 +1,21 @@
 {% extends "fleetops/base.html" %}
-{% load i18n fleetops_config %}
+{% load i18n fleetops_config fleetops_ui %}
 {% block fleetops_content %}
 {% translate "Copy" as copy_label %}
-{% translate "Copied" as copied_label %}
 {% translate "Delete this item? Existing fleet history may prevent deletion." as delete_confirm %}
+{% translate "Yes" context "FleetOps" as yes_label %}
+{% translate "No" context "FleetOps" as no_label %}
 <div class="d-flex justify-content-between align-items-start mb-3 gap-3">
   <div>
     <div class="small"><a href="{% url 'fleetops:configuration_index' %}">{% translate "FleetOps Administration" %}</a></div>
     <h2 class="mb-1">{{ config.title }}</h2>
     <div class="text-muted">{{ config.description }}</div>
   </div>
-  <a class="btn btn-primary" href="{% url 'fleetops:configuration_add' section %}">{% translate "Add" context "FleetOps" %}</a>
+  <a class="btn btn-primary text-nowrap flex-shrink-0" href="{% url 'fleetops:configuration_add' section %}">{% translate "Add" context "FleetOps" %}</a>
 </div>
 
 {% if config.link_hints %}{% include "fleetops/configuration/link_hints.html" %}{% endif %}
+{% include "fleetops/configuration/_outdated_claims.html" %}
 
 {% for action in actions %}
 <div class="card mb-3">
@@ -27,39 +29,30 @@
 {% endfor %}
 
 <div class="card">
+  {% if rows %}
   <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0">
-      <thead><tr>{% if rows %}{% for label,value in rows.0.values %}<th>{{ label }}</th>{% endfor %}{% else %}<th>{{ config.title }}</th>{% endif %}<th class="text-end">{% translate "Actions" %}</th></tr></thead>
+    <table class="table table-hover align-middle mb-0 fo-admin-table fo-table-pin">
+      <thead><tr>{% for column in columns %}<th scope="col"{% if column.numeric %} class="text-end"{% endif %}>{{ column.label }}</th>{% endfor %}<th scope="col" class="text-end">{% translate "Actions" %}</th></tr></thead>
       <tbody>
       {% for row in rows %}
         <tr>
-          {% for label,value in row.values %}
-            <td>{% if value|is_bool %}{% if value %}<span class="badge bg-success">{% translate "Yes" context "FleetOps" %}</span>{% else %}<span class="badge bg-secondary">{% translate "No" context "FleetOps" %}</span>{% endif %}{% elif value|is_copyable %}<div class="input-group input-group-sm fleetops-copy-field" style="min-width: 16rem;"><input type="text" class="form-control" value="{{ value.text }}" readonly aria-label="{{ label }}"><button type="button" class="btn btn-outline-secondary" data-fleetops-copy>{{ copy_label }}</button></div>{% elif value is None or value == "" %}<span class="text-muted">—</span>{% else %}{{ value }}{% endif %}</td>
+          {% for cell in row.cells %}
+            <td{% if cell.numeric %} class="text-end"{% endif %}>{% if cell.value|is_bool %}{% if cell.value %}{% pill "ok" yes_label %}{% else %}{% pill "neutral" no_label %}{% endif %}{% elif cell.value|is_copyable %}<div class="input-group input-group-sm fo-copy-field"><input type="text" class="form-control" id="fo-copy-{{ section }}-{{ row.object.pk }}" value="{{ cell.value.text }}" readonly aria-label="{{ cell.label }}"><button type="button" class="btn btn-outline-secondary" data-fo-copy="#fo-copy-{{ section }}-{{ row.object.pk }}">{{ copy_label }}</button></div>{% elif cell.value is None or cell.value == "" %}<span class="text-muted">—</span>{% else %}{{ cell.value }}{% endif %}</td>
           {% endfor %}
           <td class="text-end text-nowrap">
             <a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:configuration_edit' section row.object.pk %}">{% translate "Edit" %}</a>
-            <form method="post" action="{% url 'fleetops:configuration_delete' section row.object.pk %}" class="d-inline" onsubmit="return confirm('{{ delete_confirm|escapejs }}');">
+            <form method="post" action="{% url 'fleetops:configuration_delete' section row.object.pk %}" class="d-inline" data-fo-confirm="{{ delete_confirm }}" data-fo-confirm-label="{% translate 'Delete' %}">
               {% csrf_token %}<button class="btn btn-sm btn-outline-danger">{% translate "Delete" %}</button>
             </form>
           </td>
         </tr>
-      {% empty %}
-        <tr><td colspan="8" class="p-4 text-muted">{% translate "No items configured yet." %}</td></tr>
       {% endfor %}
       </tbody>
     </table>
   </div>
+  {% else %}
+  {% blocktranslate trimmed with section=config.title asvar empty_text %}No {{ section }} yet.{% endblocktranslate %}
+  <div class="card-body">{% url 'fleetops:configuration_add' section as add_url %}{% include "fleetops/configuration/_empty.html" with icon=icon text=empty_text add_url=add_url %}</div>
+  {% endif %}
 </div>
-<script>
-document.querySelectorAll('[data-fleetops-copy]').forEach(button => button.addEventListener('click', () => {
-  const input = button.closest('.fleetops-copy-field').querySelector('input');
-  const done = () => { button.textContent = '{{ copied_label|escapejs }}'; setTimeout(() => { button.textContent = '{{ copy_label|escapejs }}'; }, 1500); };
-  input.select();
-  if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(input.value).then(done);
-  } else if (document.execCommand('copy')) {
-    done();
-  }
-}));
-</script>
 {% endblock %}

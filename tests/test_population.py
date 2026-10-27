@@ -373,13 +373,13 @@ class PruneHistorySubqueryTests(TestCase):
         )
 
     def test_nothing_is_removed_without_member_alliances(self):
-        self.assertEqual(prune_history(), {"old_attendance": 0, "left_alliance": 0, "old_events": 0})
+        self.assertEqual(prune_history(), {"old_attendance": 0, "left_alliance": 0, "old_events": 0, "old_pings": 0})
         self.assertEqual(AttendanceRecord.objects.count(), 3)
 
     def test_dry_run_counts_departed_members_only(self):
         set_alliances(f.DEFAULT_ALLIANCE)
         result = prune_history(dry_run=True)
-        self.assertEqual(result, {"old_attendance": 0, "left_alliance": 1, "old_events": 0})
+        self.assertEqual(result, {"old_attendance": 0, "left_alliance": 1, "old_events": 0, "old_pings": 0})
         self.assertEqual(AttendanceRecord.objects.count(), 3)
 
     def test_departed_members_history_is_deleted(self):
@@ -396,7 +396,7 @@ class PruneHistorySubqueryTests(TestCase):
         f.add_attendance(old, self.member)
         set_alliances(f.DEFAULT_ALLIANCE)
         result = prune_history(dry_run=True)
-        self.assertEqual(result, {"old_attendance": 2, "left_alliance": 1, "old_events": 0})
+        self.assertEqual(result, {"old_attendance": 2, "left_alliance": 1, "old_events": 0, "old_pings": 0})
 
     def test_departed_members_are_removed_with_a_large_population(self):
         set_alliances(f.DEFAULT_ALLIANCE)

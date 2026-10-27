@@ -18,7 +18,7 @@ A Simplified Chinese version is in [zh-CN/permissions.md](zh-CN/permissions.md).
 | `fleetops.manage_own_fleet` | Can manage own fleets | End, edit, retry and control the fleets the user leads or is credited FC of through a special role: Regenerate & Push MOTD, kicks, the Fleet tab (wings, squads, moves, invites, structure templates), PAP links, excluding the fleet from statistics, settling a pending multiplier choice, and editing or cancelling the user's own scheduled fleets. |
 | `fleetops.view_all_fleets` | Can view all fleet records | Read the whole fleet archive and open every fleet record, including scheduled fleets, the member list of running fleets and their Fleet tab (read-only). Gives no edit or control rights. |
 | `fleetops.create_manual_fleet` | Can create manual fleet records | Add a manual (historical) fleet record without ESI tracking. |
-| `fleetops.manage_fleets` | Can manage all fleets | Manage every fleet whoever leads it, including editing or cancelling any scheduled fleet and the Fleet tab of any running fleet. It does not allow starting another FC's scheduled fleet. This is also the FC lead permission of the PAP rules: approve or reject manual fleets, manual PAP, pasted rosters, PAP-link fleets and edited fleet times (the user's own entries are approved at once), set a PAP multiplier beyond the duration rule with a written reason, count a fleet in statistics anyway or undo an exclusion, delete approved manual PAP. |
+| `fleetops.manage_fleets` | Can manage all fleets | Manage every fleet whoever leads it, including editing or cancelling any scheduled fleet and the Fleet tab of any running fleet. It does not allow starting another FC's scheduled fleet. This is also the FC lead permission of the PAP rules: approve or reject manual fleets, manual PAP, pasted rosters, PAP-link fleets and edited fleet times (the user's own entries are approved at once), set a PAP multiplier beyond the duration rule with a written reason, give a fleet more PAP characters per player than the setting allows, or no limit at all, and change that value after the fleet closed (with a written reason), count a fleet in statistics anyway or undo an exclusion, delete approved manual PAP. |
 | `fleetops.view_corp_stats` | Can view own corporation statistics | The user's own corporation: statistics, members, inactive members, member pages, PAP history and their exports. |
 | `fleetops.view_all_stats` | Can view all FleetOps statistics | Alliance-wide statistics: every corporation, all members and inactive members, every member page, FC statistics, PAP history, the leaderboard and every statistics export. Statistics only; opening fleet records needs `view_all_fleets` or `manage_fleets`. |
 | `fleetops.manage_attendance` | Can manage attendance | Add manual PAP (by name, ID or pasted roster), delete the user's own entries until an FC lead approves them, recalculate PAP and change the PAP multiplier of closed fleets within the duration rule, on fleets the user may manage. Together with `manage_fleets` it applies to every fleet. |
@@ -87,7 +87,7 @@ All FleetOps permissions except the SRP ones:
 - `fleetops.manage_configuration`
 - `fleetops.view_audit_log`
 
-An FC lead manages every fleet, approves manual records, overrides multipliers, sees all statistics and the
+An FC lead manages every fleet, approves manual records, overrides multipliers and PAP character limits, sees all statistics and the
 audit log, runs the FC incentives (once **Incentive enabled** is ticked) and administers FleetOps. Add
 `fleetops.request_srp` and `fleetops.manage_srp` when FC leads also run SRP.
 
@@ -103,6 +103,24 @@ opens and closes fleet SRP links, reads the claims of every fleet, sees every SR
 files, and adds internal notes that only SRP managers read. Another SRP manager decides on the manager's own
 claims, unless **SRP managers may decide on their own claims** is ticked.
 
+### Group leaders
+
+A group leader is a user whom Alliance Auth records as a leader of an Alliance Auth group (its group leaders, and the
+members of its leader groups). The permission `auth.group_management` alone does not make anybody a leader. A
+leader needs no FleetOps permission besides `fleetops.basic_access`: the row of the group under
+**Administration** > **Groups** is the grant (see [Groups](configuration.md#groups)). What a leader may do follows
+the group's **Leaders may** setting:
+
+| Setting of the group | The leader can |
+|---|---|
+| **Ping only** | Open **Send Ping** and ping the channels assigned to the group. No fleet record, no PAP. |
+| **Pings and fleets with PAP** | Also start **group fleets** on the Start Fleet page (the group is fixed or chosen under **Fleet for**), only of the fleet types allowed for the group, only to the channels of the group, to start now (no pre ping). They manage the group fleets they started, open the other fleets of their group read-only, and, when the group has the SRP switch on, see **My fleets** in the SRP menu. |
+
+What a group leader cannot do: change any setting, send a pre ping, start a PAP-link fleet, use an alliance channel
+(a channel without a group) or another group's channel, change the fleet type of a group fleet, or loosen the PAP
+character limit. A leader who also holds the normal FC permissions keeps those rights as well and chooses between
+an alliance fleet and a group fleet.
+
 ## Row-level rules
 
 - A fleet is managed by its FC, by members whose special role gives FC credit and who hold
@@ -113,8 +131,19 @@ claims, unless **SRP managers may decide on their own claims** is ticked.
   the holder needs no FC permission for that. Managing the fleet still needs `manage_own_fleet`. Roles go to
   characters recorded in the fleet; manual PAP that waits for approval or was rejected does not make a
   character eligible, so FC credit cannot be handed out through unreviewed manual PAP.
+- Group fleets are managed by the leader who started them and by `manage_fleets`. FC leads (`manage_fleets`) post to
+  every active ping channel. Normal FCs use every channel without a group and, on a channel that belongs to
+  groups, only where **Alliance FCs can use this channel** is ticked.
 - Users see their own corporation through the corporation of their main character. A user without a main
-  character gets 404 on the corporation pages.
+  character gets 404 on the corporation pages. Another corporation's page answers the same 404 whether the
+  corporation exists or not, and the page says why ("You can only open the statistics of your own corporation."
+  and similar). Every unknown or hidden FleetOps page answers one neutral FleetOps 404 page; pages that need a
+  permission the user lacks show the FleetOps page with the reason and the permission name (403).
+- Special roles with FC credit can be assigned once an FC lead has approved the fleet. A rejected fleet stays
+  rejected after edits; its FC (or whoever manages it) sends it back with **Resubmit for approval**, with an optional
+  note the approvers see.
+- Reject (fleet, PAP rows, SRP claims), Undo payment, Revoke approval and similar irreversible steps ask for a
+  confirmation first.
 
 ## The incentive switch
 
@@ -232,6 +261,9 @@ audited as `configuration.create` or `configuration.update`.
 | Choose the PAP multiplier when ending a fleet | Whoever may end the fleet. The server allows only the multipliers the fleet's duration reached. |
 | Change the multiplier of a closed fleet within the duration rule | `manage_attendance` on the fleet. The fleet's FC (`manage_own_fleet`) can always settle a pending choice. |
 | Set a multiplier beyond the duration rule | `manage_fleets`, with a written reason of at least 5 characters (audited as `attendance.multiplier` with source "override") |
+| Choose **PAP characters per player** for a fleet on the Start Fleet page, the PAP-link fleet page and the edit page of a scheduled fleet | FCs and group leaders: up to the setting **PAP characters per player** when it is set (any value when it is empty); `manage_fleets`: any value, including no limit |
+| Change **PAP characters per player** of a running fleet (control above the PAP preview) | Whoever manages the fleet, with the same rule: up to the setting, or any value with `manage_fleets` (audited as `pap.limit`) |
+| Change **PAP characters per player** of a closed fleet (PAP is calculated again) | `manage_fleets` only, with a written reason of at least 5 characters (audited as `pap.limit`). FCs and group leaders cannot change it any more. |
 | Recalculate PAP of a closed fleet | `manage_attendance` on the fleet |
 | Exclude a fleet from statistics (**Do not count**, reason required) | Whoever manages the fleet |
 | Count a fleet anyway (**Always count**) or return to the automatic rule | `manage_fleets` |

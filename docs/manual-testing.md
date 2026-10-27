@@ -105,6 +105,13 @@ With test characters:
 - [ ] **PAP minimum time**: characters below it get no PAP.
 - [ ] **PAP characters per player** (try 1 and 2): further characters are "Capped (limit)"; the FC character, then
   the main, then the longest time in fleet keep the PAP.
+- [ ] **PAP characters per player of one fleet**: the Start Fleet page (and the PAP-link fleet page) offers the
+  field with the setting as default. As a normal FC a value above the setting, or an empty field, is refused; as an
+  FC lead any value and an empty field work. A preset keeps the value.
+- [ ] While the fleet runs, the control above the PAP preview lowers the limit; the preview changes at once and the
+  PAP at the close follows the latest value. A normal FC cannot raise it above the setting; an FC lead can.
+- [ ] After the close only an FC lead sees the control, asks for a reason, and the PAP is calculated again; the audit
+  log has the old and the new value and the reason (`pap.limit`).
 - [ ] Characters that are not in Alliance Auth are listed as "Not in Alliance Auth" and get no PAP.
 - [ ] A fleet that ended without a choice shows **Multiplier pending**; the FC settles it.
 - [ ] An FC lead overrides a multiplier with a reason; the audit log keeps it.
@@ -140,7 +147,8 @@ Use a month with real PAP.
   above the target are green, the others red; for the running month "Not reached yet" is amber.
 - [ ] Average PAP equals total PAP divided by the main characters; alts do not change the denominator.
 - [ ] Members and Inactive as a corporation manager list only the own corporation; another corporation's page
-  answers 403 or 404. As `view_all_stats` the whole alliance is listed.
+  answers 404 with the reason ("You can only open ..."), the same page for a corporation that does not exist.
+  As `view_all_stats` the whole alliance is listed.
 - [ ] The leaderboard as a plain member; after switching **Leaderboard visibility** to statistics managers
   only, the entry disappears and the page answers 403.
 - [ ] A fleet that started shortly before or after midnight UTC at the edge of a month counts in its EVE month.
@@ -150,7 +158,7 @@ Use a month with real PAP.
 
 ## 10. FC incentives
 
-Tick **Incentive enabled** first; the FC Incentive menu entry appears only while it is on.
+Tick **Incentive enabled** first; the FC Incentive entry (in the More menu) appears only while it is on.
 
 - [ ] Minimum fleets, fleet type weights and multipliers give the expected points.
 - [ ] A non-eligible FC and a waived FC get no payout; the remainder goes to the top FC.
@@ -186,7 +194,8 @@ Create the five groups of [permissions](permissions.md) and test one user in eac
 - [ ] Switch the Alliance Auth language menu to Simplified Chinese: walk every FleetOps page (menu, Start Fleet,
   the fleet page, the End Fleet dialog, PAP pages, statistics, exports opened in WPS, administration, SRP,
   audit), start and end a test fleet, and check that step messages and the end reason are in Chinese.
-- [ ] The Discord ping and the in-game MOTD are exactly the same as when started in English.
+- [ ] The Discord ping and the in-game MOTD are exactly the same as when started in English. With `LANGUAGE_CODE`
+  set to a Chinese code they stay English as well, field labels and footer included, while the pages are Chinese.
 - [ ] Switch back to English and open the same fleet page. A second account in the other language sees the same
   fleet in its own language.
 - [ ] Report wording to change as a list: page, current text, wanted text (the translation issue form).
@@ -198,3 +207,24 @@ Restore a copy of the data of a site that runs the previous release, then:
 - [ ] Back up the database, install the new wheel, run `migrate fleetops` and `collectstatic`, restart.
 - [ ] Old fleets, PAP, statistics, history, SRP claims and settings are intact.
 - [ ] The notes in the CHANGELOG for the release were enough to finish the upgrade.
+
+## 15. Interface, groups and the 0.2.0b2 additions
+
+- [ ] **Theme and width.** Flatly (the default), Darkly and Materia on a phone (375 px) and on a desktop, and Bootstrap
+  Dark if a site uses it: the dashboard, Start Fleet, the fleet page, the approvals, SRP review and Send Ping have
+  readable text, buttons that can be tapped, and nothing hidden behind the fixed action bar. There is one solid
+  primary button in each region and no decoration that carries no meaning. In Materia the primary button is darker
+  inside FleetOps than in Alliance Auth's own pages.
+- [ ] **Drag and drop.** On the Fleet tab drag a member to another squad in Chrome, Edge and Firefox at 100,
+  125 and 150 % browser zoom: the dragged label stays small, the tree does not jump, and only valid squads light up.
+- [ ] **Keyboard.** Tab through the fleet tree, open the "..." menu of a member with Enter, move a member from the
+  Move dialog, confirm and cancel the End Fleet dialog with the keyboard.
+- [ ] **Export.** Open the members export of a month that has members without a rank in Excel, WPS, Numbers
+  and macOS Quick Look: every row keeps its columns and nothing shifts to the left.
+- [ ] **Group pings.** For a group that sends pings only and a group that also starts fleets: Send Ping reaches only
+  the group's channel in Discord, a second ping to the same channel within 60 seconds is refused, the group fleet's
+  ping carries the "Group" line, and a leader never sees an alliance channel.
+- [ ] **MOTD links.** Start a fleet with the built-in MOTD: in the game the FC name opens the character's information
+  window and a known form-up system opens the system's. Try an FC whose bloodline is not Amarr.
+- [ ] **Confirmations.** Posting a ping, Reject (fleet, PAP rows, SRP claim) and Undo payment ask first; approving
+  does not.

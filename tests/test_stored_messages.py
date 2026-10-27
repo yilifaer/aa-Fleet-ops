@@ -305,6 +305,11 @@ class StartFlowTests(StoredTextAssertions, StartFleetTestBase):
         self.assertIsNotNone(texts.split_series(message))
         self.assertStored(operation)
 
+    def retry(self, operation):
+        """Retry the ping as if the channel's cooldown had run out since the last post."""
+        OperationAction.objects.filter(operation=operation).update(executed_at=timezone.now() - timedelta(minutes=5))
+        return retry_ping(operation, actor=operation.fc_user)
+
     def test_discord_failures(self):
         operation = self.start()
         cases = [
@@ -315,22 +320,22 @@ class StartFlowTests(StoredTextAssertions, StartFleetTestBase):
         for prepare in cases:
             self.discord_post.side_effect = None
             prepare()
-            retry_ping(operation)
+            self.retry(operation)
             self.assertStored(operation)
         self.discord_post.side_effect = None
         # A ping over Discord's limit is not sent.
         FleetOperation.objects.filter(pk=operation.pk).update(ping_text="x" * 2100)
         operation.refresh_from_db()
-        action = retry_ping(operation)
+        action = self.retry(operation)
         self.assertEqual(action.error_message, texts.PING_TOO_LONG(length=2100, limit=2000))
         # The webhook is switched off, then gone.
         self.webhook.is_active = False
         self.webhook.save()
         operation.refresh_from_db()
-        self.assertEqual(retry_ping(operation).error_message, texts.PING_CHANNEL_DISABLED(name="Pings"))
+        self.assertEqual(self.retry(operation).error_message, texts.PING_CHANNEL_DISABLED(name="Pings"))
         FleetOperation.objects.filter(pk=operation.pk).update(ping_channel=None)
         operation.refresh_from_db()
-        self.assertEqual(retry_ping(operation).error_message, texts.NO_PING_CHANNEL())
+        self.assertEqual(self.retry(operation).error_message, texts.NO_PING_CHANNEL())
         self.assertStored(operation)
 
     def test_a_ping_that_may_not_notify_the_selection(self):
@@ -822,3 +827,49 @@ class FlowHelpersTests(SimpleTestCase):
         )
         self.assertTrue(texts.registered(fleet_access.not_boss_message(fc, "Bob")))
         self.assertTrue(texts.registered(fleet_access.not_boss_message(fc)))
+
+
+class GroupMessageTests(SimpleTestCase):
+    """Why a ping channel or a group fleet is refused: declared, English as stored, recognised again."""
+
+    CASES = (
+        (texts.CHANNEL_NOT_ALLOWED, {"name": "STR"}, "You may not post to the ping channel STR."),
+        (texts.GROUP_NOT_LED, {"group": "Sig A"}, "You no longer lead the group Sig A in FleetOps."),
+        (
+            texts.GROUP_CHANNEL_NOT_ASSIGNED,
+            {"name": "STR", "group": "Sig A"},
+            "STR is not a ping channel of the group Sig A.",
+        ),
+        (texts.GROUP_NO_FLEETS, {"group": "Sig A"}, "The leaders of Sig A may only send pings."),
+        (
+            texts.GROUP_FLEET_TYPE_NOT_ALLOWED,
+            {"type": "StratOp", "group": "Sig A"},
+            "Fleet type StratOp is not allowed for the group Sig A.",
+        ),
+        (texts.GROUP_REQUIRED, {}, "Choose the group this fleet belongs to."),
+        (
+            texts.GROUP_NO_PRE_PING,
+            {},
+            "Group fleets cannot be pre pinged. Send the fleet time with Send Ping and start the fleet when it is due.",
+        ),
+        (texts.GROUP_NO_SRP, {"group": "Sig A"}, "Group fleets of Sig A get no SRP link."),
+    )
+
+    def test_each_message_reads_as_declared_and_is_found_again(self):
+        for message, params, expected in self.CASES:
+            text = message(**params)
+            with self.subTest(message=expected):
+                self.assertEqual(text, expected)
+                self.assertTrue(texts.registered(text))
+                self.assertIs(texts.find(text)[0], message)
+                self.assertEqual(texts.find(text)[1], params)
+
+    def test_they_stay_English_for_an_English_viewer(self):
+        for message, params, expected in self.CASES:
+            with self.subTest(message=expected), translation.override("en"):
+                self.assertEqual(texts.translate_stored(message(**params)), expected)
+
+    def test_a_name_with_stop_and_colon_keeps_the_message_whole(self):
+        text = texts.GROUP_NOT_LED(group="Sig A. B: C")
+
+        self.assertEqual(texts.find(text)[1], {"group": "Sig A. B: C"})

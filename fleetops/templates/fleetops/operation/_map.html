@@ -7,6 +7,6 @@
       <b>{{ row.members|length }}</b>
       <details><summary>{% translate "Members" %}</summary>{% for m in row.members %}<div class="small">{{ m.character_name }} — {{ m.ship_type_name|default:m.ship_type_id }}</div>{% endfor %}</details>
     </div>
-  {% empty %}<div class="text-muted">{% blocktranslate trimmed %}Map requires the FC solar system and optional <code>eve_sde</code> Stargate data.{% endblocktranslate %}</div>{% endfor %}
+  {% empty %}<div class="fo-empty"><i class="fa-solid fa-map" aria-hidden="true"></i><span>{% blocktranslate trimmed %}Map requires the FC solar system and optional <code>eve_sde</code> Stargate data.{% endblocktranslate %}</span></div>{% endfor %}
 </div>
-{% else %}<div class="text-muted">{% translate "The map is shown once the fleet has closed." %}</div>{% endif %}
+{% else %}<div class="fo-empty"><i class="fa-solid fa-eye-slash" aria-hidden="true"></i><span>{% translate "The map is shown once the fleet has closed." %}</span></div>{% endif %}

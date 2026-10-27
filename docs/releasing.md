@@ -11,8 +11,8 @@ the wheel and the User-Agent carry it, and the tag must be `v` plus the same str
 
 | Version | Meaning |
 |---|---|
-| `0.2.0b1` | First public pre-release. Install it with the version named; once a stable release exists, `pip` skips pre-releases unless asked for the version or given `--pre`. |
-| `0.2.0b2`, `0.2.0rc1`, ... | Further pre-releases. The release marks every version with `a`, `b`, `rc` or `.dev` as a GitHub pre-release. |
+| `0.2.0b2` | First public pre-release (0.2.0b1 was a test build that was never published). Install it with the version named; once a stable release exists, `pip` skips pre-releases unless asked for the version or given `--pre`. |
+| `0.2.0b3`, `0.2.0rc1`, ... | Further pre-releases. The release marks every version with `a`, `b`, `rc` or `.dev` as a GitHub pre-release. |
 | `1.0.0` | The first stable release, once the pre-releases have run stably in production. |
 | `0.3.0.dev0` | The development version between releases. |
 
@@ -48,8 +48,8 @@ These steps are done once by the owner of the repository.
    The release run stops on any untranslated or fuzzy entry, and on a `.mo` file that does not match its `.po`
    file (a forgotten `compilemessages`).
 3. Set `__version__` in `fleetops/__init__.py`. In `CHANGELOG.md` rename the section "Unreleased" to
-   `## [0.2.0b1] - YYYY-MM-DD` (with the upgrade notes for administrators) and add a new empty "Unreleased"
-   section above it. Commit as "Release 0.2.0b1".
+   `## [0.2.0b2] - YYYY-MM-DD` (with the upgrade notes for administrators) and add a new empty "Unreleased"
+   section above it. Commit as "Release 0.2.0b2".
 4. Check the package locally:
 
    ```bash
@@ -58,17 +58,21 @@ These steps are done once by the owner of the repository.
    twine check --strict dist/*
    python tools/check_dist.py dist
    python tools/check_docs.py
+   python tools/check_ui.py --strict
+   node tools/ui_check/run.js --python .venv/bin/python
    python tools/check_translations.py --no-update
-   python tools/changelog_section.py 0.2.0b1
+   python tools/changelog_section.py 0.2.0b2
    ```
 
-   The last command prints the release notes the release run will use. Run the [manual testing](manual-testing.md)
+   The interface run (all pages, five modes, three widths, Chinese at the narrowest and the widest) must end
+   without a FAIL; attach its contact sheet (`index.html`) to the release notes of the maintainers' discussion or
+   keep it with the test record. The last command prints the release notes the release run will use. Run the [manual testing](manual-testing.md)
    checklist on a test site with the wheel.
 5. Tag and push:
 
    ```bash
-   git tag -a v0.2.0b1 -m "AA FleetOps 0.2.0b1"
-   git push origin dev v0.2.0b1
+   git tag -a v0.2.0b2 -m "AA FleetOps 0.2.0b2"
+   git push origin dev v0.2.0b2
    ```
 
 6. The release run creates the GitHub Release (a pre-release for `a`, `b`, `rc` and `.dev` versions) with the wheel,
@@ -93,7 +97,7 @@ These steps are done once by the owner of the repository.
    PyPI rejects files that are not distributions.
 
 If a job fails before the release exists, fix the problem, delete the tag
-(`git push origin :refs/tags/v0.2.0b1` and `git tag -d v0.2.0b1`) and tag again. Never move or delete a tag
+(`git push origin :refs/tags/v0.2.0b2` and `git tag -d v0.2.0b2`) and tag again. Never move or delete a tag
 after a GitHub Release or a PyPI upload exists for it; publish the next version instead.
 
 ## Installing a release
@@ -101,9 +105,9 @@ after a GitHub Release or a PyPI upload exists for it; publish the next version 
 For the users, `README.md` gives these lines:
 
 ```bash
-pip install aa-fleetops==0.2.0b1
-pip install --no-deps https://github.com/yilifaer/aa-fleetops/releases/download/v0.2.0b1/aa_fleetops-0.2.0b1-py3-none-any.whl
-pip install --no-deps "git+https://github.com/yilifaer/aa-fleetops.git@v0.2.0b1"
+pip install aa-fleetops==0.2.0b2
+pip install --no-deps https://github.com/yilifaer/aa-fleetops/releases/download/v0.2.0b2/aa_fleetops-0.2.0b2-py3-none-any.whl
+pip install --no-deps "git+https://github.com/yilifaer/aa-fleetops.git@v0.2.0b2"
 ```
 
 `--no-deps` keeps `pip` from changing the Alliance Auth and django-esi versions of an existing site.

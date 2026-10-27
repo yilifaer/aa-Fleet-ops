@@ -160,14 +160,35 @@ class ApproveTests(ReviewBase):
         self.assertEqual(caught.exception.code, "reason_required")
 
     def test_claim_without_a_suggested_amount_can_be_paid_with_a_reason(self):
+        # FB10.1: with no automatic amount (no rule, no value) there is no policy to go above, so the reviewer
+        # types the amount and a reason; the "above policy" box is not asked for.
         claim = self.submit(fitted=None, zkill_status="pending")
-        self.assertEqual(claim.suggested_amount, 0)
-        with self.assertRaises(SrpLimitError):
+        self.assertEqual((claim.suggested_amount, claim.payout_basis), (0, SrpClaim.PayoutBasis.NONE))
+        review.approve_claim(claim, actor=self.manager, amount=20_000_000, reason="By hand")
+        stored = fresh(claim)
+        self.assertEqual((stored.status, stored.approved_amount), (Status.APPROVED, 20_000_000))
+        event = self.event(claim, Action.APPROVE)
+        self.assertFalse(event.data["above_policy_confirmed"])
+        self.assertTrue(event.data["no_automatic_amount"])
+
+    def test_claim_without_a_suggested_amount_still_needs_a_reason(self):
+        claim = self.submit(fitted=None, zkill_status="pending")
+        with self.assertRaises(SrpError) as caught:
+            review.approve_claim(claim, actor=self.manager, amount=20_000_000)
+        self.assertEqual(caught.exception.code, "reason_required")
+        self.assertEqual(fresh(claim).status, Status.PENDING)
+
+    def test_a_rule_that_pays_nothing_still_needs_the_confirmation_for_more(self):
+        f.payout_rule(MOA, amount=0)
+        claim = self.submit(fitted=None, zkill_status="pending", ship_type_id=MOA)
+        self.assertEqual((claim.suggested_amount, claim.payout_basis), (0, SrpClaim.PayoutBasis.RULE))
+        with self.assertRaises(SrpLimitError) as caught:
             review.approve_claim(claim, actor=self.manager, amount=20_000_000, reason="By hand")
-        review.approve_claim(
-            claim, actor=self.manager, amount=20_000_000, reason="By hand", confirm_above_policy=True
-        )
-        self.assertEqual(fresh(claim).status, Status.APPROVED)
+        self.assertEqual(caught.exception.code, "confirm_above_policy")
+        review.approve_claim(claim, actor=self.manager, amount=20_000_000, reason="By hand", confirm_above_policy=True)
+        event = self.event(claim, Action.APPROVE)
+        self.assertTrue(event.data["above_policy_confirmed"])
+        self.assertNotIn("no_automatic_amount", event.data)
 
     def test_amounts_are_checked(self):
         claim = self.submit()

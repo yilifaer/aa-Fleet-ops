@@ -1,25 +1,38 @@
-{% load i18n tz fleetops_i18n fleetops_messages %}
-<div class="d-flex justify-content-between align-items-start mb-3 gap-3 flex-wrap">
-  <div>
-    <h2 class="mb-1">{{ operation.fleet_type }} <span class="badge bg-{% if operation.status == 'active' %}success{% elif operation.status == 'closed' %}secondary{% else %}warning text-dark{% endif %}">{{ operation.get_status_display }}</span></h2>
-    <div class="text-muted">{% blocktranslate trimmed with fc=operation.fc_character_name uuid=operation.uuid %}FC {{ fc }} · {{ uuid }}{% endblocktranslate %} {% if operation.link_only %}<span class="badge bg-info text-dark" id="badge-link-only">{% translate "PAP-link fleet" %}</span>{% elif operation.is_manual %}<span class="badge bg-secondary">{% translate "Manual Record" %}</span>{% elif not operation.send_ping %}<span class="badge bg-info text-dark">{% translate "PAP Only" %}</span>{% endif %}
-      {% if operation.review_status == 'pending' %}<span class="badge bg-warning text-dark" id="badge-review-pending">{% translate "Pending approval" %}</span>{% elif operation.review_status == 'rejected' %}<span class="badge bg-danger" id="badge-review-rejected">{% translate "Rejected" context "FleetOps" %}</span>{% endif %}
-      {% if operation.status == 'closed' and count_reason %}<span class="badge bg-secondary" id="badge-not-counted" title="{{ count_reason }}">{% translate "Not counted" %}</span>{% endif %}
-      {% if operation.multiplier_pending %}<span class="badge bg-warning text-dark" id="badge-multiplier-pending">{% translate "Multiplier pending" %}</span>{% endif %}
+{% load i18n tz fleetops_i18n fleetops_messages fleetops_operation fleetops_ui %}
+{% translate "PAP-link fleet" as link_only_label %}
+{% translate "Manual Record" as manual_label %}
+{% translate "PAP Only" as pap_only_label %}
+{% translate "Pending approval" as pending_label %}
+{% translate "Rejected" context "FleetOps" as rejected_label %}
+{% translate "Not counted" as not_counted_label %}
+{% translate "Multiplier pending" as multiplier_pending_label %}
+{% translate "Group fleet" as group_fleet_label %}
+{# The command bar: the type and status on the left, the buttons on the right. It stays under the navbar for the people who manage an open fleet. #}
+<div class="fo-commandbar fleet-command-bar mb-3{% if can_manage and operation.status == 'active' or can_manage and operation.status == 'ending' %} is-sticky{% endif %}" id="fleet-command-bar">
+  <div class="fleet-command-main">
+    <h2 class="mb-1">{{ operation.fleet_type }} {{ operation|op_status_pill }}</h2>
+    <div class="fleet-command-meta text-muted">
+      <span>{% blocktranslate trimmed with fc=operation.fc_character_name uuid=operation.uuid %}FC {{ fc }} · {{ uuid }}{% endblocktranslate %}</span>
+      {% if operation.started_at %}<span id="fleet-started">{% translate "Started at" %} {% eve_when operation.started_at %}</span>{% endif %}
+      {% if operation.link_only %}{% pill "info" link_only_label id="badge-link-only" %}{% elif operation.is_manual %}{% pill "neutral" manual_label %}{% elif not operation.send_ping %}{% pill "info" pap_only_label %}{% endif %}
+      {% if operation.group_name %}{% pill "neutral" operation.group_name class="fo-pill-group" icon="users" title=group_fleet_label %}{% endif %}
+      {% if operation.review_status == 'pending' %}{% pill "warn" pending_label id="badge-review-pending" %}{% elif operation.review_status == 'rejected' %}{% pill "bad" rejected_label id="badge-review-rejected" %}{% endif %}
+      {% if operation.status == 'closed' and count_reason %}{% pill "neutral" not_counted_label id="badge-not-counted" title=count_reason %}{% endif %}
+      {% if operation.multiplier_pending %}{% pill "warn" multiplier_pending_label id="badge-multiplier-pending" %}{% endif %}
       {% if show_fleet_tab and operation.status == 'active' %}<a href="" class="small d-none" id="fleet-reload-hint">{% translate "Updated — reload page" %}</a>{% endif %}
     </div>
   </div>
-  <div class="d-flex gap-2 flex-wrap">
-    {% if can_manage %}<a class="btn btn-outline-primary" href="{% url 'fleetops:edit_operation' operation.uuid %}">{% translate "Edit Operation" %}</a>{% endif %}
-    {% if operation.srp_url %}<a class="btn btn-outline-success" href="{{ operation.srp_url }}" target="_blank" rel="noopener">{% translate "Open SRP" %}</a>{% endif %}
+  <div class="fleet-command-actions d-flex gap-2 flex-wrap">
+    {% if can_manage %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:edit_operation' operation.uuid %}">{% translate "Edit Operation" %}</a>{% endif %}
+    {% if operation.srp_url %}<a class="btn btn-outline-secondary" href="{{ operation.srp_url }}" target="_blank" rel="noopener">{% translate "Open SRP" %}</a>{% endif %}
     {% if can_manage and operation.status == 'active' %}
       {% if attendance_prompt_eligible %}
-        <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#endFleetModal">{% translate "End Fleet" %}</button>
+        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#endFleetModal">{% translate "End Fleet" %}</button>
       {% else %}
-        <form method="post" action="{% url 'fleetops:end_fleet' operation.uuid %}" class="end-fleet-form">{% csrf_token %}<button class="btn btn-danger">{% translate "End Fleet" %}</button></form>
+        <form method="post" action="{% url 'fleetops:end_fleet' operation.uuid %}" class="end-fleet-form" data-fo-confirm="{% translate 'End this fleet now and finalize its PAP?' %}" data-fo-confirm-label="{% translate 'End Fleet' %}">{% csrf_token %}<button class="btn btn-outline-danger">{% translate "End Fleet" %}</button></form>
       {% endif %}
     {% elif operation.status == 'ending' %}
-      <button class="btn btn-danger" disabled>{% translate "Ending…" %}</button>
+      <button type="button" class="btn btn-outline-secondary" disabled>{% translate "Ending…" %}</button>
     {% endif %}
   </div>
 </div>
@@ -30,11 +43,18 @@
 {% if unreadable_warning %}<div class="alert alert-warning" id="fleet-unreadable">{{ unreadable_warning }}</div>
 {% elif operation.last_error and operation.status != 'closed' %}<div class="alert alert-warning">{{ operation.last_error|stored_text }}</div>{% endif %}
 {% if operation.srp_error %}<div class="alert alert-warning"><strong>SRP:</strong> {{ operation.srp_error|stored_text }}</div>{% endif %}
+{% failed_start_steps operation actions as failed_steps %}
+{% if can_manage and failed_steps %}
+<div class="alert alert-warning" id="fleet-failed-steps" role="status">
+  <strong>{% blocktranslate trimmed count counter=failed_steps|length %}{{ counter }} start step failed{% plural %}{{ counter }} start steps failed{% endblocktranslate %}:</strong>
+  {{ failed_steps|join:", " }}. <a href="#operation-steps">{% translate "See Operation Actions for the reason and the retry button." %}</a>
+</div>
+{% endif %}
 
-<div class="row g-3 mb-3">
-  <div class="col-md-2"><div class="stat-card"><span>{% translate "Characters" %}</span><strong id="stat-characters">{{ members|length }}</strong></div></div>
-  <div class="col-md-2"><div class="stat-card"><span>{% translate "Players" %}</span><strong>{{ unique_players }}</strong></div></div>
-  <div class="col-md-2"><div class="stat-card"><span>PAP</span><strong>{{ attendance_total }}</strong><div class="small text-muted">{% blocktranslate trimmed with multiplier=operation.attendance_multiplier %}{{ multiplier }}x PAP multiplier{% endblocktranslate %}{% if operation.multiplier_pending %} {% translate "(choice pending)" %}{% endif %}</div></div></div>
-  <div class="col-md-3"><div class="stat-card"><span>{% translate "Form Up" %}</span><strong class="small">{{ operation.formup }}</strong></div></div>
-  <div class="col-md-3"><div class="stat-card"><span>{% translate "Last ESI" %}</span><strong class="small" id="stat-last-esi">{% if operation.last_esi_update %}{{ operation.last_esi_update|eve_time:"%Y-%m-%d %H:%M:%S" }} EVE{% else %}—{% endif %}</strong></div></div>
+<div class="row g-3 mb-3 fleet-metrics">
+  <div class="col-6 col-md-2"><div class="fo-metric fo-metric-sm"><span class="fo-metric-sub">{% translate "Characters" %}</span><strong class="fo-metric-figure" id="stat-characters">{{ members|length }}</strong></div></div>
+  <div class="col-6 col-md-2"><div class="fo-metric fo-metric-sm"><span class="fo-metric-sub">{% translate "Players" %}</span><strong class="fo-metric-figure">{{ unique_players }}</strong></div></div>
+  <div class="col-6 col-md-2"><div class="fo-metric fo-metric-sm"><span class="fo-metric-sub">PAP</span><strong class="fo-metric-figure">{{ attendance_total }}</strong><div class="fo-metric-sub">{% blocktranslate trimmed with multiplier=operation.attendance_multiplier %}{{ multiplier }}x PAP multiplier{% endblocktranslate %}{% if operation.multiplier_pending %} {% translate "(choice pending)" %}{% endif %}</div></div></div>
+  <div class="col-6 col-md-3"><div class="fo-metric fo-metric-sm"><span class="fo-metric-sub">{% translate "Form Up" %}</span><strong class="fo-metric-figure fleet-metric-text">{{ operation.formup }}</strong></div></div>
+  <div class="col-12 col-md-3"><div class="fo-metric fo-metric-sm"><span class="fo-metric-sub">{% translate "Last ESI" %}</span><strong class="fo-metric-figure fleet-metric-text" id="stat-last-esi">{% if operation.last_esi_update %}{{ operation.last_esi_update|eve_time:"%Y-%m-%d %H:%M:%S" }} EVE{% else %}—{% endif %}</strong></div></div>
 </div>

@@ -12,12 +12,13 @@ A Simplified Chinese version of this page is in [zh-CN/configuration.md](zh-CN/c
 | [General Settings](#general-settings) | Tracking, automatic fleet end, PAP rules, statistics, PAP links, Fleet tab, SRP provider, FC incentives, history |
 | [Fleet Types](#fleet-types) | Fleet categories and their FC point weight |
 | [PAP Multipliers](#pap-multipliers) | Multipliers for long fleets |
-| [Monthly Targets](#monthly-targets) | Corporation PAP target and member minimum per month |
+| [Monthly Targets](#monthly-targets) | Corporation PAP target and member minimum per month (a month without a target is not assessed) |
 | [Special Roles](#special-roles) | Roles FCs give to pilots in a fleet |
 | [Comms Presets](#comms-presets) | Voice choices and their public join link |
 | [Logi / Boost Channels](#logi--boost-channels) | In-game channels shown in the MOTD |
-| [Ping Channels](#ping-channels) and [Ping Roles](#ping-roles) | Discord webhooks, allowed mentions, mentionable roles |
-| [Message Templates](#message-templates) | Ping and MOTD texts |
+| [Ping Channels](#ping-channels) and [Ping Roles](#ping-roles) | Discord webhooks, allowed mentions, mentionable roles, the groups that may use a channel |
+| [Groups](#groups) | What the leaders of an Alliance Auth group may do: send pings, start fleets with PAP |
+| [Message Templates](#message-templates) | Ping, MOTD and Ping without fleet texts |
 | [Ship Functions](#ship-functions-and-rules), [Ship Function Rules](#ship-functions-and-rules), [Fleet Structure Templates](#fleet-structure-templates) | Composition groups and wing and squad layouts |
 | [FleetOps SRP](#fleetops-srp), [SRP Payout Table](#srp-payout-table), [SRP Corporation Limits](#srp-corporation-limits) | The ship replacement program |
 
@@ -32,7 +33,7 @@ warning while the first two are missing.
 | `APPS_WITH_PUBLIC_VIEWS` | Add `"fleetops"` so pilots who are not logged in can open the comms join page. |
 | `ESI_USER_CONTACT_EMAIL` | The line already exists in `local.py` (empty in the template): fill it in, do not add a second one. Sent in the User-Agent of ESI requests (django-esi requires it) and of zKillboard requests (`SITE_URL` is the fallback there). |
 | `DISCORD_GUILD_ID` | Needed by the Alliance Auth Discord service for **Sync roles from Discord**. |
-| `LANGUAGE_CODE` | The site language. Pings and MOTDs are written in it. |
+| `LANGUAGE_CODE` | The site language. FleetOps pages follow each user's Alliance Auth language; pings and MOTDs are always English. |
 
 ## General settings
 
@@ -49,7 +50,7 @@ reaches fleets that already started.
 | Auto end missing count | 3 | Unreadable polls in a row before the automatic end (at least 2). Before ending, FleetOps reads the fleet once more and calls the end off if that read works. A successful read resets the count. |
 | Incentive enabled | off | Turns the FC incentive pages on. See [FC incentives](#fc-incentives). |
 | Incentive minimum fleets | 3 | Default for the minimum number of counted fleets of a new incentive period. |
-| Data retention days | 365 | How long PAP history and member events are kept. 365 to 36500. `fleetops_prune_history` and the daily beat task remove older rows. |
+| Data retention days | 365 | How long PAP history, member events and the texts of pings sent without a fleet are kept. 365 to 36500. `fleetops_prune_history` and the daily beat task remove older rows. |
 | SRP auto create | on | Create an SRP link for every fleet when it starts. |
 | SRP provider | Automatic | Which SRP app gets the link. See [SRP providers](srp-providers.md). |
 
@@ -60,13 +61,13 @@ no longer exists or the FC left it". The fleet page warns while polls fail.
 ### PAP rules
 
 These three settings apply to fleets that start after a change. A running or closed fleet keeps the values it
-started with.
+started with. **PAP characters per player** is only the default: each fleet has its own value (see below).
 
 | Setting | Default | Meaning |
 |---|---|---|
 | PAP multiplier mode | FC chooses when ending | **FC chooses when ending**: End Fleet asks the FC for the multiplier once the fleet passed a tier; a fleet that ends without a choice gets 1x until the FC chooses. **Automatic by fleet duration**: the fleet gets the highest multiplier its duration allows. |
 | PAP minimum time | 0 | Minutes a character must spend in the fleet to receive PAP. 0 means any presence. Up to 1440. |
-| PAP characters per player | empty | Most characters of one Alliance Auth user that receive PAP in one fleet. Empty means no limit. |
+| PAP characters per player | empty | Most characters of one Alliance Auth user that receive PAP in one fleet. Empty means no limit. It is the default of the field of the same name on the Start Fleet page, and the most FCs may choose there. |
 
 Rules behind these settings:
 
@@ -79,6 +80,17 @@ Rules behind these settings:
 - Over **PAP characters per player**, the FC character gets the PAP first, then the player's main, then the
   character with the longest time in fleet (then the one seen first). The others are listed as "Capped
   (limit)".
+- **PAP characters per player of one fleet.** A fleet starts with the value of the Start Fleet field "PAP characters
+  per player" (the setting is the default; empty means no limit). The value is saved in presets, and the PAP-link
+  fleet page and the edit page of a scheduled fleet have the same field; a pre-pinged fleet starts with the value
+  it was scheduled with. While the fleet runs, FCs change it in the control above the PAP preview on the **PAP**
+  tab; the preview follows at once and PAP is granted at the close with the latest value. FCs and group leaders may
+  only lower it: the value must not be higher than the setting when the setting is set (when it is empty, any
+  value). FC leads (`manage_fleets`) may choose any value, including no limit. After the fleet has closed only FC
+  leads can change it, with a written reason of at least 5 characters (the same rule as a multiplier override);
+  the PAP of the fleet is then calculated again, PAP rows whose credit changes get a new time, and the FC points
+  of the month are checked. Every change is audited as `pap.limit` with the old and the new value and the
+  reason. Fleets that were closed before PAP followed time in fleet do not use the limit.
 - Characters that are not in Alliance Auth get no PAP and are listed as "Not in Alliance Auth". **Recalculate
   PAP** on the closed fleet grants it once they were added to Alliance Auth.
 - PAP belongs to the character's owner and counts for the owner's main and the main's corporation, also when
@@ -117,13 +129,25 @@ See [Statistics rules](#statistics-rules) for how the figures are counted.
 | Setting | Default | Meaning |
 |---|---|---|
 | Live fleet refresh | 15 | While somebody who manages a fleet has its Fleet tab, Members tab or PAP preview open with **Live** on, FleetOps reads the fleet from ESI this often (seconds, 10 to 300). 0 means only the tracking interval and the Refresh button. |
-| Ship groups without bridge | Titan, Dreadnought, Freighter, Carrier, Supercarrier, Rorqual, Jump Freighter, Industrial Command Ship, Force Auxiliary, Lancer Dreadnought, Command Carrier | SDE ship group IDs whose mass is not counted as bridgeable. The default follows the titan bridge rule. |
+| Ship groups without bridge | Titan, Dreadnought, Freighter, Carrier, Supercarrier, Rorqual, Jump Freighter, Industrial Command Ship, Force Auxiliary, Lancer Dreadnought, Command Carrier (11 groups) | The ship groups whose mass is not counted as bridgeable. The default follows the titan bridge rule. |
+
+**Ship groups without bridge** is a searchable list of ship groups with a tick for each group. The line "Now:"
+under it names the ticked groups, each linked to EVE Ref, and "All ship groups on EVE Ref" opens the full list of
+groups. Tick **Use the default list (11 groups)** and save to go back to the default. A group that is not in the
+list can be added by its ID in **Other ship group IDs** (comma separated); when the SDE is installed, an ID that is
+not a ship group is refused, without the SDE it is saved with a notice.
 
 Cost of the live refresh: tracking reads each active fleet every tracking interval (members, and wings and
 squads: two ESI calls). The live refresh adds two more calls per refresh with the FC character's token, about
 120 calls per 15 minutes at 15 seconds, out of the 1800 that ESI allows per character. However many managers
 watch, a fleet is read once per interval, and users with only `view_all_fleets` never cause reads. The **Live**
 switch is remembered per browser.
+
+### Messages
+
+| Setting | Default | Meaning |
+|---|---|---|
+| MOTD warning length | 2000 | The start preview warns when the MOTD, tags included, is longer than this many characters. The game's limit is not documented; MOTDs of about 1,700 characters are known to work. 0 means no warning. At most 100000. |
 
 ## Fleet Types
 
@@ -159,10 +183,14 @@ threshold may get that multiplier (90 minutes and 1 second qualifies for a 90-mi
 ## Monthly Targets
 
 An entry has a year and month, a **Corporation average target** (average PAP per main character that a
-corporation needs; empty means no target), a **Member minimum PAP** (default 1; 0 means nobody is listed as
-inactive) and a note. An entry applies from its month until the next entry, so a target set for the future
-never recolours finished months; edit the older entry to change the past. Without an entry there is no
-corporation status and the member minimum is 1.
+corporation needs; empty means no target), a **Member minimum PAP** (0 means nobody is listed as inactive) and a
+note. An entry applies from its month until the next entry, so a target set for the future never recolours
+finished months; edit the older entry to change the past.
+
+**A month without an applicable monthly target is not assessed at all.** There is no green, amber or red, nobody
+is listed as inactive, and the pages and exports say "No target for this month". The same holds when no target was
+ever configured. The inactive list tells administrators to set a monthly target first (the link is shown to
+people who may change the targets).
 
 A corporation meets the target when its total PAP is at least the target times its main characters (exact
 arithmetic, no rounding). Corporations and members use the same colours:
@@ -265,7 +293,17 @@ A ping channel is a Discord channel reached through a webhook. FCs choose it on 
 | Webhook URL | The webhook of the Discord channel. Write-only: the page never shows a stored URL. Leave the field empty when editing to keep the URL, or paste a new one to replace it. |
 | Allow @everyone, Allow @here | Whether FCs may use these mentions in this channel. |
 | Allowed roles | The ping roles FCs may mention here. None ticked means every active role. |
+| Groups | The Alliance Auth groups whose leaders may use this channel. Only groups that have a row under [Groups](#groups) are listed. |
+| Alliance FCs can use this channel | Only matters while at least one group is ticked: untick it to reserve the channel for the groups. FC leads (`manage_fleets`) can always use every channel. |
 | Active, Sort | Only active channels are offered; sort sets the order. |
+
+**Who may use a channel.** A channel without a group is an alliance channel: everybody with `start_fleet` can
+use it, as before. Once groups are ticked, group leaders can use the channel for their group, and normal FCs can
+only use it while **Alliance FCs can use this channel** is ticked. A group leader can never use an alliance
+channel (a channel without groups) or the channel of another group, unless they also hold the normal FC
+permissions. The mention rules of the channel (allowed roles, `@everyone`, `@here`) apply to group leaders as to
+everybody else. The groups of a channel are set on this page only; Django admin does not show them. If the last Alliance Auth group of a
+channel is deleted in Alliance Auth, the channel is an alliance channel again, and the audit log records it.
 
 Only URLs of the form `https://discord.com/api/webhooks/<id>/<token>` are accepted. The hosts
 `ptb.discord.com`, `canary.discord.com` and `discordapp.com`, an API version segment
@@ -276,6 +314,47 @@ fixed.
 Leaving the ping channel empty on Start Fleet ("No Discord message (copy only)") is valid: the Discord step is
 skipped and the ping stays available to copy by hand. The demo data does not create a ping channel, because a
 channel needs a real webhook.
+
+## Groups
+
+Squads and interest groups are Alliance Auth groups. A row under **Groups** gives the **leaders** of one group
+rights in FleetOps. The leaders are the group leaders that Alliance Auth records for the group (Alliance Auth's
+group management) and the members of its leader groups; the page shows them but cannot change them
+(staff accounts get a button to the Alliance Auth page of the group). Having the Alliance Auth permission
+`auth.group_management` alone does not make anybody a leader. Group leaders need only `fleetops.basic_access`:
+the row is the grant. Only alliance administrators (`manage_configuration`) change these rows, and group leaders
+cannot change any setting.
+
+| Field | Meaning |
+|---|---|
+| Alliance Auth group | The group (one row per group). |
+| Leaders may | **Ping only**: the leaders use **Send Ping** for the group's channels; no fleet record, no PAP. **Pings and fleets with PAP**: they can also start fleets (not PAP-link fleets or pre pings), limited to the fleet types ticked here. The ticked types are kept when you switch back to pings only. |
+| Fleet types | The fleet types the leaders may start. A fleet type with the weight 0 gives no FC points, so a group fleet of that type does not change the FC incentive. |
+| SRP link for group fleets | Group fleets get an SRP link like alliance fleets, and the leaders get **My fleets** in the SRP menu. |
+| Is active | While it is off, the leaders of the group can do nothing in FleetOps. |
+| Note | Free text for administrators. |
+
+Group fleets count in the alliance statistics like any fleet of their type (PAP is granted, FC points follow the
+fleet type's weight; a weight 0 means no FC points and no effect on the monthly incentive minimum). Pings sent
+without a fleet change nothing in the statistics.
+
+Saving a group that runs fleets of a type with a weight above 0 shows a notice (leaders get FC credit for those
+fleets). A group without a ping channel shows a notice too: assign it under [Ping Channels](#ping-channels).
+
+Deleting an Alliance Auth group that has a row removes the row. The audit log records it ("Alliance Auth group
+was deleted", without an actor, with the old settings and channels), channels that belonged only to this group
+become alliance channels again, channels of other groups stay as they are, and earlier group fleets and pings keep
+the group's name.
+
+### Send Ping
+
+Leaders of a group (and FCs) send pings without a fleet from **Send Ping**. The page offers only the channels the
+person may use, shows a preview that looks like Discord, and asks before the ping is posted. The same channel
+accepts one ping every 60 seconds, a double click sends one ping, and an answer that does not arrive within five
+minutes is shown as "Not confirmed". **Recent pings** lists the last 30 days (own pings and the pings of the
+groups the person leads; people with `view_audit_log` see all) with **Use again**. Every send is audited as
+`ping.send` (channel, group, targets, status, HTTP status; never the webhook address). The texts of pings sent
+without a fleet are deleted after **Data retention days**.
 
 ## Ping Roles
 
@@ -291,7 +370,7 @@ so other `@everyone`, `@here` or `<@&id>` text in the ping notifies nobody.
 
 ## Message Templates
 
-The Ping and MOTD texts. Variables, the built-in templates and the rules are in
+The Ping, MOTD and Ping without fleet texts. Variables, the built-in templates and the rules are in
 [message templates](message-templates.md).
 
 ## Ship functions and rules
@@ -442,7 +521,12 @@ active rule wins: doctrine and ship, then doctrine (any ship), then ship; a rule
 beats one for both scopes. Doctrine rules match losses in a fleet that has that doctrine. Ships without a rule
 are paid the percentage of the loss value. Every claim keeps the rule and the settings it was calculated with;
 **Recalculate** applies the current ones to pending claims. The amount is paid as it is, before the per-loss cap
-and the monthly limits.
+and the monthly limits. The optional **Label** is shown in the payout table and in the calculation of a claim.
+
+When the SRP settings, the payout table or the corporation limits change while claims are pending, the three
+pages show a notice: "N pending claims were calculated with earlier SRP settings". SRP managers can press
+**Recalculate** there (it asks first); everybody else sees that an SRP manager can recalculate them on the review
+page. Claims that were decided already are never changed.
 
 ## SRP Corporation Limits
 
@@ -452,7 +536,8 @@ corporation.
 ## History and retention
 
 `python manage.py fleetops_prune_history` removes PAP older than **Data retention days**, PAP of members who
-left the alliances in **Member alliance IDs**, and old member events; add `--dry-run` to see the counts first.
+left the alliances in **Member alliance IDs**, old member events and the old texts of pings sent without a fleet
+(their audit entries stay); add `--dry-run` to see the counts first.
 The daily beat task `fleetops.tasks.prune_attendance_history` does the same and also deletes SRP killmails
 nobody claimed. `python manage.py fleetops_refresh_names` rewrites ship and solar system names of fleet member
 records in English from the SDE (`--dry-run` available). Ship and solar system names are English everywhere.

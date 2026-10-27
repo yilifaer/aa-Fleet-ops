@@ -22,9 +22,9 @@ from fleetops.services.roster_paste import (
 # Copied from the Chinese client's fleet composition window on 2026-10-12. The fleet
 # commander's position column is empty but its tab is still there.
 CHINESE_FLEET = (
-    "Sally en Chalune\tHY-RWO (已停靠)\tRagnarok\tTitan\t中队队员\t5 - 5 - 5\t联队1 / 中队1\n"
-    "yilifaerrrrrrr\t4-IT9G (已停靠)\tArazu\tForce Recon Ship\t舰队指挥官（统帅）\t5 - 5 - 5\t\n"
-    "Stream Sarum\tR-ARKN (已停靠)\tMoa\tCruiser\t中队队员\t5 - 5 - 5\t联队1 / 中队1\n"
+    "Pilot A\tJita (已停靠)\tRagnarok\tTitan\t中队队员\t5 - 5 - 5\t联队1 / 中队1\n"
+    "Example FC\tAmarr (已停靠)\tArazu\tForce Recon Ship\t舰队指挥官（统帅）\t5 - 5 - 5\t\n"
+    "Pilot B\tDodixie (已停靠)\tMoa\tCruiser\t中队队员\t5 - 5 - 5\t联队1 / 中队1\n"
 )
 
 ENGLISH_FLEET = (
@@ -46,12 +46,12 @@ class ChineseFleetCompositionTests(SimpleTestCase):
         lines, warnings = parse_roster(CHINESE_FLEET)
 
         self.assertEqual(warnings, [])
-        self.assertEqual(names(lines), ["Sally en Chalune", "yilifaerrrrrrr", "Stream Sarum"])
+        self.assertEqual(names(lines), ["Pilot A", "Example FC", "Pilot B"])
         self.assertEqual(
             asdict(lines[0]),
             {
-                "name": "Sally en Chalune",
-                "location": "HY-RWO",
+                "name": "Pilot A",
+                "location": "Jita",
                 "ship_type": "Ragnarok",
                 "ship_group": "Titan",
                 "role": "中队队员",
@@ -68,7 +68,7 @@ class ChineseFleetCompositionTests(SimpleTestCase):
         lines, _ = parse_roster(CHINESE_FLEET)
         boss = lines[1]
 
-        self.assertEqual(boss.location, "4-IT9G")
+        self.assertEqual(boss.location, "Amarr")
         self.assertEqual(boss.ship_type, "Arazu")
         self.assertEqual(boss.ship_group, "Force Recon Ship")
         self.assertEqual(boss.role, "舰队指挥官（统帅）")
@@ -80,7 +80,7 @@ class ChineseFleetCompositionTests(SimpleTestCase):
     def test_docked_marker_is_removed_from_every_location(self):
         lines, _ = parse_roster(CHINESE_FLEET)
 
-        self.assertEqual([line.location for line in lines], ["HY-RWO", "4-IT9G", "R-ARKN"])
+        self.assertEqual([line.location for line in lines], ["Jita", "Amarr", "Dodixie"])
         self.assertTrue(all(line.docked for line in lines))
         self.assertTrue(all(line.source == SOURCE_FLEET for line in lines))
 
@@ -89,7 +89,7 @@ class ChineseFleetCompositionTests(SimpleTestCase):
         lines, warnings = parse_roster(header + CHINESE_FLEET)
 
         self.assertEqual(warnings, [])
-        self.assertEqual(names(lines), ["Sally en Chalune", "yilifaerrrrrrr", "Stream Sarum"])
+        self.assertEqual(names(lines), ["Pilot A", "Example FC", "Pilot B"])
         self.assertEqual(lines[0].line_no, 2)
 
     def test_header_detected_by_ship_type_column(self):
@@ -99,17 +99,17 @@ class ChineseFleetCompositionTests(SimpleTestCase):
                 self.assertEqual(names(lines), ["Real Pilot"])
 
     def test_full_width_parentheses_and_location_in_space(self):
-        text = "Pilot One\tHY-RWO（已停靠）\tRagnarok\nPilot Two\tHY-RWO\tRagnarok\nPilot Three\tHY-RWO ( 已停靠 ) \tMoa\n"
+        text = "Pilot One\tJita（已停靠）\tRagnarok\nPilot Two\tJita\tRagnarok\nPilot Three\tJita ( 已停靠 ) \tMoa\n"
         lines, _ = parse_roster(text)
 
-        self.assertEqual([(line.location, line.docked) for line in lines], [("HY-RWO", True), ("HY-RWO", False), ("HY-RWO", True)])
+        self.assertEqual([(line.location, line.docked) for line in lines], [("Jita", True), ("Jita", False), ("Jita", True)])
 
     def test_rows_from_an_indented_paste_are_still_read(self):
         indented = "".join(f"  {line}\n" for line in CHINESE_FLEET.splitlines())
         lines, warnings = parse_roster(indented)
 
         self.assertEqual(warnings, [])
-        self.assertEqual(names(lines), ["Sally en Chalune", "yilifaerrrrrrr", "Stream Sarum"])
+        self.assertEqual(names(lines), ["Pilot A", "Example FC", "Pilot B"])
         self.assertEqual(lines[2].position, "联队1 / 中队1")
 
 
@@ -179,21 +179,21 @@ class EnglishFleetCompositionTests(SimpleTestCase):
 
 class NameListTests(SimpleTestCase):
     def test_one_name_per_line(self):
-        text = "Sally en Chalune\nyilifaer\nyilifaerrrrrrr\nyilifaerrrrrr\nyilifaerrrrr\nyilifaerrr\nyilifaerr\nStream Sarum\n"
+        text = "Pilot A\nPilot C\nExample FC\nPilot Cccccc\nPilot Ccccc\nPilot Ccc\nPilot Cc\nPilot B\n"
         lines, warnings = parse_roster(text)
 
         self.assertEqual(warnings, [])
         self.assertEqual(
             names(lines),
             [
-                "Sally en Chalune",
-                "yilifaer",
-                "yilifaerrrrrrr",
-                "yilifaerrrrrr",
-                "yilifaerrrrr",
-                "yilifaerrr",
-                "yilifaerr",
-                "Stream Sarum",
+                "Pilot A",
+                "Pilot C",
+                "Example FC",
+                "Pilot Cccccc",
+                "Pilot Ccccc",
+                "Pilot Ccc",
+                "Pilot Cc",
+                "Pilot B",
             ],
         )
         self.assertTrue(all(line.source == SOURCE_NAME_LIST for line in lines))
@@ -233,30 +233,30 @@ class NameListTests(SimpleTestCase):
 class ChatLogTests(SimpleTestCase):
     def test_speakers_are_taken_from_chat_lines(self):
         text = (
-            "[12:18:36] Sally en Chalune > o7\n"
-            "[12:18:40] Stream Sarum > x up\n"
-            "[ 2026.10.12 12:19:02 ] yilifaerr > 舰队集合\n"
+            "[12:18:36] Pilot A > o7\n"
+            "[12:18:40] Pilot B > x up\n"
+            "[ 2026.10.12 12:19:02 ] Pilot Cc > 舰队集合\n"
         )
         lines, warnings = parse_roster(text)
 
         self.assertEqual(warnings, [])
-        self.assertEqual(names(lines), ["Sally en Chalune", "Stream Sarum", "yilifaerr"])
+        self.assertEqual(names(lines), ["Pilot A", "Pilot B", "Pilot Cc"])
         self.assertTrue(all(line.source == SOURCE_CHAT_LOG for line in lines))
         self.assertEqual([line.line_no for line in lines], [1, 2, 3])
         self.assertEqual(lines[0].location, "")
 
     def test_repeated_speakers_are_kept_once_without_warning(self):
-        text = "[12:18:36] Sally en Chalune > o7\n[12:18:37] sally en chalune > x\n[12:18:38] Sally en Chalune > again\n"
+        text = "[12:18:36] Pilot A > o7\n[12:18:37] pilot a > x\n[12:18:38] Pilot A > again\n"
         lines, warnings = parse_roster(text)
 
-        self.assertEqual(names(lines), ["Sally en Chalune"])
+        self.assertEqual(names(lines), ["Pilot A"])
         self.assertEqual(warnings, [])
 
     def test_message_text_with_arrows_and_tabs(self):
-        text = "[12:18:36] Stream Sarum > align > gate\tnow\n[12:18:37] Empty Message >\n"
+        text = "[12:18:36] Pilot B > align > gate\tnow\n[12:18:37] Empty Message >\n"
         lines, _ = parse_roster(text)
 
-        self.assertEqual(names(lines), ["Stream Sarum", "Empty Message"])
+        self.assertEqual(names(lines), ["Pilot B", "Empty Message"])
         self.assertEqual(lines[0].source, SOURCE_CHAT_LOG)
 
     def test_system_messages_are_skipped(self):
@@ -303,10 +303,10 @@ class ChatLogTests(SimpleTestCase):
 
 class DedupeAndLimitTests(SimpleTestCase):
     def test_duplicates_are_case_insensitive_and_first_wins(self):
-        text = CHINESE_FLEET + "SALLY EN CHALUNE\nstream  sarum\nNew Pilot\n"
+        text = CHINESE_FLEET + "PILOT A\npilot  b\nNew Pilot\n"
         lines, warnings = parse_roster(text)
 
-        self.assertEqual(names(lines), ["Sally en Chalune", "yilifaerrrrrrr", "Stream Sarum", "New Pilot"])
+        self.assertEqual(names(lines), ["Pilot A", "Example FC", "Pilot B", "New Pilot"])
         self.assertEqual(lines[0].source, SOURCE_FLEET)
         self.assertEqual(lines[0].ship_type, "Ragnarok")
         self.assertEqual(warnings, ["Skipped 2 duplicate names."])
@@ -317,7 +317,7 @@ class DedupeAndLimitTests(SimpleTestCase):
         self.assertEqual(warnings, ["Skipped 1 duplicate name."])
 
     def test_similar_names_are_not_merged(self):
-        lines, _ = parse_roster("yilifaer\nyilifaerr\nyilifaerrr\n")
+        lines, _ = parse_roster("Pilot C\nPilot Cc\nPilot Ccc\n")
 
         self.assertEqual(len(lines), 3)
 
@@ -364,7 +364,7 @@ class InvalidNameTests(SimpleTestCase):
         self.assertEqual(lines[1].error, "Character names are at most 37 characters long.")
 
     def test_fleet_row_with_spaces_instead_of_tabs_is_invalid(self):
-        lines, _ = parse_roster("Sally en Chalune HY-RWO (已停靠) Ragnarok Titan 中队队员 5 - 5 - 5 联队1 / 中队1\n")
+        lines, _ = parse_roster("Pilot A Jita (已停靠) Ragnarok Titan 中队队员 5 - 5 - 5 联队1 / 中队1\n")
 
         self.assertEqual(len(lines), 1)
         self.assertFalse(lines[0].is_valid)
@@ -385,17 +385,17 @@ class InvalidNameTests(SimpleTestCase):
 
 class MixedPasteTests(SimpleTestCase):
     def test_fleet_composition_with_names_typed_below(self):
-        lines, warnings = parse_roster(CHINESE_FLEET + "\nyilifaer\nyilifaerr\n")
+        lines, warnings = parse_roster(CHINESE_FLEET + "\nPilot C\nPilot Cc\n")
 
         self.assertEqual(warnings, [])
         self.assertEqual(
             [(line.name, line.source) for line in lines],
             [
-                ("Sally en Chalune", SOURCE_FLEET),
-                ("yilifaerrrrrrr", SOURCE_FLEET),
-                ("Stream Sarum", SOURCE_FLEET),
-                ("yilifaer", SOURCE_NAME_LIST),
-                ("yilifaerr", SOURCE_NAME_LIST),
+                ("Pilot A", SOURCE_FLEET),
+                ("Example FC", SOURCE_FLEET),
+                ("Pilot B", SOURCE_FLEET),
+                ("Pilot C", SOURCE_NAME_LIST),
+                ("Pilot Cc", SOURCE_NAME_LIST),
             ],
         )
         self.assertEqual([line.line_no for line in lines], [1, 2, 3, 5, 6])
@@ -409,24 +409,24 @@ class MixedPasteTests(SimpleTestCase):
 
 class HelperTests(SimpleTestCase):
     def test_clean_name(self):
-        self.assertEqual(clean_name("  Sally   en\tChalune​ "), "Sally en Chalune")
+        self.assertEqual(clean_name("  Pilot\u00a0 A\tOne\u200b "), "Pilot A One")
         self.assertEqual(clean_name(""), "")
         self.assertEqual(clean_name(None), "")
 
     def test_name_key(self):
-        self.assertEqual(name_key(" Stream  SARUM "), "stream sarum")
-        self.assertEqual(name_key("Stream Sarum"), name_key("stream sarum"))
+        self.assertEqual(name_key(" PILOT  b "), "pilot b")
+        self.assertEqual(name_key("Pilot B"), name_key("pilot b"))
 
     def test_name_error(self):
-        self.assertEqual(name_error("Stream Sarum"), "")
+        self.assertEqual(name_error("Pilot B"), "")
         self.assertEqual(name_error("中队队员"), "")
         self.assertNotEqual(name_error("x" * 38), "")
         self.assertNotEqual(name_error("a > b"), "")
 
     def test_roster_line_key_and_defaults(self):
-        line = RosterLine(name="Stream Sarum")
+        line = RosterLine(name="Pilot B")
 
-        self.assertEqual(line.key, "stream sarum")
+        self.assertEqual(line.key, "pilot b")
         self.assertTrue(line.is_valid)
         self.assertEqual(line.source, SOURCE_NAME_LIST)
         self.assertFalse(line.docked)

@@ -306,14 +306,17 @@ class ClaimsFileTests(ExportTestCase):
         self.assertEqual(response["Cache-Control"], "private, no-store")
         rows = csv_rows(response)
         self.assertEqual(rows[0][:3], ["Claim", "Loss time (EVE)", "Pilot (main)"])
-        self.assertEqual(len(rows), 9)
+        # The header, the eight claims and the total.
+        self.assertEqual(len(rows), 10)
+        self.assertEqual(rows[-1][0], "Total")
 
     def test_the_workbook_has_the_rows_and_the_about_sheet(self):
         response = self.download(self.manager, "srp-claims", fmt="xlsx")
 
         self.assertEqual(response.status_code, 200)
         sheet = workbook_rows(response)
-        self.assertEqual(len(sheet), 9)
+        self.assertEqual(len(sheet), 10)
+        self.assertEqual(sheet[-1][0], "Total")
         about = {row[0]: row[1] for row in workbook_rows(response, "xl/worksheets/sheet2.xml") if len(row) > 1}
         self.assertEqual(about["Dataset"], "SRP claims")
 
@@ -322,8 +325,10 @@ class ClaimsFileTests(ExportTestCase):
             rows = csv_rows(self.download(self.manager, "srp-claims"))
             note = exports.truncation_note()
 
-        self.assertEqual(len(rows), 1 + 3 + 1)
-        self.assertEqual(rows[-1], [note])
+        # The header, three claims, the note and the total of all claims.
+        self.assertEqual(len(rows), 1 + 3 + 1 + 1)
+        self.assertEqual(rows[-2], [note])
+        self.assertEqual(rows[-1][0], "Total")
 
     def test_the_number_of_queries_does_not_grow_with_the_claims(self):
         def queries():

@@ -107,6 +107,21 @@ python tools/check_docs.py
   (`SPDX-FileCopyrightText` and `SPDX-License-Identifier: GPL-3.0-only`); `tests/test_license_headers.py`
   checks it. Templates, migrations and documents have none.
 
+### Checking the interface
+
+Every page has to look right in every Alliance Auth theme and on a phone. Two checks belong together and are
+described in [tools/ui_check/README.md](tools/ui_check/README.md):
+
+- `python tools/check_ui.py --strict` finds forbidden classes, colours and theme variables in the sources. It needs
+  nothing but Python, and the CI runs it.
+- `node tools/ui_check/run.js --python .venv/bin/python` opens every page in a real browser (five themes, three
+  widths, English and Chinese, the interaction states such as menus, dialogs, drag and the previews) and reports
+  contrast, clipped text, overflow, touch size, focus rings and missing names. Run it before a release (see
+  [docs/releasing.md](docs/releasing.md)) and look at the screenshots at 375 px yourself.
+
+New interface text and colours use the tokens and components of the FleetOps stylesheet (pills, `fo-` classes); do not
+write colours or Bootstrap utility classes that only look right in one theme.
+
 ### Text and translations
 
 All text people read is translatable. The rules are short:
@@ -121,8 +136,9 @@ All text people read is translatable. The rules are short:
   results, automatic SRP decisions) is stored in English. Declare it in `fleetops/texts.py` with `StoredText`;
   pages show it through `translate_stored()` or the `stored_text` template filter. Do not store lazy strings
   in the database, the cache, JSON or Celery arguments.
-- Discord pings and in-game MOTDs are written in the site language (`outgoing_language()`), not in the
-  language of the user who clicked.
+- Discord pings and in-game MOTDs are always English: render them inside `outgoing_language()`, write FleetOps's
+  own words in them as plain English and never mark them for translation. Text that administrators write in a
+  template is sent as written.
 - Templates use `{% translate %}` and `{% blocktranslate %}`; static JavaScript uses `gettext()`,
   `ngettext()` and `interpolate()`.
 - The term is "PAP". Ship and solar system names stay English everywhere.

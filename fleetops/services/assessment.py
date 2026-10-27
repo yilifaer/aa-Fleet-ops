@@ -5,7 +5,8 @@
 
 A target row applies from its month (EVE time) until the next row. Statuses follow one colour rule for
 corporations and members: green when reached, amber while the month still runs, red only for a finished
-month that missed the target.
+month that missed the target. A month without an applicable row (before the first one, or none at all) is
+not assessed: no status, no inactive members, a member minimum of 0.
 """
 
 from __future__ import annotations
@@ -19,8 +20,6 @@ from django.utils.translation import gettext_lazy, pgettext_lazy
 
 from fleetops.models import StatisticsTarget
 from fleetops.services.periods import MonthRef
-
-DEFAULT_MEMBER_MINIMUM = 1
 
 # Corporation statuses.
 MET = "met"
@@ -55,20 +54,24 @@ def status_label(status: str) -> str:
 class MonthTarget:
     # Average PAP per main a corporation needs; None = no target.
     average: Decimal | None
-    # PAP a member needs; 0 = nobody is listed as inactive.
+    # PAP a member needs; 0 = nobody is listed as inactive (also without a rule).
     minimum: int
     rule: StatisticsTarget | None = None
 
 
 def month_target(year: int, month: int) -> MonthTarget:
-    """The target row with the latest month up to the given one; without a row there is no target and the minimum is 1."""
+    """The target row with the latest month up to the given one.
+
+    Without a row (a month before the first target, or no target ever set) nothing is assessed: no corporation
+    average, a member minimum of 0 and ``rule`` None.
+    """
     rule = (
         StatisticsTarget.objects.filter(Q(year__lt=year) | Q(year=year, month__lte=month))
         .order_by("-year", "-month")
         .first()
     )
     if rule is None:
-        return MonthTarget(average=None, minimum=DEFAULT_MEMBER_MINIMUM, rule=None)
+        return MonthTarget(average=None, minimum=0, rule=None)
     return MonthTarget(average=rule.corporation_average_target, minimum=rule.member_minimum_pap, rule=rule)
 
 

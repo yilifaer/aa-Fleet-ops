@@ -5,7 +5,8 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
-"Report-Msgid-Bugs-To: https://github.com/yilifaer/aa-fleetops/issues\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-10-27 09:50+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -179,9 +180,9 @@ msgstr "请求被拒绝。你的会话可能已过期 —— 请重新加载页�
 msgid "The server answered with HTTP %(status)s. Try again in a moment."
 msgstr "服务器返回了 HTTP %(status)s。请稍后重试。"
 
-#: static/fleetops/fleet_live.js
-msgid "Close"
-msgstr "关闭"
+#: static/fleetops/fleet_tools.js
+msgid "Searching…"
+msgstr "正在搜索…"
 
 #: static/fleetops/fleet_tools.js
 msgid "Invite %(count)s"
@@ -238,10 +239,6 @@ msgstr "显示前 %(count)s 个。输入更多的名称可以缩小搜索范围�
 #: static/fleetops/fleet_tools.js
 msgid "Type at least %(count)s letters, or clear the search to list your own characters."
 msgstr "请至少输入 %(count)s 个字母，或清空搜索框以列出你自己的角色。"
-
-#: static/fleetops/fleet_tools.js
-msgid "Searching…"
-msgstr "正在搜索…"
 
 #: static/fleetops/fleet_tools.js
 msgid "The search failed. Reload the page if this keeps happening."
@@ -347,9 +344,10 @@ msgstr "%(hours)s 小时 %(minutes)s 分钟"
 msgid "%(minutes)s min"
 msgstr "%(minutes)s 分钟"
 
-#: static/fleetops/fleetops.js static/fleetops/start_fleet.js
+#: static/fleetops/fleetops.js static/fleetops/send_ping.js
+#: static/fleetops/start_fleet.js
 msgid "in %(duration)s"
-msgstr "%(duration)s 后"
+msgstr "%(duration)s后"
 
 #: static/fleetops/fleetops.js
 msgid "now"
@@ -357,7 +355,7 @@ msgstr "现在"
 
 #: static/fleetops/fleetops.js
 msgid "%(duration)s ago"
-msgstr "%(duration)s 前"
+msgstr "%(duration)s前"
 
 #: static/fleetops/fleetops.js
 msgctxt "fleet position"
@@ -399,13 +397,45 @@ msgstr "舰队 %(fleet_id)s —— 职位：%(role)s —— 舰队 Boss"
 msgid "Fleet %(fleet_id)s — %(message)s"
 msgstr "舰队 %(fleet_id)s —— %(message)s"
 
-#: static/fleetops/srp.js
+#: static/fleetops/fleetops.js
+msgid "Close"
+msgstr "关闭"
+
+#: static/fleetops/fleetops.js static/fleetops/srp.js
 msgid "Copied"
 msgstr "已复制"
 
-#: static/fleetops/srp.js
+#: static/fleetops/fleetops.js static/fleetops/srp.js
 msgid "Copy failed"
 msgstr "复制失败"
+
+#: static/fleetops/send_ping.js static/fleetops/start_fleet.js
+msgid "Post this ping to %(channel)s? It notifies %(targets)s. A posted ping cannot be taken back."
+msgstr "要把这条 Ping 发到 %(channel)s 吗？它会提醒 %(targets)s。发出的 Ping 无法撤回。"
+
+#: static/fleetops/send_ping.js static/fleetops/start_fleet.js
+msgid "Post this ping to %(channel)s? It notifies nobody. A posted ping cannot be taken back."
+msgstr "要把这条 Ping 发到 %(channel)s 吗？它不会提醒任何人。发出的 Ping 无法撤回。"
+
+#: static/fleetops/send_ping.js static/fleetops/start_fleet.js
+msgid "This time has already passed."
+msgstr "这个时间已经过去了。"
+
+#: static/fleetops/send_ping.js static/fleetops/start_fleet.js
+msgid "Missing: %(fields)s"
+msgstr "缺少：%(fields)s"
+
+#: static/fleetops/send_ping.js static/fleetops/start_fleet.js
+msgid "Check the highlighted fields."
+msgstr "请检查高亮的字段。"
+
+#: static/fleetops/send_ping.js static/fleetops/start_fleet.js
+msgid "Ping %(length)s / %(limit)s"
+msgstr "Ping %(length)s / %(limit)s"
+
+#: static/fleetops/send_ping.js static/fleetops/start_fleet.js
+msgid "Complete the form to render a preview."
+msgstr "填完表单后才会生成预览。"
 
 #: static/fleetops/srp.js
 msgid "Reason required: the amount differs from the suggested amount."
@@ -420,28 +450,8 @@ msgid "Not needed for a pre ping."
 msgstr "预 Ping 不需要。"
 
 #: static/fleetops/start_fleet.js
-msgid "This time has already passed."
-msgstr "这个时间已经过去了。"
-
-#: static/fleetops/start_fleet.js
-msgid "Missing: %(fields)s"
-msgstr "缺少：%(fields)s"
-
-#: static/fleetops/start_fleet.js
-msgid "Check the highlighted fields."
-msgstr "请检查高亮的字段。"
-
-#: static/fleetops/start_fleet.js
-msgid "Ping %(length)s / %(limit)s"
-msgstr "Ping %(length)s / %(limit)s"
-
-#: static/fleetops/start_fleet.js
-msgid "MOTD %(length)s characters"
-msgstr "MOTD %(length)s 个字符"
-
-#: static/fleetops/start_fleet.js
-msgid "Complete the form to render a preview."
-msgstr "填完表单后才会生成预览。"
+msgid "MOTD %(visible)s visible, %(length)s with tags"
+msgstr "MOTD 可见 %(visible)s 个字符，含标签 %(length)s 个"
 
 #: static/fleetops/start_fleet.js
 msgid "A preset named \"%(name)s\" exists. Overwrite?"

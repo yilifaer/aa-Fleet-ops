@@ -1,18 +1,20 @@
 {% extends "fleetops/base.html" %}
-{% load i18n static fleetops_i18n fleetops_srp fleetops_messages %}
+{% load i18n static fleetops_i18n fleetops_srp fleetops_messages fleetops_ui %}
 {% block fleetops_content %}
 {% translate "System" context "automatic actor" as system_actor %}
 <div class="d-flex flex-wrap align-items-start gap-3 mb-3">
-  <img class="fleetops-srp-ship" src="{% ship_render_url claim.ship_type_id 64 %}" width="64" height="64" alt="" loading="lazy">
+  <img class="fo-render" src="{% ship_render_url claim.ship_type_id 64 %}" width="64" height="64" alt="" loading="lazy">
   <div class="flex-grow-1">
-    <h2 class="mb-1">{{ claim.reference }} {{ claim|srp_status_badge }}{% if claim.auto_rejected %} <span class="badge text-bg-secondary">{% translate "Automatic" %}</span>{% endif %}</h2>
+    <h2 class="mb-1">{{ claim.reference }} {{ claim|srp_status_badge }}{% if claim.auto_rejected %} {% pill "neutral" _("Automatic") %}{% endif %}</h2>
     <div class="text-muted">{% blocktranslate trimmed with ship=claim.ship_type_name|default:claim.ship_type_id time=claim.killmail_time|eve_time pilot=claim.character_name %}{{ ship }} lost {{ time }} EVE &middot; {{ pilot }}{% endblocktranslate %}</div>
   </div>
   <div class="text-end">
-    {% if claim.status == "approved" or claim.status == "paid" %}<div class="text-muted small">{% if claim.status == "paid" %}{% translate "Paid" %}{% else %}{% translate "Approved" context "FleetOps" %}{% endif %}</div><div class="fs-4 fw-semibold">{{ claim.approved_amount|isk }}</div>
-    {% elif claim.status == "pending" %}<div class="text-muted small">{% translate "Requested" %}</div><div class="fs-4 fw-semibold">{{ claim.suggested_amount|isk }}</div>{% if claim.limited_amount != claim.suggested_amount %}<div class="small text-muted">{% translate "Within limits:" %} <span{% if claim.over_limit %} class="text-danger fw-semibold"{% endif %}>{{ claim.limited_amount|isk }}</span></div>{% endif %}{% endif %}
+    {% if claim.status == "approved" or claim.status == "paid" %}<div class="text-muted small">{% if claim.status == "paid" %}{% translate "Paid" %}{% else %}{% translate "Approved" context "FleetOps" %}{% endif %}</div><div class="fo-claim-amount">{{ claim.approved_amount|isk }}</div>
+    {% elif claim.status == "pending" %}<div class="text-muted small">{% translate "Requested" %}</div><div class="fo-claim-amount">{{ claim.suggested_amount|isk }}</div>{% if claim.limited_amount != claim.suggested_amount %}<div class="small text-muted">{% translate "Within limits:" %} <span{% if claim.over_limit %} class="text-danger fw-semibold"{% endif %}>{{ claim.limited_amount|isk }}</span></div>{% endif %}{% endif %}
   </div>
 </div>
+
+{% include "fleetops/srp/_claim_steps.html" %}
 
 {% if claim.decision_reason and claim.status != "pending" %}
 <div class="alert {% if claim.status == 'rejected' %}alert-danger{% else %}alert-secondary{% endif %}">
@@ -126,24 +128,26 @@
 
 <div class="card mb-3">
   <div class="card-header"><strong>{% translate "History" %}</strong></div>
-  <ul class="list-group list-group-flush fleetops-srp-timeline">
-    {% for event in events %}
-    <li class="list-group-item">
-      <div class="d-flex flex-wrap justify-content-between gap-2">
-        <strong>{{ event.get_action_display }}{% if event.internal %} <span class="badge text-bg-secondary">{% translate "Internal note" %}</span>{% endif %}</strong>
-        <span class="text-muted small">{{ event.created_at|eve_time }} EVE</span>
-      </div>
-      <div class="small text-muted">
-        {% if is_manager %}{{ event.actor|default:system_actor }}{% else %}{{ event|srp_actor:user }}{% endif %}
-        {% if event.from_status or event.to_status %}&middot; {% if event.from_status %}{{ event.from_status|srp_status_label }} &rarr; {% endif %}{{ event.to_status|srp_status_label }}{% endif %}
-        {% if event.amount is not None %}&middot; {{ event.amount|isk }}{% endif %}
-      </div>
-      {% if event.reason %}<div>{{ event.reason|stored_text|linebreaksbr }}</div>{% endif %}
-    </li>
-    {% empty %}
-    <li class="list-group-item text-muted">{% translate "Nothing has happened to this claim yet." %}</li>
-    {% endfor %}
-  </ul>
+  <div class="card-body">
+    <ul class="fo-timeline fleetops-srp-timeline mb-0">
+      {% for event in events %}
+      <li>
+        <div class="d-flex flex-wrap justify-content-between gap-2">
+          <strong>{{ event.get_action_display }}{% if event.internal %} {% pill "neutral" _("Internal note") %}{% endif %}</strong>
+          <span class="small">{% eve_when event.created_at %}</span>
+        </div>
+        <div class="small text-muted">
+          {% if is_manager %}{{ event.actor|default:system_actor }}{% else %}{{ event|srp_actor:user }}{% endif %}
+          {% if event.from_status or event.to_status %}&middot; {% if event.from_status %}{{ event.from_status|srp_status_label }} &rarr; {% endif %}{{ event.to_status|srp_status_label }}{% endif %}
+          {% if event.amount is not None %}&middot; {{ event.amount|isk }}{% endif %}
+        </div>
+        {% if event.reason %}<div>{{ event.reason|stored_text|linebreaksbr }}</div>{% endif %}
+      </li>
+      {% empty %}
+      <li class="text-muted">{% translate "Nothing has happened to this claim yet." %}</li>
+      {% endfor %}
+    </ul>
+  </div>
 </div>
 <a class="btn btn-outline-secondary" href="{% if is_owner %}{% url 'fleetops:srp_home' %}{% elif is_manager %}{% url 'fleetops:srp_review' %}{% else %}{% url 'fleetops:dashboard' %}{% endif %}">{% if is_owner %}{% translate "Back to My SRP" %}{% elif is_manager %}{% translate "Back to the review queue" %}{% else %}{% translate "Back" %}{% endif %}</a>
 <script src="{% static 'fleetops/srp.js' %}?v={{ fleetops_version }}" defer></script>

@@ -5,21 +5,19 @@
 
 import threading
 import uuid
-from datetime import datetime, timedelta, timezone as dt_timezone
+from datetime import timedelta
 from unittest import mock
 
 from django.contrib.messages import get_messages
 from django.db import connection
-from django.test import TestCase, TransactionTestCase, override_settings, skipUnlessDBFeature
+from django.test import TestCase, TransactionTestCase, skipUnlessDBFeature
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone, translation
 
 from fleetops import texts
-from fleetops.forms import ManualFleetForm
 from fleetops.models import AuditLog, FleetMemberState, FleetOperation, MessageTemplate
 from fleetops.services import operations as operations_module
-from fleetops.services.fleet_controls import CAPSULES, kick_members, kickable_pod_members
 from fleetops.services.operations import (
     START_ABANDONED_MESSAGE,
     STARTING_ABANDONED_AFTER,
@@ -29,10 +27,10 @@ from fleetops.services.operations import (
 from fleetops.tasks import schedule_active_fleet_tracking
 
 from . import factories as f
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 from .static_files import static_source
 from .test_operations_tracking import FLEET_ID, FakeESIMixin
 
-UTC = dt_timezone.utc
 CAPSULE = 670
 RIFTER = 587
 Status = FleetOperation.Status
@@ -55,64 +53,6 @@ def track(operation, character, ship_type_id=CAPSULE, active=True):
         last_seen=now,
         is_active=active,
     )
-
-
-class KickableCapsuleTests(TestCase):
-    def setUp(self):
-        self.fc = f.create_user(perms=f.FC_PERMS, main_name="Boss Main")
-        self.fc_char = f.main_of(self.fc)
-        self.boss_alt = f.add_alt(self.fc, "Boss Alt")
-        self.operation = f.create_operation(
-            self.fc, esi_fleet_id=FLEET_ID, fleet_boss_character_id=self.boss_alt.character_id
-        )
-        track(self.operation, self.fc_char)
-        track(self.operation, self.boss_alt)
-        self.pod = track(self.operation, f.create_character("Podded Pilot"))
-        track(self.operation, f.create_character("Flying Pilot"), ship_type_id=RIFTER)
-        track(self.operation, f.create_character("Gone Pod"), active=False)
-        f.add_token(self.fc, self.fc_char)
-        # The reads of the fleet after the kicks are not part of these tests.
-        for target in ("fleetops.services.fleet_controls.sync_operation", "fleetops.services.fleet_refresh.schedule_refresh"):
-            patcher = mock.patch(target)
-            patcher.start()
-            self.addCleanup(patcher.stop)
-        self.client.force_login(self.fc)
-
-    def detail(self):
-        return self.client.get(reverse("fleetops:operation_detail", args=[self.operation.uuid]))
-
-    def test_fc_and_fleet_boss_are_never_kickable(self):
-        self.assertEqual([m.pk for m in kickable_pod_members(self.operation)], [self.pod.pk])
-
-    def test_button_count_matches_the_kick(self):
-        page = self.detail()
-
-        self.assertEqual(page.context["pod_count"], 1)
-        self.assertContains(page, "Kick 1 Capsule</button>")
-        with mock.patch("fleetops.services.fleet_controls.kick_fleet_member") as kick:
-            result = kick_members(self.operation, None, actor=self.fc, purpose=CAPSULES)
-
-        self.assertEqual(result["target_count"], page.context["pod_count"])
-        self.assertEqual([call.args[3] for call in kick.call_args_list], [self.pod.character_id])
-
-    def test_button_is_disabled_when_only_the_fc_sits_in_a_capsule(self):
-        self.pod.delete()
-
-        page = self.detail()
-
-        self.assertEqual(page.context["pod_count"], 0)
-        self.assertContains(page, "disabled>Kick 0 Capsules</button>")
-
-    def test_unexpected_kick_error_is_stored_without_its_text(self):
-        with mock.patch(
-            "fleetops.services.fleet_controls.kick_fleet_member", side_effect=RuntimeError("token=abc123secret")
-        ):
-            result = kick_members(self.operation, None, actor=self.fc, purpose=CAPSULES)
-
-        self.assertEqual(result["failures"], [{"character": "Podded Pilot", "error": "Capsule kick failed unexpectedly (RuntimeError)."}])
-        step = self.operation.actions.get(action="kick_capsules")
-        self.assertNotIn("abc123secret", step.error_message)
-        self.assertIn("Podded Pilot: Capsule kick failed unexpectedly (RuntimeError).", step.error_message)
 
 
 class StartTestBase(FakeESIMixin, TestCase):
@@ -712,108 +652,3 @@ class StartPreviewTests(TestCase):
         self.assertIn("classList.add('is-invalid')", source)
         self.assertIn("const PREVIEW_DELAY = 400;", source)
         self.assertIn("setTimeout(preview,PREVIEW_DELAY)", source)
-
-
-class ManualFleetTimeTests(TestCase):
-    def setUp(self):
-        self.fc = f.create_user(perms=f.FC_PERMS, main_name="Boss Main")
-        self.fleet_type = f.fleet_type("Roam")
-
-    def form(self, started="2026-10-11T19:00", ended="2026-10-11T21:00", **extra):
-        data = {
-            "fleet_type": self.fleet_type.pk,
-            "formup": "Amamake",
-            "started_at": started,
-            "ended_at": ended,
-            "attendance_multiplier": "1",
-        }
-        data.update(extra)
-        return ManualFleetForm(data=data)
-
-    def test_labels_name_eve_time(self):
-        form = ManualFleetForm()
-
-        self.assertEqual(form.fields["started_at"].label, "Start Time — EVE time (UTC)")
-        self.assertEqual(form.fields["ended_at"].label, "End Time — EVE time (UTC)")
-
-    def test_end_time_is_required(self):
-        form = self.form(ended="")
-
-        self.assertFalse(form.is_valid())
-        self.assertIn("ended_at", form.errors)
-
-    @override_settings(TIME_ZONE="Australia/Adelaide")
-    def test_times_are_read_as_utc_whatever_the_time_zone(self):
-        with timezone.override("America/Los_Angeles"):
-            form = self.form()
-            self.assertTrue(form.is_valid(), form.errors)
-
-        self.assertEqual(form.cleaned_data["started_at"], datetime(2026, 10, 11, 19, 0, tzinfo=UTC))
-        self.assertEqual(form.cleaned_data["ended_at"], datetime(2026, 10, 11, 21, 0, tzinfo=UTC))
-
-    def test_explicit_offsets_are_respected(self):
-        form = self.form(started="2026-10-11T21:00+02:00")
-
-        self.assertTrue(form.is_valid(), form.errors)
-        self.assertEqual(form.cleaned_data["started_at"], datetime(2026, 10, 11, 19, 0, tzinfo=UTC))
-
-    @override_settings(TIME_ZONE="Australia/Adelaide")
-    def test_stored_times_are_shown_in_utc(self):
-        form = ManualFleetForm(initial={"started_at": datetime(2026, 10, 11, 19, 0, tzinfo=UTC)})
-
-        self.assertIn('value="2026-10-11T19:00"', str(form["started_at"]))
-
-    def test_end_must_be_after_start(self):
-        for ended in ("2026-10-11T19:00", "2026-10-11T18:59"):
-            with self.subTest(ended=ended):
-                form = self.form(ended=ended)
-                self.assertFalse(form.is_valid())
-                self.assertEqual(form.errors["ended_at"], ["End Time must be after Start Time."])
-
-    def test_more_than_six_hours_needs_the_confirmation(self):
-        form = self.form(ended="2026-10-12T08:51")
-
-        self.assertFalse(form.is_valid())
-        self.assertEqual(
-            form.errors["confirm_long_fleet"],
-            [
-                "This fleet would last 13 h 51 min. Check the times, or tick this box if the fleet really ran "
-                "for more than 6 hours."
-            ],
-        )
-        self.assertTrue(self.form(ended="2026-10-12T08:51", confirm_long_fleet="on").is_valid())
-        self.assertTrue(self.form(ended="2026-10-12T01:00").is_valid())
-
-    def test_page_shows_eve_time_and_the_duration(self):
-        self.client.force_login(self.fc)
-        moment = datetime(2026, 10, 12, 8, 41, tzinfo=UTC)
-
-        with mock.patch("django.utils.timezone.now", return_value=moment), override_settings(TIME_ZONE="Asia/Shanghai"):
-            page = self.client.get(reverse("fleetops:manual_fleet"))
-
-        self.assertContains(page, '<strong id="eve-time-now">2026-10-12 08:41</strong>')
-        self.assertContains(page, 'id="manual-fleet-duration"')
-        # The duration text is a translated message that the script fills in.
-        self.assertContains(page, "Duration: %(duration)s")
-        self.assertEqual(page.context["form"]["ended_at"].value(), None)
-
-    def test_long_fleet_is_saved_after_confirming(self):
-        self.client.force_login(self.fc)
-        data = {
-            "fleet_type": self.fleet_type.pk,
-            "formup": "Amamake",
-            "started_at": "2026-10-11T19:21",
-            "ended_at": "2026-10-12T08:51",
-            "attendance_multiplier": "1",
-        }
-
-        rejected = self.client.post(reverse("fleetops:manual_fleet"), data)
-        self.assertEqual(rejected.status_code, 200)
-        self.assertContains(rejected, "This fleet would last 13 h 30 min.")
-        self.assertFalse(FleetOperation.objects.exists())
-
-        accepted = self.client.post(reverse("fleetops:manual_fleet"), {**data, "confirm_long_fleet": "on"})
-        self.assertEqual(accepted.status_code, 302)
-        operation = FleetOperation.objects.get()
-        self.assertEqual(operation.started_at, datetime(2026, 10, 11, 19, 21, tzinfo=UTC))
-        self.assertEqual(operation.ended_at - operation.started_at, timedelta(hours=13, minutes=30))

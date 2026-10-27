@@ -331,7 +331,8 @@ class FleetPageMessagesTests(TestCase):
         content = self.page(operation)
 
         self.assertIn(f'action="{reverse("fleetops:regenerate_motd", args=[operation.uuid])}" id="regenerate-motd"', content)
-        self.assertIn("return confirm(", content)
+        self.assertIn('data-fo-confirm="Render the MOTD again from the current templates and settings and push it to the fleet?"', content)
+        self.assertNotIn("return confirm(", content)
         self.assertIn('<button class="btn btn-sm btn-outline-primary">Regenerate &amp; Push MOTD</button>', content)
 
     def test_regenerate_button_is_disabled_after_a_boss_handover(self):

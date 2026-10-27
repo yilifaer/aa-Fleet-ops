@@ -51,6 +51,15 @@ class ReviewForm(forms.Form):
         return data
 
 
+class ResubmitForm(forms.Form):
+    """Sending a rejected fleet back for approval: an optional note, and whether its rejected PAP rows go along."""
+
+    note = forms.CharField(label=_("Note"), max_length=255, required=False)
+    include_attendance = forms.BooleanField(
+        label=_("Also send its PAP rows rejected with it back for approval"), required=False, initial=True
+    )
+
+
 class RosterPasteForm(forms.Form):
     text = forms.CharField(
         label=_("Roster"),

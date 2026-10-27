@@ -1,50 +1,58 @@
 {% extends "fleetops/base.html" %}
-{% load i18n fleetops_messages %}
+{% load i18n fleetops_messages fleetops_srp fleetops_ui %}
 {% block fleetops_content %}
+{% translate "Yes" context "FleetOps" as yes_label %}
+{% translate "No" context "FleetOps" as no_label %}
 <h2>{% translate "FC Incentive Review" %}</h2>
 {% include "fleetops/month_selector.html" %}
 {% if pending_multiplier_count or not_counted_count %}
 <div class="alert alert-warning" id="incentive-warnings">
   {% if pending_multiplier_count %}
-  <div><strong>{% blocktranslate trimmed count counter=pending_multiplier_count %}{{ counter }} fleet in this month still waits for the FC's PAP multiplier choice.{% plural %}{{ counter }} fleets in this month still wait for the FC's PAP multiplier choice.{% endblocktranslate %}</strong> {% translate "They count with 1x until the multiplier is chosen; recalculate afterwards." %}</div>
+  <div><strong>{% blocktranslate trimmed count counter=pending_multiplier_count %}{{ counter }} fleet in this month still waits for the FC's PAP multiplier choice.{% plural %}{{ counter }} fleets in this month still wait for the FC's PAP multiplier choice.{% endblocktranslate %}</strong> {% translate "They count with 1x until the multiplier is chosen." %}</div>
   <ul class="mb-1 small">{% for operation in pending_multiplier_operations %}<li><a href="{% url 'fleetops:operation_detail' operation.uuid %}">{% blocktranslate trimmed with fleet_type=operation.fleet_type fc=operation.fc_character_name started=operation.started_at|eve_time %}{{ fleet_type }} · FC {{ fc }} · {{ started }} EVE{% endblocktranslate %}</a></li>{% endfor %}{% if pending_multiplier_count > pending_multiplier_operations|length %}<li>{% blocktranslate trimmed with total=pending_multiplier_count %}… {{ total }} in total{% endblocktranslate %}</li>{% endif %}</ul>
   {% endif %}
   {% if not_counted_count %}<div>{% blocktranslate trimmed count counter=not_counted_count %}{{ counter }} closed fleet in this month is not counted in statistics and incentives.{% plural %}{{ counter }} closed fleets in this month are not counted in statistics and incentives.{% endblocktranslate %}</div>{% endif %}
 </div>
 {% endif %}
 {% if period %}
-<div class="card my-3"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2"><strong>{{ period }}</strong><span class="d-flex align-items-center gap-2">{% include "fleetops/statistics/_export_buttons.html" with dataset="incentives" export_period=period.pk %}<span class="badge bg-secondary">{{ period.get_status_display }}</span></span></div><div class="card-body">
-  <div class="row"><div class="col">{% translate "Budget" %}<br><strong>{{ period.budget }} ISK</strong></div><div class="col">{% translate "Minimum Fleets" %}<br><strong>{{ period.minimum_fleets }}</strong></div></div>
-  <div class="mt-3 d-flex gap-2">
-    {% if period.status != 'finalized' %}<form method="post" action="{% url 'fleetops:incentive_recalculate' period.pk %}">{% csrf_token %}<button class="btn btn-primary">{% translate "Recalculate" %}</button></form>{% endif %}
-    {% if period.status == 'review' %}<form method="post" action="{% url 'fleetops:incentive_finalize' period.pk %}">{% csrf_token %}<button class="btn btn-success">{% translate "Finalize Month" %}</button></form>{% endif %}
-    {% if period.status == 'finalized' %}<form method="post" action="{% url 'fleetops:incentive_unlock' period.pk %}">{% csrf_token %}<button class="btn btn-warning">{% translate "Unlock" %}</button></form>{% endif %}
+{% if numbers_stale %}
+{% if period.status == 'finalized' %}<div class="alert alert-info" id="incentive-stale">{% translate "Finalized numbers are kept; the current FC statistics of this month differ." %}</div>
+{% else %}<div class="alert alert-warning" id="incentive-stale"><strong>{% translate "The numbers differ from the current FC statistics." %}</strong> {% translate "Recalculate to update them." %}</div>{% endif %}
+{% endif %}
+<div class="card my-3"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2"><strong>{{ period }}</strong><span class="d-flex align-items-center gap-2">{% include "fleetops/statistics/_export_buttons.html" with dataset="incentives" export_period=period.pk %}{% pill period_tone period.get_status_display id="period-status" %}</span></div><div class="card-body">
+  <div class="row g-3"><div class="col-6 col-md-3"><div class="text-muted small">{% translate "Budget" %}</div><strong class="fs-5" id="period-budget">{{ period.budget|isk }}</strong></div><div class="col-6 col-md-3"><div class="text-muted small">{% translate "Minimum Fleets" %}</div><strong class="fs-5">{{ period.minimum_fleets }}</strong></div>
+    <div class="col-12 col-md-6" id="period-calculated"><div class="text-muted small">{% translate "Last calculated" %}</div>{% if period.calculated_at %}<strong>{% eve_when period.calculated_at %}</strong>{% else %}<span class="text-muted">{% translate "Not calculated yet" %}</span>{% endif %}</div></div>
+  <div class="mt-3 d-flex flex-wrap gap-2">
+    {% if period.status == 'review' %}<form method="post" action="{% url 'fleetops:incentive_finalize' period.pk %}">{% csrf_token %}<button class="btn btn-primary">{% translate "Finalize Month" %}</button></form>{% endif %}
+    {% if period.status != 'finalized' %}<form method="post" action="{% url 'fleetops:incentive_recalculate' period.pk %}">{% csrf_token %}<button class="btn {% if period.status == 'review' %}btn-outline-secondary{% else %}btn-primary{% endif %}">{% translate "Recalculate" %}</button></form>{% endif %}
+    {% if period.status == 'finalized' %}<form method="post" action="{% url 'fleetops:incentive_unlock' period.pk %}" data-fo-confirm="{% translate 'Unlock this month? Its numbers can change again until it is finalized again.' %}" data-fo-confirm-label="{% translate 'Unlock' %}">{% csrf_token %}<button class="btn btn-outline-danger">{% translate "Unlock" %}</button></form>{% endif %}
   </div>
+  {% if period.status != 'finalized' %}<div class="form-text mt-2">{% translate "The numbers are updated by themselves when a fleet of this month ends or changes." %}</div>{% endif %}
   {% if edit_form %}
   <details class="mt-3" id="incentive-edit"{% if edit_form.errors %} open{% endif %}>
     <summary>{% translate "Edit budget / minimum fleets" %}</summary>
     <form method="post" action="{% url 'fleetops:incentive_update' period.pk %}" class="mt-2">{% csrf_token %}
-      {% if edit_form.non_field_errors %}<div class="alert alert-danger">{{ edit_form.non_field_errors }}</div>{% endif %}
+      {% include "fleetops/partials/form_errors.html" with errors=edit_form.non_field_errors %}
       <div class="row g-2 align-items-start">
-        {% for field in edit_form %}<div class="col-sm-4"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}<div class="text-danger small">{{ field.errors }}</div></div>{% endfor %}
+        {% for field in edit_form %}<div class="col-sm-4"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}{{ field.errors }}</div>{% endfor %}
         <div class="col-sm-4 align-self-end"><button class="btn btn-outline-primary">{% translate "Save" %}</button></div>
       </div>
-      <div class="form-text">{% translate "Saved values apply when the month is recalculated." %}</div>
+      <div class="form-text">{% translate "Saving recalculates the month." %}</div>
     </form>
   </details>
   {% else %}
   <div class="form-text mt-3">{% translate "Unlock the month to change its budget or minimum fleets." %}</div>
   {% endif %}
 </div></div>
-<div class="table-responsive"><table class="table align-middle"><thead><tr><th>FC</th><th>{% translate "Fleets" %}</th><th>{% translate "Points" %}</th><th>{% translate "Eligible" %}</th><th>{% translate "Waived" %}</th><th>{% translate "Payout" %}</th><th></th></tr></thead><tbody>
-{% for row in fc_statistics %}<tr><td>{{ row.fc_user.profile.main_character.character_name|default:row.fc_user.username }}</td><td>{{ row.fleet_count }}</td><td>{{ row.total_points }}</td><td>{{ row.eligible|yesno:_("YES,NO") }}</td><td>{{ row.waived|yesno:_("YES,NO") }}</td><td>{{ row.final_payout }} ISK</td><td>{% if period.status != 'finalized' %}<form method="post" action="{% url 'fleetops:incentive_waiver' period.pk row.fc_user_id %}">{% csrf_token %}<input type="hidden" name="waived" value="{% if row.waived %}0{% else %}1{% endif %}"><button class="btn btn-sm btn-outline-secondary">{% if row.waived %}{% translate "Restore" %}{% else %}{% translate "Waive" %}{% endif %}</button></form>{% endif %}</td></tr>{% empty %}<tr><td colspan="7">{% translate "Recalculate to build monthly FC statistics." %}</td></tr>{% endfor %}
-</tbody></table></div>
+<div class="card"><div class="table-responsive"><table class="table align-middle mb-0 fo-table-pin" id="incentive-table"><thead><tr><th>FC</th><th class="text-end">{% translate "Fleets" %}</th><th class="text-end">{% translate "Points" %}</th><th>{% translate "Eligible" %}</th><th>{% translate "Waived" %}</th><th class="text-end">{% translate "Payout" %}</th><th></th></tr></thead><tbody>
+{% for row in fc_statistics %}<tr><td>{{ row.fc_user.profile.main_character.character_name|default:row.fc_user.username }}</td><td class="text-end">{{ row.fleet_count }}{% if row.toward_minimum < row.fleet_count %}<div class="small text-muted fo-toward-minimum">{% blocktranslate trimmed count fleets=row.fleet_count with toward=row.toward_minimum %}{{ fleets }} fleet · {{ toward }} toward the minimum{% plural %}{{ fleets }} fleets · {{ toward }} toward the minimum{% endblocktranslate %}</div>{% endif %}</td><td class="text-end">{{ row.total_points }}</td><td>{% if row.eligible %}{% pill "ok" yes_label %}{% else %}{% pill "neutral" no_label %}{% endif %}</td><td>{% if row.waived %}{% pill "warn" yes_label %}{% else %}{% pill "neutral" no_label %}{% endif %}</td><td class="text-end">{{ row.final_payout|isk }}</td><td>{% if period.status != 'finalized' %}<form method="post" action="{% url 'fleetops:incentive_waiver' period.pk row.fc_user_id %}">{% csrf_token %}<input type="hidden" name="waived" value="{% if row.waived %}0{% else %}1{% endif %}"><button class="btn btn-sm btn-outline-secondary">{% if row.waived %}{% translate "Restore" %}{% else %}{% translate "Waive" %}{% endif %}</button></form>{% endif %}</td></tr>{% empty %}<tr><td colspan="7"><div class="fo-empty"><i class="fa-solid fa-coins" aria-hidden="true"></i><div>{% translate "No FC has credited fleets in this month yet." %}</div></div></td></tr>{% endfor %}
+</tbody></table></div></div>
 {% else %}
 <div class="card mt-3"><div class="card-header">{% blocktranslate trimmed with year=year month=month|stringformat:"02d" %}Create {{ year }}-{{ month }}{% endblocktranslate %}</div><div class="card-body">
   <form method="post" action="{% url 'fleetops:incentive_review' %}?year={{ year }}&amp;month={{ month }}" id="incentive-create">{% csrf_token %}
     <input type="hidden" name="create_period" value="1">
-    {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
-    {% for field in form %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}<div class="text-danger small">{{ field.errors }}</div></div>{% endfor %}
+    {% include "fleetops/partials/form_errors.html" with errors=form.non_field_errors %}
+    {% for field in form %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}{{ field.errors }}</div>{% endfor %}
     <button class="btn btn-primary">{% translate "Create Period" %}</button>
   </form>
 </div></div>

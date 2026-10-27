@@ -118,7 +118,7 @@ class ChineseTemplateTests(TestCase):
 
         page = self.client.get(reverse("fleetops:preset_list"))
 
-        self.assertContains(page, 'data-confirm="删除预设 Roam &lt;b&gt;？"')
+        self.assertContains(page, 'data-fo-confirm="删除预设 Roam &lt;b&gt;？"')
 
     def test_the_comms_join_page_uses_the_language_of_the_visitor(self):
         preset = CommsPreset.objects.create(name="Alliance Mumble", channel_name="Ops", voice_url="mumble://voice.example.com/ops")

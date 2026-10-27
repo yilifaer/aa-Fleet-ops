@@ -5,6 +5,7 @@
 
 import importlib
 import re
+import uuid
 from datetime import timedelta
 from decimal import Decimal
 from io import StringIO
@@ -12,7 +13,7 @@ from io import StringIO
 from allianceauth import hooks
 from django.apps import apps
 from django.contrib import admin
-from django.contrib.auth.models import AnonymousUser, Permission, User
+from django.contrib.auth.models import AnonymousUser, Group, Permission, User
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.db import IntegrityError, transaction
@@ -26,6 +27,7 @@ from fleetops.auth_hooks import FleetOpsMenu
 from fleetops.constants import (
     DEFAULT_MOTD_TEMPLATE,
     DEFAULT_PING_TEMPLATE,
+    DEFAULT_STANDALONE_PING_TEMPLATE,
     FLEET_READ_SCOPE,
     FLEET_SCOPES,
     FLEET_WRITE_SCOPE,
@@ -45,6 +47,7 @@ from fleetops.models import (
     FleetOpsSettings,
     FleetStartPreset,
     FleetType,
+    GroupAccess,
     IncentivePeriod,
     MessageTemplate,
     MonthlyFCStatistic,
@@ -59,6 +62,7 @@ from fleetops.models import (
     SrpFleetLink,
     SrpKillmail,
     SrpSettings,
+    StandalonePing,
 )
 
 from fleetops.services.mentions import ROLES, MentionSelection, RoleRef, validate_for_channel
@@ -75,6 +79,8 @@ READ_ONLY_ADMIN_MODELS = (
     SrpKillmail,
     SrpClaim,
     SrpClaimEvent,
+    GroupAccess,
+    StandalonePing,
 )
 
 ALL_PERMISSIONS = [
@@ -144,6 +150,7 @@ class FleetOpsSettingsTests(TestCase):
         self.assertEqual(obj.history_alliance_ids, "")
         self.assertTrue(obj.srp_auto_create)
         self.assertEqual(obj.srp_provider, "auto")
+        self.assertEqual(obj.motd_warning_length, 2000)
         self.assertEqual(str(obj), "FleetOps Settings")
 
     def test_get_solo_is_a_singleton(self):
@@ -536,6 +543,159 @@ class ModelDefaultsAndConstraintsTests(TestCase):
         self.assertNotIn(FleetOperation.Status.SCHEDULED, FleetOperation.OPEN_STATUSES)
 
 
+class B2FieldTests(TestCase):
+    """The fields of 0.2.0b2 and the models for group pings and group fleets."""
+
+    def setUp(self):
+        self.fc = f.create_user(perms=f.FC_PERMS)
+
+    def test_new_fields_have_their_defaults(self):
+        operation = f.create_operation(self.fc)
+        period = IncentivePeriod.objects.create(year=2026, month=9)
+        channel = DiscordWebhook.objects.create(name="Ops", webhook_url=WEBHOOK_SECRET)
+
+        self.assertEqual((operation.review_request_note, operation.group_id, operation.group_name), ("", None, ""))
+        self.assertIsNone(period.calculated_at)
+        self.assertTrue(channel.fcs_allowed)
+        self.assertEqual(channel.allowed_groups.count(), 0)
+
+    def test_the_motd_warning_length_is_bounded(self):
+        settings_obj = FleetOpsSettings.get_solo()
+        for value, valid in ((0, True), (2000, True), (100000, True), (100001, False)):
+            settings_obj.motd_warning_length = value
+            with self.subTest(value=value):
+                if valid:
+                    settings_obj.full_clean()
+                else:
+                    with self.assertRaises(ValidationError) as caught:
+                        settings_obj.full_clean()
+                    self.assertIn("motd_warning_length", caught.exception.message_dict)
+
+    def test_the_standalone_template_type_exists(self):
+        template = MessageTemplate.objects.create(
+            template_type=MessageTemplate.TemplateType.STANDALONE, name="Ping", content="{{ sender }}"
+        )
+
+        self.assertEqual(MessageTemplate.TemplateType.STANDALONE.label, "Ping without fleet")
+        self.assertEqual(str(template), "Ping without fleet: Ping")
+        template.full_clean()
+
+    def test_the_default_is_kept_per_template_type(self):
+        first = MessageTemplate.objects.create(template_type="standalone", name="One", content="x", is_default=True)
+        MessageTemplate.objects.create(template_type="standalone", name="Two", content="y", is_default=True)
+
+        first.refresh_from_db()
+        self.assertFalse(first.is_default)
+        self.assertTrue(MessageTemplate.objects.get(template_type="ping", name="Default Ping").is_default)
+
+    def test_group_access_is_one_row_per_group(self):
+        group = Group.objects.create(name="Sig A")
+        access = GroupAccess.objects.create(group=group)
+
+        self.assertEqual((access.mode, access.srp_enabled, access.is_active), (GroupAccess.Mode.PING, False, True))
+        self.assertEqual(str(access), "Sig A")
+        self.assertEqual(group.fleetops_access, access)
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            GroupAccess.objects.create(group=group)
+
+    def test_group_access_is_ordered_by_group_name_and_goes_with_its_group(self):
+        for name in ("Sig C", "Sig A", "Sig B"):
+            GroupAccess.objects.create(group=Group.objects.create(name=name))
+
+        self.assertEqual([str(access) for access in GroupAccess.objects.all()], ["Sig A", "Sig B", "Sig C"])
+        Group.objects.get(name="Sig B").delete()
+        self.assertEqual(GroupAccess.objects.count(), 2)
+
+    def test_the_fleet_types_of_a_group_are_kept_when_the_mode_changes(self):
+        access = GroupAccess.objects.create(group=Group.objects.create(name="Sig A"), mode="fleets")
+        fleet_type = f.fleet_type("Group Type")
+        access.fleet_types.add(fleet_type)
+
+        access.mode = GroupAccess.Mode.PING
+        access.save()
+
+        access.refresh_from_db()
+        self.assertEqual(list(access.fleet_types.all()), [fleet_type])
+        self.assertEqual(list(fleet_type.group_accesses.all()), [access])
+
+    def test_a_fleet_type_in_use_by_a_group_can_still_be_deleted(self):
+        access = GroupAccess.objects.create(group=Group.objects.create(name="Sig A"), mode="fleets")
+        fleet_type = FleetType.objects.create(name="Spare", short_name="SP")
+        access.fleet_types.add(fleet_type)
+
+        fleet_type.delete()
+
+        self.assertEqual(access.fleet_types.count(), 0)
+
+    def test_a_group_fleet_keeps_its_group_name_when_the_group_is_deleted(self):
+        group = Group.objects.create(name="Sig A")
+        operation = f.create_operation(self.fc, group=group, group_name=group.name)
+
+        group.delete()
+
+        operation.refresh_from_db()
+        self.assertEqual((operation.group_id, operation.group_name), (None, "Sig A"))
+
+    def ping(self, **extra):
+        values = dict(request_id=uuid.uuid4(), channel_name="STR", additional_message="Gate camp now")
+        values.update(extra)
+        return StandalonePing.objects.create(**values)
+
+    def test_a_ping_without_a_fleet_has_its_defaults(self):
+        ping = self.ping()
+
+        self.assertEqual(ping.status, StandalonePing.Status.PENDING)
+        self.assertEqual((ping.mention_mode, ping.mention_roles), ("none", []))
+        self.assertIsNotNone(ping.created_at)
+        self.assertIn("STR", str(ping))
+
+    def test_a_request_id_is_used_once(self):
+        ping = self.ping()
+
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            self.ping(request_id=ping.request_id)
+
+    def test_pings_are_listed_newest_first(self):
+        old = self.ping(created_at=days_ago(3))
+        new = self.ping(created_at=days_ago(1))
+
+        self.assertEqual(list(StandalonePing.objects.all()), [new, old])
+
+    def test_a_ping_keeps_its_names_when_the_channel_group_and_sender_go(self):
+        group = Group.objects.create(name="Sig A")
+        channel = DiscordWebhook.objects.create(name="Ops", webhook_url=WEBHOOK_SECRET)
+        ping = self.ping(
+            sender=self.fc, sender_name="Boss Main", group=group, group_name="Sig A", channel=channel, channel_name="Ops"
+        )
+
+        group.delete()
+        channel.delete()
+
+        ping.refresh_from_db()
+        self.assertEqual((ping.group_id, ping.channel_id), (None, None))
+        self.assertEqual((ping.group_name, ping.channel_name, ping.sender_name), ("Sig A", "Ops", "Boss Main"))
+
+    def test_the_status_labels(self):
+        self.assertEqual(
+            [str(label) for _value, label in StandalonePing.Status.choices], ["Pending", "Sent", "Failed"]
+        )
+
+    def test_the_payout_rule_without_a_target_has_an_error_code(self):
+        from fleetops.models import SrpPayoutRule
+
+        with self.assertRaises(ValidationError) as caught:
+            SrpPayoutRule(amount=1_000_000).full_clean()
+
+        [error] = caught.exception.error_dict["__all__"]
+        self.assertEqual(error.code, "no_target")
+        self.assertEqual(error.message, "Choose a ship type, a doctrine, or both.")
+
+    def test_the_new_models_have_verbose_names(self):
+        self.assertEqual(str(GroupAccess._meta.verbose_name), "group access")
+        self.assertEqual(str(GroupAccess._meta.verbose_name_plural), "group accesses")
+        self.assertEqual(str(StandalonePing._meta.verbose_name), "ping without fleet")
+
+
 class ModelOrderingTests(TestCase):
     def setUp(self):
         self.fc = f.create_user(perms=f.FC_PERMS)
@@ -642,14 +802,18 @@ class MigrationTests(TestCase):
     def test_seed_migration_templates_match_constants(self):
         seed = importlib.import_module("fleetops.migrations.0002_seed_defaults")
         upgrade = importlib.import_module("fleetops.migrations.0009_convert_ping_targets_and_presets")
-        # 0009 replaces exactly the templates 0002 created with the current built-in ones.
+        # 0009 replaces exactly the templates 0002 created with the built-in ones of 0.2.0b1.
         self.assertEqual(upgrade.OLD_PING, seed.PING)
         self.assertEqual(upgrade.OLD_MOTD, seed.MOTD)
-        self.assertEqual(upgrade.NEW_PING, DEFAULT_PING_TEMPLATE)
         # 0017 adds the SRP line to the untouched default MOTD.
         srp = importlib.import_module("fleetops.migrations.0017_srp_data")
         self.assertEqual(upgrade.NEW_MOTD, srp.OLD_MOTD)
-        self.assertEqual(srp.NEW_MOTD, DEFAULT_MOTD_TEMPLATE)
+        # 0020 brings the untouched defaults of 0.2.0b1 up to the current built-in ones.
+        data = importlib.import_module("fleetops.migrations.0020_b2_data")
+        self.assertEqual(upgrade.NEW_PING, data.OLD_PING)
+        self.assertEqual(data.NEW_PING, DEFAULT_PING_TEMPLATE)
+        self.assertEqual(srp.NEW_MOTD, data.OLD_MOTD)
+        self.assertEqual(data.NEW_MOTD, DEFAULT_MOTD_TEMPLATE)
 
     def test_new_installations_get_the_current_default_templates(self):
         self.assertEqual(MessageTemplate.objects.get(name="Default Ping").content, DEFAULT_PING_TEMPLATE)
@@ -752,6 +916,9 @@ class SeedCommandTests(TestCase):
         self.assertEqual(motd.content, DEFAULT_MOTD_TEMPLATE)
         self.assertTrue(ping.is_default and ping.is_active)
         self.assertTrue(motd.is_default and motd.is_active)
+        standalone = MessageTemplate.objects.get(template_type="standalone", name="Default Ping without fleet")
+        self.assertEqual(standalone.content, DEFAULT_STANDALONE_PING_TEMPLATE)
+        self.assertTrue(standalone.is_default and standalone.is_active)
         self.assertFalse(FleetType.objects.exists())
         self.assertFalse(PingTarget.objects.exists())
         self.assertFalse(DiscordWebhook.objects.exists())
@@ -778,7 +945,7 @@ class SeedCommandTests(TestCase):
         self.assertFalse(DiscordWebhook.objects.exists())
         self.assertNotIn("ping target", output)
 
-        self.assertEqual(MessageTemplate.objects.filter(is_default=True).count(), 2)
+        self.assertEqual(MessageTemplate.objects.filter(is_default=True).count(), 3)
         self.assertEqual(FleetOpsSettings.objects.count(), 1)
 
     def test_seed_demo_never_creates_webhooks_or_secrets(self):
@@ -807,6 +974,7 @@ class SeedCommandTests(TestCase):
         self.assertFalse(PingTarget.objects.exists())
         self.assertEqual(MessageTemplate.objects.filter(name="Default Ping").count(), 1)
         self.assertEqual(MessageTemplate.objects.filter(name="Default MOTD").count(), 1)
+        self.assertEqual(MessageTemplate.objects.filter(name="Default Ping without fleet").count(), 1)
 
     def test_seed_keeps_existing_settings_and_ping_target(self):
         f.settings(tracking_interval=120, attendance_limit=2)
@@ -822,6 +990,16 @@ class SeedCommandTests(TestCase):
         self.assertEqual(target.target_value, "@here")
         self.assertEqual(target.webhook, hook)
         self.assertEqual(DiscordWebhook.objects.count(), 1)
+
+    def test_seed_does_not_take_the_default_of_a_ping_template_that_has_one(self):
+        MessageTemplate.objects.create(
+            template_type="standalone", name="Our Ping", content="x {{ sender }}", is_default=True
+        )
+
+        run_command("fleetops_seed")
+
+        self.assertFalse(MessageTemplate.objects.get(name="Default Ping without fleet").is_default)
+        self.assertTrue(MessageTemplate.objects.get(name="Our Ping").is_default)
 
     def test_seed_rerun_keeps_customised_default_templates(self):
         template = MessageTemplate.objects.get(template_type="ping", name="Default Ping")
@@ -867,14 +1045,22 @@ class PruneHistoryCommandTests(TestCase):
     def test_dry_run_deletes_nothing(self):
         output = run_command("fleetops_prune_history", "--dry-run")
 
-        self.assertIn("Would remove: 1 old PAP records, 0 departed-member PAP records, 1 old member events.", output)
+        self.assertIn(
+            "Would remove: 1 old PAP records, 0 departed-member PAP records, 1 old member events, "
+            "0 old pings without a fleet.",
+            output,
+        )
         self.assertEqual(AttendanceRecord.objects.count(), 2)
         self.assertEqual(FleetMemberEvent.objects.count(), 2)
 
     def test_real_run_prunes_records_older_than_retention(self):
         output = run_command("fleetops_prune_history")
 
-        self.assertIn("Removed: 1 old PAP records, 0 departed-member PAP records, 1 old member events.", output)
+        self.assertIn(
+            "Removed: 1 old PAP records, 0 departed-member PAP records, 1 old member events, "
+            "0 old pings without a fleet.",
+            output,
+        )
         self.assertEqual(list(AttendanceRecord.objects.all()), [self.recent_record])
         self.assertEqual(list(FleetMemberEvent.objects.all()), [self.recent_event])
         self.assertTrue(FleetOperation.objects.filter(pk=self.old_op.pk).exists())
@@ -882,7 +1068,11 @@ class PruneHistoryCommandTests(TestCase):
     def test_second_run_has_nothing_left_to_prune(self):
         run_command("fleetops_prune_history")
         output = run_command("fleetops_prune_history")
-        self.assertIn("Removed: 0 old PAP records, 0 departed-member PAP records, 0 old member events.", output)
+        self.assertIn(
+            "Removed: 0 old PAP records, 0 departed-member PAP records, 0 old member events, "
+            "0 old pings without a fleet.",
+            output,
+        )
 
     def test_records_just_inside_one_year_are_kept(self):
         edge_op = f.create_operation(self.fc, status=FleetOperation.Status.CLOSED, started_at=days_ago(364))
@@ -962,6 +1152,76 @@ class PruneHistoryCommandTests(TestCase):
         self.assertFalse(AttendanceRecord.objects.filter(pk=old_departed.pk).exists())
         self.assertEqual(list(AttendanceRecord.objects.all()), [self.recent_record])
 
+    def add_ping(self, age_days, **extra):
+        values = dict(
+            request_id=uuid.uuid4(),
+            channel_name="STR",
+            sender_name="Boss Main",
+            additional_message="Gate camp now",
+            text="Gate camp now",
+            created_at=days_ago(age_days),
+        )
+        values.update(extra)
+        return StandalonePing.objects.create(**values)
+
+    def test_old_pings_without_a_fleet_are_pruned_with_the_rest(self):
+        old, recent = self.add_ping(400), self.add_ping(30)
+
+        output = run_command("fleetops_prune_history")
+
+        self.assertIn("1 old pings without a fleet.", output)
+        self.assertEqual(list(StandalonePing.objects.all()), [recent])
+        self.assertFalse(StandalonePing.objects.filter(pk=old.pk).exists())
+
+    def test_a_dry_run_counts_the_old_pings_and_keeps_them(self):
+        self.add_ping(400)
+        self.add_ping(500)
+        self.add_ping(30)
+
+        output = run_command("fleetops_prune_history", "--dry-run")
+
+        self.assertIn("Would remove:", output)
+        self.assertIn("2 old pings without a fleet.", output)
+        self.assertEqual(StandalonePing.objects.count(), 3)
+
+    def test_the_audit_entry_of_a_pruned_ping_stays(self):
+        old = self.add_ping(400)
+        entry = AuditLog.objects.create(
+            actor=self.fc, action="ping.send", object_type="StandalonePing", object_id=str(old.pk), new_value={"status": "sent"}
+        )
+
+        run_command("fleetops_prune_history")
+
+        self.assertFalse(StandalonePing.objects.exists())
+        self.assertTrue(AuditLog.objects.filter(pk=entry.pk).exists())
+
+    def test_pings_follow_the_retention_setting(self):
+        f.settings(data_retention_days=500)
+        self.add_ping(400)
+        expired = self.add_ping(600)
+
+        run_command("fleetops_prune_history")
+
+        self.assertEqual(StandalonePing.objects.count(), 1)
+        self.assertFalse(StandalonePing.objects.filter(pk=expired.pk).exists())
+
+    def test_retention_below_365_keeps_a_ping_for_365_days(self):
+        FleetOpsSettings.objects.filter(pk=1).update(data_retention_days=30)
+        kept = self.add_ping(200)
+
+        run_command("fleetops_prune_history")
+
+        self.assertTrue(StandalonePing.objects.filter(pk=kept.pk).exists())
+
+    def test_the_result_names_the_old_pings(self):
+        self.add_ping(400)
+
+        from fleetops.services.history import prune_history
+
+        self.assertEqual(prune_history(dry_run=True)["old_pings"], 1)
+        self.assertEqual(prune_history()["old_pings"], 1)
+        self.assertEqual(prune_history()["old_pings"], 0)
+
     def test_reported_totals_match_rows_removed(self):
         f.settings(history_alliance_ids=str(f.DEFAULT_ALLIANCE[0]))
         departed = f.create_user(alliance=f.FOREIGN_ALLIANCE)
@@ -1018,6 +1278,21 @@ class AdminTests(TestCase):
         link = f.fleet_link(cls.operation)
         claim = f.srp_claim(cls.fc, link=link)
         f.claim_event(claim, SrpClaimEvent.Action.SUBMIT, actor=cls.fc)
+        cls.group = Group.objects.create(name="Sig A")
+        cls.access = GroupAccess.objects.create(group=cls.group, mode=GroupAccess.Mode.FLEETS)
+        cls.access.fleet_types.add(cls.fleet_type)
+        cls.webhook.allowed_groups.add(cls.group)
+        cls.ping = StandalonePing.objects.create(
+            request_id=uuid.uuid4(),
+            sender=cls.fc,
+            sender_name="Boss Main",
+            group=cls.group,
+            group_name=cls.group.name,
+            channel=cls.webhook,
+            channel_name=cls.webhook.name,
+            additional_message="Gate camp now",
+            text="Gate camp now",
+        )
         AuditLog.objects.create(
             actor=cls.fc,
             action="configuration.update",
@@ -1093,6 +1368,7 @@ class AdminTests(TestCase):
             "leaderboard_size": 20,
             "leaderboard_visibility": "members",
             "fleet_live_refresh_seconds": 15,
+            "motd_warning_length": 2000,
         }
         url = self._url(FleetOpsSettings, "change", 1)
 
@@ -1125,6 +1401,102 @@ class AdminTests(TestCase):
         changelist = self.client.get(self._url(DiscordWebhook, "changelist")).content.decode()
         self.assertIn("Ops Pings", changelist)
         self.assertNotIn("sUp3r-s3cret", changelist)
+
+    def test_group_access_and_pings_without_a_fleet_are_read_only(self):
+        for obj in (self.access, self.ping):
+            model_admin = admin.site._registry[type(obj)]
+            request = RequestFactory().get("/")
+            request.user = self.superuser
+            with self.subTest(model=type(obj).__name__):
+                self.assertFalse(model_admin.has_add_permission(request))
+                self.assertFalse(model_admin.has_change_permission(request, obj))
+                self.assertFalse(model_admin.has_delete_permission(request, obj))
+                self.assertEqual(self.client.get(self._url(type(obj), "add")).status_code, 403)
+                self.assertEqual(self.client.get(self._url(type(obj), "change", obj.pk)).status_code, 200)
+                self.assertEqual(self.client.get(self._url(type(obj), "delete", obj.pk)).status_code, 403)
+
+    def test_the_ping_channel_form_has_no_input_for_group_access(self):
+        response = self.client.get(self._url(DiscordWebhook, "change", self.webhook.pk))
+        content = response.content.decode()
+
+        for name in ("allowed_groups", "fcs_allowed"):
+            self.assertNotIn(f'name="{name}"', content)
+            self.assertNotIn(f'id="id_{name}"', content)
+        # The page says where it is set instead.
+        self.assertIn("Groups: Sig A", content)
+        self.assertIn("Alliance FCs: yes", content)
+        self.assertIn("FleetOps Administration", content)
+
+    def test_the_ping_channel_page_reads_a_channel_that_only_leaders_use(self):
+        DiscordWebhook.objects.filter(pk=self.webhook.pk).update(fcs_allowed=False)
+
+        content = self.client.get(self._url(DiscordWebhook, "change", self.webhook.pk)).content.decode()
+
+        self.assertIn("Alliance FCs: no", content)
+
+    def test_a_channel_without_a_group_reads_open_to_every_fc(self):
+        DiscordWebhook.objects.filter(pk=self.webhook.pk).update(fcs_allowed=False)
+        self.webhook.allowed_groups.clear()
+
+        content = self.client.get(self._url(DiscordWebhook, "change", self.webhook.pk)).content.decode()
+
+        self.assertIn("Groups: none", content)
+        self.assertIn("Alliance FCs: yes", content)
+
+    def test_a_crafted_admin_post_cannot_change_the_group_access_of_a_channel(self):
+        other = Group.objects.create(name="Sig B")
+        data = {"name": "Ops Pings", "webhook_url": WEBHOOK_SECRET, "is_active": "on", "sort_order": "0"}
+
+        response = self.client.post(
+            self._url(DiscordWebhook, "change", self.webhook.pk),
+            {**data, "allowed_groups": [other.pk], "fcs_allowed": ""},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        channel = DiscordWebhook.objects.get(pk=self.webhook.pk)
+        self.assertEqual(list(channel.allowed_groups.all()), [self.group])
+        self.assertTrue(channel.fcs_allowed)
+
+    def test_a_new_channel_added_in_the_admin_is_open_to_every_fc(self):
+        response = self.client.post(
+            self._url(DiscordWebhook, "add"),
+            {"name": "New Hook", "webhook_url": WEBHOOK_SECRET + "-new", "is_active": "on", "sort_order": "0"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        channel = DiscordWebhook.objects.get(name="New Hook")
+        self.assertTrue(channel.fcs_allowed)
+        self.assertEqual(channel.allowed_groups.count(), 0)
+
+    def test_the_audit_entry_of_a_channel_lists_its_groups(self):
+        data = {"name": "Ops Pings", "webhook_url": WEBHOOK_SECRET, "is_active": "on", "sort_order": "0"}
+        AuditLog.objects.all().delete()
+
+        self.client.post(self._url(DiscordWebhook, "change", self.webhook.pk), data)
+
+        entry = AuditLog.objects.get(action="configuration.update", object_type="DiscordWebhook")
+        self.assertEqual(entry.new_value["allowed_groups"], [self.group.pk])
+        self.assertTrue(entry.new_value["fcs_allowed"])
+        self.assertEqual(entry.new_value["webhook_url"], "***redacted***")
+
+    def test_the_group_of_a_fleet_is_read_only_in_the_admin(self):
+        FleetOperation.objects.filter(pk=self.operation.pk).update(group=self.group, group_name=self.group.name)
+        response = self.client.get(self._url(FleetOperation, "change", self.operation.pk))
+        content = response.content.decode()
+
+        self.assertNotIn('name="group"', content)
+        self.assertNotIn('name="group_name"', content)
+        self.assertIn("Sig A", content)
+
+        post = {
+            "status": self.operation.status,
+            "fc_character_name": self.operation.fc_character_name,
+            "group": "",
+            "group_name": "Changed",
+        }
+        self.client.post(self._url(FleetOperation, "change", self.operation.pk), post)
+        operation = FleetOperation.objects.get(pk=self.operation.pk)
+        self.assertEqual((operation.group_id, operation.group_name), (self.group.pk, "Sig A"))
 
     def test_ping_target_page_does_not_expose_webhook_url(self):
         content = self.client.get(self._url(PingTarget, "change", self.target.pk)).content.decode()

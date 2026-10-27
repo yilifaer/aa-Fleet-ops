@@ -6,7 +6,7 @@ closes, and feeds the statistics, FC points and SRP of the alliance.
 
 English | [简体中文](https://github.com/yilifaer/aa-fleetops/blob/dev/README.zh-CN.md)
 
-Status: beta. The first public pre-release is 0.2.0b1; read the CHANGELOG before every upgrade.
+Status: beta. The current pre-release is 0.2.0b2 (0.2.0b1 was a test build that was not published); read the CHANGELOG before every upgrade.
 
 ## Features
 
@@ -23,14 +23,21 @@ Status: beta. The first public pre-release is 0.2.0b1; read the CHANGELOG before
   that shows in each reader's own time zone. The scheduled fleet is started later by the FC who scheduled it.
 - **PAP Tracking Only** tracks a fleet without Discord ping, MOTD or SRP link. **PAP-link fleets** need no ESI
   fleet at all.
+- **Group pings and group fleets.** Squads and interest groups are Alliance Auth groups. Administrators choose,
+  on FleetOps's own Administration pages, which ping channels a group's leaders may use and what they may do:
+  send a ping only (**Send Ping**, no fleet record, no PAP) or also start fleets with PAP of the fleet types
+  the administrators allow for that group. Group leaders are the leaders Alliance Auth already records; they
+  cannot change any setting and never reach the alliance channels.
 
 **Discord ping and MOTD**
 
 - Pings go to Discord channels through webhooks. The FC picks the ping channel and the target: no mention,
   `@everyone`, `@here` or Discord roles. Each channel decides which mentions it allows, and only the selected
   mention can notify anybody. A ping over Discord's 2000-character limit is refused before it is sent.
-- Editable Ping and MOTD templates with live preview, copy buttons that work whatever automation does, and
-  **Regenerate & Push MOTD** on a running fleet.
+- Editable Ping and MOTD templates with a live preview that looks like Discord and like the in-game window,
+  copy buttons that work whatever automation does, and **Regenerate & Push MOTD** on a running fleet. The
+  built-in MOTD makes the FC and the form-up system clickable in game (`showinfo` links); a confirmation asks
+  before a ping is posted.
 - A public join page for voice links such as `mumble://`, so the comms link in Discord and in the in-game MOTD
   can be clicked.
 
@@ -49,10 +56,13 @@ Status: beta. The first public pre-release is 0.2.0b1; read the CHANGELOG before
 **PAP**
 
 - PAP is granted when the fleet closes, to characters that reached the **PAP minimum time** or registered
-  through a PAP link, with an optional limit of characters per player. Alts count for their main.
+  through a PAP link, with an optional limit of characters per player that the FC can tighten for a single fleet
+  (FC leads can also loosen it). Alts count for their main.
 - PAP multipliers by fleet duration (for example 2x after 90 minutes and 3x after 180), chosen by the FC when
   ending or set automatically.
-- Manual fleets, manual PAP and pasted rosters wait for approval by an FC lead.
+- Manual fleets, manual PAP and pasted rosters wait for approval by an FC lead. A rejected fleet can be
+  corrected and sent back with **Resubmit for approval**; special roles with FC credit are assigned once the
+  fleet is approved.
 - **PAP links** let pilots register their characters for a fleet without being in the ESI fleet.
 - Special roles such as Back Seat FC, with an option to give FC credit.
 
@@ -62,7 +72,8 @@ Status: beta. The first public pre-release is 0.2.0b1; read the CHANGELOG before
   status; a leaderboard; inactive members; PAP history.
 - Excel and CSV exports of the corporation, member, FC, PAP history, FC incentive and SRP pages.
 - FC points (fleet type weight times the PAP multiplier) and a monthly FC incentive calculation with
-  eligibility, waivers and finalization.
+  eligibility, waivers and finalization. Periods that are not finalised follow the fleets of their month by
+  themselves. A month without a monthly target is not assessed at all.
 
 **SRP**
 
@@ -76,7 +87,8 @@ Status: beta. The first public pre-release is 0.2.0b1; read the CHANGELOG before
 - All configuration is in the web interface; no Django admin access is needed. Every change and every
   privileged action is in the audit log.
 - Permissions for members, corporation managers, FCs, FC leads and SRP managers.
-- English and Simplified Chinese pages that follow each user's Alliance Auth language.
+- English and Simplified Chinese pages that follow each user's Alliance Auth language, in every Alliance Auth
+  theme (Flatly, Darkly, Materia, Bootstrap and Bootstrap Dark), on phones and on desktops.
 
 ## Requirements
 
@@ -106,14 +118,14 @@ the versions of Alliance Auth and django-esi.
 ```bash
 source /path/to/venv/bin/activate
 
-# from PyPI (0.2.0b1 is a pre-release, so name the version)
-pip install --no-deps aa-fleetops==0.2.0b1
+# from PyPI (0.2.0b2 is a pre-release, so name the version)
+pip install --no-deps aa-fleetops==0.2.0b2
 
 # or from the wheel of a GitHub Release
-pip install --no-deps https://github.com/yilifaer/aa-fleetops/releases/download/v0.2.0b1/aa_fleetops-0.2.0b1-py3-none-any.whl
+pip install --no-deps https://github.com/yilifaer/aa-fleetops/releases/download/v0.2.0b2/aa_fleetops-0.2.0b2-py3-none-any.whl
 
 # or from Git
-pip install --no-deps "git+https://github.com/yilifaer/aa-fleetops.git@v0.2.0b1"
+pip install --no-deps "git+https://github.com/yilifaer/aa-fleetops.git@v0.2.0b2"
 ```
 
 On a site without the dependencies, leave out `--no-deps`. The extras `aa-fleetops[fittings]` and
@@ -174,7 +186,7 @@ python manage.py fleetops_seed          # default templates, multipliers, specia
 Celery worker and Celery beat the way your installation does. FleetOps logs to the extension log of Alliance
 Auth (`extensions.log`).
 
-**Docker.** Add `aa-fleetops==0.2.0b1` to the requirements of the image that your web, worker and beat services
+**Docker.** Add `aa-fleetops==0.2.0b2` to the requirements of the image that your web, worker and beat services
 share, rebuild it and add the `local.py` lines above. Then open a shell in the web container and run the commands
 there with the `auth` shortcut of the Alliance Auth image:
 
@@ -248,8 +260,9 @@ FleetOps works without all of them. See [docs/integrations.md](https://github.co
 
 ## Translations
 
-FleetOps follows the language menu of Alliance Auth. English and Simplified Chinese are available. Discord pings
-and in-game MOTDs are written in the site language, not in the language of the FC who clicked. To improve a
+FleetOps follows the language menu of Alliance Auth. English and Simplified Chinese are available for the web
+pages. Discord pings and in-game MOTDs are always English, whatever the site language: FleetOps's own words in
+them are never translated, and text that administrators write in a template is sent as written. To improve a
 translation or add a language, see [docs/translations.md](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/translations.md).
 
 ## Documentation

@@ -23,6 +23,7 @@ class Command(BaseCommand):
             self.style.SUCCESS(
                 f"{prefix}: {result['old_attendance']} old PAP records, "
                 f"{result['left_alliance']} departed-member PAP records, "
-                f"{result['old_events']} old member events."
+                f"{result['old_events']} old member events, "
+                f"{result['old_pings']} old pings without a fleet."
             )
         )

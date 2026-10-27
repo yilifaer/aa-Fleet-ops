@@ -17,12 +17,14 @@ from fleetops.constants import (
     CLICK_SCOPES,
     DEFAULT_MOTD_TEMPLATE,
     DEFAULT_PING_TEMPLATE,
+    DEFAULT_STANDALONE_PING_TEMPLATE,
     FLEET_SCOPES,
 )
 from fleetops.models import FleetOpsSettings, SrpSettings
 from fleetops.services.messages import build_context
 
 from . import factories as f
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 from . import i18n_utils as po
 
 PACKAGE = Path(fleetops.__file__).resolve().parent
@@ -258,6 +260,28 @@ class MessageDocsTests(TestCase):
             with self.subTest(path=path.parent.name):
                 self.assertIn(DEFAULT_PING_TEMPLATE, text)
                 self.assertIn(DEFAULT_MOTD_TEMPLATE, text)
+                self.assertIn(DEFAULT_STANDALONE_PING_TEMPLATE, text)
+
+    def test_the_documents_say_that_pings_and_motds_are_always_english(self):
+        for path, phrase in ((DOCS / "message-templates.md", "always English"), (ZH / "message-templates.md", "始终是英文")):
+            text = read(path)
+            with self.subTest(path=path.parent.name):
+                self.assertIn(phrase, text)
+                self.assertNotIn("site language", text)
+                self.assertNotIn("站点语言", text)
+        for path, phrase in (
+            (DOCS / "configuration.md", "pings and MOTDs are always English"),
+            (ZH / "configuration.md", "Ping 和 MOTD 始终是英文"),
+        ):
+            with self.subTest(path=path.parent.name, document="configuration"):
+                self.assertIn(phrase, read(path))
+
+    def test_the_documents_name_the_links_of_the_default_motd(self):
+        for path in (DOCS / "message-templates.md", ZH / "message-templates.md"):
+            text = read(path)
+            with self.subTest(path=path.parent.name):
+                self.assertIn("FC: {{ fc_link }}<br>Form Up: {{ formup_link }}", text)
+                self.assertNotIn("FC: {{ fc }}<br>", text)
 
 
 class ScheduledTaskDocsTests(SimpleTestCase):
@@ -337,6 +361,7 @@ class DefaultsInDocsTests(SimpleTestCase):
         "Leaderboard places": "leaderboard_size",
         "PAP link validity": "pap_link_minutes",
         "Live fleet refresh": "fleet_live_refresh_seconds",
+        "MOTD warning length": "motd_warning_length",
     }
     SRP = {
         "Enabled": "enabled",

@@ -3,10 +3,11 @@
 
 from datetime import timedelta
 
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, F, Q, Sum
 from django.utils import timezone
 
-from fleetops.models import AttendanceRecord, FleetMemberState, FleetType
+from fleetops.models import AttendanceRecord, FleetMemberState, FleetType, OperationRoleAssignment
+from fleetops.services import group_access
 from fleetops.services.counting import counted_attendance, counted_operation_q
 from fleetops.services.history import apply_current_membership_filter
 from fleetops.services.periods import current_year_month, month_bounds
@@ -67,6 +68,7 @@ def dashboard_metrics(user):
         item["attendance"] += row.attendance_value
         item["character_names"].append(row.character_name)
     recent = list(grouped.values())
+    _add_member_counts(recent)
 
     top_ship_rows = (
         FleetMemberState.objects.filter(counted_operation_q("operation__"), auth_user=user)
@@ -83,3 +85,73 @@ def dashboard_metrics(user):
         for row in top_ship_rows
     ]
     return {"cards": cards, "recent": recent, "top_ships": top_ships}
+
+
+def _add_member_counts(recent) -> None:
+    """Set ``member_count`` on the recent rows: the characters that were granted PAP in the fleet (one query)."""
+    if not recent:
+        return
+    operation_ids = [row["operation"].pk for row in recent]
+    counts = {
+        row["operation_id"]: row["members"]
+        for row in counted_attendance(AttendanceRecord.objects.filter(operation_id__in=operation_ids))
+        .values("operation_id")
+        .annotate(members=Count("pk"))
+        .order_by()
+    }
+    for row in recent:
+        row["member_count"] = counts.get(row["operation"].pk, 0)
+
+
+def running_fleet_rows(user, operations) -> list[dict]:
+    """The running fleets of the home page, one row per fleet of ``operations`` (already limited to what
+    ``user`` may see).
+
+    Each row has ``operation``, ``can_manage``, ``show_system``, ``fc_system_name`` and ``member_count``.
+    ``can_manage`` is the rule of the fleet page (``views._can_manage_operation``) and decides who gets the
+    command deck link; ``show_system`` is the rule of the live tree (managers, ``view_all_fleets`` and
+    ``manage_fleets``), so a member never sees where the FC is (K3, S14), and a leader who did not start a
+    group fleet sees it read-only. The FC's system is one query for all rows that may show it, and the roles
+    that give FC credit are one query for all rows, whatever the number of fleets.
+    """
+    rows = list(operations)
+    if not rows:
+        return []
+    manage_all = user.has_perm("fleetops.manage_fleets")
+    view_all = manage_all or user.has_perm("fleetops.view_all_fleets")
+    credited = set()
+    if not manage_all and user.has_perm("fleetops.manage_own_fleet"):
+        others = [operation.pk for operation in rows if operation.fc_user_id != user.pk]
+        if others:
+            credited = set(
+                OperationRoleAssignment.objects.filter(
+                    operation_id__in=others, auth_user=user, grants_fc_credit=True
+                ).values_list("operation_id", flat=True)
+            )
+    manage_own = user.has_perm("fleetops.manage_own_fleet")
+    result = []
+    for operation in rows:
+        can_manage = (
+            manage_all
+            or (manage_own and (operation.fc_user_id == user.pk or operation.pk in credited))
+            or group_access.manages_group_fleet(user, operation)
+        )
+        result.append(
+            {
+                "operation": operation,
+                "can_manage": bool(can_manage),
+                "show_system": bool(view_all or can_manage),
+                "fc_system_name": "",
+                "member_count": getattr(operation, "active_member_count", 0),
+            }
+        )
+    visible = [row["operation"].pk for row in result if row["show_system"]]
+    if visible:
+        systems = dict(
+            FleetMemberState.objects.filter(
+                operation_id__in=visible, character_id=F("operation__fc_character_id"), is_active=True
+            ).values_list("operation_id", "solar_system_name")
+        )
+        for row in result:
+            row["fc_system_name"] = systems.get(row["operation"].pk, "") or ""
+    return result

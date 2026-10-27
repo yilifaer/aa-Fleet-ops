@@ -60,6 +60,7 @@ from fleetops.services.routing import proximity_rows, systems_within_jumps
 from fleetops.services.statistics import fc_operations_queryset, fc_statistics
 
 from . import factories as f
+from .link_fakes import setUpModule, tearDownModule  # noqa: F401 - unittest runs them around the module
 
 Status = FleetOperation.Status
 ActionStatus = OperationAction.Status

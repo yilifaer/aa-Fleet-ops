@@ -1,6 +1,12 @@
 {% extends "fleetops/base.html" %}
-{% load i18n fleetops_messages %}
+{% load i18n fleetops_i18n fleetops_messages fleetops_ui %}
 {% block fleetops_content %}
+{% translate "Over the limit" as over_limit_label %}
+{% translate "Not in Alliance Auth" as not_in_auth_label %}
+{% translate "Not found" as not_found_label %}
+{% translate "Not checked" as not_checked_label %}
+{% translate "Invalid" as invalid_label %}
+{% translate "Has PAP" as has_pap_label %}
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <div><h2 class="mb-1">{% translate "Paste Roster" %}</h2><div class="text-muted">{{ operation.fleet_type }} · FC {{ operation.fc_character_name }} · {{ operation.started_at|eve_time }} EVE · {{ operation.get_status_display }}</div></div>
   <a class="btn btn-outline-secondary" href="{% url 'fleetops:operation_detail' operation.uuid %}">{% translate "Back to the fleet" %}</a>
@@ -10,30 +16,30 @@
 {% if preview_rows %}
 {% if warnings %}<div class="alert alert-warning" id="roster-warnings">{% for warning in warnings %}<div>{{ warning }}</div>{% endfor %}</div>{% endif %}
 <div class="card mb-3" id="roster-preview"><div class="card-header d-flex flex-wrap gap-2 align-items-center"><strong>{% translate "Preview" %}</strong>
-  <span class="badge bg-success">{% blocktranslate trimmed with num=counts.add|default:0 %}To add: {{ num }}{% endblocktranslate %}</span>
-  {% if counts.capped %}<span class="badge bg-warning text-dark">{% blocktranslate trimmed with num=counts.capped %}Over the limit: {{ num }}{% endblocktranslate %}</span>{% endif %}
-  {% if counts.has_pap %}<span class="badge bg-secondary">{% blocktranslate trimmed with num=counts.has_pap %}Already has PAP: {{ num }}{% endblocktranslate %}</span>{% endif %}
-  {% if counts.not_in_auth %}<span class="badge bg-danger">{% blocktranslate trimmed with num=counts.not_in_auth %}Not in Alliance Auth: {{ num }}{% endblocktranslate %}</span>{% endif %}
-  {% if counts.not_found %}<span class="badge bg-danger">{% blocktranslate trimmed with num=counts.not_found %}Not found: {{ num }}{% endblocktranslate %}</span>{% endif %}
-  {% if counts.error %}<span class="badge bg-danger">{% blocktranslate trimmed with num=counts.error %}Not checked: {{ num }}{% endblocktranslate %}</span>{% endif %}
-  {% if counts.invalid %}<span class="badge bg-danger">{% blocktranslate trimmed with num=counts.invalid %}Invalid: {{ num }}{% endblocktranslate %}</span>{% endif %}
+  {% blocktranslate trimmed with num=counts.add|default:0 asvar to_add_text %}To add: {{ num }}{% endblocktranslate %}{% pill "ok" to_add_text %}
+  {% if counts.capped %}{% blocktranslate trimmed with num=counts.capped asvar capped_text %}Over the limit: {{ num }}{% endblocktranslate %}{% pill "bad" capped_text %}{% endif %}
+  {% if counts.has_pap %}{% blocktranslate trimmed with num=counts.has_pap asvar has_pap_text %}Already has PAP: {{ num }}{% endblocktranslate %}{% pill "neutral" has_pap_text %}{% endif %}
+  {% if counts.not_in_auth %}{% blocktranslate trimmed with num=counts.not_in_auth asvar not_in_auth_text %}Not in Alliance Auth: {{ num }}{% endblocktranslate %}{% pill "bad" not_in_auth_text %}{% endif %}
+  {% if counts.not_found %}{% blocktranslate trimmed with num=counts.not_found asvar not_found_text %}Not found: {{ num }}{% endblocktranslate %}{% pill "bad" not_found_text %}{% endif %}
+  {% if counts.error %}{% blocktranslate trimmed with num=counts.error asvar error_text %}Not checked: {{ num }}{% endblocktranslate %}{% pill "bad" error_text %}{% endif %}
+  {% if counts.invalid %}{% blocktranslate trimmed with num=counts.invalid asvar invalid_text %}Invalid: {{ num }}{% endblocktranslate %}{% pill "bad" invalid_text %}{% endif %}
 </div>
 <form method="post" id="roster-import-form">{% csrf_token %}
   <input type="hidden" name="step" value="import">
   <input type="hidden" name="payload" value="{{ payload }}">
-  <div class="card-body small text-muted">{% blocktranslate trimmed with value=form.cleaned_data.attendance_value %}Value {{ value }}{% endblocktranslate %} · {{ duplicate_action_label }}{% if form.cleaned_data.notes %} · {% blocktranslate trimmed with notes=form.cleaned_data.notes %}Notes: {{ notes }}{% endblocktranslate %}{% endif %}</div>
-  <div class="table-responsive"><table class="table table-sm align-middle mb-0">
-    <thead><tr><th></th><th>{% translate "Line" %}</th><th>{% translate "Pasted name" %}</th><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th>{% translate "Ship" %}</th><th>{% translate "Location" %}</th><th>{% translate "Fleet role" %}</th><th>{% translate "Status" %}</th></tr></thead>
-    <tbody>{% for item in preview_rows %}{% with row=item.row %}<tr{% if not row.importable %} class="text-muted"{% endif %}>
-      <td>{% if row.importable %}<input class="form-check-input" type="checkbox" name="rows" value="{{ item.index }}"{% if row.checked %} checked{% endif %} aria-label="{% blocktranslate trimmed with name=row.character_name %}Import {{ name }}{% endblocktranslate %}">{% else %}<input class="form-check-input" type="checkbox" disabled aria-label="{% blocktranslate trimmed with name=row.line.name %}Cannot import {{ name }}{% endblocktranslate %}">{% endif %}</td>
-      <td>{{ row.line.line_no|default:"—" }}</td>
+  <div class="card-body small text-muted">{% blocktranslate trimmed with value=form.cleaned_data.attendance_value %}Value {{ value }}{% endblocktranslate %} · {{ duplicate_action_label }}{% if form.cleaned_data.notes %} · {% blocktranslate trimmed with notes=form.cleaned_data.notes|stored_text %}Notes: {{ notes }}{% endblocktranslate %}{% endif %}</div>
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0 fo-table-pin">
+    <thead><tr><th></th><th class="text-end">{% translate "Line" %}</th><th>{% translate "Pasted name" %}</th><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th>{% translate "Ship" %}</th><th>{% translate "Location" %}</th><th>{% translate "Fleet role" %}</th><th>{% translate "Status" %}</th></tr></thead>
+    <tbody>{% for item in preview_rows %}{% with row=item.row %}<tr>
+      <td>{% if row.importable %}<label class="fo-check-cell"><input class="form-check-input" type="checkbox" name="rows" value="{{ item.index }}"{% if row.checked %} checked{% endif %} aria-label="{% blocktranslate trimmed with name=row.character_name %}Import {{ name }}{% endblocktranslate %}"></label>{% else %}<label class="fo-check-cell"><input class="form-check-input" type="checkbox" disabled aria-label="{% blocktranslate trimmed with name=row.line.name %}Cannot import {{ name }}{% endblocktranslate %}"></label>{% endif %}</td>
+      <td class="text-end">{{ row.line.line_no|default:"—" }}</td>
       <td>{{ row.line.name }}</td>
       <td>{{ row.character_name|default:"—" }}</td>
       <td>{{ row.main_character_name|default:"—" }}</td>
       <td>{{ row.line.ship_type|default:"—" }}{% if row.line.ship_group %}<div class="small text-muted">{{ row.line.ship_group }}</div>{% endif %}</td>
-      <td>{{ row.line.location|default:"—" }}{% if row.line.docked %} <span class="badge bg-light text-dark">{% translate "Docked" %}</span>{% endif %}</td>
+      <td>{{ row.line.location|default:"—" }}{% if row.line.docked %} {% translate "Docked" as docked_label %}{% pill "neutral" docked_label %}{% endif %}</td>
       <td>{{ row.line.role|default:"—" }}{% if row.line.position %}<div class="small text-muted">{{ row.line.position }}</div>{% endif %}</td>
-      <td>{% if row.status == 'add' %}<span class="badge bg-success">{% translate "Add" context "FleetOps" %}</span>{% elif row.status == 'capped' %}<span class="badge bg-warning text-dark">{% translate "Over the limit" %}</span>{% elif row.status == 'has_pap' %}<span class="badge bg-secondary">{% translate "Has PAP" %}</span>{% elif row.status == 'not_in_auth' %}<span class="badge bg-danger">{% translate "Not in Alliance Auth" %}</span>{% elif row.status == 'not_found' %}<span class="badge bg-danger">{% translate "Not found" %}</span>{% elif row.status == 'error' %}<span class="badge bg-danger">{% translate "Not checked" %}</span>{% else %}<span class="badge bg-danger">{% translate "Invalid" %}</span>{% endif %}{% if row.reason %}<div class="small text-muted">{{ row.reason }}</div>{% endif %}</td>
+      <td>{% if row.status == 'add' %}{% translate "Add" context "FleetOps" as add_label %}{% pill "ok" add_label %}{% elif row.status == 'capped' %}{% pill "bad" over_limit_label %}{% elif row.status == 'has_pap' %}{% pill "neutral" has_pap_label %}{% elif row.status == 'not_in_auth' %}{% pill "bad" not_in_auth_label %}{% elif row.status == 'not_found' %}{% pill "bad" not_found_label %}{% elif row.status == 'error' %}{% pill "bad" not_checked_label %}{% else %}{% pill "bad" invalid_label %}{% endif %}{% if row.reason %}<div class="small text-muted fo-roster-reason">{{ row.reason }}</div>{% endif %}</td>
     </tr>{% endwith %}{% endfor %}</tbody>
   </table></div>
   <div class="card-body"><button class="btn btn-primary" id="roster-import-submit">{% translate "Import selected" %}</button> <span class="small text-muted ms-2">{% translate "The preview is valid for 30 minutes." %}</span></div>
@@ -52,14 +58,14 @@ document.getElementById('roster-import-form').addEventListener('submit',()=>{
 <div class="card mb-3" id="roster-paste-form"><div class="card-body">
 <form method="post">{% csrf_token %}
   <input type="hidden" name="step" value="parse">
-  {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
-  <div class="mb-3">{{ form.text.label_tag }}{{ form.text }}{% if form.text.errors %}<div class="text-danger small">{{ form.text.errors|join:" " }}</div>{% endif %}<div class="form-text">{{ form.text.help_text }}</div></div>
+  {% include "fleetops/partials/form_errors.html" with errors=form.non_field_errors %}
+  <div class="mb-3">{{ form.text.label_tag }}{{ form.text }}{{ form.text.errors }}<div class="form-text">{{ form.text.help_text }}</div></div>
   <div class="row g-3">
-    <div class="col-md-2">{{ form.attendance_value.label_tag }}{{ form.attendance_value }}{% if form.attendance_value.errors %}<div class="text-danger small">{{ form.attendance_value.errors|join:" " }}</div>{% endif %}</div>
-    <div class="col-md-4">{{ form.duplicate_action.label_tag }}{{ form.duplicate_action }}{% if form.duplicate_action.errors %}<div class="text-danger small">{{ form.duplicate_action.errors|join:" " }}</div>{% endif %}</div>
-    <div class="col-md-6">{{ form.notes.label_tag }}{{ form.notes }}{% if form.notes.errors %}<div class="text-danger small">{{ form.notes.errors|join:" " }}</div>{% endif %}</div>
+    <div class="col-md-2">{{ form.attendance_value.label_tag }}{{ form.attendance_value }}{{ form.attendance_value.errors }}</div>
+    <div class="col-md-4">{{ form.duplicate_action.label_tag }}{{ form.duplicate_action }}{{ form.duplicate_action.errors }}</div>
+    <div class="col-md-6">{{ form.notes.label_tag }}{{ form.notes }}{{ form.notes.errors }}</div>
   </div>
-  <button class="btn {% if preview_rows %}btn-outline-primary{% else %}btn-primary{% endif %} mt-3">{% translate "Preview" %}</button>
+  <button class="btn {% if preview_rows %}btn-outline-secondary{% else %}btn-primary{% endif %} mt-3">{% translate "Preview" %}</button>
 </form>
 </div></div>
 {% if preview_rows %}</details>{% endif %}

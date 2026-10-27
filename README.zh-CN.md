@@ -7,7 +7,7 @@
 
 英文版为准；本文是 [README.md](README.md) 的中文版本。
 
-状态：测试版。第一个公开的预发布版本是 0.2.0b1；每次升级之前请阅读 [CHANGELOG](CHANGELOG.md)（英文）。
+状态：测试版。当前的预发布版本是 0.2.0b2（0.2.0b1 是未发布的测试版本）；每次升级之前请阅读 [CHANGELOG](CHANGELOG.md)（英文）。
 
 ## 功能
 
@@ -19,12 +19,16 @@
 - 带 FC 积分权重的舰队类型，来自可选的 `fittings` 应用的教义（也可以自定义文字），自由填写的集结地，以及语音、后勤和加成频道预设。
 - 个人开队预设，以及 **预 Ping**：为之后的某个 EVE 时间预告舰队，Discord 时间戳会按每位读者自己的时区显示。预约的舰队之后由预约它的 FC 开启。
 - **PAP 仅追踪** 只追踪舰队，不发 Discord Ping、不设 MOTD、不建 SRP 链接。**PAP 登记链接舰队** 完全不需要 ESI 舰队。
+- **小组 Ping 与小组舰队。** 小组就是 Alliance Auth 的用户组。管理员在 FleetOps 自己的后台页面里决定：每个 Ping 频道允许哪些小组的组长使用，以及组长可以做什么
+  ——只发 Ping（**发送 Ping**，不产生舰队记录、不发 PAP），或者还可以开管理员为该小组允许的舰队类型的带 PAP 的舰队。组长就是 Alliance Auth 里已经记录的组长；
+  他们不能修改任何设置，也用不了联盟频道。
 
 **Discord Ping 与 MOTD**
 
 - Ping 通过 Webhook 发到 Discord 频道。FC 选择 Ping 频道和目标：不提及、`@everyone`、`@here` 或 Discord 身份组。每个频道决定允许哪些提及，
   只有选中的提及才能通知到人。超过 Discord 2000 字符限制的 Ping 在发出前就会被拒绝。
-- 可编辑的 Ping 和 MOTD 模板，带实时预览；不论自动化是否成功，复制按钮始终可用；进行中的舰队可以 **重新生成并推送 MOTD**（Regenerate & Push MOTD）。
+- 可编辑的 Ping 和 MOTD 模板，带实时预览（看起来像 Discord 和游戏内窗口）；不论自动化是否成功，复制按钮始终可用；进行中的舰队可以 **重新生成并推送 MOTD**（Regenerate & Push MOTD）。
+  内置的 MOTD 里，FC 和集结星系在游戏里可以直接点开（`showinfo` 链接）；发出 Ping 之前会先确认。
 - 为 `mumble://` 这类语音链接提供公开的加入页，这样 Discord 和游戏内 MOTD 里的语音链接可以直接点击。
 
 **追踪与舰队管理**
@@ -38,9 +42,9 @@
 
 **PAP**
 
-- PAP 在舰队结束时发放，给在队时长达到 **PAP 最低在队时长** 或通过 PAP 登记链接登记过的角色，可选择限制每位玩家的角色数。小号计入大号。
+- PAP 在舰队结束时发放，给在队时长达到 **PAP 最低在队时长** 或通过 PAP 登记链接登记过的角色，可选择限制每位玩家的角色数，FC 可以为单支舰队调小（FC 主管还可以调大）。小号计入大号。
 - 按舰队时长设置 PAP 倍率（例如 90 分钟后 2 倍、180 分钟后 3 倍），由 FC 在结束时选择，或自动设定。
-- 补录舰队、补录 PAP 和粘贴的名单需要 FC 主管审批。
+- 补录舰队、补录 PAP 和粘贴的名单需要 FC 主管审批。被拒绝的舰队改正后可以用 **重新提交审批** 送回去；带 FC 积分的特殊角色要等舰队通过审核后才能指派。
 - **PAP 登记链接** 让飞行员不必在 ESI 舰队里也能登记自己的角色。
 - Back Seat FC 之类的特殊角色，可以选择是否带 FC 积分。
 
@@ -48,7 +52,7 @@
 
 - 按 EVE 月统计个人、军团、联盟和 FC 数据；月度达标线带绿、琥珀、红三种状态；排行榜；不活跃成员；PAP 历史。
 - 军团、成员、FC、PAP 历史、FC 奖金和 SRP 页面都能导出 Excel 和 CSV。
-- FC 积分（舰队类型权重乘以 PAP 倍率），以及每月的 FC 奖金计算：资格判定、放弃领取和定稿。
+- FC 积分（舰队类型权重乘以 PAP 倍率），以及每月的 FC 奖金计算：资格判定、放弃领取和定稿。没有定稿的月份会随着该月舰队的变化自动重新计算；没有设置月度达标线的月份完全不做评估。
 
 **SRP**
 
@@ -59,7 +63,7 @@
 
 - 所有配置都在网页界面里完成，不需要 Django 后台权限。每次修改和每个特权操作都有操作日志。
 - 为成员、军团管理、FC、FC 主管和 SRP 管理员分别设置权限。
-- 英文和简体中文页面，跟随每位用户的 Alliance Auth 语言。
+- 英文和简体中文页面，跟随每位用户的 Alliance Auth 语言；适配 Alliance Auth 的所有主题（Flatly、Darkly、Materia、Bootstrap、Bootstrap Dark），手机和电脑都能用。
 
 ## 环境要求
 
@@ -87,14 +91,14 @@ FleetOps 使用 django-esi 的 OpenAPI 客户端，ESI 兼容日期为 `2025-11-
 ```bash
 source /path/to/venv/bin/activate
 
-# from PyPI (0.2.0b1 is a pre-release, so name the version)
-pip install --no-deps aa-fleetops==0.2.0b1
+# from PyPI (0.2.0b2 is a pre-release, so name the version)
+pip install --no-deps aa-fleetops==0.2.0b2
 
 # or from the wheel of a GitHub Release
-pip install --no-deps https://github.com/yilifaer/aa-fleetops/releases/download/v0.2.0b1/aa_fleetops-0.2.0b1-py3-none-any.whl
+pip install --no-deps https://github.com/yilifaer/aa-fleetops/releases/download/v0.2.0b2/aa_fleetops-0.2.0b2-py3-none-any.whl
 
 # or from Git
-pip install --no-deps "git+https://github.com/yilifaer/aa-fleetops.git@v0.2.0b1"
+pip install --no-deps "git+https://github.com/yilifaer/aa-fleetops.git@v0.2.0b2"
 ```
 
 如果站点上还没有依赖，去掉 `--no-deps`。额外依赖 `aa-fleetops[fittings]` 和 `aa-fleetops[sde]` 会安装可选的 `fittings` 与 `django-eveonline-sde`。
@@ -146,7 +150,7 @@ python manage.py fleetops_seed          # default templates, multipliers, specia
 `fleetops_seed --demo` 还会为测试站点创建三个示例舰队类型。按你的部署方式重启 Web 进程、Celery Worker 和 Celery Beat。FleetOps 的日志写入 Alliance Auth 的扩展日志
 （`extensions.log`）。
 
-**Docker。** 把 `aa-fleetops==0.2.0b1` 加到 Web、Worker 和 Beat 服务共用的镜像的依赖里，重新构建镜像，加上上面的 `local.py` 内容。然后在 Web 容器里打开一个 shell，
+**Docker。** 把 `aa-fleetops==0.2.0b2` 加到 Web、Worker 和 Beat 服务共用的镜像的依赖里，重新构建镜像，加上上面的 `local.py` 内容。然后在 Web 容器里打开一个 shell，
 用 Alliance Auth 镜像自带的 `auth` 简写运行命令：
 
 ```bash
@@ -212,7 +216,7 @@ FleetOps SRP 不需要任何权限范围。
 
 ## 翻译
 
-FleetOps 跟随 Alliance Auth 的语言菜单，目前提供英文和简体中文。Discord Ping 和游戏内 MOTD 使用站点语言书写，而不是点击按钮的 FC 的语言。
+FleetOps 跟随 Alliance Auth 的语言菜单，网页提供英文和简体中文。Discord Ping 和游戏内 MOTD 永远是英文，不管站点语言是什么：其中 FleetOps 自己的字样从不翻译，管理员写在模板里的文字原样发出。
 想改进翻译或增加语言，请看 [docs/translations.md](docs/translations.md)（英文，含中文术语表）。
 
 ## 文档

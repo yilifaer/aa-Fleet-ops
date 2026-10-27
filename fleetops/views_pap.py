@@ -3,27 +3,30 @@
 
 """Fleet page parts and actions of the PAP rules: recalculation, statistics inclusion, live status."""
 
-from allianceauth.authentication.decorators import permissions_required
 from django.contrib import messages
-from django.contrib.auth.decorators import permission_required
 from django.core.exceptions import PermissionDenied
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.functional import SimpleLazyObject
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 
 from fleetops import texts
-from fleetops.forms import EndFleetForm, FleetAttendanceMultiplierForm, format_duration
+from fleetops.decorators import fleet_manager_required, fleetops_permission_required
+from fleetops.forms import EndFleetForm, FleetAttendanceMultiplierForm, PapLimitChangeForm, format_duration
 from fleetops.models import FleetOperation, FleetOpsSettings
+from fleetops.services import pap_limit
 from fleetops.services.audit import audit
 from fleetops.services.counting import operation_count_reason, set_stats_mode
+from fleetops.services.fleet_manage import FleetActionResult
 from fleetops.services.multipliers import (
     allowed_multipliers,
     auto_multiplier,
     fleet_duration,
+    multiplier_list_text,
     needs_choice,
-    requirements_text,
     tiers,
+    unmet_requirements_text,
 )
 from fleetops.services.pap import compute_pap, finalize_pap, live_pap_status
 from fleetops.texts import translate_stored
@@ -34,6 +37,7 @@ from fleetops.views import (
     _can_view_operation,
     _operation_for_user,
 )
+from fleetops.views_fleet_common import fleet_response
 
 LIVE_PAP_TEMPLATE = "fleetops/partials/live_pap_status.html"
 StatsMode = FleetOperation.StatsMode
@@ -50,7 +54,13 @@ def _end_prompt(operation, settings):
     """What End Fleet shows for a running fleet: the multiplier choice, the automatic result, or nothing."""
     duration = fleet_duration(operation)
     allowed = allowed_multipliers(duration)
-    prompt = {"allowed": allowed, "duration": format_duration(duration) if duration else "", "requirements": requirements_text()}
+    prompt = {
+        "allowed": allowed,
+        "allowed_text": multiplier_list_text(allowed),
+        "duration": format_duration(duration) if duration else "",
+        # Only what the fleet has not reached yet; the multipliers it has are listed in "allowed_text".
+        "requirements": unmet_requirements_text(duration),
+    }
     if settings.multiplier_mode == FleetOpsSettings.MultiplierMode.AUTO:
         multiplier = auto_multiplier(duration)
         reached = [tier.threshold_minutes for tier in tiers() if tier.multiplier == multiplier]
@@ -96,6 +106,16 @@ def pap_context(request, operation):
         context["attendance_prompt_eligible"] = False
     if operation.status in FleetOperation.OPEN_STATUSES:
         context.update(_preview(request, operation, _sees_all_members(user, operation, can_manage)))
+    # Who manages a running fleet, and FC leads for a closed one, can change its PAP characters per player.
+    limit_mode = pap_limit.change_access(user, operation)
+    if limit_mode == "running" and not can_manage:
+        limit_mode = ""
+    context["pap_limit_mode"] = limit_mode
+    if limit_mode:
+        # Built when the page asks for it: the poller's PAP fragment never does.
+        context["pap_limit_form"] = SimpleLazyObject(
+            lambda: PapLimitChangeForm(operation=operation, user=user, pap_settings=settings, auto_id="pap_limit_%s")
+        )
     if is_closed and _can_set_multiplier(user, operation):
         can_override = user.has_perm("fleetops.manage_fleets")
         form = FleetAttendanceMultiplierForm(
@@ -109,12 +129,13 @@ def pap_context(request, operation):
     if operation.started_at:
         duration = fleet_duration(operation, operation.ended_at if is_closed else None)
         context["multiplier_allowed"] = allowed_multipliers(duration)
-        context["multiplier_requirements"] = requirements_text()
+        context["multiplier_allowed_text"] = multiplier_list_text(context["multiplier_allowed"])
+        context["multiplier_requirements"] = unmet_requirements_text(duration)
         context["fleet_duration_text"] = format_duration(duration)
     return context
 
 
-@permission_required("fleetops.manage_attendance", raise_exception=True)
+@fleetops_permission_required("fleetops.manage_attendance", page=False)
 @require_POST
 def recalculate_pap_view(request, operation_uuid):
     operation = get_object_or_404(FleetOperation, uuid=operation_uuid)
@@ -136,7 +157,42 @@ def recalculate_pap_view(request, operation_uuid):
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
 
 
-@permissions_required(("fleetops.manage_own_fleet", "fleetops.manage_fleets"), raise_exception=True)
+def _limit_text(value):
+    return str(value) if value is not None else _("no limit")
+
+
+@fleet_manager_required()
+@require_POST
+def set_pap_limit_view(request, operation_uuid):
+    """Change the PAP characters per player of a running fleet, or of a closed one (FC leads, with a reason)."""
+    operation = _operation_for_user(request, operation_uuid, manage=True)
+    try:
+        value = pap_limit.parse(request.POST.get("pap_character_limit"))
+        change = pap_limit.change_limit(operation, value, actor=request.user, reason=request.POST.get("reason", ""))
+    except ValueError as exc:
+        result = FleetActionResult(False, str(exc), level="error", status=400)
+    except pap_limit.LimitRefused as exc:
+        result = FleetActionResult(False, str(exc), level="error", status=exc.status)
+    else:
+        data = {"pap_character_limit": change.new}
+        if not change.changed:
+            text = _("The PAP characters per player is already %(value)s.") % {"value": _limit_text(change.new)}
+            result = FleetActionResult(True, text, level="info", data=data)
+        elif change.summary is not None:
+            text = _("PAP characters per player set to %(value)s; PAP recalculated (%(granted)s granted).") % {
+                "value": _limit_text(change.new),
+                "granted": change.summary["granted"],
+            }
+            result = FleetActionResult(True, text, data=data)
+        else:
+            text = _("PAP characters per player set to %(value)s. PAP is granted with it when the fleet closes.") % {
+                "value": _limit_text(change.new)
+            }
+            result = FleetActionResult(True, text, data=data)
+    return fleet_response(request, operation, result, anchor="attendance")
+
+
+@fleet_manager_required()
 @require_POST
 def set_stats_mode_view(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid, manage=True)
@@ -168,7 +224,7 @@ def live_pap_rows(user):
     return rows
 
 
-@permission_required("fleetops.basic_access", raise_exception=True)
+@fleetops_permission_required("fleetops.basic_access", page=False)
 def live_pap_partial(request):
     """The live PAP status of the user's characters, refreshed by the member pages."""
     return render(request, LIVE_PAP_TEMPLATE, {"live_pap_rows": live_pap_rows(request.user), "live_pap_fragment": True})

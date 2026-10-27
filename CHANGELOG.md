@@ -1,12 +1,112 @@
 # Changelog
 
-## [0.2.0b1] - Unreleased
+## [0.2.0b2] - Unreleased
 
-The first public pre-release. It covers everything since 0.1.0a5: pre pings and a new ping and MOTD, PAP rules
-that are applied when a fleet closes, a Fleet tab to manage the fleet from the web page, monthly statistics
-with exports, FC points, FleetOps SRP, English and Simplified Chinese pages, and new documentation. Install it
-with the version named (`pip install --no-deps aa-fleetops==0.2.0b1`); once a stable release exists, pip skips
-pre-releases unless you name the version or pass `--pre`.
+The second pre-release. The 0.2.0b1 build was a test build that was never published, so this section covers
+everything since 0.1.0a5: pre pings and a new ping and MOTD, PAP rules that are applied when a fleet closes, a Fleet
+tab to manage the fleet from the web page, monthly statistics with exports, FC points, FleetOps SRP, group pings
+and group fleets, English and Simplified Chinese pages, a refined interface in every Alliance Auth theme, and new
+documentation. Install it with the version named (`pip install --no-deps aa-fleetops==0.2.0b2`); once a stable
+release exists, pip skips pre-releases unless you name the version or pass `--pre`.
+
+### Changes since the 0.2.0b1 test build
+
+Everything the 0.2.0b1 test found, and the work that came with it. The upgrade notes below cover both ways of
+arriving here.
+
+**Groups**
+
+- **Group pings and group fleets.** Squads and interest groups are Alliance Auth groups. Administrators open
+  **Administration** > **Groups** and choose, for each group, whether its leaders may only send pings (the new
+  **Send Ping** page, no fleet record, no PAP) or also start fleets with PAP of the fleet types they allow for the
+  group. Leaders are the group leaders Alliance Auth already records (and the members of its leader groups). On
+  **Ping Channels** each channel names the groups whose leaders may use it; a channel without a group stays usable by
+  every FC, and **Alliance FCs can use this channel** decides whether FCs may also use a channel that has groups.
+  Group access is set on these pages only, never in Django admin, and leaders can change no setting. Send Ping shows a
+  preview that looks like Discord, asks before posting, allows one ping per channel every 60 seconds, keeps a list
+  of recent pings with **Use again**, and is audited as `ping.send`. Group fleets show a group pill, count in the
+  statistics like their type (a fleet type of weight 0 gives no FC points and does not count toward the incentive
+  minimum), and can get an SRP link when the group has the SRP switch on. Deleting an Alliance Auth group is
+  audited and returns channels that only it used to the alliance. The texts of pings sent without a fleet are
+  deleted after **Data retention days**.
+- **PAP characters per player for one fleet**. The setting stays the default, but the FC can
+  choose the value of a single fleet: on the Start Fleet page (also in presets, on the PAP-link fleet page and when
+  editing a scheduled fleet) and, while the fleet runs, in a control above the PAP preview on the fleet page. FCs and
+  group leaders may only lower it; FC leads may choose any value, including no limit, and are the only ones who can
+  change it after the fleet closed, with a written reason. The PAP of a closed fleet is calculated again then. Every
+  change is audited as `pap.limit`.
+
+**Pings, MOTD and messages**
+
+- **Pings and MOTDs are always English**, also on a site whose `LANGUAGE_CODE` is Chinese. The
+  0.2.0b1 test build wrote FleetOps's own words in them (the target words, `Now`, the cancellation notice, the field
+  labels and the footer) in the site language; now they are English everywhere, and text that administrators write
+  in a template is sent as written. The pages keep following each user's Alliance Auth language.
+- **Clickable MOTD**. The built-in default MOTD makes the FC name open the character's
+  information window and the form-up system open the system's, with the new variables `fc_link`, `formup_link`,
+  `fc_character_id` and `formup_system_id`. Only a MOTD template that still equals the old default is replaced
+  (reversible); edited and custom templates are not touched.
+- The MOTD warning is a setting, **MOTD warning length** (default 2000, 0 = off), counted with the tags; the preview
+  names both counts. The default pre ping shows the fleet time in each reader's local time with a
+  Discord timestamp. The default ping has a group line for group fleets. Pings and MOTDs have a live preview that
+  looks like Discord and like the game window, and a confirmation asks before a ping is posted.
+- A start form no longer asks the SSO for the R/W markers: a broken SSO answer is a translated message, never an
+  error page. Job summaries are translated, and step texts written by 0.1.0a5 and 0.1.0a6 are
+  converted to current ones by the upgrade.
+
+**Fleets, PAP and approvals**
+
+- **A rejected fleet needs Resubmit for approval**. Edits alone keep it rejected; the
+  button takes an optional note that the approvers see in the queue.
+- **Special roles with FC credit are assigned after approval**; a credit role given earlier is
+  flagged in the queue. The approval count in the menu shows fleets and PAP rows separately.
+- **FC incentive periods recalculate themselves** when a fleet of the month ends, its multiplier, type,
+  times or statistics mode change, or it is approved, rejected or resubmitted, or a credit role changes. Finalised
+  periods never change; the page shows the time of the last calculation and says when the numbers are stale.
+- A month **without a monthly target is not assessed**: no colours, nobody inactive, "No target for
+  this month"; the exports say "No target". The earlier default member minimum of 1 is gone.
+- Shortening a closed fleet lowers a multiplier the new duration no longer allows; the End Fleet dialog lists only
+  what is not reached yet, and multipliers are written the Chinese way ("N times") in Chinese. Manual fleets and edited
+  times more than five minutes in the future, in a year before the minimum or older than the PAP retention are
+  refused, and a record older than a year asks for a confirmation. In a pasted roster, a character that
+  already has PAP is offered only with Replace or Merge and only when the PAP is tracked.
+- A recalculation of PAP updates only the rows whose credit changed (N6-2). Squad change events name the wing
+  (`DPS / 111 -> FAX / 111`). Dragging a member shows a small label and the tree no longer jumps.
+  The PAP-link card of fleets closed before the upgrade is translated.
+
+**Statistics, SRP and administration**
+
+- The statistics overview explains the alliance total and the corporation rows; "Not assessed: you
+  registered after this month." replaces a dash; FC points show two decimals. The claims and
+  members exports end with a total row, and empty cells are written as cells, so a row without a rank no
+  longer shifts left in Excel, WPS and Numbers. The incentive page shows ISK with separators.
+- **Other corporations' pages answer 404 with a reason**, the same page for a corporation that does not exist;
+  every unknown or hidden FleetOps page answers a FleetOps 404 page, and a page you may not
+  open shows a FleetOps page with the reason and the permission name.
+- SRP: every FC and every leader of an SRP group gets **My fleets** and a summary of their own fleets; new claims use the short fleet type name; the payout rule has a **Label**; the reason
+  messages say what is missing; an own duplicate claim is explained in Chinese; no
+  "above policy" confirmation without an automatic amount; and a notice names the pending claims that were
+  calculated with earlier SRP settings, with a **Recalculate** button for SRP managers.
+- **Ship groups without bridge** is a searchable list with links to EVE Ref, a button for the default list and a
+  field for IDs outside the list. The positions of ship functions and the objects of the audit log show names
+  in your language. Relative times in Chinese have no space before the words for "later" and "ago".
+
+**Interface**
+
+- Every page was refined within its current layout: numbers and headings, spacing, surfaces,
+  pills and buttons, image frames, and a check of every page in Flatly, Darkly, Materia, Bootstrap and Bootstrap
+  Dark on a phone, a tablet and a desktop. The dashboard keeps all its blocks and gains a compact **Running fleets**
+  strip while a fleet runs (one short row per fleet on a phone), and metric cards two per row on a phone.
+- **Flatly secondary buttons and alerts look different.** Outline-secondary buttons, pills and notices now have
+  the contrast the page checks require in every theme, so in Flatly they are darker and calmer than in 0.2.0b1. The
+  Materia primary button is darker inside FleetOps. This is intended. For example, an outline-secondary button in Flatly
+  was grey text (#95a5a6) on a light border and is now body-coloured text on a light border.
+- Closed fleets and members open on the **PAP** tab; running fleets stay on the Fleet tab. Reject (fleet, PAP rows,
+  SRP claim), Undo payment, Revoke approval, End Fleet without a dialog, regenerating the MOTD and revoking a PAP link
+  ask first. Messages of Alliance Auth appear as notifications on FleetOps pages. Failure notices say what to do
+  next, and an unreadable form error is shown in the page instead of an empty bar.
+- Readable colours for metric cards, the month selector, sort links, `code` in notices, approval group rows,
+  pagination text, composition function pills and position labels, and the fleet tree states.
 
 ### Upgrade notes
 
@@ -21,11 +121,18 @@ python manage.py collectstatic --noinput
 
 **What the commands do**
 
-- `migrate` applies the migrations `0005` to `0018`. `0018` only changes the labels of fields and choices; it
-  changes no table. The data steps of the other migrations are described under "Migrations" below.
+- `migrate` applies the migrations `0005` to `0021` (from the 0.2.0b1 test build only `0019` to `0021`). `0018` only
+  changes the labels of fields and choices; it changes no table. `0019` adds the new fields, `0020` updates the
+  default ping and the default MOTD where they are still untouched (reversibly) and converts old step texts, and
+  `0021` adds group access. Send Ping uses a built-in text until a **Ping without fleet** template exists; `python manage.py fleetops_seed` creates it
+  (it never overwrites a template you edited). The data steps are described under "Migrations" below.
 - `collectstatic` is needed: the Fleet tab, the SRP pages and the translated JavaScript bring new files. Without
   them the Fleet tab shows its first state but does not refresh, and its buttons do nothing.
 - No beat entry is added or changed; the two entries from the README stay as they are.
+- No setting changes. Custom MOTD templates keep working: add `{{ fc_link }}` and `{{ formup_link }}` by hand if the
+  FC and the form-up place should be clickable in game. Sites that want Chinese text in pings write it in their
+  templates. Existing incentive periods that are not finalised show a note that their numbers are stale until the
+  next fleet change or **Recalculate**.
 
 **Settings to check in `local.py`**
 
@@ -136,12 +243,16 @@ its URL in FleetOps), because the old token may have been seen.
   structure templates, and the settings **Live fleet refresh** and **Ship groups without bridge**. The defaults
   are created only while those tables are empty.
 - `0015` adds Monthly Targets and the settings **Leaderboard places** (20) and **Leaderboard visibility**
-  (everyone with FleetOps access). No data is converted: without a target the corporation pages show no status
-  and a member needs at least 1 PAP.
+  (everyone with FleetOps access). No data is converted; a month without a target is not assessed (see above).
 - `0016` and `0017` add FleetOps SRP. SRP stays off until you enable it under Administration > FleetOps SRP. No
   data of aa-srp or Alliance Auth SRP is imported.
 - `0018` changes labels only.
-- The data steps of `0005`, `0006`, `0007`, `0009`, `0012`, `0014` and `0017` are not undone when migrating back.
+- `0019` adds the fields of this release (the MOTD warning length, the time of the last incentive calculation and the
+  note of a resubmitted fleet). `0020` replaces the **Default Ping** and **Default MOTD** only while they still equal
+  the text of the version before, and rewrites step texts that 0.1.0a5 and 0.1.0a6 stored. `0021` adds group access, the groups of ping
+  channels (existing channels stay open to every FC), the group of a fleet and the pings sent without a fleet.
+- The data steps of `0005`, `0006`, `0007`, `0009`, `0012`, `0014` and `0017`, and the step-text rewrite of `0020`, are not undone when migrating back (the default ping
+  and MOTD of `0020` are restored).
 
 **Message templates.** The **Default Ping** and **Default MOTD** are replaced by the new built-in texts only if
 they were never edited; edited and custom templates keep working. `{{ ping_target }}` now renders the mention
@@ -152,8 +263,9 @@ comms join page for voice client links (the raw link is `{{ comms_voice_url }}`)
 put the SRP link in. The variables are listed in the message templates reference.
 
 **Languages.** FleetOps pages follow each user's language in Alliance Auth: English and Simplified Chinese are
-available, and other languages show English text. Discord pings and in-game MOTDs are always written in the site
-language (`LANGUAGE_CODE`), never in the language of the FC who clicked. Nothing needs configuring.
+available, and other languages show English text. Discord pings and in-game MOTDs are always English, whatever
+`LANGUAGE_CODE` says and whoever clicked: FleetOps's own words in them are never translated, and text that you write
+in a template is sent as you wrote it. Nothing needs configuring.
 
 ### Added
 

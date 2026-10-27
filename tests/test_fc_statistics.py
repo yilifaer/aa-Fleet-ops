@@ -402,7 +402,8 @@ class IncentiveRebuildMatchesTests(FcFixtureMixin, TestCase):
 
         saved = MonthlyFCStatistic.objects.get(period=self.period, fc_user=self.erin).fleet_type_breakdown
 
-        self.assertEqual(saved, {"Roam": {"count": 1, "points": 3.45}})
+        # Each entry also says how many of its fleets count toward the minimum fleets.
+        self.assertEqual(saved, {"Roam": {"count": 1, "points": 3.45, "toward_minimum": 1}})
 
 
 class FcPageTests(FcFixtureMixin, TestCase):
