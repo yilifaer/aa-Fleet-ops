@@ -325,9 +325,14 @@ group management) and the members of its leader groups; the page shows them but 
 the row is the grant. Only alliance administrators (`manage_configuration`) change these rows, and group leaders
 cannot change any setting.
 
+If your alliance records no group leaders in Alliance Auth and keeps two Alliance Auth groups per small group
+(for example "Example Squad members" and "Example Squad leaders"), switch on **All members of this group count as its
+leaders** on the row of the leaders group. See [Two groups per small group](#two-groups-per-small-group).
+
 | Field | Meaning |
 |---|---|
 | Alliance Auth group | The group (one row per group). |
+| All members of this group count as its leaders | Off by default. When on, every active member of this Alliance Auth group who holds `fleetops.basic_access` is a leader of it in FleetOps, with the same rights as a leader recorded in Alliance Auth. Group leaders and leader groups recorded in Alliance Auth keep working beside it. The leaders card on the edit page then lists the members (read only). Tick it only for the leaders group: on a members group every member would be a leader. The group must be marked Internal in Alliance Auth, otherwise the setting is refused: people can join other groups on their own, and anyone who can change the membership of the group (an Alliance Auth administrator, `auth.group_management`, a group leader of it) decides who leads it. Add and remove people in Alliance Auth: it counts from their next request. |
 | Leaders may | **Ping only**: the leaders use **Send Ping** for the group's channels; no fleet record, no PAP. **Pings and fleets with PAP**: they can also start fleets (not PAP-link fleets or pre pings), limited to the fleet types ticked here. The ticked types are kept when you switch back to pings only. |
 | Fleet types | The fleet types the leaders may start. A fleet type with the weight 0 gives no FC points, so a group fleet of that type does not change the FC incentive. |
 | SRP link for group fleets | Group fleets get an SRP link like alliance fleets, and the leaders get **My fleets** in the SRP menu. |
@@ -340,6 +345,28 @@ without a fleet change nothing in the statistics.
 
 Saving a group that runs fleets of a type with a weight above 0 shows a notice (leaders get FC credit for those
 fleets). A group without a ping channel shows a notice too: assign it under [Ping Channels](#ping-channels).
+
+### Two groups per small group
+
+Some alliances do not record group leaders in Alliance Auth. Each small group has two Alliance Auth groups instead:
+"Example Squad members" for everybody in the squad and "Example Squad leaders" for the people who lead it. FleetOps
+handles this without any change in Alliance Auth:
+
+1. In Alliance Auth, make sure the people who lead the squad are members of "Example Squad leaders" and hold
+   `fleetops.basic_access` (through that group, their state or another group). Nothing else is needed there; no
+   group leaders have to be recorded.
+2. Open **Administration** > **Groups** and add a row for "Example Squad leaders" (not for the members group).
+3. Switch on **All members of this group count as its leaders**. Choose **Leaders may**, the fleet types and the SRP
+   switch as for any other group, and save. A notice shows how many active members who hold FleetOps access count as leaders now.
+4. Open **Administration** > **Ping Channels**, edit the channel of the squad and tick "Example Squad leaders" under
+   **Groups**. Only groups that have a row are listed.
+5. Check the edit page of the row: the leaders card says "All members of Example Squad leaders" and lists them. A
+   member who lacks FleetOps access is marked.
+
+Adding someone to "Example Squad leaders" in Alliance Auth gives them these rights on their next request; removing
+them takes the rights away on their next request. Members of "Example Squad members" get nothing, because that group
+has no row. Inactive accounts and accounts without `fleetops.basic_access` never count. Every change of the row is
+in the audit log.
 
 Deleting an Alliance Auth group that has a row removes the row. The audit log records it ("Alliance Auth group
 was deleted", without an actor, with the old settings and channels), channels that belonged only to this group

@@ -7,7 +7,7 @@
 
 英文版为准；本文是 [README.md](README.md) 的中文版本。
 
-状态：测试版。当前的预发布版本是 0.2.0b2（0.2.0b1 是未发布的测试版本）；每次升级之前请阅读 [CHANGELOG](CHANGELOG.md)（英文）。
+状态：测试版。当前的预发布版本是 0.2.0b3（0.2.0b1 是未发布的测试版本）；每次升级之前请阅读 [CHANGELOG](CHANGELOG.md)（英文）。
 
 ## 功能
 
@@ -91,14 +91,14 @@ FleetOps 使用 django-esi 的 OpenAPI 客户端，ESI 兼容日期为 `2025-11-
 ```bash
 source /path/to/venv/bin/activate
 
-# from PyPI (0.2.0b2 is a pre-release, so name the version)
-pip install --no-deps aa-fleetops==0.2.0b2
+# from PyPI (0.2.0b3 is a pre-release, so name the version)
+pip install --no-deps aa-fleetops==0.2.0b3
 
 # or from the wheel of a GitHub Release
-pip install --no-deps https://github.com/yilifaer/aa-fleetops/releases/download/v0.2.0b2/aa_fleetops-0.2.0b2-py3-none-any.whl
+pip install --no-deps https://github.com/yilifaer/aa-fleetops/releases/download/v0.2.0b3/aa_fleetops-0.2.0b3-py3-none-any.whl
 
 # or from Git
-pip install --no-deps "git+https://github.com/yilifaer/aa-fleetops.git@v0.2.0b2"
+pip install --no-deps "git+https://github.com/yilifaer/aa-fleetops.git@v0.2.0b3"
 ```
 
 如果站点上还没有依赖，去掉 `--no-deps`。额外依赖 `aa-fleetops[fittings]` 和 `aa-fleetops[sde]` 会安装可选的 `fittings` 与 `django-eveonline-sde`。
@@ -150,7 +150,7 @@ python manage.py fleetops_seed          # default templates, multipliers, specia
 `fleetops_seed --demo` 还会为测试站点创建三个示例舰队类型。按你的部署方式重启 Web 进程、Celery Worker 和 Celery Beat。FleetOps 的日志写入 Alliance Auth 的扩展日志
 （`extensions.log`）。
 
-**Docker。** 把 `aa-fleetops==0.2.0b2` 加到 Web、Worker 和 Beat 服务共用的镜像的依赖里，重新构建镜像，加上上面的 `local.py` 内容。然后在 Web 容器里打开一个 shell，
+**Docker。** 把 `aa-fleetops==0.2.0b3` 加到 Web、Worker 和 Beat 服务共用的镜像的依赖里，重新构建镜像，加上上面的 `local.py` 内容。然后在 Web 容器里打开一个 shell，
 用 Alliance Auth 镜像自带的 `auth` 简写运行命令：
 
 ```bash

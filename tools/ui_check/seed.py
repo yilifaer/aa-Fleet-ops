@@ -40,7 +40,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tools.ui_check.settings")
 # run with ``--lane S0`` or ``--lane all``.
 LANE_PATTERNS = (
     ("A", ("start", "start-*", "presets", "scheduled", "edit-scheduled")),
-    ("F", ("send-ping-*", "config-groups", "config-group-edit")),
+    ("F", ("send-ping-*", "config-groups", "config-group-edit", "config-group-edit-members")),
     ("B", ("fleet-*", "pap-link-register", "pap-fleet-start")),
     ("C", ("operations*", "manual-fleet", "roster-import", "edit-operation", "approvals", "incentives")),
     ("D", ("dashboard*", "my-*", "leaderboard", "corp-*", "all-corps", "alliance-members", "history-*",
@@ -187,6 +187,8 @@ def build_pages():
         Page("config-groups", "admin", lambda ctx: reverse("fleetops:configuration_list", args=["groups"])),
         Page("config-group-edit", "admin",
              lambda ctx: reverse("fleetops:configuration_edit", args=["groups", ctx.group_access_fleets.pk])),
+        Page("config-group-edit-members", "admin",
+             lambda ctx: reverse("fleetops:configuration_edit", args=["groups", ctx.group_access_members.pk])),
         Page("config-channel-edit", "admin",
              lambda ctx: reverse("fleetops:configuration_edit", args=["ping-channels", ctx.channel_groups.pk])),
         Page("start-fleetleader", "fleetleader", u("start_fleet")),
@@ -614,7 +616,7 @@ def prime_eve_links(users, f):
 
 def build_group_data(ctx, users, types, alliance_channel, now, f, m, Group, AuthGroup):
     """The group leaders, the groups with their access rows, the group fleet and the two pings without a fleet."""
-    ctx.group_access_fleets = ctx.group_access_ping = ctx.channel_groups = ctx.group_fleet = None
+    ctx.group_access_fleets = ctx.group_access_ping = ctx.group_access_members = ctx.channel_groups = ctx.group_fleet = None
     pingleader = f.create_user("pingleader", perms=f.MEMBER_PERMS, main_name="Example Ping Leader")
     fleetleader = f.create_user("fleetleader", perms=f.MEMBER_PERMS, main_name="Example Fleet Leader")
     fleetleader2 = f.create_user("fleetleader2", perms=f.MEMBER_PERMS, main_name="Example Fleet Leader Two")
@@ -635,6 +637,12 @@ def build_group_data(ctx, users, types, alliance_channel, now, f, m, Group, Auth
                                                            note="Example group with fleets")
     ctx.group_access_fleets.fleet_types.add(group_type)
     ctx.group_access_ping = m.GroupAccess.objects.create(group=ping_group, mode="ping", note="Example ping-only group")
+    # A leaders group of an alliance that records no group leaders: all its members count as leaders.
+    squad_leaders, _created = Group.objects.get_or_create(name="Example Squad leaders")
+    fleetleader.groups.add(squad_leaders)
+    pingleader.groups.add(squad_leaders)
+    ctx.group_access_members = m.GroupAccess.objects.create(
+        group=squad_leaders, mode="ping", members_are_leaders=True, note="Example members-are-leaders group")
 
     ctx.channel_groups = f.ping_channel("Group Pings")
     ctx.channel_groups.allowed_groups.set([fleet_group, ping_group])

@@ -12,7 +12,8 @@ the wheel and the User-Agent carry it, and the tag must be `v` plus the same str
 | Version | Meaning |
 |---|---|
 | `0.2.0b2` | First public pre-release (0.2.0b1 was a test build that was never published). Install it with the version named; once a stable release exists, `pip` skips pre-releases unless asked for the version or given `--pre`. |
-| `0.2.0b3`, `0.2.0rc1`, ... | Further pre-releases. The release marks every version with `a`, `b`, `rc` or `.dev` as a GitHub pre-release. |
+| `0.2.0b3` | Adds the option "All members of this group count as its leaders" for alliances with a members group and a leaders group per small group. |
+| `0.2.0b4`, `0.2.0rc1`, ... | Further pre-releases. The release marks every version with `a`, `b`, `rc` or `.dev` as a GitHub pre-release. |
 | `1.0.0` | The first stable release, once the pre-releases have run stably in production. |
 | `0.3.0.dev0` | The development version between releases. |
 

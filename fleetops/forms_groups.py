@@ -9,6 +9,7 @@ once more right before the post (a crafted form, or a change made in Alliance Au
 """
 
 from django import forms
+from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.db.models import Q
 from django.urls import NoReverseMatch, reverse
@@ -35,6 +36,10 @@ from fleetops.services.periods import EVE_CLOCK_PATTERN, parse_eve_datetime
 from fleetops.ui import TONE_INFO, TONE_NEUTRAL, TONE_WARN, bool_tone, pill_html
 
 FLEETS_NEED_TYPE = _("A group that runs fleets needs at least one fleet type.")
+MEMBERS_NEED_INTERNAL = _(
+    "Only a group marked Internal in Alliance Auth can count its members as leaders. People can join other groups "
+    "on their own or approve each other, which would make them leaders. Set the group to Internal in Alliance Auth first."
+)
 GROUP_FOR_PING_REQUIRED = _("Choose the group this ping is for.")
 FLEET_TIME_INCOMPLETE = _("Enter the fleet date and time in EVE time (UTC).")
 FLEET_TIME_PAST = _("The fleet time must be in the future (EVE time).")
@@ -66,19 +71,21 @@ class FleetTypeChoiceField(forms.ModelMultipleChoiceField):
 class GroupAccessForm(forms.ModelForm):
     """What the leaders of one Alliance Auth group may do in FleetOps.
 
-    The leaders themselves are read from Alliance Auth and cannot be set here. ``warnings`` are shown after a
+    The leaders themselves are read from Alliance Auth and cannot be set here; the one thing set here is whether
+    all members of the group count as its leaders. ``warnings`` are shown after a
     save; ``audit_extra`` adds the group's name to the audit entry.
     """
 
     class Meta:
         model = GroupAccess
-        fields = ["group", "mode", "fleet_types", "srp_enabled", "is_active", "note"]
+        fields = ["group", "members_are_leaders", "mode", "fleet_types", "srp_enabled", "is_active", "note"]
         field_classes = {"fleet_types": FleetTypeChoiceField}
         widgets = {"fleet_types": forms.CheckboxSelectMultiple}
         labels = {"group": _("Alliance Auth group")}
         help_texts = {
             "group": _(
-                "Its leaders are the group leaders and the members of the leader groups set in Alliance Auth."
+                "Its leaders are the group leaders and the members of the leader groups set in Alliance Auth, "
+                "or all of its members when the option below is on."
             ),
             "mode": _("Fleets with PAP include pings. The fleet types are kept when you switch back to pings only."),
             "is_active": _("While it is off, the leaders of the group can do nothing in FleetOps."),
@@ -111,6 +118,18 @@ class GroupAccessForm(forms.ModelForm):
                 )
         if group is not None:
             self.audit_extra = {"group": group.name}
+            if cleaned.get("members_are_leaders"):
+                if not group_access.members_grant_allowed(group):
+                    self.add_error("members_are_leaders", MEMBERS_NEED_INTERNAL)
+                else:
+                    counted = [row for row in group_access.members_of([group.pk])[group.pk] if row.has_access]
+                    self.warnings.append(
+                        _(
+                            "Every active member of %(group)s who holds FleetOps access now counts as its leader. "
+                            "Members counted: %(count)s. Add and remove people in Alliance Auth."
+                        )
+                        % {"group": group.name, "count": len(counted)}
+                    )
             if not DiscordWebhook.objects.filter(is_active=True, allowed_groups=group).exists():
                 self.warnings.append(
                     _("No ping channel is assigned to this group yet. Assign one under Ping Channels.")
@@ -148,7 +167,8 @@ def group_list_prepare(objects) -> None:
     """Fill in what the list cells and the leaders card of ``objects`` need, with a fixed number of queries.
 
     Each row gets ``fleetops_leaders`` (all leaders, ``LeaderRow``), ``fleetops_direct_leaders``,
-    ``fleetops_leader_groups`` (``[(leader group name, [LeaderRow, ...])]``), ``fleetops_channels`` and
+    ``fleetops_leader_groups`` (``[(leader group name, [LeaderRow, ...])]``), ``fleetops_members`` (the members
+    of a group whose row counts all members as leaders, else ``[]``), ``fleetops_channels`` and
     ``fleetops_admin_url``.
     """
     objects = list(objects)
@@ -157,6 +177,8 @@ def group_list_prepare(objects) -> None:
     group_ids = [obj.group_id for obj in objects]
     leaders = group_access.leaders_of(group_ids)
     channels = _channels_by_group(objects, group_ids)
+    members = group_access.members_of([obj.group_id for obj in objects if obj.members_are_leaders])
+    internal = group_access.internal_group_ids(group_ids)
     for obj in objects:
         rows = leaders.get(obj.group_id, [])
         via = {}
@@ -166,6 +188,8 @@ def group_list_prepare(objects) -> None:
         obj.fleetops_leaders = rows
         obj.fleetops_direct_leaders = [row for row in rows if not row.via_group]
         obj.fleetops_leader_groups = sorted(via.items(), key=lambda item: item[0].casefold())
+        obj.fleetops_members = members.get(obj.group_id, []) if obj.members_are_leaders else []
+        obj.fleetops_members_allowed = obj.group_id in internal
         obj.fleetops_channels = channels.get(obj.group_id, [])
         obj.fleetops_admin_url = _admin_group_url(obj.group_id)
 
@@ -245,6 +269,26 @@ def group_cell(obj, field_name):
         rows = getattr(obj, "fleetops_leaders", None)
         if rows is None:
             rows = group_access.leaders_of([obj.group_id]).get(obj.group_id, [])
+        if obj.members_are_leaders:
+            members = getattr(obj, "fleetops_members", None)
+            if members is None:
+                members = group_access.members_of([obj.group_id]).get(obj.group_id, [])
+            with_access = [row for row in members if row.has_access]
+            if len(with_access) == len(members):
+                text = _("All members (%(count)s)") % {"count": len(members)}
+            else:
+                text = _("All members (%(count)s of %(total)s have access)") % {
+                    "count": len(with_access),
+                    "total": len(members),
+                }
+            allowed = getattr(obj, "fleetops_members_allowed", None)
+            if allowed is None:
+                allowed = group_access.members_grant_allowed(obj.group)
+            if not allowed:
+                everyone = pill_html(TONE_WARN, _("Members do not lead: group is not internal"), class_="fo-pill-wrap")
+            else:
+                everyone = pill_html(TONE_INFO, text, class_="fo-pill-wrap")
+            return format_html("{} {}", everyone, _leader_names(rows)) if rows else everyone
         if not rows:
             return pill_html(TONE_WARN, _("No leaders in Alliance Auth"))
         return _leader_names(rows)

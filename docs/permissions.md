@@ -106,7 +106,8 @@ claims, unless **SRP managers may decide on their own claims** is ticked.
 ### Group leaders
 
 A group leader is a user whom Alliance Auth records as a leader of an Alliance Auth group (its group leaders, and the
-members of its leader groups). The permission `auth.group_management` alone does not make anybody a leader. A
+members of its leader groups, or every member of the group when its row has **All members of this group count as its
+leaders** on). The permission `auth.group_management` alone does not make anybody a leader. The all-members option only works for a group marked Internal in Alliance Auth, and for such a row whoever can change the membership of the group (an Alliance Auth administrator) decides who leads it. A
 leader needs no FleetOps permission besides `fleetops.basic_access`: the row of the group under
 **Administration** > **Groups** is the grant (see [Groups](configuration.md#groups)). What a leader may do follows
 the group's **Leaders may** setting:
@@ -115,6 +116,20 @@ the group's **Leaders may** setting:
 |---|---|
 | **Ping only** | Open **Send Ping** and ping the channels assigned to the group. No fleet record, no PAP. |
 | **Pings and fleets with PAP** | Also start **group fleets** on the Start Fleet page (the group is fixed or chosen under **Fleet for**), only of the fleet types allowed for the group, only to the channels of the group, to start now (no pre ping). They manage the group fleets they started, open the other fleets of their group read-only, and, when the group has the SRP switch on, see **My fleets** in the SRP menu. |
+
+**Two groups per small group.** When an alliance keeps "Example Squad members" and "Example Squad leaders" as Alliance
+Auth groups and records no group leaders, the leaders are simply the members of the second group:
+
+1. Put the squad leaders into "Example Squad leaders" in Alliance Auth and give them `fleetops.basic_access` (for
+   example through their state or a group they already have).
+2. Under **Administration** > **Groups** add a row for "Example Squad leaders" and switch on **All members of this
+   group count as its leaders**.
+3. Under **Administration** > **Ping Channels** tick "Example Squad leaders" on the squad's channel.
+
+Those members then have exactly the rights of a leader recorded in Alliance Auth, in the mode of the row, for the
+channels of that group only. Members of "Example Squad members" have none of them. Removing a person from
+"Example Squad leaders" ends the rights on their next request; an inactive account or one without `basic_access` never
+has them. Details: [Groups](configuration.md#two-groups-per-small-group).
 
 What a group leader cannot do: change any setting, send a pre ping, start a PAP-link fleet, use an alliance channel
 (a channel without a group) or another group's channel, change the fleet type of a group fleet, or loosen the PAP

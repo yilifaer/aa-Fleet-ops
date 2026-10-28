@@ -390,7 +390,7 @@ class RecordAdmin(ReadOnlyAdmin):
 class GroupAccessAdmin(RecordAdmin):
     """Group access is set on the FleetOps Administration pages, where every change is checked and audited."""
 
-    list_display = ("group", "mode", "srp_enabled", "is_active", "updated_at")
+    list_display = ("group", "mode", "members_are_leaders", "srp_enabled", "is_active", "updated_at")
     list_filter = ("mode", "is_active")
     search_fields = ("group__name",)
 

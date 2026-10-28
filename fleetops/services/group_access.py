@@ -4,8 +4,12 @@
 """Group leaders: which configured Alliance Auth groups a user leads, and what that allows in FleetOps.
 
 Leadership is read from Alliance Auth on every request: the group leaders of a group and the members of its
-leader groups. ``auth.group_management`` alone makes nobody a leader. An active ``GroupAccess`` row for the
-group is the grant; there is no FleetOps permission for it. The answer is kept on the user object for one
+leader groups, and, for a row with "All members of this group count as its leaders", the members of the group
+itself. ``auth.group_management`` alone makes nobody a leader. The members-based grant is only given for a group
+that is internal in Alliance Auth (nobody can join it on their own; Alliance Auth admins change its membership):
+for such a row, whoever can change the membership of the group decides who leads it, so a group people can join
+or request to join never grants it. An active ``GroupAccess`` row for the group is the
+grant; there is no FleetOps permission for it. The answer is kept on the user object for one
 request, so the navigation, a form and the send in the same request share one lookup; a change in Alliance
 Auth (leader removed, row deactivated, group deleted) counts from the next request on.
 
@@ -97,6 +101,7 @@ def leader_access(user) -> LeaderAccess:
 
     No query without ``basic_access`` (or for an inactive or anonymous user), one when the user leads no
     configured group or only ping groups, two when they lead a group that runs fleets. Cached on ``user``.
+    Members of a group whose row has ``members_are_leaders`` on lead it like a recorded leader.
     """
     cached = getattr(user, CACHE_ATTRIBUTE, None)
     if cached is not None:
@@ -104,8 +109,11 @@ def leader_access(user) -> LeaderAccess:
     access = LeaderAccess()
     if getattr(user, "is_authenticated", False) and user.is_active and user.has_perm(BASIC_ACCESS):
         led = Group.objects.filter(leader_q(user)).values("pk")
+        # A group whose row counts all its members as leaders: the user's own memberships are enough.
+        member_of = user.groups.values("pk")
         rows = list(
-            GroupAccess.objects.filter(is_active=True, group_id__in=led)
+            GroupAccess.objects.filter(is_active=True)
+            .filter(Q(group_id__in=led) | Q(members_are_leaders=True, group_id__in=member_of, group__authgroup__internal=True))
             .order_by("group__name", "group_id")
             .values_list("group_id", "group__name", "mode", "srp_enabled")
         )
@@ -310,6 +318,45 @@ def _users_with_access(user_ids) -> set:
             | Q(profile__state__permissions=permission)
         )
     return set(users.filter(rule).values_list("pk", flat=True).distinct())
+
+
+def members_grant_allowed(group) -> bool:
+    """Whether the members of ``group`` may count as its leaders: the group is internal in Alliance Auth."""
+    authgroup = getattr(group, "authgroup", None)
+    return bool(authgroup is not None and authgroup.internal)
+
+
+def internal_group_ids(group_ids) -> set:
+    """Which of ``group_ids`` are internal in Alliance Auth (one query)."""
+    from allianceauth.groupmanagement.models import AuthGroup
+
+    return set(AuthGroup.objects.filter(group_id__in=list(group_ids), internal=True).values_list("group_id", flat=True))
+
+
+def members_of(group_ids) -> dict:
+    """``{group_id: [LeaderRow, ...]}``: the members of each group, for the rows that count all members as leaders.
+
+    For the administration pages; a fixed number of queries (the memberships, the users with their main
+    characters, who of them has FleetOps access). Inactive users are left out: they lead nothing.
+    """
+    group_ids = list(group_ids or ())
+    result = {group_id: [] for group_id in group_ids}
+    if not group_ids:
+        return result
+    user_model = get_user_model()
+    pairs = list(user_model.groups.through.objects.filter(group_id__in=group_ids).values_list("group_id", "user_id"))
+    user_ids = {user_id for _group, user_id in pairs}
+    names = {}
+    for user in user_model.objects.filter(pk__in=user_ids, is_active=True).select_related("profile__main_character"):
+        main = getattr(getattr(user, "profile", None), "main_character", None)
+        names[user.pk] = getattr(main, "character_name", "") or user.username
+    access = _users_with_access(set(names))
+    for group_id, user_id in pairs:
+        if user_id in names:
+            result[group_id].append(LeaderRow(user_id, names[user_id], user_id in access))
+    for rows in result.values():
+        rows.sort(key=lambda row: (row.name.casefold(), row.user_id))
+    return result
 
 
 def leaders_of(group_ids) -> dict:

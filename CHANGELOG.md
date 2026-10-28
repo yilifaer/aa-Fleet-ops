@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.2.0b3] - Unreleased
+
+A small addition for alliances that keep two Alliance Auth groups per small group and record no group leaders.
+Install it like the previous pre-release (`pip install --no-deps aa-fleetops==0.2.0b3`).
+
+### Added
+
+- **All members of this group count as its leaders.** Every row under **Administration** > **Groups** has a new option
+  of this name, off by default. With it on, every active member of that Alliance Auth group who holds
+  `fleetops.basic_access` is a leader of the group in FleetOps, with exactly the rights of a leader recorded in
+  Alliance Auth: the channels assigned to the group, the group's **Leaders may** mode, group fleets, the read-only
+  views of the group's fleets and, when the row has the SRP switch on, SRP for group fleets. For an alliance with
+  "Example Squad members" and "Example Squad leaders" groups, add the row for the leaders group and assign the squad's
+  channel to it; nothing has to be set in Alliance Auth. Leaders and leader groups recorded in Alliance Auth keep
+  working. Removing someone from the group, an inactive account or a missing `basic_access` takes the rights away on
+  the next request. The leaders card of the row lists the members read only, the list shows "All members", and the
+  change is audited like every other change of the row. The documents explain the setup step by step
+  ([configuration](docs/configuration.md#two-groups-per-small-group), [permissions](docs/permissions.md#group-leaders)).
+
+### Upgrade notes
+
+Back up the database first, install the release with `--no-deps`, then run `python manage.py migrate fleetops` and
+restart the web process, the Celery worker and Celery beat. Migration `0022` adds one switch to the group rows and
+leaves it off, so nothing changes until an administrator turns it on. If you come from 0.2.0b1 or earlier, read
+the notes of 0.2.0b2 below as well.
+
 ## [0.2.0b2] - Unreleased
 
 The second pre-release. The 0.2.0b1 build was a test build that was never published, so this section covers

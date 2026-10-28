@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-27 15:06+0000\n"
+"POT-Creation-Date: 2026-10-28 01:37+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -702,6 +702,10 @@ msgid "A group that runs fleets needs at least one fleet type."
 msgstr "能开舰队的小组至少需要一种舰队类型。"
 
 #: forms_groups.py
+msgid "Only a group marked Internal in Alliance Auth can count its members as leaders. People can join other groups on their own or approve each other, which would make them leaders. Set the group to Internal in Alliance Auth first."
+msgstr "只有在 Alliance Auth 里标为 Internal 的用户组才能让它的成员算作组长。其他用户组的人可以自己加入或互相批准，这会让他们成为组长。请先在 Alliance Auth 里把这个用户组设为 Internal。"
+
+#: forms_groups.py
 msgid "Choose the group this ping is for."
 msgstr "请选择这条 Ping 所属的小组。"
 
@@ -720,8 +724,8 @@ msgid "Alliance Auth group"
 msgstr "Alliance Auth 用户组"
 
 #: forms_groups.py
-msgid "Its leaders are the group leaders and the members of the leader groups set in Alliance Auth."
-msgstr "组长是 Alliance Auth 里设置的组长，以及组长组的成员。"
+msgid "Its leaders are the group leaders and the members of the leader groups set in Alliance Auth, or all of its members when the option below is on."
+msgstr "它的组长是 Alliance Auth 里设置的组长和组长组的成员；打开下面的选项时，则是它的所有成员。"
 
 #: forms_groups.py
 msgid "Fleets with PAP include pings. The fleet types are kept when you switch back to pings only."
@@ -735,6 +739,11 @@ msgstr "关闭期间，该小组的组长在 FleetOps 里不能做任何事。"
 #, python-format
 msgid "Fleets of type %(types)s give FC points; group leaders who run them get FC credit."
 msgstr "%(types)s 类型的舰队计 FC 积分；带这些舰队的组长会获得 FC 积分。"
+
+#: forms_groups.py
+#, python-format
+msgid "Every active member of %(group)s who holds FleetOps access now counts as its leader. Members counted: %(count)s. Add and remove people in Alliance Auth."
+msgstr "%(group)s 中每个启用且有 FleetOps 权限的成员现在都算作它的组长。计入的成员数：%(count)s。人员的增减请在 Alliance Auth 里操作。"
 
 #: forms_groups.py
 msgid "No ping channel is assigned to this group yet. Assign one under Ping Channels."
@@ -773,6 +782,20 @@ msgstr "没有舰队类型"
 #: forms_groups.py
 msgid "No channel"
 msgstr "没有频道"
+
+#: forms_groups.py
+#, python-format
+msgid "All members (%(count)s)"
+msgstr "所有成员（%(count)s）"
+
+#: forms_groups.py
+#, python-format
+msgid "All members (%(count)s of %(total)s have access)"
+msgstr "所有成员（%(total)s 人中 %(count)s 人有权限）"
+
+#: forms_groups.py
+msgid "Members do not lead: group is not internal"
+msgstr "成员不算组长：用户组不是 Internal"
 
 #: forms_groups.py templates/fleetops/configuration/_group_leaders.html
 msgid "No leaders in Alliance Auth"
@@ -3452,6 +3475,14 @@ msgid "Group fleets get an SRP link like alliance fleets."
 msgstr "小组舰队和联盟舰队一样会创建 SRP 链接。"
 
 #: models.py
+msgid "All members of this group count as its leaders"
+msgstr "这个用户组的所有成员都算作它的组长"
+
+#: models.py
+msgid "For alliances that keep two Alliance Auth groups per small group, such as a members group and a leaders group, and record no group leaders. Choose the leaders group here and switch this on: every active member of it who holds FleetOps access counts as a leader, with the same rights as a leader recorded in Alliance Auth. Tick it only for the leaders group: on a members group every member would be a leader. The group must be Internal in Alliance Auth."
+msgstr "适用于每个小组在 Alliance Auth 里有两个用户组（例如成员组和组长组）、并且没有记录组长的联盟。在这里选组长组并打开此项：它里面每个启用且有 FleetOps 权限的成员都算作组长，权限和 Alliance Auth 里记录的组长完全一样。只对组长组打开：对成员组打开的话，每个成员都会成为组长。该用户组在 Alliance Auth 里必须是 Internal。"
+
+#: models.py
 msgid "group access"
 msgstr "小组权限"
 
@@ -5202,6 +5233,23 @@ msgid "Leaders from Alliance Auth"
 msgstr "来自 Alliance Auth 的组长"
 
 #: templates/fleetops/configuration/_group_leaders.html
+msgid "Not internal"
+msgstr "不是 Internal"
+
+#: templates/fleetops/configuration/_group_leaders.html
+msgid "This group is not Internal in Alliance Auth, so its members do not count as leaders. Set it to Internal there."
+msgstr "这个用户组在 Alliance Auth 里不是 Internal，所以它的成员不算作组长。请在那里把它设为 Internal。"
+
+#: templates/fleetops/configuration/_group_leaders.html
+#, python-format
+msgid "All members of %(group)s"
+msgstr "%(group)s 的所有成员"
+
+#: templates/fleetops/configuration/_group_leaders.html
+msgid "The group has no active members."
+msgstr "这个用户组没有启用的成员。"
+
+#: templates/fleetops/configuration/_group_leaders.html
 msgid "Group leaders"
 msgstr "组长"
 
@@ -5215,8 +5263,8 @@ msgid "The leaders of the group are shown here once it is saved."
 msgstr "保存后这里会显示该小组的组长。"
 
 #: templates/fleetops/configuration/_group_leaders.html
-msgid "Leaders are set in Alliance Auth: the group leaders and the members of the leader groups. Holding the group management permission alone makes nobody a leader."
-msgstr "组长在 Alliance Auth 里设置：组长和组长组的成员。只拥有用户组管理权限并不会成为组长。"
+msgid "Leaders are the group leaders and the members of the leader groups set in Alliance Auth, and all members of the group when the option is on. Holding the group management permission alone makes nobody a leader."
+msgstr "组长是 Alliance Auth 里设置的组长和组长组的成员；打开该选项时，用户组的所有成员也都是组长。只有组管理权限并不会让谁成为组长。"
 
 #: templates/fleetops/configuration/_group_leaders.html
 msgid "Edit the leaders in Alliance Auth"
@@ -11856,8 +11904,8 @@ msgid "Fixed SRP amounts per ship type and/or fleet doctrine. The most specific 
 msgstr "按船型和/或舰队教义设定的固定 SRP 金额。最具体的已启用规则优先；没有规则的舰船按价值 × 比例赔付。"
 
 #: views_config.py
-msgid "Alliance Auth groups whose leaders may send pings to their channels or run fleets with PAP. Leaders are the group leaders set in Alliance Auth."
-msgstr "其组长可以向各自频道发送 Ping，或开带 PAP 舰队的 Alliance Auth 小组。组长就是在 Alliance Auth 中设置的组长。"
+msgid "Alliance Auth groups whose leaders may send pings to their channels or run fleets with PAP. Leaders are the group leaders set in Alliance Auth, or all members of the group when you switch that on."
+msgstr "组长可以向自己频道发 Ping 或开带 PAP 舰队的 Alliance Auth 用户组。组长是 Alliance Auth 里设置的组长；打开相应选项后，也可以是用户组的所有成员。"
 
 #: views_config.py
 msgid "Leaders (from Alliance Auth)"

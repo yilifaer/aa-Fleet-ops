@@ -275,7 +275,7 @@ CONFIG_SECTIONS = {
         "title": pgettext_lazy("FleetOps", "Groups"),
         "description": gettext_lazy(
             "Alliance Auth groups whose leaders may send pings to their channels or run fleets with PAP. Leaders "
-            "are the group leaders set in Alliance Auth."
+            "are the group leaders set in Alliance Auth, or all members of the group when you switch that on."
         ),
         "model": GroupAccess,
         "form": forms_groups.GroupAccessForm,

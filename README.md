@@ -6,7 +6,7 @@ closes, and feeds the statistics, FC points and SRP of the alliance.
 
 English | [简体中文](https://github.com/yilifaer/aa-fleetops/blob/dev/README.zh-CN.md)
 
-Status: beta. The current pre-release is 0.2.0b2 (0.2.0b1 was a test build that was not published); read the CHANGELOG before every upgrade.
+Status: beta. The current pre-release is 0.2.0b3 (0.2.0b1 was a test build that was not published); read the CHANGELOG before every upgrade.
 
 ## Features
 
@@ -118,14 +118,14 @@ the versions of Alliance Auth and django-esi.
 ```bash
 source /path/to/venv/bin/activate
 
-# from PyPI (0.2.0b2 is a pre-release, so name the version)
-pip install --no-deps aa-fleetops==0.2.0b2
+# from PyPI (0.2.0b3 is a pre-release, so name the version)
+pip install --no-deps aa-fleetops==0.2.0b3
 
 # or from the wheel of a GitHub Release
-pip install --no-deps https://github.com/yilifaer/aa-fleetops/releases/download/v0.2.0b2/aa_fleetops-0.2.0b2-py3-none-any.whl
+pip install --no-deps https://github.com/yilifaer/aa-fleetops/releases/download/v0.2.0b3/aa_fleetops-0.2.0b3-py3-none-any.whl
 
 # or from Git
-pip install --no-deps "git+https://github.com/yilifaer/aa-fleetops.git@v0.2.0b2"
+pip install --no-deps "git+https://github.com/yilifaer/aa-fleetops.git@v0.2.0b3"
 ```
 
 On a site without the dependencies, leave out `--no-deps`. The extras `aa-fleetops[fittings]` and
@@ -186,7 +186,7 @@ python manage.py fleetops_seed          # default templates, multipliers, specia
 Celery worker and Celery beat the way your installation does. FleetOps logs to the extension log of Alliance
 Auth (`extensions.log`).
 
-**Docker.** Add `aa-fleetops==0.2.0b2` to the requirements of the image that your web, worker and beat services
+**Docker.** Add `aa-fleetops==0.2.0b3` to the requirements of the image that your web, worker and beat services
 share, rebuild it and add the `local.py` lines above. Then open a shell in the web container and run the commands
 there with the `auth` shortcut of the Alliance Auth image:
 

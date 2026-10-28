@@ -2400,6 +2400,17 @@ class GroupAccess(models.Model):
         default=False,
         help_text=_("Group fleets get an SRP link like alliance fleets."),
     )
+    members_are_leaders = models.BooleanField(
+        _("All members of this group count as its leaders"),
+        default=False,
+        help_text=_(
+            "For alliances that keep two Alliance Auth groups per small group, such as a members group and a "
+            "leaders group, and record no group leaders. Choose the leaders group here and switch this on: "
+            "every active member of it who holds FleetOps access counts as a leader, with the same rights as a "
+            "leader recorded in Alliance Auth. Tick it only for the leaders group: on a members group every member "
+            "would be a leader. The group must be Internal in Alliance Auth."
+        ),
+    )
     is_active = models.BooleanField(verbose_name=_("Is active"), default=True)
     note = models.CharField(verbose_name=_("Note"), max_length=255, blank=True)
     created_at = models.DateTimeField(verbose_name=_("Created at"), auto_now_add=True)
