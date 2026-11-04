@@ -174,7 +174,7 @@ def operation_srp_context(operation: FleetOperation, user) -> dict:
 
     srp_settings = SrpSettings.get_solo()
     link = SrpFleetLink.objects.filter(operation=operation).first()
-    manager = access.is_manager(user)
+    manager = access.is_srp_staff(user)
     # The fleet may carry a link of another SRP app; FleetOps then offers no second one.
     has_other_link = link is None and bool(operation.srp_reference or operation.srp_url)
     # PAP-only fleets never get an SRP link (the retry refuses them too).

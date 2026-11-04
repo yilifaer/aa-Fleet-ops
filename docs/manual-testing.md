@@ -186,7 +186,10 @@ Create the five groups of [permissions](permissions.md) and test one user in eac
 - [ ] Corporation manager: the own corporation only.
 - [ ] FC: starts and manages own fleets; reads every fleet; cannot change another FC's fleet.
 - [ ] FC lead: everything except SRP unless the SRP permissions are added.
-- [ ] SRP manager: decides on other people's claims, not on their own.
+- [ ] SRP manager (`manage_srp`): decides on other people's claims, not on their own, and pays other people's claims only.
+- [ ] SRP reviewer only (`review_srp`): approves and rejects, can press Recalculate, sees no Mark paid; cannot decide on own claims unless the self-review setting allows it.
+- [ ] SRP payer only (`pay_srp`): marks paid, sees no Approve and no Recalculate (only the note that a reviewer can recalculate); cannot pay own claims unless the self-payment setting allows it; with the four-eyes rule on, cannot pay a claim they approved.
+- [ ] Superuser: acts as reviewer and payer and is bound by the same three settings.
 - [ ] A user without `basic_access` gets 403 on every page; the comms join page works as configured.
 
 ## 13. Language

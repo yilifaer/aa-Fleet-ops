@@ -477,7 +477,9 @@ history; it never moves ISK.
 | Corporation monthly cap | empty | Default cap per corporation and EVE month. [SRP Corporation Limits](#srp-corporation-limits) override it. |
 | In-fleet losses count toward the corporation cap | on | |
 | Notify members | on | Send an Alliance Auth notification when a claim is approved, changed, paid, rejected, revoked or reopened. |
-| SRP managers may decide on their own claims | off | Normally another SRP manager decides on a manager's own claims. Allow this for small alliances. |
+| SRP reviewers may decide on their own claims | off | Normally another reviewer decides on a reviewer's own claims. Allow this for small alliances. |
+| SRP payers may mark their own claims paid | off | Normally another payer pays a payer's own claims. Allow this for small alliances. Before 0.3.0b1 the setting above also covered payments; the upgrade copies it here, so a site that allowed one keeps allowing the other. |
+| The approver of a claim may not pay it | off | Four-eyes rule: the person who approved a claim cannot mark it paid, another payer has to. Undoing a payment is not bound by it. |
 | Member instructions | empty | Free text, up to 2000 characters, shown on My SRP and on the SRP page of a fleet. |
 
 To enable FleetOps SRP:
@@ -485,7 +487,9 @@ To enable FleetOps SRP:
 1. Run `python manage.py migrate fleetops` and `python manage.py collectstatic`.
 2. Tick **Enabled** on the SRP Settings page and set the value source, the percentage, the caps and the limits.
    Add ships to the payout table and, where a corporation needs its own limit, to the corporation limits.
-3. Give `fleetops.manage_srp` to your SRP managers. `fleetops.request_srp` lets members claim.
+3. Give `fleetops.manage_srp` to your SRP managers, or split the work: `fleetops.review_srp` for the people who decide
+   on claims and `fleetops.pay_srp` for the people who pay them (see [Permissions](permissions.md)).
+   `fleetops.request_srp` lets members claim.
 4. In **General Settings** choose **SRP provider** *Automatic* or *FleetOps SRP*, and keep **SRP auto create**
    on, so every fleet gets an SRP link when it starts, before the ping and the MOTD.
 5. Add `{{ srp_url }}` to custom ping and MOTD templates. The untouched Default MOTD already has an SRP line.
@@ -539,10 +543,10 @@ To enable FleetOps SRP:
   the payer was asked to send.
 - A decision is made on the claim the reviewer looked at: when the suggested amount changed while the page was
   open, the approval is refused with the old and new amount.
-- SRP managers cannot decide on their own claims unless the setting above allows it.
+- Reviewers cannot decide on their own claims unless "SRP reviewers may decide on their own claims" allows it, and payers cannot mark their own claims paid unless "SRP payers may mark their own claims paid" allows it. With "The approver of a claim may not pay it" on, the approver cannot mark the claim paid either.
 - Summaries (**Summary**, **Corporation**, **My fleets**) are by EVE month of the loss and exclude withdrawn
   claims. The files are `srp-claims`, `srp-members`, `srp-corporations` and `srp-fcs`.
-- The fleet page has an SRP card with the link and a Copy button, **Open** and **Close** for SRP managers (a
+- The fleet page has an SRP card with the link and a Copy button, **Open** and **Close** for SRP staff (a
   closed link takes no new claims), **Request SRP for this fleet** for pilots, and **Create SRP link** for a
   fleet without a link. Creating a link twice changes nothing.
 
@@ -593,8 +597,8 @@ are paid the percentage of the loss value. Every claim keeps the rule and the se
 and the monthly limits. The optional **Label** is shown in the payout table and in the calculation of a claim.
 
 When the SRP settings, the categories, the payout table or the corporation limits change while claims are pending, the
-four pages show a notice: "N pending claims were calculated with earlier SRP settings". SRP managers can press
-**Recalculate** there (it asks first); everybody else sees that an SRP manager can recalculate them on the review
+four pages show a notice: "N pending claims were calculated with earlier SRP settings". SRP reviewers can press
+**Recalculate** there (it asks first); everybody else sees that an SRP reviewer can recalculate them on the review
 page. Claims that were decided already are never changed.
 
 ## SRP Corporation Limits

@@ -905,7 +905,8 @@ class DecisionFlowTests(SrpFlowBase):
         # No decision form on the page, and the routes refuse.
         page = self.claim_page(self.mgr, own)
         self.assertNotContains(page, reverse("fleetops:srp_claim_action", args=[own.uuid, "approve"]))
-        self.assertContains(page, "Another SRP manager has to decide on it.")
+        # REV-1: the notice names the reviewer role.
+        self.assertContains(page, "Another reviewer has to decide on it.")
         for action, data in (("approve", {"mode": "suggested"}), ("reject", {"reason": "no"}), ("recalculate", {})):
             self.act(self.mgr, own, action, data, expect=403)
         self.assertEqual(own.status, Status.PENDING)
@@ -921,7 +922,7 @@ class DecisionFlowTests(SrpFlowBase):
         )
         texts = " ".join(flashed(response))
         self.assertIn("1 claim approved at the suggested amount.", texts)
-        self.assertIn("your own claim; another SRP manager has to decide.", texts)
+        self.assertIn("your own claim; another reviewer has to decide.", texts)
         clean.refresh_from_db(), own.refresh_from_db()
         self.assertEqual((clean.status, own.status), (Status.APPROVED, Status.PENDING))
 
@@ -932,7 +933,8 @@ class DecisionFlowTests(SrpFlowBase):
         paid = self.post(reverse("fleetops:srp_payments"), {"claim": [str(own.uuid)], "note": ""})
         own.refresh_from_db()
         self.assertEqual(own.status, Status.APPROVED)
-        self.assertIn("your own claim; another SRP manager has to decide.", " ".join(flashed(paid)))
+        # REV-1/REV-2: paying has its own skip text.
+        self.assertIn("your own claim; another payer has to pay.", " ".join(flashed(paid)))
         self.act(self.mgr2, own, "paid")
         self.assertEqual(own.status, Status.PAID)
 

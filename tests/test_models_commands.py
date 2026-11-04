@@ -98,6 +98,8 @@ ALL_PERMISSIONS = [
     "view_audit_log",
     "request_srp",
     "manage_srp",
+    "review_srp",
+    "pay_srp",
 ]
 
 

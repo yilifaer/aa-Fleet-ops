@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-04 03:27+0000\n"
+"POT-Creation-Date: 2026-11-04 06:01+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -3156,12 +3156,28 @@ msgid "Without a default category, a claim outside a fleet needs a category."
 msgstr "没有默认类别时，舰队外的申请必须选择类别。"
 
 #: models.py
-msgid "SRP managers may decide on their own claims"
-msgstr "SRP 管理员可以处理自己的申请"
+msgid "SRP reviewers may decide on their own claims"
+msgstr "SRP 审核人可以处理自己的申请"
 
 #: models.py
-msgid "By default another SRP manager decides on a manager's own claims. Allow this for small alliances."
-msgstr "默认由另一位 SRP 管理员处理管理员自己的申请。小联盟可以开启此项。"
+msgid "By default another reviewer decides on a reviewer's own claims. Allow this for small alliances."
+msgstr "默认由另一位审核人处理审核人自己的申请。小联盟可以开启此项。"
+
+#: models.py
+msgid "SRP payers may mark their own claims paid"
+msgstr "SRP 付款人可以把自己的申请标记为已付款"
+
+#: models.py
+msgid "By default another payer pays a payer's own claims. Allow this for small alliances."
+msgstr "默认由另一位付款人支付付款人自己的申请。小联盟可以开启此项。"
+
+#: models.py
+msgid "The approver of a claim may not pay it"
+msgstr "批准申请的人不能付款"
+
+#: models.py
+msgid "Four-eyes rule: the person who approved a claim cannot mark it paid. Undoing a payment is not affected."
+msgstr "四眼规则：批准某条申请的人不能把它标记为已付款。撤销付款不受影响。"
 
 #: models.py
 msgid "Notify members"
@@ -5469,8 +5485,8 @@ msgid "Recalculate them to apply the current payout table, caps and limits. Clai
 msgstr "重新计算后会应用当前的赔付表、上限和限额。已经处理的申请不会改变。"
 
 #: templates/fleetops/configuration/_outdated_claims.html
-msgid "An SRP manager can recalculate them on the review page."
-msgstr "SRP 管理员可以在审核页面重新计算这些申请。"
+msgid "An SRP reviewer can recalculate them on the review page."
+msgstr "SRP 审核人可以在审核页面重新计算这些申请。"
 
 #: templates/fleetops/configuration/_outdated_claims.html
 #: templates/fleetops/srp/review.html
@@ -8435,8 +8451,8 @@ msgid "Select %(reference)s"
 msgstr "选择 %(reference)s"
 
 #: templates/fleetops/srp/_claims_table.html
-msgid "Your own claim: another SRP manager has to decide on it."
-msgstr "你自己的申请：必须由另一位 SRP 管理员处理。"
+msgid "Your own claim: another reviewer has to decide on it."
+msgstr "你自己的申请：必须由另一位审核人处理。"
 
 #: templates/fleetops/srp/_claims_table.html
 #: templates/fleetops/srp/payments.html
@@ -8482,8 +8498,16 @@ msgid "Page %(number)s of %(pages)s"
 msgstr "第 %(number)s / %(pages)s 页"
 
 #: templates/fleetops/srp/_decision_forms.html
-msgid "This is your own claim. Another SRP manager has to decide on it. You can still add a note or check the fleet presence."
-msgstr "这是你自己的申请，必须由另一位 SRP 管理员处理。你仍可以添加备注或核对舰队在场情况。"
+msgid "This is your own claim. Another reviewer has to decide on it. You can still add a note or check the fleet presence."
+msgstr "这是你自己的申请，必须由另一位审核人处理。你仍然可以添加备注或重新检查在队情况。"
+
+#: templates/fleetops/srp/_decision_forms.html
+msgid "This is your own claim. Another payer has to mark it paid or undo the payment."
+msgstr "这是你自己的申请，必须由另一位付款人标记已付款或撤销付款。"
+
+#: templates/fleetops/srp/_decision_forms.html
+msgid "You approved this claim. A different payer has to mark it paid."
+msgstr "这条申请是你批准的，必须由另一位付款人标记已付款。"
 
 #: templates/fleetops/srp/_decision_forms.html
 msgid "Change the amount"
@@ -8604,8 +8628,8 @@ msgid "Check fleet presence again"
 msgstr "重新核对舰队在场情况"
 
 #: templates/fleetops/srp/_decision_forms.html
-msgid "Only SRP managers see notes. The pilot does not."
-msgstr "只有 SRP 管理员能看到备注，飞行员看不到。"
+msgid "Only SRP staff see notes. The pilot does not."
+msgstr "只有 SRP 人员能看到备注，飞行员看不到。"
 
 #: templates/fleetops/srp/_decision_forms.html
 msgid "Add note"
@@ -8862,6 +8886,10 @@ msgstr "返回我的 SRP"
 msgid "Back to the review queue"
 msgstr "返回审核队列"
 
+#: templates/fleetops/srp/claim.html
+msgid "Back to payments"
+msgstr "返回付款页"
+
 #: templates/fleetops/srp/claim.html templates/fleetops/srp/preview.html
 msgid "Back"
 msgstr "返回"
@@ -9013,8 +9041,16 @@ msgid "Copy name"
 msgstr "复制名称"
 
 #: templates/fleetops/srp/payments.html
-msgid "Your own claim: another SRP manager has to pay it."
-msgstr "你自己的申请：必须由另一位 SRP 管理员付款。"
+msgid "You approved this claim: a different payer has to pay it."
+msgstr "这条申请是你批准的：必须由另一位付款人支付。"
+
+#: templates/fleetops/srp/payments.html
+msgid "Your own claim: another payer has to pay it."
+msgstr "你自己的申请：必须由另一位付款人支付。"
+
+#: templates/fleetops/srp/payments.html
+msgid "approved by you"
+msgstr "你批准的"
 
 #: templates/fleetops/srp/payments.html
 msgid "Selected"
@@ -11399,16 +11435,40 @@ msgid "Only pending claims can be moved between in fleet and out of fleet."
 msgstr "只有待审核的申请才能在舰队内和舰队外之间移动。"
 
 #: texts.py
-msgid "You are not allowed to decide on SRP claims."
+msgid "You are not allowed to review SRP claims."
+msgstr "你无权审核 SRP 申请。"
+
+#: texts.py
+msgid "You are not allowed to pay SRP claims."
+msgstr "你无权支付 SRP 申请。"
+
+#: texts.py
+msgid "You are not allowed to work on SRP claims."
 msgstr "你无权处理 SRP 申请。"
 
 #: texts.py
-msgid "Another SRP manager has to decide on your own claim."
-msgstr "你自己的申请必须由另一位 SRP 管理员处理。"
+msgid "Another reviewer has to decide on your own claim."
+msgstr "你自己的申请必须由另一位审核人处理。"
 
 #: texts.py
-msgid "Your own claims are decided by another SRP manager."
-msgstr "你自己的申请由另一位 SRP 管理员处理。"
+msgid "Your own claims are decided by another reviewer."
+msgstr "你自己的申请由另一位审核人处理。"
+
+#: texts.py
+msgid "Another payer has to pay your own claim."
+msgstr "你自己的申请必须由另一位付款人支付。"
+
+#: texts.py
+msgid "Your own claims are paid by another payer."
+msgstr "你自己的申请由另一位付款人支付。"
+
+#: texts.py
+msgid "A different payer has to pay a claim you approved."
+msgstr "你批准的申请必须由另一位付款人支付。"
+
+#: texts.py
+msgid "You approved this claim; a different payer has to pay it."
+msgstr "这条申请是你批准的；必须由另一位付款人支付。"
 
 #: texts.py
 #, python-format
@@ -12342,6 +12402,14 @@ msgid "Only SRP managers can open this page."
 msgstr "只有 SRP 管理员可以打开此页面。"
 
 #: views_errors.py
+msgid "Only SRP reviewers can open this page."
+msgstr "只有 SRP 审核人可以打开此页面。"
+
+#: views_errors.py
+msgid "Only SRP payers can open this page."
+msgstr "只有 SRP 付款人可以打开此页面。"
+
+#: views_errors.py
 msgid "Only FCs and leaders of groups that run fleets can start fleets."
 msgstr "只有 FC 和能开舰队的小组的组长可以开舰队。"
 
@@ -12838,8 +12906,16 @@ msgid "Skipped: %(details)s"
 msgstr "已跳过：%(details)s"
 
 #: views_srp_review.py
-msgid "your own claim; another SRP manager has to decide."
-msgstr "你自己的申请；必须由另一位 SRP 管理员处理。"
+msgid "you approved it; a different payer has to pay."
+msgstr "你批准的；必须由另一位付款人支付。"
+
+#: views_srp_review.py
+msgid "your own claim; another payer has to pay."
+msgstr "你自己的申请；必须由另一位付款人支付。"
+
+#: views_srp_review.py
+msgid "your own claim; another reviewer has to decide."
+msgstr "你自己的申请；必须由另一位审核人处理。"
 
 #: views_srp_review.py
 #, python-format
@@ -12927,8 +13003,8 @@ msgid "Fleet presence of %(reference)s checked again."
 msgstr "已重新核对 %(reference)s 的舰队在场情况。"
 
 #: views_srp_review.py
-msgid "Note added. Only SRP managers can see it."
-msgstr "备注已添加。只有 SRP 管理员能看到。"
+msgid "Note added. Only SRP staff can see it."
+msgstr "已添加备注。只有 SRP 人员能看到。"
 
 #: views_srp_review.py
 msgid "Undo payment…"

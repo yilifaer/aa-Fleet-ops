@@ -274,7 +274,7 @@ class OutdatedClaimsTests(TestCase):
         for url in self.pages().values():
             response = self.client.get(url)
             self.assertContains(response, "1 pending claim was calculated with earlier SRP settings.")
-            self.assertContains(response, "An SRP manager can recalculate them on the review page.")
+            self.assertContains(response, "An SRP reviewer can recalculate them on the review page.")
             self.assertNotContains(response, 'id="srp-recalculate-outdated"')
 
     def test_no_notice_while_nothing_is_outdated(self):

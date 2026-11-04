@@ -226,7 +226,7 @@ class PermissionDocsTests(SimpleTestCase):
         for name in ("README.md", "README.zh-CN.md"):
             text = read(ROOT / name)
             with self.subTest(name=name):
-                for codename in ("basic_access", "request_srp", "view_corp_stats", "manage_srp", "manage_configuration"):
+                for codename in ("basic_access", "request_srp", "view_corp_stats", "manage_srp", "review_srp", "pay_srp", "manage_configuration"):
                     self.assertIn(codename, text)
                     self.assertIn(codename, permissions())
 
@@ -372,7 +372,10 @@ class DefaultsInDocsTests(SimpleTestCase):
         "Payout percentage": "percentage",
         "Capsules need a payout rule": "capsules_need_rule",
         "Notify members": "notify_members",
-        "SRP managers may decide on their own claims": "allow_self_review",
+        # REV-2: the label is the verbose_name of the field.
+        "SRP reviewers may decide on their own claims": "allow_self_review",
+        "SRP payers may mark their own claims paid": "allow_self_payment",
+        "The approver of a claim may not pay it": "require_different_payer",
     }
 
     @staticmethod
@@ -425,3 +428,33 @@ class DefaultsInDocsTests(SimpleTestCase):
 
     def test_chinese_defaults(self):
         self.check(ZH / "configuration.md", {True: "开", False: "关"})
+
+
+class SrpRoleWordingTests(SimpleTestCase):
+    """The SRP role split is described the same way in the documents, the notice and the migration comment."""
+
+    def read(self, path):
+        return Path(path).read_text(encoding="utf-8")
+
+    def test_superuser_behaviour_is_written_down(self):
+        self.assertIn("A superuser holds every permission", self.read(DOCS / "permissions.md"))
+        self.assertIn("超级用户拥有所有权限", self.read(ZH / "permissions.md"))
+
+    def test_no_stale_manager_wording(self):
+        for path in (DOCS / "configuration.md", ZH / "configuration.md"):
+            text = self.read(path)
+            for stale in ("SRP managers cannot decide", "SRP managers can press", "an SRP manager can recalculate", "for SRP managers (", "SRP 管理员可以在审核页", "SRP 管理员不能处理自己的申请"):
+                self.assertNotIn(stale, text, f"{path.name}: {stale}")
+        template = Path(fleetops.__file__).parent / "templates/fleetops/configuration/_outdated_claims.html"
+        self.assertNotIn("SRP manager", self.read(template))
+
+    def test_manual_checks_cover_each_role(self):
+        text = self.read(DOCS / "manual-testing.md")
+        for marker in ("SRP reviewer only", "SRP payer only", "Superuser:"):
+            self.assertIn(marker, text)
+
+    def test_migration_0026_header_names_the_right_target(self):
+        path = Path(fleetops.__file__).parent / "migrations/0026_srp_review_permissions.py"
+        header = self.read(path).split("from django.db", 1)[0]
+        self.assertNotIn("0023", header)
+        self.assertIn("reversing 0026", header)

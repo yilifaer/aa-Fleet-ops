@@ -32,9 +32,26 @@ Install it like the previous pre-release (`pip install --no-deps aa-fleetops==0.
   that has one. A category switched off between the check and the submission gives a clear error.
 - **Old settings.** The notice "N pending claims were calculated with earlier SRP settings" also appears on the category
   pages and notices a changed category as well.
+- **Separate permissions for reviewing and paying.** `fleetops.review_srp` ("Can review SRP claims") and
+  `fleetops.pay_srp` ("Can pay SRP claims") are new. A reviewer approves, changes, rejects, revokes, reopens, moves and
+  recalculates claims and sees the review queue; a payer sees the payments page, marks claims paid and undoes
+  payments. Both can add internal notes, open and close fleet SRP links and read every SRP summary, claim and
+  internal note. `fleetops.manage_srp` stays and means both together, so nobody who holds it notices a difference. The
+  menu shows **Review** to reviewers and **Payments** (with the number of approved claims the person can still pay) to
+  payers, and the buttons of a claim page follow the role. Nothing is granted to any group, state or user by the
+  upgrade; give the permissions to the groups you want.
+- **Self-processing settings.** **SRP payers may mark their own claims paid** and **The approver of a claim may not
+  pay it** (a four-eyes rule; undoing a payment is not bound by it) are new, both off by default. When claims are
+  paid in bulk, the claims left out are listed with the reason (your own claim, or approved by you).
 
 ### Changed
 
+- **"SRP managers may decide on their own claims" is now "SRP reviewers may decide on their own claims"** and only
+  covers decisions. Marking a claim paid and undoing a payment follow **SRP payers may mark their own claims paid**.
+  Because the old setting covered both, the upgrade copies it into the new one: a site that allowed its managers to
+  decide and pay their own claims keeps doing so, and every new site starts with both off.
+- Pages and messages say reviewer or payer where they said SRP manager. Internal notes and the names of the people who
+  acted on a claim are visible to every SRP role.
 - **The default value source is now the zKillboard total value** (it includes cargo; aa-srp pays the total value).
   Existing sites that saved their SRP settings once, or have claims, keep their choice. Only a site that never saved
   its SRP settings and has no claim is switched, by the upgrade.
@@ -48,8 +65,11 @@ restart the web process, the Celery worker and Celery beat. Migration `0024` add
 replaces the unique constraint of the payout table by one that includes the category. Migration `0025` creates the
 **Fleet** category, puts the claims made through a fleet link into it, and switches the value source of a site that
 never saved its SRP settings. Nothing else changes: amounts, statuses and limits of existing claims stay as they are,
-and the number of claims "calculated with earlier settings" is 0 after the upgrade. No new Alliance Auth permission is
-created and nothing is granted to anybody.
+and the number of claims "calculated with earlier settings" is 0 after the upgrade. Migration `0026` registers the two
+new permissions (`review_srp`, `pay_srp`; Alliance Auth creates them when `migrate` finishes) and adds the two
+settings; migration `0027` copies **SRP reviewers may decide on their own claims** into **SRP payers may mark their
+own claims paid**. Nothing is granted to anybody: add `fleetops.review_srp` and `fleetops.pay_srp` to the groups of
+the people who should only review or only pay.
 
 ### Rollback notes
 
@@ -58,7 +78,11 @@ The rollback is refused, and the database is left as it is, while any payout rul
 category column such a rule would apply to every claim and could pay too much. The message lists the rule IDs only.
 Delete those rules or make them general (**All categories**) first. The categories themselves, the category of each
 claim and the category settings are lost by the rollback; export what you need before. Claims, amounts and statuses
-stay. The value source is not changed back.
+stay. The value source is not changed back. Rolling back `0026` and `0027` removes the two new settings; the older
+version again lets `manage_srp` holders pay their own claims exactly when **may decide on their own claims** is on.
+The permission rows `review_srp` and `pay_srp` stay in the database, harmless, and nobody holds them unless you gave
+them out; remove them from your groups before rolling back, because the older version does not know them and its
+pages need `manage_srp`.
 
 ## [0.2.0b3] - Unreleased
 

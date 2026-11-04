@@ -64,6 +64,10 @@ ACTIONS_BY_STATUS = {
     SrpClaim.Status.REJECTED: ("reopen",),
     SrpClaim.Status.WITHDRAWN: (),
 }
+# The buttons that need the reviewer role (and the self-review rule); "paid" and "unpaid" need the payer role.
+REVIEW_BUTTONS = frozenset(
+    {"approve", "reject", "revoke", "reopen", "reclassify", "recategorize", "recalculate"}
+)
 # The decisions that need nothing but a reason: title, button, button style and the help text under the box.
 REASON_ACTIONS = {
     "reject": (
@@ -407,9 +411,14 @@ def claim_page_context(request, claim, *, bound=None, settings_obj=None):
     """What claim.html shows. ``bound`` maps an action to the form the person just sent, with its input and errors."""
     user = request.user
     settings_obj = settings_obj or SrpSettings.get_solo()
-    is_manager = access.is_manager(user)
+    is_staff = access.is_srp_staff(user)
+    is_reviewer = access.is_reviewer(user)
+    is_payer = access.is_payer(user)
     is_owner = claim.user_id == user.pk
     can_decide = access.can_review(user, claim, settings_obj=settings_obj)
+    pay_block = access.payment_block(user, claim, settings_obj=settings_obj)
+    # Undoing a payment is not bound by the rule that the approver may not pay.
+    undo_block = access.payment_block(user, claim, settings_obj=settings_obj, approver_rule=False)
     events = claim.events.select_related("actor").order_by("created_at", "pk")
     if not access.can_view_internal_notes(user):
         events = events.filter(internal=False)
@@ -420,7 +429,9 @@ def claim_page_context(request, claim, *, bound=None, settings_obj=None):
         "killmail": claim.killmail,
         "events": events,
         "is_owner": is_owner,
-        "is_manager": is_manager,
+        "is_staff": is_staff,
+        "is_reviewer": is_reviewer,
+        "is_payer": is_payer,
         "can_decide": can_decide,
         "can_withdraw": is_owner and claim.status == SrpClaim.Status.PENDING,
         "can_resubmit": is_owner and claim.status == SrpClaim.Status.WITHDRAWN,
@@ -432,14 +443,20 @@ def claim_page_context(request, claim, *, bound=None, settings_obj=None):
         "item_groups": item_groups(claim.killmail.items),
         "withdraw_form": WithdrawForm(auto_id="id_withdraw_%s"),
     }
-    if is_manager:
+    if is_staff:
         bound = bound or {}
-        context["self_review_blocked"] = not can_decide
+        context["self_review_blocked"] = is_reviewer and not can_decide
+        context["self_payment_blocked"] = is_payer and pay_block == access.OWN_CLAIM_PAY
+        context["own_approval_blocked"] = is_payer and pay_block == access.OWN_APPROVAL_PAY
         context["pay_to"] = rules.pay_to(claim)[1]
         context["note_form"] = bound.get("note") or decision_form("note")
         context["actions"] = ()
-        if can_decide:
-            actions = ACTIONS_BY_STATUS.get(claim.status, ())
+        actions = tuple(
+            action
+            for action in ACTIONS_BY_STATUS.get(claim.status, ())
+            if (can_decide if action in REVIEW_BUTTONS else not (undo_block if action == "unpaid" else pay_block))
+        )
+        if actions:
             forms = {
                 action: bound.get(action) or decision_form(action, claim=claim)
                 for action in DECISION_FORMS
@@ -483,7 +500,7 @@ def claim_response(request, claim, *, bound=None, settings_obj=None):
 def srp_claim_detail(request, claim_uuid):
     """A claim. Who may open it is decided by ``access.can_view_claim``; everyone else gets a 404.
 
-    Internal notes stay with the SRP managers; the claimant and the other viewers see the timeline without them.
+    Internal notes stay with the SRP staff; the claimant and the other viewers see the timeline without them.
     """
     claim = get_claim(claim_uuid)
     if not access.can_view_claim(request.user, claim):

@@ -137,6 +137,24 @@ class SrpSettingsPageTests(TestCase):
         )
         self.assertEqual((entry.old_value["allow_self_review"], entry.new_value["allow_self_review"]), (False, True))
 
+    def test_the_self_processing_switches_are_saved_and_audited(self):
+        # REV-2: the two payment switches sit next to allow_self_review on the settings page.
+        response = self.client.post(
+            self.url,
+            settings_post(enabled="on", allow_self_payment="on", require_different_payer="on"),
+        )
+        self.assertEqual(response.status_code, 302)
+        obj = SrpSettings.get_solo()
+        self.assertEqual((obj.allow_self_review, obj.allow_self_payment, obj.require_different_payer), (False, True, True))
+        entry = AuditLog.objects.filter(action="configuration.update", object_type="SrpSettings").latest("pk")
+        self.assertEqual((entry.old_value["allow_self_payment"], entry.new_value["allow_self_payment"]), (False, True))
+        self.assertEqual(
+            (entry.old_value["require_different_payer"], entry.new_value["require_different_payer"]), (False, True)
+        )
+        page = self.client.get(self.url)
+        self.assertContains(page, "SRP payers may mark their own claims paid")
+        self.assertContains(page, "The approver of a claim may not pay it")
+
     def test_unticked_switches_are_saved_off(self):
         response = self.client.post(
             self.url,

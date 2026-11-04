@@ -434,7 +434,7 @@ def duplicate_message(user, existing) -> str:
     """Why a killmail cannot be claimed twice: the claimant's own claim, or somebody else's (managers see who)."""
     if existing.user_id is not None and existing.user_id == user.pk:
         return OWN_DUPLICATE_TEXT
-    if access.is_manager(user) and existing.main_character_name:
+    if access.is_srp_staff(user) and existing.main_character_name:
         return texts.SRP_CLAIMED_BY(name=existing.main_character_name)
     return OTHER_DUPLICATE_TEXT
 

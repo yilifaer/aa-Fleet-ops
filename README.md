@@ -235,6 +235,8 @@ Without a ping channel, Start Fleet offers the ping for copying.
 | FC | `basic_access`, `start_fleet`, `manage_own_fleet`, `view_all_fleets`, `create_manual_fleet`, `manage_attendance` |
 | FC lead | All permissions except the SRP ones |
 | SRP manager | `basic_access`, `request_srp`, `manage_srp`, `view_all_fleets` |
+| SRP reviewer (decides only) | `basic_access`, `review_srp`, `view_all_fleets` |
+| SRP payer (pays only) | `basic_access`, `pay_srp`, `view_all_fleets` |
 
 Every permission and every row-level rule is in [docs/permissions.md](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/permissions.md).
 

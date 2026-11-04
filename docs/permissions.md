@@ -26,7 +26,9 @@ A Simplified Chinese version is in [zh-CN/permissions.md](zh-CN/permissions.md).
 | `fleetops.manage_configuration` | Can manage FleetOps configuration | Use the FleetOps Administration pages: settings, fleet types, comms presets, Logi and Boost channels, ping channels and roles (including **Sync roles from Discord**), PAP multipliers, special roles, monthly targets, ship functions and rules, structure templates, message templates and the SRP settings, SRP categories, payout table and corporation limits. Classify a ship from the composition of a fleet the user can open. |
 | `fleetops.view_audit_log` | Can view FleetOps audit log | Open the **Audit** page. |
 | `fleetops.request_srp` | Can request SRP | Claim ship losses in FleetOps SRP (My SRP and the SRP links of fleets) and see the user's own claims and monthly allowance. Needs FleetOps SRP to be enabled. The migration that added SRP gave it to every group, state and user that already held `basic_access`; add it to groups you create later. |
-| `fleetops.manage_srp` | Can review and pay SRP claims | Review and pay claims: approve, change amounts, reject, revoke, mark paid, reopen, reclassify, change the category, recalculate, check the fleet presence again and add internal notes. Open and close fleet SRP links. See every SRP summary and claim. Not granted to anybody by default because it decides on money. |
+| `fleetops.manage_srp` | Can review and pay SRP claims | Everything `review_srp` and `pay_srp` allow together: review and pay claims. The permission of the older versions, kept as it was, so nobody who holds it loses or gains anything. Not granted to anybody by default because it decides on money. |
+| `fleetops.review_srp` | Can review SRP claims | Review claims: approve, change amounts, reject, revoke, reopen, reclassify, change the category, recalculate, check the fleet presence again. Add internal notes, open and close fleet SRP links, see every SRP summary, claim and internal note. Cannot mark a claim paid or undo a payment. Not granted to anybody by default; the upgrade does not give it to any group, state or user. |
+| `fleetops.pay_srp` | Can pay SRP claims | Pay claims: see the payments page, mark one or several claims paid and undo a payment. Add internal notes, open and close fleet SRP links, see every SRP summary, claim and internal note (read-only, so the payer can open the claim to check what is paid for; opening the fleet of a claim needs `view_all_fleets`). Cannot approve or reject. Not granted to anybody by default; the upgrade does not give it to any group, state or user. |
 
 ## Recommended groups
 
@@ -100,8 +102,16 @@ audit log, runs the FC incentives (once **Incentive enabled** is ticked) and adm
 
 An SRP manager reviews, approves, changes, rejects, revokes and pays claims with the reasons the rules ask for,
 opens and closes fleet SRP links, reads the claims of every fleet, sees every SRP summary and downloads the SRP
-files, and adds internal notes that only SRP managers read. Another SRP manager decides on the manager's own
-claims, unless **SRP managers may decide on their own claims** is ticked.
+files, and adds internal notes that only SRP staff read. Another reviewer decides on a reviewer's own claims,
+unless **SRP reviewers may decide on their own claims** is ticked; another payer pays a payer's own claims,
+unless **SRP payers may mark their own claims paid** is ticked.
+
+To separate the two jobs, give the SRP reviewer `fleetops.basic_access` and `fleetops.review_srp` and the SRP
+payer `fleetops.basic_access` and `fleetops.pay_srp` (add `fleetops.request_srp` to anybody who also claims
+losses, and `fleetops.view_all_fleets` to open a fleet from a claim). Both jobs can be given to one person, and
+`manage_srp` is exactly the two together. Tick **The approver of a claim may not pay it** when the person who
+approves must not be the one who pays (the four-eyes rule). Granting these permissions is up to you; FleetOps
+grants none of them.
 
 ### Group leaders
 
@@ -193,27 +203,34 @@ download is audited as `statistics.export` with the dataset, scope, month, forma
 
 ## SRP
 
+"SRP staff" below means a user with `manage_srp`, `review_srp` or `pay_srp`. `manage_srp` is both roles: reviewer
+(`review_srp`) and payer (`pay_srp`). A user with only one of them sees only the menu entry and the buttons of that job. A superuser holds every permission, so they act as `manage_srp` (reviewer and payer) and are bound by the three self-processing settings (`allow_self_review`, `allow_self_payment`, `require_different_payer`) like anyone else.
+
+The read-only side is the same for all three: every SRP staff user sees all SRP summaries, the SRP exports, every claim with its internal notes and the names of the people who acted, and the SRP card of a fleet, and may open and close fleet SRP links. This is intended: the payer needs to see why a claim was approved, and internal notes are visible to the payer as well. Only the buttons that decide (approve, reject, mark paid and so on) follow the role.
+
 | Action | Who |
 |---|---|
 | My SRP, the SRP link page of a fleet, checking and submitting a loss, withdrawing and submitting a claim again, the page of an own claim | `fleetops.request_srp`. The claim must be for a character on the user's own Alliance Auth account. |
-| SRP card on the fleet page | The link and its Copy button: the fleet's managers, its FC and SRP managers. **Request SRP for this fleet**: `request_srp`, while the link is open. |
+| SRP card on the fleet page | The link and its Copy button: the fleet's managers, its FC and SRP staff (`manage_srp`, `review_srp` or `pay_srp`). **Request SRP for this fleet**: `request_srp`, while the link is open. |
 | Create the SRP link of a fleet (**Create SRP link**, **Retry SRP**) | `fleetops.manage_own_fleet` on the fleet, or `fleetops.manage_fleets` |
-| Open or close a fleet's SRP link | `fleetops.manage_srp` |
-| Review queue, payments page, decisions on a claim, bulk approval, **Recalculate** | `fleetops.manage_srp`; not on the manager's own claims unless **SRP managers may decide on their own claims** is ticked (403; bulk actions skip them with a message). Checking the fleet presence again and an internal note need only `manage_srp`. |
-| Any claim page | The claimant, `manage_srp`, the FC of the claim's fleet, `view_all_stats` (read-only), and `view_corp_stats` for claims of the own corporation. Anybody else gets 404. Internal notes and the names of the people who acted on a claim are visible to `manage_srp` only; everybody else sees "Claimant", "Reviewer" or "System". The monthly usage is shown to the claimant, `manage_srp`, `view_all_stats` and `view_corp_stats` of the claim's corporation, not to the FC of the fleet. |
-| SRP Summary (alliance, corporations, FCs) | `manage_srp` or `view_all_stats` (read-only) |
-| SRP Corporation (totals, members, claims of the own corporation) | `view_corp_stats` for the own corporation (a user without a main gets 404); `manage_srp` or `view_all_stats` for any corporation |
-| SRP My fleets (claims and totals of the fleets the user led) | Users with an FC permission (`start_fleet`, `manage_own_fleet`, `manage_fleets` or `create_manual_fleet`) and anybody who led a fleet with an SRP link see their own page; `manage_srp` and `view_all_stats` also see any FC's page |
+| Open or close a fleet's SRP link | `fleetops.manage_srp`, `fleetops.review_srp` or `fleetops.pay_srp` |
+| Review queue, decisions on a claim (approve, change the amount, reject, revoke, reopen, reclassify, change the category), bulk approval, **Recalculate**, checking the fleet presence again | `fleetops.manage_srp` or `fleetops.review_srp`; not on the reviewer's own claims unless **SRP reviewers may decide on their own claims** is ticked (403; bulk actions skip them with a message). Checking the fleet presence again is not bound by that rule. |
+| Payments page, **Mark paid** (one claim or the ticked ones), **Undo payment** | `fleetops.manage_srp` or `fleetops.pay_srp`; not on the payer's own claims unless **SRP payers may mark their own claims paid** is ticked, and, with **The approver of a claim may not pay it** ticked, not on a claim the user approved (403; bulk payments skip them with a message). Undoing a payment is not bound by the approver rule. |
+| Internal note | Any SRP staff permission (`manage_srp`, `review_srp` or `pay_srp`); not bound by the self-processing settings |
+| Any claim page | The claimant, SRP staff (`manage_srp`, `review_srp`, `pay_srp`), the FC of the claim's fleet, `view_all_stats` (read-only), and `view_corp_stats` for claims of the own corporation. Anybody else gets 404. Internal notes and the names of the people who acted on a claim are visible to SRP staff only; everybody else sees "Claimant", "Reviewer" or "System". The monthly usage is shown to the claimant, SRP staff, `view_all_stats` and `view_corp_stats` of the claim's corporation, not to the FC of the fleet. The buttons on the page follow the role: a reviewer sees no **Mark paid**, a payer no **Approve**. |
+| SRP Summary (alliance, corporations, FCs) | SRP staff or `view_all_stats` (read-only) |
+| SRP Corporation (totals, members, claims of the own corporation) | `view_corp_stats` for the own corporation (a user without a main gets 404); SRP staff or `view_all_stats` for any corporation |
+| SRP My fleets (claims and totals of the fleets the user led) | Users with an FC permission (`start_fleet`, `manage_own_fleet`, `manage_fleets` or `create_manual_fleet`) and anybody who led a fleet with an SRP link see their own page; SRP staff and `view_all_stats` also see any FC's page |
 | SRP settings, SRP Categories, SRP Payout Table, SRP Corporation Limits | `fleetops.manage_configuration`; every change is audited with the old and new values |
 
 SRP files are at `/fleetops/statistics/export/<dataset>/`:
 
 | Dataset | Who |
 |---|---|
-| `srp-claims`, `srp-members` | `manage_srp` or `view_all_stats` for the alliance or any corporation (`corporation=<id>`); `view_corp_stats` only with the own corporation's ID (any other corporation is 404, no corporation is 403) |
-| `srp-corporations`, `srp-fcs` | `manage_srp` or `view_all_stats` |
+| `srp-claims`, `srp-members` | SRP staff or `view_all_stats` for the alliance or any corporation (`corporation=<id>`); `view_corp_stats` only with the own corporation's ID (any other corporation is 404, no corporation is 403) |
+| `srp-corporations`, `srp-fcs` | SRP staff or `view_all_stats` |
 
-The *Decided by* and *Paid by* columns of `srp-claims` are filled for `manage_srp` only. FCs and members have no
+The *Decided by* and *Paid by* columns of `srp-claims` are filled for SRP staff only. FCs and members have no
 SRP file. Every download is audited as `srp.export`. Every other SRP action is audited and shown in the
 claim's timeline: `srp.link_create`, `srp.link_open`, `srp.link_close`, `srp.claim_submit`,
 `srp.claim_auto_reject`, `srp.claim_withdraw`, `srp.claim_resubmit`, `srp.claim_approve`,

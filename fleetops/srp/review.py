@@ -5,8 +5,11 @@
 entry and notifies the claimant; every action that changes a claim's status or amount runs under
 ``quota.quota_lock()``, so decisions and submissions queue up and see the usage the previous one left.
 
-A manager does not decide on their own claim unless the SRP settings allow it (``allow_self_review``). The
-single actions refuse it; the bulk actions skip such claims and say so.
+Two roles: reviewers (``review_srp``) decide on claims, payers (``pay_srp``) mark them paid and undo a payment;
+``manage_srp`` is both. A reviewer does not decide on their own claim unless the SRP settings allow it
+(``allow_self_review``), a payer does not pay their own claim unless ``allow_self_payment`` is on, and with
+``require_different_payer`` the approver of a claim does not pay it. The single actions refuse it; the bulk
+actions skip such claims and say so. A re-check and an internal note are open to all staff.
 """
 
 from decimal import Decimal
@@ -29,26 +32,65 @@ MAX_PAYMENT_NOTE_LENGTH = 255
 MAX_NOTE_LENGTH = 2000
 
 # Stored messages (English): the pages show them through ``translate_stored``.
-NOT_A_MANAGER = texts.SRP_NOT_A_MANAGER()
+NOT_A_REVIEWER = texts.SRP_NOT_A_REVIEWER()
+NOT_A_PAYER = texts.SRP_NOT_A_PAYER()
+NOT_STAFF = texts.SRP_NOT_STAFF()
 OWN_CLAIM = texts.SRP_OWN_CLAIM()
 OWN_CLAIM_SKIPPED = texts.SRP_OWN_CLAIM_SKIPPED()
+OWN_CLAIM_PAY = texts.SRP_OWN_CLAIM_PAY()
+OWN_CLAIM_PAY_SKIPPED = texts.SRP_OWN_CLAIM_PAY_SKIPPED()
+OWN_APPROVAL_PAY = texts.SRP_OWN_APPROVAL_PAY()
+OWN_APPROVAL_PAY_SKIPPED = texts.SRP_OWN_APPROVAL_PAY_SKIPPED()
+# What a bulk action says about a claim it skipped, by the code of the refusal.
+SKIPPED_TEXTS = {
+    "own_claim": OWN_CLAIM_SKIPPED,
+    "own_claim_pay": OWN_CLAIM_PAY_SKIPPED,
+    "own_approval_pay": OWN_APPROVAL_PAY_SKIPPED,
+}
 
 
 def can_review(user, claim: SrpClaim) -> bool:
-    """``manage_srp``, and not on the manager's own claim unless the settings allow self review."""
+    """A reviewer, and not on the reviewer's own claim unless the settings allow self review."""
     return access.can_review(user, claim)
 
 
-def _require_manager(actor) -> None:
-    if not access.is_manager(actor):
-        raise SrpError("forbidden", NOT_A_MANAGER)
+def can_pay(user, claim: SrpClaim) -> bool:
+    """A payer, not on the payer's own claim unless the settings allow it, and not the approver when the
+    settings ask for a different payer."""
+    return access.can_pay(user, claim)
+
+
+def _require_reviewer_role(actor) -> None:
+    if not access.is_reviewer(actor):
+        raise SrpError("forbidden", NOT_A_REVIEWER)
+
+
+def _require_payer_role(actor) -> None:
+    if not access.is_payer(actor):
+        raise SrpError("forbidden", NOT_A_PAYER)
+
+
+def _require_staff(actor) -> None:
+    if not access.is_srp_staff(actor):
+        raise SrpError("forbidden", NOT_STAFF)
 
 
 def _require_reviewer(actor, claim, srp=None) -> None:
-    """``SrpError`` unless ``actor`` may decide on ``claim`` (a manager, not on their own claim)."""
-    _require_manager(actor)
+    """``SrpError`` unless ``actor`` may decide on ``claim`` (a reviewer, not on their own claim)."""
+    _require_reviewer_role(actor)
     if not access.can_review(actor, claim, settings_obj=srp):
         raise SrpError("own_claim", OWN_CLAIM)
+
+
+def _require_payer(actor, claim, srp=None, *, approver_rule=True) -> None:
+    """``SrpError`` unless ``actor`` may pay ``claim`` (see ``access.payment_block``)."""
+    block = access.payment_block(actor, claim, settings_obj=srp, approver_rule=approver_rule)
+    if block == access.NOT_A_PAYER:
+        raise SrpError("forbidden", NOT_A_PAYER)
+    if block == access.OWN_CLAIM_PAY:
+        raise SrpError("own_claim_pay", OWN_CLAIM_PAY)
+    if block == access.OWN_APPROVAL_PAY:
+        raise SrpError("own_approval_pay", OWN_APPROVAL_PAY)
 
 
 def _amount(value) -> int:
@@ -267,7 +309,7 @@ def _each(items, action) -> BulkResult:
         try:
             done = action(claim)
         except SrpError as exc:
-            result.skipped.append((claim, OWN_CLAIM_SKIPPED if exc.code == "own_claim" else exc.message))
+            result.skipped.append((claim, SKIPPED_TEXTS.get(exc.code, exc.message)))
         else:
             result.done.append(done)
     return result
@@ -281,10 +323,10 @@ def approve_clean_claims(claims_, *, actor, expected_amounts=None) -> BulkResult
     """Approve pending claims without warnings at the suggested amount, each under its own lock.
 
     Claims with warnings, without a suggested amount or that no longer fit into a monthly limit are skipped,
-    and so are the manager's own claims. ``expected_amounts`` maps a claim's ID to the suggested amount the
+    and so are the reviewer's own claims. ``expected_amounts`` maps a claim's ID to the suggested amount the
     reviewer saw; a claim whose suggested amount is another one by now is skipped as well.
     """
-    _require_manager(actor)
+    _require_reviewer_role(actor)
     expected = expected_amounts or {}
     return _each(_claim_list(claims_), lambda claim: _approve_clean(claim, actor, expected.get(claim.pk)))
 
@@ -352,7 +394,7 @@ def revoke_approval(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
 def _mark_paid(claim, actor, note, expected_amount=None) -> SrpClaim:
     with quota.quota_lock() as srp:
         locked = claims.lock_claim(claim)
-        _require_reviewer(actor, locked, srp)
+        _require_payer(actor, locked, srp)
         if locked.status != Status.APPROVED:
             raise claims.wrong_state(locked, texts.SRP_ONLY_APPROVED_PAID(), Status.PAID)
         if expected_amount is not None and expected_amount != locked.approved_amount:
@@ -384,11 +426,12 @@ def _mark_paid(claim, actor, note, expected_amount=None) -> SrpClaim:
 def mark_paid(claims_, *, actor, note: str = "", expected_amounts=None) -> BulkResult:
     """Approved to paid, each claim under its own row lock.
 
-    Claims that are not approved are skipped with the reason, and so are the manager's own claims.
+    Claims that are not approved are skipped with the reason, and so are the payer's own claims and, with
+    ``require_different_payer``, the ones the payer approved.
     ``expected_amounts`` maps a claim's ID to the approved amount the payer was shown and sent; a claim whose
     approved amount is another one by now is skipped, so a payment is never booked for a different amount.
     """
-    _require_manager(actor)
+    _require_payer_role(actor)
     note = (note or "").strip()
     if len(note) > MAX_PAYMENT_NOTE_LENGTH:
         raise SrpError("note_too_long", texts.SRP_NOTE_TOO_LONG(max=MAX_PAYMENT_NOTE_LENGTH))
@@ -397,11 +440,14 @@ def mark_paid(claims_, *, actor, note: str = "", expected_amounts=None) -> BulkR
 
 
 def undo_payment(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
-    """Paid back to approved; the amount stays approved and counted."""
+    """Paid back to approved; the amount stays approved and counted.
+
+    Needs a payer. The four-eyes rule (``require_different_payer``) does not apply to undoing a payment.
+    """
     reason = claims.clean_reason(reason, required=True, what="reason for undoing the payment")
     with quota.quota_lock() as srp:
         locked = claims.lock_claim(claim)
-        _require_reviewer(actor, locked, srp)
+        _require_payer(actor, locked, srp, approver_rule=False)
         if locked.status != Status.PAID:
             raise claims.wrong_state(locked, texts.SRP_ONLY_PAID_UNPAID(), Status.APPROVED)
         previous = {"status": locked.status, "paid_at": locked.paid_at.isoformat() if locked.paid_at else None}
@@ -627,9 +673,9 @@ def recalculate_claim(claim: SrpClaim, *, actor=None, reason: str = "") -> SrpCl
 def recalculate_pending(*, actor) -> int:
     """Recalculate every pending claim, oldest loss first; returns how many.
 
-    The manager's own claims are left to another manager unless the settings allow self review.
+    The reviewer's own claims are left to another reviewer unless the settings allow self review.
     """
-    _require_manager(actor)
+    _require_reviewer_role(actor)
     srp = SrpSettings.get_solo()
     done = 0
     pending = SrpClaim.objects.filter(status=Status.PENDING).order_by("killmail_time", "pk")
@@ -648,9 +694,9 @@ def recalculate_pending(*, actor) -> int:
 def recheck_presence(claim: SrpClaim, *, actor) -> SrpClaim:
     """Look up again whether the pilot was in the fleet at the loss time (the fleet may have been read since).
 
-    Needs ``manage_srp`` only; the claim may be in any status.
+    Needs a reviewer but not the self-review rule; the claim may be in any status.
     """
-    _require_manager(actor)
+    _require_reviewer_role(actor)
     now = timezone.now()
     with transaction.atomic():
         locked = claims.lock_claim(claim)
@@ -674,8 +720,8 @@ def recheck_presence(claim: SrpClaim, *, actor) -> SrpClaim:
 
 
 def add_note(claim: SrpClaim, *, actor, text: str) -> SrpClaimEvent:
-    """An internal note, visible to managers only."""
-    _require_manager(actor)
+    """An internal note, visible to SRP staff only."""
+    _require_staff(actor)
     text = (text or "").strip()
     if not text:
         raise SrpError("note_required", texts.SRP_NOTE_REQUIRED())

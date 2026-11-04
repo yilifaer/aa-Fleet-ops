@@ -632,11 +632,13 @@ class PaymentTests(ReviewBase):
         other = self.approved(self.user)
         result = review.mark_paid([own, other], actor=self.manager)
         self.assertEqual(result.done, [other])
-        self.assertEqual(result.skipped, [(own, "Your own claims are decided by another SRP manager.")])
+        # REV-1/REV-2: paying has its own skip text, and own claims are paid per allow_self_payment.
+        self.assertEqual(result.skipped, [(own, "Your own claims are paid by another payer.")])
         self.assertEqual(fresh(own).status, Status.APPROVED)
 
     def test_own_claims_can_be_paid_when_the_settings_allow_it(self):
-        self.settings(allow_self_review=True)
+        # REV-2: allow_self_review no longer covers payments; allow_self_payment does.
+        self.settings(allow_self_payment=True)
         own = self.approved(self.manager)
         self.assertEqual(review.mark_paid([own], actor=self.manager).done, [own])
 
@@ -1027,7 +1029,8 @@ class BulkApproveTests(ReviewBase):
         own, other = self.submit(self.manager), self.submit()
         result = review.approve_clean_claims([own, other], actor=self.manager)
         self.assertEqual(result.done, [other])
-        self.assertEqual(result.skipped, [(own, "Your own claims are decided by another SRP manager.")])
+        # REV-1: the skip text names the reviewer role now.
+        self.assertEqual(result.skipped, [(own, "Your own claims are decided by another reviewer.")])
 
     def test_claims_are_approved_oldest_loss_first_and_stop_at_the_limit(self):
         self.settings(personal_monthly_cap=100_000_000, over_limit_action="reject")
@@ -1093,7 +1096,7 @@ class SelfReviewTests(ReviewBase):
                 with self.assertRaises(SrpError) as caught:
                     decide()
                 self.assertEqual(caught.exception.code, "own_claim")
-                self.assertEqual(caught.exception.message, "Another SRP manager has to decide on your own claim.")
+                self.assertEqual(caught.exception.message, "Another reviewer has to decide on your own claim.")
         self.assertEqual(fresh(claim).status, Status.PENDING)
         self.assertFalse(claim.events.exclude(action=Action.SUBMIT).exists())
 
@@ -1104,13 +1107,16 @@ class SelfReviewTests(ReviewBase):
         calls = [
             lambda: review.revoke_approval(approved, actor=self.manager, reason="x"),
             lambda: review.approve_claim(approved, actor=self.manager, amount=5, reason="x", confirm_above_policy=True),
-            lambda: review.undo_payment(paid, actor=self.manager, reason="x"),
             lambda: review.reopen_claim(rejected, actor=self.manager, reason="x"),
         ]
         for call in calls:
             with self.assertRaises(SrpError) as caught:
                 call()
             self.assertEqual(caught.exception.code, "own_claim")
+        # REV-2: undoing a payment is a payer's step and follows allow_self_payment.
+        with self.assertRaises(SrpError) as caught:
+            review.undo_payment(paid, actor=self.manager, reason="x")
+        self.assertEqual(caught.exception.code, "own_claim_pay")
 
     def test_another_manager_decides(self):
         claim = self.own()
@@ -1177,9 +1183,13 @@ class SelfReviewTests(ReviewBase):
         paid_own = f.srp_claim(self.manager, status=Status.APPROVED)
         approve_result = review.approve_clean_claims([own], actor=self.manager)
         pay_result = review.mark_paid([paid_own], actor=self.manager)
-        for result, claim in ((approve_result, own), (pay_result, paid_own)):
+        # REV-1/REV-2: the reviewer and the payer skip texts differ.
+        for result, claim, text in (
+            (approve_result, own, "Your own claims are decided by another reviewer."),
+            (pay_result, paid_own, "Your own claims are paid by another payer."),
+        ):
             self.assertEqual(result.done, [])
-            self.assertEqual(result.skipped, [(claim, "Your own claims are decided by another SRP manager.")])
+            self.assertEqual(result.skipped, [(claim, text)])
 
 
 class RecheckAndNoteTests(ReviewBase):

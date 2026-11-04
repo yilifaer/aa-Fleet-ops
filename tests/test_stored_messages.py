@@ -186,7 +186,9 @@ class SourceGuardTests(SimpleTestCase):
             approvals: ("REJECTION_NOTE_REQUIRED", "ALREADY_APPROVED", "NOT_PENDING"),
             counting: ("STATS_NOTE_REQUIRED",),
             claims: ("EXPIRED_TEXT", "THROTTLED_TEXT", "OWN_DUPLICATE_TEXT", "OTHER_DUPLICATE_TEXT"),
-            review: ("NOT_A_MANAGER", "OWN_CLAIM", "OWN_CLAIM_SKIPPED"),
+            # REV-1/REV-2: NOT_A_MANAGER became the per-role refusals; the payment refusals are new.
+            review: ("NOT_A_REVIEWER", "NOT_A_PAYER", "NOT_STAFF", "OWN_CLAIM", "OWN_CLAIM_SKIPPED", "OWN_CLAIM_PAY",
+                     "OWN_CLAIM_PAY_SKIPPED", "OWN_APPROVAL_PAY", "OWN_APPROVAL_PAY_SKIPPED"),
             killmails: ("UNRECOGNISED", "NO_HASH", "USE_INGAME_LINK", "ZKILLBOARD_OFF"),
         }
         for module, names in constants.items():

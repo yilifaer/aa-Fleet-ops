@@ -634,7 +634,7 @@ class SrpSettingsForm(forms.ModelForm):
         (
             _("Members and review"),
             "",
-            ["notify_members", "allow_self_review", "member_instructions"],
+            ["notify_members", "allow_self_review", "allow_self_payment", "require_different_payer", "member_instructions"],
         ),
     ]
     ISK_FIELDS = ("in_fleet_loss_cap", "out_of_fleet_loss_cap", "personal_monthly_cap", "corporation_monthly_cap")
@@ -659,6 +659,8 @@ class SrpSettingsForm(forms.ModelForm):
             "out_of_fleet_category_required",
             "claim_deadline_days",
             "allow_self_review",
+            "allow_self_payment",
+            "require_different_payer",
             "notify_members",
             "member_instructions",
         ]

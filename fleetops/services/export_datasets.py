@@ -842,7 +842,7 @@ def build_srp_claims(request, scope):
         scope,
         gettext("SRP claims"),
         columns,
-        _srp_claim_lines(claims, show_reviewers=srp_access.is_manager(request.user)),
+        _srp_claim_lines(claims, show_reviewers=srp_access.is_srp_staff(request.user)),
         scope_text=_srp_scope_text(scope),
         details=[(pgettext("FleetOps", "Filters"), filters), (gettext("Counting rule"), str(SRP_RULE))],
     )

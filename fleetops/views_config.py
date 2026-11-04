@@ -547,7 +547,7 @@ def _outdated_claims_context(request):
     """
     return {
         "outdated_claims": srp_policy.outdated_pending_claim_count(),
-        "can_recalculate_claims": srp_access.is_manager(request.user),
+        "can_recalculate_claims": srp_access.is_reviewer(request.user),
         "next_url": request.get_full_path(),
     }
 

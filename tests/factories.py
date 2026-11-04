@@ -79,10 +79,15 @@ FC_LEAD_PERMS = [
     "fleetops.view_audit_log",
     "fleetops.request_srp",
     "fleetops.manage_srp",
+    "fleetops.review_srp",
+    "fleetops.pay_srp",
 ]
 # Members get request_srp from the upgrade; tests ask for it explicitly so pages do not pay for the SRP menu.
 SRP_MEMBER_PERMS = MEMBER_PERMS + ["fleetops.request_srp"]
 SRP_MANAGER_PERMS = SRP_MEMBER_PERMS + ["fleetops.manage_srp"]
+# The two halves of manage_srp (REV-1); neither has request_srp.
+SRP_REVIEWER_PERMS = MEMBER_PERMS + ["fleetops.review_srp"]
+SRP_PAYER_PERMS = MEMBER_PERMS + ["fleetops.pay_srp"]
 
 DEFAULT_CORP = (2_000_001, "Test Corp One")
 OTHER_CORP = (2_000_002, "Test Corp Two")

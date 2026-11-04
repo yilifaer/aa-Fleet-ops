@@ -129,6 +129,8 @@ class SettingsModelTests(TestCase):
 
         self.assertEqual(declared["request_srp"], "Can request SRP")
         self.assertEqual(declared["manage_srp"], "Can review and pay SRP claims")
+        self.assertEqual(declared["review_srp"], "Can review SRP claims")
+        self.assertEqual(declared["pay_srp"], "Can pay SRP claims")
 
 
 class DoctrineKeyTests(TestCase):
@@ -563,6 +565,10 @@ class FactoryTests(TestCase):
         self.assertIn("fleetops.manage_srp", f.SRP_MANAGER_PERMS)
         self.assertIn("fleetops.request_srp", f.SRP_MANAGER_PERMS)
         self.assertTrue({"fleetops.request_srp", "fleetops.manage_srp"} <= set(f.FC_LEAD_PERMS))
+        self.assertTrue({"fleetops.review_srp", "fleetops.pay_srp"} <= set(f.FC_LEAD_PERMS))
+        self.assertNotIn("fleetops.request_srp", f.SRP_REVIEWER_PERMS + f.SRP_PAYER_PERMS)
+        self.assertTrue(f.create_user(perms=f.SRP_REVIEWER_PERMS).has_perm("fleetops.review_srp"))
+        self.assertTrue(f.create_user(perms=f.SRP_PAYER_PERMS).has_perm("fleetops.pay_srp"))
         manager = f.create_user(perms=f.SRP_MANAGER_PERMS)
         self.assertTrue(manager.has_perm("fleetops.manage_srp"))
 

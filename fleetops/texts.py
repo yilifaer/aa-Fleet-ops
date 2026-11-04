@@ -1150,9 +1150,15 @@ SRP_ONLY_REJECTED_REOPENED = StoredText(gettext_noop("Only rejected claims can b
 SRP_ONLY_PENDING_MOVED = StoredText(
     gettext_noop("Only pending claims can be moved between in fleet and out of fleet.")
 )
-SRP_NOT_A_MANAGER = StoredText(gettext_noop("You are not allowed to decide on SRP claims."))
-SRP_OWN_CLAIM = StoredText(gettext_noop("Another SRP manager has to decide on your own claim."))
-SRP_OWN_CLAIM_SKIPPED = StoredText(gettext_noop("Your own claims are decided by another SRP manager."))
+SRP_NOT_A_REVIEWER = StoredText(gettext_noop("You are not allowed to review SRP claims."))
+SRP_NOT_A_PAYER = StoredText(gettext_noop("You are not allowed to pay SRP claims."))
+SRP_NOT_STAFF = StoredText(gettext_noop("You are not allowed to work on SRP claims."))
+SRP_OWN_CLAIM = StoredText(gettext_noop("Another reviewer has to decide on your own claim."))
+SRP_OWN_CLAIM_SKIPPED = StoredText(gettext_noop("Your own claims are decided by another reviewer."))
+SRP_OWN_CLAIM_PAY = StoredText(gettext_noop("Another payer has to pay your own claim."))
+SRP_OWN_CLAIM_PAY_SKIPPED = StoredText(gettext_noop("Your own claims are paid by another payer."))
+SRP_OWN_APPROVAL_PAY = StoredText(gettext_noop("A different payer has to pay a claim you approved."))
+SRP_OWN_APPROVAL_PAY_SKIPPED = StoredText(gettext_noop("You approved this claim; a different payer has to pay it."))
 SRP_AMOUNT_RANGE = StoredText(gettext_noop("Enter an amount between 1 and %(max)s ISK."))
 SRP_STATUS_CHANGED = StoredText(
     gettext_noop("This claim is %(now)s now; it was %(was)s on your page. Check it and decide again."),

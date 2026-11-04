@@ -1,7 +1,8 @@
 # SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
 # SPDX-License-Identifier: GPL-3.0-only
 
-"""FleetOps SRP: the review queue, the decisions on claims and the payments list. SRP managers only."""
+"""FleetOps SRP: the review queue, the decisions on claims and the payments list. SRP reviewers decide on claims,
+SRP payers pay them (``manage_srp`` is both)."""
 
 import re
 from datetime import datetime, time, timedelta, timezone as dt_timezone
@@ -24,7 +25,7 @@ from fleetops.models import SrpClaim, SrpFleetLink, SrpSettings
 from fleetops.services.periods import eve_now, month_bounds
 from fleetops.srp import access, display, review
 from fleetops.srp import policy as rules
-from fleetops.srp.access import MANAGE_SRP
+from fleetops.srp.access import MANAGE_SRP, PAY_SRP, REVIEW_SRP
 from fleetops.srp.types import SrpError, SrpPayRow, SrpStateError
 from fleetops.texts import translate_stored
 from fleetops.ui_notices import push_notice
@@ -48,10 +49,18 @@ PAID_DEFAULT_DAYS = 30
 # Lines of "skipped" reasons shown after a bulk action; the rest is counted.
 SKIPPED_SHOWN = 5
 
-# The buttons of the claim page. Deciding on a claim (everything but a re-check and an internal note) follows
-# the self-review rule: managers do not decide their own claims unless the settings allow it.
-DECISION_ACTIONS = frozenset({"approve", "reject", "revoke", "paid", "unpaid", "reopen", "reclassify", "recategorize", "recalculate"})
-CLAIM_ACTIONS = DECISION_ACTIONS | {"recheck", "note"}
+# The buttons of the claim page by the role they need. Reviewers decide on claims (everything but a re-check
+# follows the self-review rule: reviewers do not decide their own claims unless the settings allow it); payers
+# mark claims paid and undo a payment (``allow_self_payment`` and ``require_different_payer``); an internal note
+# is open to all SRP staff.
+REVIEW_ACTIONS = frozenset(
+    {"approve", "reject", "revoke", "reopen", "reclassify", "recategorize", "recalculate", "recheck"}
+)
+PAY_ACTIONS = frozenset({"paid", "unpaid"})
+STAFF_ACTIONS = frozenset({"note"})
+CLAIM_ACTIONS = REVIEW_ACTIONS | PAY_ACTIONS | STAFF_ACTIONS
+# A re-check needs the reviewer role but not the self-review rule.
+REVIEW_ACTIONS_WITHOUT_SELF_RULE = frozenset({"recheck"})
 
 # Fleet checks that are not a warning.
 SOUND_FLEET_CHECKS = [code for code, level in display.PRESENCE_LEVEL_BY_CODE.items() if level == display.LEVEL_OK]
@@ -107,15 +116,24 @@ def expected_amounts(form, claims):
     return {claim.pk: shown[claim.uuid] for claim in claims if claim.uuid in shown}
 
 
-def split_by_review_right(user, claims, settings_obj):
-    """The claims ``user`` may decide on, and the skip entries of the others (their own)."""
-    reviewable, skipped = [], []
+def split_by_review_right(user, claims, settings_obj, kind="review"):
+    """The claims ``user`` may decide on (``kind="review"``) or pay (``kind="pay"``), and the skip entries of the
+    others (their own, or in a payment the ones the user approved)."""
+    allowed, skipped = [], []
     for claim in claims:
-        if access.can_review(user, claim, settings_obj=settings_obj):
-            reviewable.append(claim)
+        if kind == "pay":
+            block = access.payment_block(user, claim, settings_obj=settings_obj)
+            if not block:
+                allowed.append(claim)
+            elif block == access.OWN_APPROVAL_PAY:
+                skipped.append((claim, _("you approved it; a different payer has to pay.")))
+            else:
+                skipped.append((claim, _("your own claim; another payer has to pay.")))
+        elif access.can_review(user, claim, settings_obj=settings_obj):
+            allowed.append(claim)
         else:
-            skipped.append((claim, _("your own claim; another SRP manager has to decide.")))
-    return reviewable, skipped
+            skipped.append((claim, _("your own claim; another reviewer has to decide.")))
+    return allowed, skipped
 
 
 # --- Review queue -------------------------------------------------------------------------------------------
@@ -173,7 +191,7 @@ def filtered_claims(filters, bounds=None):
 
 
 @require_GET
-@fleetops_permission_required(MANAGE_SRP)
+@fleetops_permission_required((MANAGE_SRP, REVIEW_SRP), any_perm=True)
 def review_queue(request):
     """Claims waiting for a decision, with filters; 50 per page."""
     settings_obj = SrpSettings.get_solo()
@@ -217,7 +235,7 @@ def review_queue(request):
 
 
 @require_POST
-@fleetops_permission_required(MANAGE_SRP, page=False)
+@fleetops_permission_required((MANAGE_SRP, REVIEW_SRP), any_perm=True, page=False)
 def bulk_approve(request):
     """Approve the ticked claims that are clean at their suggested amount; the others are listed as skipped."""
     form = ClaimSelectionForm(request.POST)
@@ -247,7 +265,7 @@ def bulk_approve(request):
 
 
 @require_POST
-@fleetops_permission_required(MANAGE_SRP, page=False)
+@fleetops_permission_required((MANAGE_SRP, REVIEW_SRP), any_perm=True, page=False)
 def recalculate_pending(request):
     """Recalculate every pending claim with the current policy."""
     count = review.recalculate_pending(actor=request.user)
@@ -368,7 +386,7 @@ def do_recheck(request, claim, form):
 
 def do_note(request, claim, form):
     review.add_note(claim, actor=request.user, text=form.cleaned_data["text"])
-    return _("Note added. Only SRP managers can see it.")
+    return _("Note added. Only SRP staff can see it.")
 
 
 HANDLERS = {
@@ -386,14 +404,29 @@ HANDLERS = {
 }
 
 
+def claim_action_allowed(user, claim, action, settings_obj) -> bool:
+    """Whether ``user`` may do ``action`` on ``claim``: the role of the action and its self-processing rule."""
+    if action in PAY_ACTIONS:
+        # Undoing a payment is not bound by the rule that the approver may not pay.
+        return not access.payment_block(user, claim, settings_obj=settings_obj, approver_rule=action == "paid")
+    if action in REVIEW_ACTIONS_WITHOUT_SELF_RULE:
+        return access.is_reviewer(user)
+    if action in REVIEW_ACTIONS:
+        return access.can_review(user, claim, settings_obj=settings_obj)
+    return access.is_srp_staff(user)
+
+
 @require_POST
-@fleetops_permission_required(MANAGE_SRP, page=False)
+@fleetops_permission_required((MANAGE_SRP, REVIEW_SRP, PAY_SRP), any_perm=True, page=False)
 def claim_action(request, claim_uuid, action):
     """One decision on one claim: approve, reject, revoke, paid, unpaid, reopen, reclassify, recategorize,
     recalculate, recheck (the presence check) or note. An unknown action or claim is a 404.
 
-    A decision on the manager's own claim is a 403 unless ``allow_self_review`` is on; the claim page does not
-    offer those buttons then. A re-check and an internal note only need ``manage_srp``.
+    Each action needs its role: the review actions ``review_srp``, paid and unpaid ``pay_srp``, a note any SRP
+    staff permission (``manage_srp`` has them all); any other permission is a 403. A decision on the reviewer's own
+    claim is a 403 unless ``allow_self_review`` is on, paying one's own claim unless ``allow_self_payment`` is on
+    and paying a claim one approved when ``require_different_payer`` is on; the claim page does not offer those
+    buttons then. A re-check and an internal note are not bound by these rules.
 
     Input that does not check out, or an amount that needs a confirmation, shows the claim page again with the
     form as it was sent. A claim that is no longer in the status the button needs (a second click, a decision of
@@ -403,7 +436,7 @@ def claim_action(request, claim_uuid, action):
         raise Http404
     claim = get_claim(claim_uuid)
     settings_obj = SrpSettings.get_solo()
-    if action in DECISION_ACTIONS and not access.can_review(request.user, claim, settings_obj=settings_obj):
+    if not claim_action_allowed(request.user, claim, action, settings_obj):
         raise PermissionDenied
     form = None
     if action in DECISION_FORMS:
@@ -474,7 +507,7 @@ def mark_selected_paid(request, settings_obj):
         messages.error(request, form_errors(note_form))
         return back(request, redirect("fleetops:srp_payments"))
     ticked = list(SrpClaim.objects.filter(uuid__in=form.cleaned_data["claim"]))
-    reviewable, skipped = split_by_review_right(request.user, ticked, settings_obj)
+    reviewable, skipped = split_by_review_right(request.user, ticked, settings_obj, kind="pay")
     if reviewable:
         result = review.mark_paid(
             reviewable,
@@ -497,11 +530,12 @@ def mark_selected_paid(request, settings_obj):
 
 
 @require_http_methods(["GET", "POST"])
-@fleetops_permission_required(MANAGE_SRP)
+@fleetops_permission_required((MANAGE_SRP, PAY_SRP), any_perm=True)
 def payments(request):
     """Approved claims waiting for payment, grouped by main; a POST marks the ticked claims paid.
 
-    Claims the manager may not decide on (their own) are skipped with a message. The month narrows both lists by
+    Claims the payer may not pay (their own, or ones they approved when a different payer is required) are
+    skipped with a message. The month narrows both lists by
     the month of the loss once one is picked; the payment dates narrow the claims already paid (the last 30 days
     until a date is given).
     """
@@ -528,7 +562,8 @@ def payments(request):
         .order_by("killmail_time", "pk")
     )
     for claim in to_pay:
-        claim.reviewable = access.can_review(request.user, claim, settings_obj=settings_obj)
+        claim.pay_block = access.payment_block(request.user, claim, settings_obj=settings_obj)
+        claim.payable = not claim.pay_block
     paid = base.filter(status=SrpClaim.Status.PAID)
     lower, upper = day_bounds(paid_from, paid_to)
     if lower is not None:

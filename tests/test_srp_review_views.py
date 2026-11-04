@@ -230,7 +230,7 @@ class ReviewQueueTests(ManagerPagesTestCase):
 
         self.assertContains(response, f'name="claim" value="{theirs.uuid}"')
         self.assertNotContains(response, f'name="claim" value="{own.uuid}"')
-        self.assertContains(response, "Your own claim: another SRP manager has to decide on it.")
+        self.assertContains(response, "Your own claim: another reviewer has to decide on it.")
         self.assertEqual(response.content.decode().count('name="claim"'), 1)
         self.assertContains(response, f'action="{route("srp_review_bulk_approve")}"')
         self.assertContains(response, "Approve selected at the suggested amount")
@@ -796,7 +796,7 @@ class ClaimActionTests(ManagerPagesTestCase):
 
         self.assertEqual(note.call_args.kwargs, {"actor": self.manager, "text": "Asked the pilot"})
         self.assertRedirects(response, self.page(), fetch_redirect_response=False)
-        self.assertIn("Note added. Only SRP managers can see it.", messages_of(response))
+        self.assertIn("Note added. Only SRP staff can see it.", messages_of(response))
 
     def test_an_empty_note_is_refused(self):
         note = self.service("add_note")
@@ -1020,7 +1020,7 @@ class DecisionFormsTests(ManagerPagesTestCase):
 
         response = self.get(mine)
 
-        self.assertContains(response, "This is your own claim. Another SRP manager has to decide on it.")
+        self.assertContains(response, "This is your own claim. Another reviewer has to decide on it.")
         self.assertNotContains(response, f'action="{self.action_url(mine, "approve")}"')
         self.assertContains(response, f'action="{self.action_url(mine, "note")}"')
         self.assertContains(response, f'action="{self.action_url(mine, "recheck")}"')
@@ -1032,7 +1032,7 @@ class DecisionFormsTests(ManagerPagesTestCase):
 
         response = self.get(mine)
 
-        self.assertNotContains(response, "Another SRP manager has to decide on it.")
+        self.assertNotContains(response, "Another reviewer has to decide on it.")
         self.assertContains(response, f'action="{self.action_url(mine, "approve")}"')
 
     def test_nobody_but_managers_sees_any_review_form(self):
@@ -1217,14 +1217,17 @@ class PaymentsPageTests(ManagerPagesTestCase):
 
         self.assertIn(f'<input type="hidden" name="shown-{claim.uuid}" value="12345678">', html)
 
-    def test_own_claims_have_no_tick_box_unless_self_review_is_allowed(self):
+    def test_own_claims_have_no_tick_box_unless_self_payment_is_allowed(self):
+        # REV-2: paying one's own claim follows allow_self_payment, not allow_self_review.
         own = self.approved(self.manager)
 
         response = self.client.get(route("srp_payments"))
 
         self.assertNotContains(response, f'name="claim" value="{own.uuid}"')
-        self.assertContains(response, "Your own claim: another SRP manager has to pay it.")
+        self.assertContains(response, "Your own claim: another payer has to pay it.")
         SrpSettings.objects.filter(pk=1).update(allow_self_review=True)
+        self.assertNotContains(self.client.get(route("srp_payments")), f'name="claim" value="{own.uuid}"')
+        SrpSettings.objects.filter(pk=1).update(allow_self_payment=True)
         self.assertContains(self.client.get(route("srp_payments")), f'name="claim" value="{own.uuid}"')
 
     def test_nothing_to_pay(self):

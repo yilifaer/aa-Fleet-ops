@@ -269,6 +269,8 @@ class FleetOpsSettings(models.Model):
             ("view_audit_log", "Can view FleetOps audit log"),
             ("request_srp", "Can request SRP"),
             ("manage_srp", "Can review and pay SRP claims"),
+            ("review_srp", "Can review SRP claims"),
+            ("pay_srp", "Can pay SRP claims"),
         ]
 
     def __str__(self):
@@ -1986,10 +1988,24 @@ class SrpSettings(models.Model):
         help_text=_("Without a default category, a claim outside a fleet needs a category."),
     )
     allow_self_review = models.BooleanField(
-        _("SRP managers may decide on their own claims"),
+        _("SRP reviewers may decide on their own claims"),
         default=False,
         help_text=_(
-            "By default another SRP manager decides on a manager's own claims. Allow this for small alliances."
+            "By default another reviewer decides on a reviewer's own claims. Allow this for small alliances."
+        ),
+    )
+    allow_self_payment = models.BooleanField(
+        _("SRP payers may mark their own claims paid"),
+        default=False,
+        help_text=_(
+            "By default another payer pays a payer's own claims. Allow this for small alliances."
+        ),
+    )
+    require_different_payer = models.BooleanField(
+        _("The approver of a claim may not pay it"),
+        default=False,
+        help_text=_(
+            "Four-eyes rule: the person who approved a claim cannot mark it paid. Undoing a payment is not affected."
         ),
     )
     notify_members = models.BooleanField(

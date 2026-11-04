@@ -1,6 +1,11 @@
-{% load i18n fleetops_srp fleetops_messages %}{# The forms of a claim for SRP managers. Context: claim, actions, forms, reason_actions, link_candidates, note_form, self_review_blocked, pay_to. #}
+{% load i18n fleetops_srp fleetops_messages %}{# The forms of a claim for SRP staff. Context: claim, actions, forms, reason_actions, link_candidates, note_form, self_review_blocked, self_payment_blocked, own_approval_blocked, is_reviewer, pay_to. #}
 {% if self_review_blocked %}
-<div class="alert alert-secondary">{% translate "This is your own claim. Another SRP manager has to decide on it. You can still add a note or check the fleet presence." %}</div>
+<div class="alert alert-secondary">{% translate "This is your own claim. Another reviewer has to decide on it. You can still add a note or check the fleet presence." %}</div>
+{% endif %}
+{% if self_payment_blocked and claim.status == "approved" or self_payment_blocked and claim.status == "paid" %}
+<div class="alert alert-secondary">{% translate "This is your own claim. Another payer has to mark it paid or undo the payment." %}</div>
+{% elif own_approval_blocked and claim.status == "approved" %}
+<div class="alert alert-secondary">{% translate "You approved this claim. A different payer has to mark it paid." %}</div>
 {% endif %}
 
 {% if "approve" in actions %}
@@ -144,12 +149,14 @@
 </form>
 {% endif %}
 
+{% if is_reviewer %}
 <form method="post" action="{% url 'fleetops:srp_claim_action' claim.uuid 'recheck' %}" class="fleetops-srp-form mb-4" data-srp-once>
   {% csrf_token %}
   <h3 class="h6">{% translate "Fleet presence" %}</h3>
   <div class="small text-muted mb-2">{% translate "Look at the tracking data of the fleet again, for example after the tracking caught up." %}</div>
   <button type="submit" class="btn btn-outline-secondary">{% translate "Check fleet presence again" %}</button>
 </form>
+{% endif %}
 
 <form method="post" action="{% url 'fleetops:srp_claim_action' claim.uuid 'note' %}" class="fleetops-srp-form" data-srp-once>
   {% csrf_token %}
@@ -157,7 +164,7 @@
   <div class="mb-2">
     <label class="visually-hidden" for="{{ note_form.text.id_for_label }}">{% translate "Internal note" %}</label>
     {{ note_form.text }}
-    <div class="form-text">{% translate "Only SRP managers see notes. The pilot does not." %}</div>
+    <div class="form-text">{% translate "Only SRP staff see notes. The pilot does not." %}</div>
     {{ note_form.text.errors }}
   </div>
   <button type="submit" class="btn btn-outline-secondary">{% translate "Add note" %}</button>

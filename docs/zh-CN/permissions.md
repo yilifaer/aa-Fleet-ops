@@ -25,7 +25,9 @@ staff 或 superuser 账号。
 | `fleetops.manage_configuration` | Can manage FleetOps configuration | 使用 FleetOps 后台设置：常规设置、舰队类型、语音预设、后勤和加成频道、Ping 频道和 Ping 身份组（含"从 Discord 同步身份组"）、PAP 倍率、特殊角色、月度达标线、舰船功能及规则、结构模板、消息模板，以及 SRP 设置、SRP 类别、赔付表和军团限额。在自己能打开的舰队里，从编成页快速归类舰船。 |
 | `fleetops.view_audit_log` | Can view FleetOps audit log | 打开"操作日志"页。 |
 | `fleetops.request_srp` | Can request SRP | 在 FleetOps SRP 中提交舰船损失申请（"我的 SRP"和舰队的 SRP 链接），查看自己的申请和本月额度。需要先启用 FleetOps SRP。加入 SRP 功能的那次迁移已经把它授予所有已拥有 `basic_access` 的用户组、状态和用户；之后新建的用户组需要自己加上。 |
-| `fleetops.manage_srp` | Can review and pay SRP claims | 审核并支付申请：通过、修改金额、拒绝、撤销、标记已付款、重新打开、重新归类、更改类别、重新计算、重新检查在队情况、添加内部备注。打开和关闭舰队的 SRP 链接。查看所有 SRP 汇总和申请。因为它决定付款，所以不会默认授予任何人。 |
+| `fleetops.manage_srp` | Can review and pay SRP claims | `review_srp` 和 `pay_srp` 加在一起能做的所有事：审核并支付申请。这是旧版本的权限，含义不变，所以已有持有人既不会多也不会少。因为它决定付款，所以不会默认授予任何人。 |
+| `fleetops.review_srp` | Can review SRP claims | 审核申请：通过、修改金额、拒绝、撤销、重新打开、重新归类、更改类别、重新计算、重新检查在队情况。添加内部备注，打开和关闭舰队的 SRP 链接，查看所有 SRP 汇总、申请和内部备注。不能标记已付款，也不能撤销付款。不会默认授予任何人；升级不会把它授予任何用户组、状态或用户。 |
+| `fleetops.pay_srp` | Can pay SRP claims | 支付申请：打开付款页，单条或批量标记已付款，撤销付款。添加内部备注，打开和关闭舰队的 SRP 链接，查看所有 SRP 汇总、申请和内部备注（只读，付款人可以打开申请核对付的是什么；从申请打开舰队需要 `view_all_fleets`）。不能通过或拒绝申请。不会默认授予任何人；升级不会把它授予任何用户组、状态或用户。 |
 
 ## 推荐的用户组
 
@@ -92,8 +94,12 @@ FC 主管管理所有舰队，审批补录记录，覆盖 PAP 倍率和每位玩
 - `fleetops.view_all_fleets`（只用于从申请跳转到舰队）
 
 SRP 管理员按规则要求填写理由，审核、通过、修改金额、拒绝、撤销和支付申请，打开和关闭舰队的 SRP 链接，查看每个舰队的申请和所有
-SRP 汇总并下载 SRP 文件，还可以添加只有 SRP 管理员能看到的内部备注。管理者自己的申请由另一位 SRP 管理员处理，除非勾选了
-"SRP 管理员可以处理自己的申请"。
+SRP 汇总并下载 SRP 文件，还可以添加只有 SRP 人员能看到的内部备注。审核人自己的申请由另一位审核人处理，除非勾选了
+"SRP 审核人可以处理自己的申请"；付款人自己的申请由另一位付款人支付，除非勾选了"SRP 付款人可以把自己的申请标记为已付款"。
+
+要把两项工作分开，给审核人 `fleetops.basic_access` 和 `fleetops.review_srp`，给付款人 `fleetops.basic_access` 和 `fleetops.pay_srp`
+（同时也自己提交申请的人再加 `fleetops.request_srp`；要从申请打开舰队再加 `fleetops.view_all_fleets`）。两项工作也可以给同一个人，
+`manage_srp` 就是两者合在一起。如果批准申请的人不能是付款的人，勾选"批准申请的人不能付款"（四眼规则）。这些权限给谁由你决定，FleetOps 不会授予任何人。
 
 ### 组长
 
@@ -160,27 +166,33 @@ FC 统计不受影响。
 
 ## SRP
 
+下文的"SRP 人员"指拥有 `manage_srp`、`review_srp` 或 `pay_srp` 的用户。`manage_srp` 同时是两种角色：审核人（`review_srp`）和付款人（`pay_srp`）。只拥有其中一个的用户，只会看到那一项工作的菜单入口和按钮。超级用户拥有所有权限，因此等同于 `manage_srp`（既是审核人也是付款人），并且和其他人一样受三个自处理设置（`allow_self_review`、`allow_self_payment`、`require_different_payer`）约束。
+
+只读的部分对三者相同：所有 SRP 人员都能看到全部 SRP 汇总、SRP 导出、每个申请及其内部备注和经手人的名字、舰队页上的 SRP 卡片，也能开启和关闭舰队的 SRP 链接。这是有意的：付款人需要知道申请为什么被通过，所以内部备注对付款人也可见。只有做决定的按钮（通过、拒绝、标记已付款等）才跟着角色走。
+
 | 操作 | 谁可以 |
 |---|---|
 | 我的 SRP、舰队的 SRP 链接页、检查并提交损失、撤回并重新提交申请、查看自己的申请页 | `fleetops.request_srp`。申请的角色必须属于用户自己的 Alliance Auth 账号。 |
-| 舰队页上的 SRP 卡片 | 链接及复制按钮：舰队的管理者、FC 和 SRP 管理员。"为本舰队申请 SRP"按钮：`request_srp`，且链接处于开启状态。 |
+| 舰队页上的 SRP 卡片 | 链接及复制按钮：舰队的管理者、FC 和 SRP 人员（`manage_srp`、`review_srp` 或 `pay_srp`）。"为本舰队申请 SRP"按钮：`request_srp`，且链接处于开启状态。 |
 | 创建舰队的 SRP 链接（"创建 SRP 链接"、"重试 SRP"） | 该舰队上的 `fleetops.manage_own_fleet`，或 `fleetops.manage_fleets` |
-| 开启或关闭舰队的 SRP 链接 | `fleetops.manage_srp` |
-| 审核队列、付款页、对申请的各种决定、批量通过、"重新计算" | `fleetops.manage_srp`；不能处理管理者自己的申请，除非勾选了"SRP 管理员可以处理自己的申请"（返回 403；批量操作会跳过并给出提示）。重新检查在队情况和添加内部备注只需要 `manage_srp`。 |
-| 任何申请页 | 申请人、`manage_srp`、该申请所在舰队的 FC、`view_all_stats`（只读）、以及 `view_corp_stats`（本军团的申请）。其他人得到 404。内部备注和经手人的名字只有 `manage_srp` 能看到，其他人看到的是"申请人"、"审核人"或"系统"。本月已用额度显示给申请人、`manage_srp`、`view_all_stats` 以及申请所属军团的 `view_corp_stats`，不显示给舰队的 FC。 |
-| SRP 汇总（联盟、军团、FC） | `manage_srp` 或 `view_all_stats`（只读） |
-| SRP 军团（本军团的合计、成员、申请） | 本军团的 `view_corp_stats`（没有大号的用户得到 404）；`manage_srp` 或 `view_all_stats` 可看任意军团 |
-| SRP 我的舰队（自己带过的舰队的申请和合计） | 拥有任一 FC 权限（`start_fleet`、`manage_own_fleet`、`manage_fleets`、`create_manual_fleet`）的用户，以及带过有 SRP 链接舰队的人，可看自己的页面；`manage_srp` 和 `view_all_stats` 还能看任意 FC 的页面 |
+| 开启或关闭舰队的 SRP 链接 | `fleetops.manage_srp`、`fleetops.review_srp` 或 `fleetops.pay_srp` |
+| 审核队列、对申请的各种决定（通过、修改金额、拒绝、撤销、重新打开、重新归类、更改类别）、批量通过、"重新计算"、重新检查在队情况 | `fleetops.manage_srp` 或 `fleetops.review_srp`；不能处理审核人自己的申请，除非勾选了"SRP 审核人可以处理自己的申请"（返回 403；批量操作会跳过并给出提示）。重新检查在队情况不受这条限制。 |
+| 付款页、"标记已付款"（单条或勾选的几条）、"撤销付款" | `fleetops.manage_srp` 或 `fleetops.pay_srp`；不能支付付款人自己的申请，除非勾选了"SRP 付款人可以把自己的申请标记为已付款"；勾选"批准申请的人不能付款"后，也不能支付自己批准的申请（返回 403；批量付款会跳过并给出提示）。撤销付款不受"批准的人不能付款"限制。 |
+| 内部备注 | 任一 SRP 人员权限（`manage_srp`、`review_srp` 或 `pay_srp`）；不受"处理自己的申请"设置限制 |
+| 任何申请页 | 申请人、SRP 人员（`manage_srp`、`review_srp`、`pay_srp`）、该申请所在舰队的 FC、`view_all_stats`（只读）、以及 `view_corp_stats`（本军团的申请）。其他人得到 404。内部备注和经手人的名字只有 SRP 人员能看到，其他人看到的是"申请人"、"审核人"或"系统"。本月已用额度显示给申请人、SRP 人员、`view_all_stats` 以及申请所属军团的 `view_corp_stats`，不显示给舰队的 FC。页面上的按钮跟着角色走：审核人看不到"标记已付款"，付款人看不到"通过"。 |
+| SRP 汇总（联盟、军团、FC） | SRP 人员或 `view_all_stats`（只读） |
+| SRP 军团（本军团的合计、成员、申请） | 本军团的 `view_corp_stats`（没有大号的用户得到 404）；SRP 人员或 `view_all_stats` 可看任意军团 |
+| SRP 我的舰队（自己带过的舰队的申请和合计） | 拥有任一 FC 权限（`start_fleet`、`manage_own_fleet`、`manage_fleets`、`create_manual_fleet`）的用户，以及带过有 SRP 链接舰队的人，可看自己的页面；SRP 人员和 `view_all_stats` 还能看任意 FC 的页面 |
 | SRP 设置、SRP 类别、SRP 赔付表、SRP 军团限额 | `fleetops.manage_configuration`；每次修改都会记录新旧值 |
 
 SRP 文件地址为 `/fleetops/statistics/export/<dataset>/`：
 
 | 数据集 | 谁可以 |
 |---|---|
-| `srp-claims`、`srp-members` | `manage_srp` 或 `view_all_stats` 可导出全联盟或任意军团（`corporation=<id>`）；`view_corp_stats` 只能带上本军团的 ID（其他军团返回 404，没带军团返回 403） |
-| `srp-corporations`、`srp-fcs` | `manage_srp` 或 `view_all_stats` |
+| `srp-claims`、`srp-members` | SRP 人员或 `view_all_stats` 可导出全联盟或任意军团（`corporation=<id>`）；`view_corp_stats` 只能带上本军团的 ID（其他军团返回 404，没带军团返回 403） |
+| `srp-corporations`、`srp-fcs` | SRP 人员或 `view_all_stats` |
 
-`srp-claims` 里的"处理人"（Decided by）和"付款人"（Paid by）两列只对 `manage_srp` 填写。FC 和普通成员没有 SRP 文件。每次下载都记为 `srp.export`。
+`srp-claims` 里的"处理人"（Decided by）和"付款人"（Paid by）两列只对 SRP 人员填写。FC 和普通成员没有 SRP 文件。每次下载都记为 `srp.export`。
 其他 SRP 操作都会记入操作日志，并显示在申请自己的时间线上：`srp.link_create`、`srp.link_open`、`srp.link_close`、`srp.claim_submit`、
 `srp.claim_auto_reject`、`srp.claim_withdraw`、`srp.claim_resubmit`、`srp.claim_approve`、`srp.claim_amount_change`、`srp.claim_reject`、
 `srp.claim_revoke`、`srp.claim_paid`、`srp.claim_unpaid`、`srp.claim_reopen`、`srp.claim_reclassify`、`srp.claim_recategorize`、`srp.claim_recalculate`、

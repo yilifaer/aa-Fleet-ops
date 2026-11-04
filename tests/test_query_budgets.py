@@ -260,3 +260,42 @@ class MySrpBudgetTests(TestCase):
             f.srp_claim(pilot, category=category)
 
         self.assertEqual(self.count(pilot), one)
+
+
+class SrpRoleBudgetTests(TestCase):
+    """REV-1: the menu of a payer costs one count, the menu of a reviewer one count, a manager both; the payments
+    page does not grow with the claims."""
+
+    def count(self, user, url):
+        self.client.force_login(user)
+        self.client.get(url)
+        cache.clear()
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        return len(queries)
+
+    def test_the_menu_costs_one_count_per_role(self):
+        reviewer = f.create_user("budget_reviewer", perms=f.SRP_REVIEWER_PERMS)
+        payer = f.create_user("budget_payer", perms=f.SRP_PAYER_PERMS)
+        manager = f.create_user("budget_both", perms=f.SRP_MANAGER_PERMS)
+        url = route("dashboard")
+
+        counts = {name: self.count(user, url) for name, user in (("reviewer", reviewer), ("payer", payer), ("manager", manager))}
+
+        self.assertEqual(counts["payer"], counts["reviewer"])
+        self.assertEqual(counts["manager"], counts["payer"] + 1)
+
+    def test_the_payments_page_does_not_grow_with_the_claims(self):
+        payer = f.create_user("budget_payer_page", perms=f.SRP_PAYER_PERMS)
+        pilots = [f.create_user(f"budget_pilot_{index}", perms=f.SRP_MEMBER_PERMS) for index in range(6)]
+        approver = f.create_user("budget_approver", perms=f.SRP_MANAGER_PERMS)
+        url = route("srp_payments")
+        for pilot in pilots[:2]:
+            f.srp_claim(pilot, status="approved", decided_by=approver)
+        small = self.count(payer, url)
+        for pilot in pilots[2:]:
+            f.srp_claim(pilot, status="approved", decided_by=approver)
+            f.srp_claim(pilot, status="approved", decided_by=approver)
+
+        self.assertEqual(self.count(payer, url), small)

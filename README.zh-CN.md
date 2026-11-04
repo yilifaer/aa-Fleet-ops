@@ -191,6 +191,8 @@ FleetOps SRP 不需要任何权限范围。
 | FC | `basic_access`、`start_fleet`、`manage_own_fleet`、`view_all_fleets`、`create_manual_fleet`、`manage_attendance` |
 | FC 主管 | 除 SRP 之外的全部权限 |
 | SRP 管理员 | `basic_access`、`request_srp`、`manage_srp`、`view_all_fleets` |
+| SRP 审核人（只审核） | `basic_access`、`review_srp`、`view_all_fleets` |
+| SRP 付款人（只付款） | `basic_access`、`pay_srp`、`view_all_fleets` |
 
 每一项权限和行级规则见 [docs/zh-CN/permissions.md](docs/zh-CN/permissions.md)。
 

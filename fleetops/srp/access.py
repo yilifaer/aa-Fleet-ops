@@ -5,8 +5,9 @@
 
 Members see their own claims. ``view_all_stats`` sees every SRP summary and claim read-only,
 ``view_corp_stats`` the summary and the claims of its own corporation, FCs the claims and totals of the
-fleets they led, and SRP managers (``manage_srp``) everything. Only managers see internal notes and only
-managers decide, and by default not on their own claims.
+fleets they led, and SRP staff everything. Staff are the holders of ``manage_srp`` (review and pay), of
+``review_srp`` (review only) and of ``pay_srp`` (pay only). Only staff see internal notes; reviewers decide on
+claims and payers pay them, and by default neither on their own claims.
 
 A single object out of scope (a claim, a corporation, another FC's summary) is answered by the views with the
 FleetOps 404 page, the same for an ID that exists and one that does not; a corporation manager's own corporation
@@ -23,6 +24,8 @@ from fleetops.services.stats_access import VIEW_ALL_STATS, VIEW_CORP_STATS, own_
 
 REQUEST_SRP = "fleetops.request_srp"
 MANAGE_SRP = "fleetops.manage_srp"
+REVIEW_SRP = "fleetops.review_srp"
+PAY_SRP = "fleetops.pay_srp"
 
 # Permissions of people who lead fleets; the navigation only looks for fleets led by such users.
 FC_PERMISSIONS = (
@@ -42,32 +45,74 @@ def can_request(user) -> bool:
     return _signed_in(user) and user.has_perm(REQUEST_SRP)
 
 
-def is_manager(user) -> bool:
-    """May review, change and pay claims (``manage_srp``); sees every claim and the internal notes."""
-    return _signed_in(user) and user.has_perm(MANAGE_SRP)
+def is_reviewer(user) -> bool:
+    """May review claims: approve, reject, change, reopen, move (``manage_srp`` or ``review_srp``)."""
+    return _signed_in(user) and (user.has_perm(MANAGE_SRP) or user.has_perm(REVIEW_SRP))
+
+
+def is_payer(user) -> bool:
+    """May mark claims paid and undo a payment (``manage_srp`` or ``pay_srp``)."""
+    return _signed_in(user) and (user.has_perm(MANAGE_SRP) or user.has_perm(PAY_SRP))
+
+
+def is_srp_staff(user) -> bool:
+    """Reviewers and payers: they see every claim and the internal notes."""
+    return _signed_in(user) and any(user.has_perm(name) for name in (MANAGE_SRP, REVIEW_SRP, PAY_SRP))
+
+
+# The name the pages used before the permission was split.
+is_manager = is_srp_staff
 
 
 def sees_everything(user) -> bool:
-    """Managers and ``view_all_stats`` see every summary and claim; the latter read-only."""
-    return _signed_in(user) and (user.has_perm(MANAGE_SRP) or user.has_perm(VIEW_ALL_STATS))
+    """SRP staff and ``view_all_stats`` see every summary and claim; the latter read-only."""
+    return is_srp_staff(user) or (_signed_in(user) and user.has_perm(VIEW_ALL_STATS))
 
 
 def can_view_internal_notes(user) -> bool:
-    """Internal notes of reviewers stay manager-only."""
-    return is_manager(user)
+    """Internal notes of reviewers stay with the SRP staff."""
+    return is_srp_staff(user)
 
 
 def can_review(user, claim, *, settings_obj=None) -> bool:
-    """May decide on ``claim`` (approve, reject, change the amount, mark paid, revoke, reopen, reclassify).
+    """May decide on ``claim`` (approve, reject, change the amount, revoke, reopen, reclassify, recategorize).
 
-    Needs ``manage_srp``; a manager's own claim is decided by another manager unless the settings allow
-    self review.
+    Needs ``review_srp`` (or ``manage_srp``); a reviewer's own claim is decided by another reviewer unless the
+    settings allow self review.
     """
-    if not is_manager(user):
+    if not is_reviewer(user):
         return False
     if claim.user_id is None or claim.user_id != user.pk:
         return True
     return bool((settings_obj or SrpSettings.get_solo()).allow_self_review)
+
+
+# Why ``user`` may not pay a claim; the codes of ``SrpError`` in ``review``.
+NOT_A_PAYER = "forbidden"
+OWN_CLAIM_PAY = "own_claim_pay"
+OWN_APPROVAL_PAY = "own_approval_pay"
+
+
+def payment_block(user, claim, *, settings_obj=None, approver_rule=True) -> str:
+    """Why ``user`` may not pay ``claim``, as a code (``""`` when they may).
+
+    Needs ``pay_srp`` (or ``manage_srp``). A payer's own claim is paid by another payer unless
+    ``allow_self_payment`` is on. With ``require_different_payer`` the approver of the claim may not pay it;
+    ``approver_rule=False`` leaves that rule out (undoing a payment is not bound by it).
+    """
+    if not is_payer(user):
+        return NOT_A_PAYER
+    srp = settings_obj or SrpSettings.get_solo()
+    if claim.user_id is not None and claim.user_id == user.pk and not srp.allow_self_payment:
+        return OWN_CLAIM_PAY
+    if approver_rule and srp.require_different_payer and claim.decided_by_id is not None and claim.decided_by_id == user.pk:
+        return OWN_APPROVAL_PAY
+    return ""
+
+
+def can_pay(user, claim, *, settings_obj=None) -> bool:
+    """May mark ``claim`` paid (see ``payment_block``)."""
+    return not payment_block(user, claim, settings_obj=settings_obj)
 
 
 def _sees_corporation_of(user, claim) -> bool:
@@ -175,7 +220,7 @@ def summary_access(user) -> dict:
     ``alliance``, ``corporations`` (any corporation) and ``fcs`` (any FC) are True for managers and
     ``view_all_stats``. ``own_corporation`` is the ``(id, name)`` of the user's corporation when its summary
     is allowed, ``own_fc`` whether the user has a "My fleets" page (see ``leads_fleets``) and ``manager``
-    whether the user decides on claims, so the alliance summary points them to the review page instead of
+    whether the user reviews claims, so the alliance summary points them to the review page instead of
     calling itself read only.
     """
     if not _signed_in(user):
@@ -195,7 +240,7 @@ def summary_access(user) -> dict:
         "fcs": everything,
         "own_corporation": corporation,
         "own_fc": leads_fleets(user),
-        "manager": is_manager(user),
+        "manager": is_reviewer(user),
     }
 
 
@@ -203,8 +248,10 @@ def srp_nav(user) -> dict:
     """What the SRP menu shows; runs for every page, so it needs as few queries as it takes.
 
     ``enabled`` is the SRP switch, ``request`` whether "My SRP" is offered (permission and enabled),
-    ``review`` the queue and payments for managers, ``pending_count`` the pending claims a manager can still
-    decide (one query, managers only) and ``summary`` whether any summary opens. ``own_fleets`` is whether the
+    ``review`` the review queue for reviewers, ``pay`` the payments page for payers, ``pending_count`` the
+    pending claims a reviewer can still decide (one query, reviewers only), ``to_pay_count`` the approved
+    claims a payer can still pay (one query, payers only), ``summary`` whether any summary opens and
+    ``summary_all`` whether the alliance summary opens (staff and ``view_all_stats``). ``own_fleets`` is whether the
     menu has "My fleets": for every FC, whether or not a fleet of theirs has an SRP link yet, and for the leaders
     of groups with SRP on. ``visible`` is True when the menu has an entry. Users without any SRP-related
     permission cost no query beyond the group lookup every page makes for people who are not FCs.
@@ -213,16 +260,20 @@ def srp_nav(user) -> dict:
         "enabled": False,
         "request": False,
         "review": False,
+        "pay": False,
         "pending_count": 0,
+        "to_pay_count": 0,
         "summary": False,
+        "summary_all": False,
         "own_fleets": False,
         "visible": False,
     }
     if not _signed_in(user):
         return hidden
     wants_request = user.has_perm(REQUEST_SRP)
-    manager = user.has_perm(MANAGE_SRP)
-    everything = manager or user.has_perm(VIEW_ALL_STATS)
+    reviewer = is_reviewer(user)
+    payer = is_payer(user)
+    everything = is_srp_staff(user) or user.has_perm(VIEW_ALL_STATS)
     corporation_stats = user.has_perm(VIEW_CORP_STATS)
     is_fc = has_fc_permission(user)
     own_fleets = is_fc or leads_srp_group(user)
@@ -232,18 +283,29 @@ def srp_nav(user) -> dict:
     srp_settings = SrpSettings.get_solo()
     summary = everything or own_fleets or (corporation_stats and own_corporation(user) is not None)
     pending_count = 0
-    if manager:
+    if reviewer:
         pending = SrpClaim.objects.filter(status=SrpClaim.Status.PENDING)
         if not srp_settings.allow_self_review:
             pending = pending.exclude(user=user)
         pending_count = pending.count()
+    to_pay_count = 0
+    if payer:
+        to_pay = SrpClaim.objects.filter(status=SrpClaim.Status.APPROVED)
+        if not srp_settings.allow_self_payment:
+            to_pay = to_pay.exclude(user=user)
+        if srp_settings.require_different_payer:
+            to_pay = to_pay.exclude(decided_by=user)
+        to_pay_count = to_pay.count()
     request = wants_request and srp_settings.enabled
     return {
         "enabled": srp_settings.enabled,
         "request": request,
-        "review": manager,
+        "review": reviewer,
+        "pay": payer,
         "pending_count": pending_count,
+        "to_pay_count": to_pay_count,
         "summary": bool(summary),
+        "summary_all": everything,
         "own_fleets": own_fleets,
-        "visible": request or manager or bool(summary),
+        "visible": request or reviewer or payer or bool(summary),
     }

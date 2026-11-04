@@ -15,7 +15,7 @@ from fleetops.models import SrpClaim, SrpCorporationLimit, SrpFleetLink
 from fleetops.services import population
 from fleetops.services.stats_access import BASIC_ACCESS, VIEW_ALL_STATS, VIEW_CORP_STATS, own_corporation
 from fleetops.srp import access, summaries
-from fleetops.srp.access import MANAGE_SRP
+from fleetops.srp.access import MANAGE_SRP, PAY_SRP, REVIEW_SRP
 from fleetops.srp.links import set_link_open
 from fleetops.views import _period_render_context, _year_month
 from fleetops.views_errors import OWN_CORPORATION_STATISTICS_REASON, OWN_FLEETS_SUMMARY_REASON, denied, not_found
@@ -58,7 +58,7 @@ def _page(request, tab, year, month, **context):
 
 
 @require_GET
-@fleetops_permission_required((MANAGE_SRP, VIEW_ALL_STATS), any_perm=True)
+@fleetops_permission_required((MANAGE_SRP, REVIEW_SRP, PAY_SRP, VIEW_ALL_STATS), any_perm=True)
 def alliance_summary(request):
     """The whole alliance: totals, in and out of fleet, the ships lost most and the other summaries."""
     year, month = _year_month(request)
@@ -75,12 +75,12 @@ def alliance_summary(request):
 
 
 @require_GET
-@fleetops_permission_required((VIEW_CORP_STATS, MANAGE_SRP, VIEW_ALL_STATS), any_perm=True)
+@fleetops_permission_required((VIEW_CORP_STATS, MANAGE_SRP, REVIEW_SRP, PAY_SRP, VIEW_ALL_STATS), any_perm=True)
 def corporation_summary(request, corporation_id=None):
     """One corporation's summary and its members' claims.
 
     Without an ID it is the corporation of the user's main (``view_corp_stats`` is enough). With an ID it is
-    any corporation, for SRP managers and ``view_all_stats``; a corporation SRP has never heard of is a 404.
+    any corporation, for SRP staff and ``view_all_stats``; a corporation SRP has never heard of is a 404.
     A corporation manager's own corporation by ID is their own page; any other ID is a 404 with the reason.
     """
     if corporation_id is None:
@@ -127,7 +127,7 @@ def fc_summary(request, user_id=None):
     """The claims and totals of the fleets one FC led.
 
     Without an ID it is the user's own page, for FCs, for anyone who led a fleet with an SRP link and for SRP
-    managers. With an ID it is any FC, for SRP managers and ``view_all_stats``; a user that does not exist is
+    managers. With an ID it is any FC, for SRP staff and ``view_all_stats``; a user that does not exist is
     a 404. Everybody else may use their own ID; any other ID is a 404 with the reason.
     """
     everything = access.sees_everything(request.user)
@@ -161,7 +161,7 @@ def fc_summary(request, user_id=None):
 
 
 @require_POST
-@fleetops_permission_required(MANAGE_SRP, page=False)
+@fleetops_permission_required((MANAGE_SRP, REVIEW_SRP, PAY_SRP), any_perm=True, page=False)
 def link_toggle(request, code, is_open):
     """Open or close a fleet's SRP link; the fleet page shows the result."""
     link = get_object_or_404(SrpFleetLink.objects.select_related("operation"), code=code)

@@ -28,6 +28,8 @@ PERMISSION_REASONS = {
     "fleetops.view_audit_log": _("Only auditors can open the audit log."),
     "fleetops.request_srp": _("Your account cannot request SRP."),
     "fleetops.manage_srp": _("Only SRP managers can open this page."),
+    "fleetops.review_srp": _("Only SRP reviewers can open this page."),
+    "fleetops.pay_srp": _("Only SRP payers can open this page."),
 }
 # The group decorators: FCs or the leaders of configured Alliance Auth groups.
 STARTER_REASON = _("Only FCs and leaders of groups that run fleets can start fleets.")

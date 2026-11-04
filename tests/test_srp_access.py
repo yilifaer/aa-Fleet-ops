@@ -341,8 +341,13 @@ class NavTests(AccessBase):
                 "enabled": False,
                 "request": False,
                 "review": False,
+                # review_srp / pay_srp split (REV-1): the payments page, its count and the alliance summary
+                # entry are separate keys now.
+                "pay": False,
                 "pending_count": 0,
+                "to_pay_count": 0,
                 "summary": False,
+                "summary_all": False,
                 "own_fleets": False,
                 "visible": False,
             },
@@ -368,8 +373,12 @@ class NavTests(AccessBase):
                 "enabled": True,
                 "request": True,
                 "review": False,
+                # review_srp / pay_srp split (REV-1): new keys.
+                "pay": False,
                 "pending_count": 0,
+                "to_pay_count": 0,
                 "summary": False,
+                "summary_all": False,
                 "own_fleets": False,
                 "visible": True,
             },
@@ -403,7 +412,8 @@ class NavTests(AccessBase):
     def test_managers_cost_one_more_query_for_the_pending_count(self):
         self.manager.has_perm("fleetops.basic_access")
 
-        with self.assertNumQueries(3):
+        # manage_srp is reviewer and payer: one count for the pending claims and one for the claims to pay (REV-1).
+        with self.assertNumQueries(4):
             access.srp_nav(self.manager)
 
     def test_pending_count_is_one_count_of_claims_the_manager_can_decide(self):
