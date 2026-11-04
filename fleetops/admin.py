@@ -39,6 +39,7 @@ from fleetops.models import (
     ShipFunction,
     ShipFunctionRule,
     SpecialRole,
+    SrpBan,
     SrpCategory,
     SrpClaim,
     SrpClaimEvent,
@@ -439,6 +440,16 @@ class SrpFleetLinkAdmin(SrpReadOnlyAdmin):
     list_display = ("__str__", "kind", "name", "link_date", "category", "is_open", "completed_at", "created_at")
     list_filter = ("kind", "is_open", "category", "origin")
     search_fields = ("name", "fc_main_character_name")
+
+
+@admin.register(SrpBan)
+class SrpBanAdmin(SrpReadOnlyAdmin):
+    """SRP bans are made and lifted on the SRP Bans pages; this is a read-only list for superusers (the model has no
+    Django default permissions)."""
+
+    list_display = ("main_character_name", "kind", "starts_at", "expires_at", "lifted_at", "created_by")
+    list_filter = ("kind",)
+    search_fields = ("main_character_name",)
 
 
 @admin.register(SrpKillmail)

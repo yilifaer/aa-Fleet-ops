@@ -21,6 +21,7 @@ from fleetops.services.fleet_refresh import REFRESH_TASK_LOCK_SECONDS, refresh_n
 from fleetops.services.names import apply_names_to_operation, resolve_and_store
 from fleetops.services.operations import cancel_abandoned_starts, end_fleet, finish_requested_end
 from fleetops.services.tracking import observe_unreadable_fleet, sync_operation, unreadable_fleet_message
+from fleetops.srp import links as srp_links
 from fleetops.srp.killmails import prune_unclaimed
 from fleetops.srp.tasks import queue_srp_sweep, refresh_srp_values as sweep_srp_values
 
@@ -93,7 +94,24 @@ def schedule_active_fleet_tracking():
     _recover_stuck_ends(now)
     cancel_abandoned_starts(now=now)
     _queue_srp_sweep(now)
+    _maintain_standing_links(now)
     return queued
+
+
+def _maintain_standing_links(now):
+    """Make the day's standing links and close the ones that are due; a problem there must never stop the fleet
+    tracking. Runs at most every ten minutes."""
+    try:
+        if not cache.add(srp_links.STANDING_LINKS_KEY, 1, srp_links.STANDING_LINKS_SECONDS):
+            return
+        try:
+            srp_links.maintain_standing_links(now)
+        except Exception:
+            # Without a finished run the next beat may try again.
+            cache.delete(srp_links.STANDING_LINKS_KEY)
+            raise
+    except Exception as exc:
+        log_failure(logger, "SRP standing links", exc)
 
 
 def _queue_srp_sweep(now):

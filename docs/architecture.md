@@ -23,12 +23,12 @@ Administrators want the [configuration reference](configuration.md) instead.
 | `models.py`, `admin.py`, `apps.py`, `auth_hooks.py`, `charlink_hook.py` | Models and their validators, the Django admin, the Alliance Auth menu and URL hooks, the CharLink import |
 | `views.py`, `views_*.py` | Pages and JSON endpoints, split by area: fleet start and page (`views.py`), configuration, PAP rules, records and approvals, PAP links, controls (kicks), presets, the Fleet tab (`views_fleet_*`), statistics, members, exports, history, SRP (`views_srp*`) |
 | `forms.py`, `forms_*.py` | Forms of the same areas |
-| `services/` | Business rules: `operations` (start and end), `tracking`, `pap`, `multipliers`, `counting`, `statistics`, `population`, `assessment`, `incentives`, `messages` and `mentions` (ping and MOTD), `eve_links` (the in-game links of the MOTD), `group_access` (who leads which group and what the group may do), `standalone_pings` (Send Ping), `scheduling`, `fleet_*` (Fleet tab), `composition`, `names`, `periods` (EVE time), `audit` |
+| `services/` | Business rules: `operations` (start and end), `tracking`, `pap`, `multipliers`, `counting`, `statistics`, `population`, `assessment`, `incentives`, `messages` and `mentions` (ping and MOTD), `eve_links` (the in-game links of the MOTD), `group_access` (who leads which group and what the group may do), `standalone_pings` (Send Ping), `universe` (system, constellation and region of a loss and the ship group, from the SDE or ESI), `scheduling`, `fleet_*` (Fleet tab), `composition`, `names`, `periods` (EVE time), `audit` |
 | `decorators.py`, `views_errors.py` | The access decorators and the FleetOps 403 and 404 pages (the reason a page is closed, one neutral 404) |
 | `ui.py`, `ui_notices.py`, `forms_common.py`, `forms_operation.py` | The interface components (pills, tones, the confirmation text), notices for Alliance Auth messages, form helpers shared by the forms, and the fleet-record forms |
 | `signals.py` | Reacts to the deletion of an Alliance Auth group (audit entry, channels become alliance channels again) |
-| `srp/` | FleetOps SRP: claims, policy, loss values, monthly limits, presence check, review, summaries, access rules, the fleet SRP link, notifications and the value sweep |
-| `providers/` | `esi` (fleet reads and writes), `esi_killmails`, `zkillboard`, `pings` (Discord webhook), `doctrines` (Fittings), `srp` (SRP provider registry) |
+| `srp/` | FleetOps SRP: claims, policy, loss values, monthly limits, presence check, review, summaries, access rules, the fleet SRP link, notifications and the value sweep; `bans` (who may not submit) and `blocks` (the ship groups, ships and kinds of space that are not covered, and the security band of a loss) |
+| `providers/` | `esi` (fleet reads and writes), `esi_killmails`, `esi_universe` (solar system, constellation and type reads), `zkillboard`, `pings` (Discord webhook), `doctrines` (Fittings), `srp` (SRP provider registry) |
 | `tasks.py` | Celery tasks |
 | `texts.py` | Stored messages and their translation ([stored texts](#stored-texts-and-languages)) |
 | `templates/fleetops/`, `static/fleetops/` | Templates (with `operation/`, `statistics/`, `srp/`, `configuration/` folders) and the JavaScript and CSS of the pages (`preview.js` renders the Discord and in-game previews; `send_ping.js` is the Send Ping page) |
@@ -152,7 +152,7 @@ templates, roles) is never translated.
 
 | Task | When |
 |---|---|
-| `schedule_active_fleet_tracking` | Beat, every minute: queues the polls that are due, finishes lost ends, cancels abandoned starts, queues the SRP value sweep |
+| `schedule_active_fleet_tracking` | Beat, every minute: queues the polls that are due, finishes lost ends, cancels abandoned starts, queues the SRP value sweep, and (at most every ten minutes) makes the day's standing SRP links and closes the ones that are due |
 | `prune_attendance_history` | Beat, daily: retention, departed members, unclaimed SRP killmails |
 | `track_operation`, `finish_fleet_end`, `refresh_fleet_structure`, `run_fleet_job`, `resolve_character_names`, `refresh_srp_values` | Queued by the code; no beat entry |
 

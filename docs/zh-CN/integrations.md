@@ -46,6 +46,8 @@ FleetOps 只需要 Alliance Auth 和 django-esi。下面所有内容都是可选
 除了用 FC 令牌读写的舰队接口，FleetOps 还为默认 MOTD 读取两个公开的 ESI 接口：角色的血脉（`GET /characters/{id}/`，用来生成正确的游戏内角色链接；缓存 30 天，失败缓存十分钟，此时链接使用默认的角色类型）和按名称查星系 ID
 （`POST /universe/ids/`，只在集结地文字是 SDE 不认识的名称时才用；找到的名称缓存 30 天，找不到的缓存一天）。它们都不会阻塞开队：ESI 没有回应时，MOTD 里就是普通文字。不带舰队的 Ping 不做这些请求。
 
+FleetOps SRP 还会读取另外三个公开接口，只在没有安装 django-eveonline-sde 时才用（有 SDE 时先问 SDE，此时不发任何请求）：`GET /universe/systems/{id}`（舰船被击毁的星系的安全等级和星座）、`GET /universe/constellations/{id}`（它的星域）和 `GET /universe/types/{id}`（舰船类型的组）。它们在 KM 入库时运行，不需要 scope 也不需要 token，由 django-esi 按 ESI 的 `Expires` 缓存，FleetOps 再保留 7 天（失败保留一小时）。ESI 没有回应时，KM 照常入库，不会因此拒绝任何申请。没有 SDE 时这个查询在第一个读取该 KM 的网页请求里运行（最多这三次带缓存的读取）；建议安装 django-eveonline-sde 以避免这一点。
+
 ## SRP 应用
 
 FleetOps 可以在每支舰队开队时创建 SRP 链接（"SRP 自动创建"，SRP auto create）。有三种提供方：FleetOps SRP、aa-srp（`aasrp`）和

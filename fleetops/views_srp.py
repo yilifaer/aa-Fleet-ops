@@ -32,7 +32,7 @@ from fleetops.providers.esi import FleetESIError
 from fleetops.services import sde
 from fleetops.services.periods import month_bounds
 from fleetops.services.stats_access import BASIC_ACCESS
-from fleetops.srp import access, claims, links, summaries
+from fleetops.srp import access, bans, blocks, claims, links, summaries
 from fleetops.srp import policy as rules
 from fleetops.srp.access import REQUEST_SRP
 from fleetops.srp.types import Calculation, PolicySnapshot, SrpDuplicateError, SrpError, warnings_from_json
@@ -162,6 +162,9 @@ def home_context(request, year, month, claim_form, settings_obj):
     if not settings_obj.enabled:
         return context
     user = request.user
+    context["ban"] = bans.active_ban(user)
+    context["not_covered"] = blocks.member_notice(settings_obj)
+    context["standing_links"] = links.open_standing_links()
     personal = summaries.personal(user, year, month)
     start, end = month_bounds(year, month)
     month_claims = (
@@ -262,6 +265,7 @@ def srp_link(request, code):
             )
     context = {"link": link, "operation": link.operation, "claim_form": form, "link_open": link.is_open}
     if settings_obj.enabled:
+        context["not_covered"] = blocks.member_notice(settings_obj)
         context["my_claims"] = SrpClaim.objects.filter(user=request.user, link=link).select_related("category").order_by("-killmail_time")
     return srp_render(request, "fleetops/srp/link.html", context, settings_obj=settings_obj)
 
@@ -445,6 +449,10 @@ def claim_page_context(request, claim, *, bound=None, settings_obj=None):
         "item_groups": item_groups(claim.killmail.items),
         "withdraw_form": WithdrawForm(auto_id="id_withdraw_%s"),
     }
+    if is_reviewer and claim.user_id is not None and not is_owner:
+        # The reviewer can ban the member or lift the ban, from the claim.
+        context["member_ban"] = bans.active_ban(claim.user)
+        context["ban_lift_form"] = ReasonForm(auto_id="id_banlift_%s")
     if is_staff:
         bound = bound or {}
         context["self_review_blocked"] = is_reviewer and not can_decide

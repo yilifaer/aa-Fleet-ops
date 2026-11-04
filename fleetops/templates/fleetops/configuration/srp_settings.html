@@ -19,16 +19,27 @@
 {% endif %}
 <form method="post">
   {% csrf_token %}
+  {# Pressing Enter in a field sends the first submit button: that must be Save, not the button that fills in the lists. #}
+  <button type="submit" class="d-none" tabindex="-1" aria-hidden="true">{% translate "Save SRP Settings" %}</button>
   {% include "fleetops/partials/form_errors.html" with errors=form.non_field_errors %}
   {% for group in form.field_groups %}{% with title=group.0 text=group.1 fields=group.2 %}
   <div class="card mb-3" id="srp-{{ group.key }}"><div class="card-header"><strong>{{ title }}</strong>{% if text %}<div class="small text-muted">{{ text }}</div>{% endif %}</div><div class="card-body">
     {% for field in fields %}
-      {% if field.field.widget.input_type == 'checkbox' %}
+      {% if field.name == 'blocked_groups' %}{% include "fleetops/configuration/_blocked_groups.html" %}
+      {% elif field.name == 'blocked_other_group_ids' %}{# drawn with the ship group list #}
+      {% elif field.name == 'blocked_bands' %}{% include "fleetops/configuration/_blocked_bands.html" %}
+      {% elif field.field.widget.input_type == 'checkbox' %}
         <div class="form-check mb-3">{{ field }} <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}<div class="text-danger small">{{ field.errors }}</div></div>
       {% else %}
         <div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}<div class="text-danger small">{{ field.errors }}</div></div>
       {% endif %}
     {% endfor %}
+    {% if group.key == 'not-covered' %}
+    {% if form.blocked_now %}<div class="small mb-2"><strong>{% translate "Ship groups in force" %}:</strong> {% for group_id, name in form.blocked_now %}{{ name }} ({{ group_id }}){% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+    {% if form.blocked_type_names %}<div class="small mb-2"><strong>{% translate "Ships in force" %}:</strong> {% for type_id, name in form.blocked_type_names %}{{ name }} ({{ type_id }}){% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+    <button type="submit" name="fill_recommended" value="1" class="btn btn-outline-secondary btn-sm" formnovalidate>{% translate "Fill in the recommended list" %}</button>
+    <div class="form-text">{% translate "Adds mining, industrial and exploration ship groups, the mining and exploration frigates and high security space to what is entered. Nothing is saved until you save the settings." %}</div>
+    {% endif %}
     {% if group.key == 'payouts-and-caps' %}<div class="small"><a href="{% url 'fleetops:configuration_list' 'srp-rules' %}">{% translate "Payout Table" %}</a></div>{% endif %}
     {% if group.key == 'monthly-limits' %}<div class="small"><a href="{% url 'fleetops:configuration_list' 'srp-corporation-limits' %}">{% translate "Corporation Limits" %}</a> {% translate "(a limit for one corporation replaces the default corporation cap)" %}</div>{% endif %}
   </div></div>

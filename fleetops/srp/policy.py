@@ -350,21 +350,44 @@ def owned_character(user, character_id):
     return ownership.character if ownership else None
 
 
-def eligibility(*, km, user, scope: str, link, settings_obj, now=None, operation=None, category=None) -> list[str]:
+def eligibility(
+    *,
+    km,
+    user,
+    scope: str,
+    link,
+    settings_obj,
+    now=None,
+    operation=None,
+    category=None,
+    via_standing_link: bool = False,
+    check_link_open: bool = True,
+) -> list[str]:
     """Reasons (texts for the member) why the loss cannot be claimed; empty when it can.
 
     A claim that exists for the killmail is not a reason here; the preview and the submit step look for it.
-    ``link`` is the fleet link the claim is made through; only an open link accepts new claims. ``operation``
-    is the fleet whose payout rules apply, the one of ``link`` unless given: a claim that exists already is
-    checked without its link (it may be closed) but against the rules of its fleet. ``category`` is the claim's
-    category, whose payout rules apply too.
+    ``link`` is the link the claim is made through; with ``check_link_open`` only an open link accepts it (a claim
+    that exists already is checked again without that, as it may have been withdrawn before the link closed).
+    ``operation`` is the fleet whose payout rules apply, the one of ``link`` unless given: a claim that exists
+    already is checked against the rules of its fleet. ``category`` is the claim's category, whose payout rules
+    apply too. ``via_standing_link`` says the claim belongs to a standing link: such a claim is not held back by
+    the switch for losses outside a fleet.
+
+    The order of the checks: SRP ban, SRP switched on, link, character, main character, losses outside a fleet,
+    deadline, capsule, ship, ship group, kind of space. A value the killmail does not have (no ship group or
+    security status because the lookup failed) blocks nothing and adds no warning.
     """
+    from fleetops.srp import bans, blocks
+
     srp = settings_obj or SrpSettings.get_solo()
     now = now or timezone.now()
     blockers = []
+    ban = bans.active_ban(user, now)
+    if ban is not None:
+        blockers.append(bans.ban_message(ban))
     if not srp.enabled:
         blockers.append(str(BLOCK_SRP_DISABLED))
-    elif link is not None and not link.is_open:
+    elif check_link_open and link is not None and not link.is_open:
         blockers.append(str(BLOCK_LINK_CLOSED))
 
     if km.victim_character_id is None:
@@ -374,24 +397,38 @@ def eligibility(*, km, user, scope: str, link, settings_obj, now=None, operation
     if main_character(user) is None:
         blockers.append(str(BLOCK_NO_MAIN))
 
-    if scope == OUT_OF_FLEET and not srp.out_of_fleet_enabled:
+    if scope == OUT_OF_FLEET and not srp.out_of_fleet_enabled and not via_standing_link:
         blockers.append(str(BLOCK_FLEET_ONLY))
     if srp.claim_deadline_days and km.killmail_time < now - timedelta(days=srp.claim_deadline_days):
         blockers.append(
             gettext("Losses older than %(days)s days cannot be submitted.") % {"days": srp.claim_deadline_days}
         )
-    if km.ship_type_id in CAPSULE_TYPE_IDS and srp.capsules_need_rule:
+    capsule = km.ship_type_id in CAPSULE_TYPE_IDS and srp.capsules_need_rule
+    rule = None
+    if capsule or (srp.payout_rule_lifts_ship_block and blocks.ship_is_blocked(km, srp)):
+        # One match serves both the capsule rule and the lifting of a ship block by a payout table entry.
         if operation is None and link is not None:
             operation = link.operation
         rule = match_rule(
             ship_type_id=km.ship_type_id,
             scope=scope,
             operation=operation,
-            capsules_need_rule=True,
+            capsules_need_rule=srp.capsules_need_rule,
             category=category,
         )
-        if not names_capsule(rule):
-            blockers.append(str(BLOCK_CAPSULE))
+    if capsule and not names_capsule(rule):
+        blockers.append(str(BLOCK_CAPSULE))
+    blockers.extend(
+        blocks.submission_blocks(
+            km,
+            srp,
+            scope=scope,
+            operation=operation,
+            category=category,
+            rule=rule,
+            group_names=blocks.blocked_group_names([km], srp),
+        )
+    )
     return blockers
 
 
@@ -409,8 +446,9 @@ _POLICY_FIELDS = (
     "corporation_cap_includes_in_fleet",
     "over_limit_action",
     "capsules_need_rule",
-    "claim_deadline_days",
 )
+# ``claim_deadline_days`` is stored in the snapshot but is not compared: a deadline is checked when a loss is
+# submitted, so changing it does not make a pending claim "calculated with other settings" (INT-12).
 
 
 def category_effects(policy: PolicySnapshot, scope: str) -> tuple:

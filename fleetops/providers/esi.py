@@ -71,6 +71,12 @@ logger = get_extension_logger(__name__)
 
 # Public reads for SRP: a killmail by ID and hash, and CCP's market prices (see providers/esi_killmails.py).
 KILLMAIL_OPERATIONS = ("GetKillmailsKillmailIdKillmailHash", "GetMarketsPrices")
+# Public universe reads for SRP: where a ship was lost and what group a ship type is in (providers/esi_universe.py).
+UNIVERSE_OPERATIONS = (
+    "GetUniverseSystemsSystemId",
+    "GetUniverseConstellationsConstellationId",
+    "GetUniverseTypesTypeId",
+)
 
 esi = ESIClientProvider(
     compatibility_date="2025-11-06",
@@ -100,6 +106,7 @@ esi = ESIClientProvider(
         "PostUniverseIds",
         "GetCharactersCharacterId",
         *KILLMAIL_OPERATIONS,
+        *UNIVERSE_OPERATIONS,
     ],
 )
 

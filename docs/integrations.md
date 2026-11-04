@@ -61,6 +61,14 @@ system by name (`POST /universe/ids/`, only when the form-up text is a name the 
 cached 30 days, unknown ones one day). Both never block a start: when ESI does not answer, the MOTD carries the
 plain name. Pings without a fleet make no such request.
 
+FleetOps SRP reads three more public endpoints, only when django-eveonline-sde is not installed (the SDE answers
+first and no request is made then): `GET /universe/systems/{id}` (the security status and constellation of the solar
+system a ship was lost in), `GET /universe/constellations/{id}` (its region) and `GET /universe/types/{id}` (the group of
+the ship type). They run when a killmail is stored, need no scope and no token, are cached by django-esi for as long as
+ESI's `Expires` says and kept for 7 days by FleetOps (a failure for one hour). When ESI does not answer the killmail
+is stored without them and nothing is refused because of it. Without the SDE this lookup runs in the first web request that
+reads the killmail (at most these three cached reads); installing django-eveonline-sde is recommended and avoids it.
+
 ## SRP apps
 
 FleetOps can create an SRP link for every fleet when it starts (**SRP auto create**). Three providers exist:

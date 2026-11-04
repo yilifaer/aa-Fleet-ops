@@ -1,0 +1,71 @@
+{% extends "fleetops/base.html" %}
+{% load i18n static fleetops_i18n fleetops_srp fleetops_messages fleetops_ui %}
+{% block fleetops_content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h2 class="mb-1">{% translate "SRP Bans" %}</h2>
+    <div class="text-muted">{% translate "Members who may not submit SRP claims for now" %}</div>
+  </div>
+  <a class="btn btn-primary" href="{% url 'fleetops:srp_ban_new' %}"><i class="fa-solid fa-plus" aria-hidden="true"></i> {% translate "New ban" %}</a>
+</div>
+
+<form method="get" class="card card-body mb-3 fleetops-srp-filters">
+  <div class="row g-2 align-items-end">
+    <div class="col-sm-6 col-lg-3"><label class="form-label mb-1" for="{{ filter_form.state.id_for_label }}">{{ filter_form.state.label }}</label>{{ filter_form.state }}</div>
+    <div class="col-sm-6 col-lg-3"><label class="form-label mb-1" for="{{ filter_form.kind.id_for_label }}">{{ filter_form.kind.label }}</label>{{ filter_form.kind }}</div>
+    <div class="col-sm-6 col-lg-3"><label class="form-label mb-1" for="{{ filter_form.member.id_for_label }}">{{ filter_form.member.label }}</label>{{ filter_form.member }}</div>
+  </div>
+  <div class="mt-2 d-flex flex-wrap gap-2 align-items-center">
+    <button type="submit" class="btn btn-primary">{% translate "Filter" context "FleetOps" %}</button>
+    <a class="btn btn-outline-secondary" href="{% url 'fleetops:srp_bans' %}">{% translate "Reset" %}</a>
+  </div>
+</form>
+
+<div class="card mb-3">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0 fo-table-pin" id="srp-bans-table">
+      <thead><tr>
+        <th scope="col">{% translate "Member" %}</th>
+        <th scope="col">{% translate "Reason" %}</th>
+        <th scope="col">{% translate "Since (EVE)" %}</th>
+        <th scope="col">{% translate "Until (EVE)" %}</th>
+        <th scope="col">{% translate "State" %}</th>
+        <th scope="col"></th>
+      </tr></thead>
+      <tbody>
+        {% for ban in bans %}
+        <tr>
+          <td><div class="fw-semibold">{{ ban.main_character_name|default:ban.user_id }}</div><div class="small text-muted">{{ ban.get_kind_display }}{% if ban.created_by %} &middot; {{ ban.created_by }}{% endif %}</div></td>
+          <td>{{ ban.reason|stored_text|linebreaksbr }}{% if ban.internal_note %}<div class="small text-muted">{% translate "Internal note" %}: {{ ban.internal_note|linebreaksbr }}</div>{% endif %}</td>
+          <td class="text-nowrap">{{ ban.starts_at|eve_time }}</td>
+          <td class="text-nowrap">{% if ban.expires_at %}{{ ban.expires_at|eve_time }}{% else %}{% translate "Permanent" %}{% endif %}</td>
+          <td>{% if ban.lifted_at %}{% pill "neutral" _("Lifted") %}<div class="small text-muted">{{ ban.lifted_at|eve_time }}{% if ban.lifted_by %} &middot; {{ ban.lifted_by }}{% endif %}</div>{% if ban.lift_reason %}<div class="small">{{ ban.lift_reason }}</div>{% endif %}{% elif ban.in_force_now %}{% pill "bad" _("In force") %}{% else %}{% pill "neutral" _("Expired") %}{% endif %}</td>
+          <td class="text-end">
+            {% if ban.in_force_now %}
+            <form method="post" action="{% url 'fleetops:srp_ban_lift' ban.pk %}" class="d-flex gap-2 fleetops-srp-form" data-srp-once>
+              {% csrf_token %}<input type="hidden" name="next" value="{{ next_url }}">
+              <input type="text" name="reason" id="lift-reason-{{ ban.pk }}" class="form-control form-control-sm" maxlength="1000" required placeholder="{% translate 'Reason for lifting the ban' %}" aria-label="{% translate 'Reason for lifting the ban' %}">
+              <button type="submit" class="btn btn-sm btn-outline-danger text-nowrap">{% translate "Lift ban" %}</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6">{% translate "There are no bans here." as empty_text %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-ban" %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if page.paginator.num_pages > 1 %}
+  <div class="card-footer d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <span class="small text-muted">{% blocktranslate trimmed with start=page.start_index end=page.end_index total=page.paginator.count %}Bans {{ start }}&ndash;{{ end }} of {{ total }}{% endblocktranslate %}</span>
+    <span class="d-flex align-items-center gap-2">
+      {% if page.has_previous %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.previous_page_number %}">{% translate "Previous" %}</a>{% endif %}
+      <span class="small text-muted">{% blocktranslate trimmed with number=page.number pages=page.paginator.num_pages %}Page {{ number }} of {{ pages }}{% endblocktranslate %}</span>
+      {% if page.has_next %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.next_page_number %}">{% translate "Next" %}</a>{% endif %}
+    </span>
+  </div>
+  {% endif %}
+</div>
+<script src="{% static 'fleetops/srp.js' %}?v={{ fleetops_version }}" defer></script>
+{% endblock %}

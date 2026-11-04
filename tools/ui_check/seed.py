@@ -152,6 +152,8 @@ def build_pages():
         Page("srp-links", "srp", u("srp_links")),
         Page("srp-link-new", "srp", u("srp_link_new")),
         Page("srp-link-edit", "srp", lambda ctx: reverse("fleetops:srp_link_edit", args=[ctx.standing_link.code])),
+        Page("srp-bans", "srp", u("srp_bans")),
+        Page("srp-ban-new", "srp", lambda ctx: reverse("fleetops:srp_ban_new") + f"?user={ctx.users['pilot04'].pk}"),
         Page("srp-summary-fc", "fc", u("srp_summary_own_fc")),
         # admin
         Page("config", "admin", u("configuration_index")),
@@ -548,7 +550,14 @@ def build_data(login_count):
     period.save()
 
     # ---- SRP ---------------------------------------------------------------------------------------------
-    f.srp_settings(enabled=True, percentage=Decimal("60"))
+    f.srp_settings(
+        enabled=True,
+        percentage=Decimal("60"),
+        claim_deadline_days=7,
+        blocked_ship_group_ids="463,543,28",
+        blocked_ship_type_ids="32880,605",
+        blocked_security_bands="highsec",
+    )
     f.payout_rule(f.RIFTER, 20_000_000, ship_name="Rifter")
     f.payout_rule(623, 45_000_000, ship_name="Moa", doctrine="Example Doctrine")
     f.payout_rule(f.CAPSULE, 1_000_000, ship_name="Capsule")
@@ -578,6 +587,19 @@ def build_data(login_count):
     f.claim_event(ctx.claim_paid, m.SrpClaimEvent.Action.PAID, actor=users["srp"], amount=20_000_000)
     f.srp_claim(users["pilot04"], status=m.SrpClaim.Status.REJECTED, amount=20_000_000, decided_by=users["srp"])
     f.srp_claim(users["pilot05"], status=m.SrpClaim.Status.WITHDRAWN, amount=20_000_000)
+
+    # SRP bans: the member is banned (banner on My SRP, ban box on the claim page); one more for the list.
+    from datetime import timedelta as _td
+
+    m.SrpBan.objects.create(
+        user=member, main_character_name=f.main_of(member).character_name, reason="Example reason shown to the member",
+        internal_note="Example note for staff", created_by=users["srp"], starts_at=now - _td(days=1), expires_at=now + _td(days=6),
+    )
+    m.SrpBan.objects.create(
+        user=users["pilot05"], main_character_name=f.main_of(users["pilot05"]).character_name,
+        reason="The monthly personal limit is used up and another claim was submitted. Submitting is not possible until the end of the month.",
+        kind="auto_monthly_cap", starts_at=now - _td(days=2), expires_at=None,
+    )
 
     # ---- groups (only in trees that have the models) ----------------------------------------------------
     build_group_data(ctx, users, types, alliance_channel, now, f, m, Group, AuthGroup)

@@ -1,0 +1,11 @@
+{% load i18n %}{% comment %}The kinds of space that are not covered, one box each. Context: form (SrpSettingsForm).{% endcomment %}
+<div class="mb-3" id="blocked-bands">
+  <div class="form-label" id="blocked-bands-label">{{ form.blocked_bands.label }}</div>
+  <div class="form-text mb-2">{{ form.blocked_bands.help_text }}</div>
+  <div role="group" aria-labelledby="blocked-bands-label">
+    {% for option in form.blocked_bands %}
+    <div class="form-check">{{ option.tag }} <label class="form-check-label" for="{{ option.id_for_label }}">{{ option.choice_label }}</label></div>
+    {% endfor %}
+  </div>
+  <div class="text-danger small">{{ form.blocked_bands.errors }}</div>
+</div>

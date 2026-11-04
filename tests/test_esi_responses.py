@@ -36,7 +36,7 @@ from esi.openapi_clients import ESIClientProvider
 
 from fleetops.constants import CLICK_SCOPES, FLEET_READ_SCOPE, FLEET_WRITE_SCOPE
 from fleetops.models import AttendanceRecord, FleetMemberEvent, FleetMemberState, FleetOperation, OperationAction
-from fleetops.providers import esi as esi_provider, esi_killmails
+from fleetops.providers import esi as esi_provider, esi_killmails, esi_universe
 from fleetops.providers.esi import (
     FleetESIError,
     character_affiliations,
@@ -761,6 +761,21 @@ def _fleet_spec():
                 ),
             },
             "/markets/prices": {"get": public_read("GetMarketsPrices", "Market", [], "MarketPrices")},
+            # 0.3.0b1 (RUL-1): where a ship was lost and what group a ship type is in.
+            "/universe/systems/{system_id}": {
+                "get": public_read("GetUniverseSystemsSystemId", "Universe", [("system_id", integer)], "UniverseSystem"),
+            },
+            "/universe/constellations/{constellation_id}": {
+                "get": public_read(
+                    "GetUniverseConstellationsConstellationId",
+                    "Universe",
+                    [("constellation_id", integer)],
+                    "UniverseConstellation",
+                ),
+            },
+            "/universe/types/{type_id}": {
+                "get": public_read("GetUniverseTypesTypeId", "Universe", [("type_id", integer)], "UniverseType"),
+            },
         },
         "components": {
             "schemas": {
@@ -908,6 +923,31 @@ def _fleet_spec():
                     },
                     "required": ["flag", "item_type_id", "singleton"],
                 },
+                "UniverseSystem": {
+                    "type": "object",
+                    "properties": {
+                        "constellation_id": integer,
+                        "name": {"type": "string"},
+                        "security_status": {"type": "number"},
+                        "system_id": integer,
+                    },
+                    "required": ["constellation_id", "name", "security_status", "system_id"],
+                },
+                "UniverseConstellation": {
+                    "type": "object",
+                    "properties": {"constellation_id": integer, "name": {"type": "string"}, "region_id": integer},
+                    "required": ["constellation_id", "name", "region_id"],
+                },
+                "UniverseType": {
+                    "type": "object",
+                    "properties": {
+                        "group_id": integer,
+                        "name": {"type": "string"},
+                        "published": {"type": "boolean"},
+                        "type_id": integer,
+                    },
+                    "required": ["group_id", "name", "published", "type_id"],
+                },
                 "MarketPrices": {
                     "type": "array",
                     "items": {
@@ -1010,6 +1050,7 @@ class DjangoEsiOperationTests(TestCase):
                 *POST_OPERATIONS,
                 *LOCATION_OPERATIONS,
                 *esi_killmails.KILLMAIL_OPERATIONS,
+                *esi_provider.UNIVERSE_OPERATIONS,
             ],
         )
 
@@ -1511,6 +1552,70 @@ class DjangoEsiOperationTests(TestCase):
 
         self.assertLessEqual(set(esi_killmails.KILLMAIL_OPERATIONS), set(operations))
         self.assertEqual(esi_killmails.KILLMAIL_OPERATIONS, esi_provider.KILLMAIL_OPERATIONS)
+
+    def test_the_universe_operations_are_part_of_the_client(self):
+        operations = getattr(esi_provider.esi, "_operations", None)
+        if operations is None:
+            self.skipTest("django-esi no longer keeps the operation list of the provider")
+
+        self.assertEqual(
+            esi_provider.UNIVERSE_OPERATIONS,
+            ("GetUniverseSystemsSystemId", "GetUniverseConstellationsConstellationId", "GetUniverseTypesTypeId"),
+        )
+        self.assertLessEqual(set(esi_provider.UNIVERSE_OPERATIONS), set(operations))
+        self.assertEqual(esi_universe.UNIVERSE_OPERATIONS, esi_provider.UNIVERSE_OPERATIONS)
+
+    def test_the_universe_reads_are_public_and_return_plain_data(self):
+        self.server.routes[("GET", "/universe/systems/30000142")] = (
+            200,
+            {"constellation_id": 20000020, "name": "Jita", "security_status": 0.9459, "system_id": 30000142},
+        )
+        self.server.routes[("GET", "/universe/constellations/20000020")] = (
+            200,
+            {"constellation_id": 20000020, "name": "Kimotoro", "region_id": 10000002},
+        )
+        self.server.routes[("GET", "/universe/types/587")] = (
+            200,
+            {"group_id": 25, "name": "Rifter", "published": True, "type_id": 587},
+        )
+
+        system = esi_universe.get_system(30000142)
+        constellation = esi_universe.get_constellation(20000020)
+        ship = esi_universe.get_type(587)
+
+        self.assertEqual((system["security_status"], system["constellation_id"]), (0.9459, 20000020))
+        self.assertEqual(constellation["region_id"], 10000002)
+        self.assertEqual(ship["group_id"], 25)
+        # No token: the requests carry no authorisation.
+        self.assertEqual(
+            [request[1] for request in self.server.requests],
+            ["/universe/systems/30000142", "/universe/constellations/20000020", "/universe/types/587"],
+        )
+
+    def test_a_universe_read_respects_the_expiry_of_the_answer(self):
+        self.server.cache_seconds = 300
+        self.server.routes[("GET", "/universe/types/587")] = (
+            200,
+            {"group_id": 25, "name": "Rifter", "published": True, "type_id": 587},
+        )
+
+        for _ in range(2):
+            self.assertEqual(esi_universe.get_type(587)["group_id"], 25)
+
+        self.assertEqual(len(self.server.requests), 1)
+
+    def test_a_failed_universe_read_has_a_short_text_without_headers(self):
+        self.server.error_headers = {"X-ESI-Request-ID": "esi-request-77", "X-Private-Header": "header-secret-value"}
+        self.server.routes[("GET", "/universe/systems/30000142")] = (500, {"error": "Internal error occurred"})
+
+        with mock.patch("esi.app_settings.ESI_SERVER_ERROR_MAX_RETRIES", 1), self.assertLogs(
+            esi_killmails.logger, "WARNING"
+        ) as logs, self.assertRaises(FleetESIError) as ctx:
+            esi_universe.get_system(30000142)
+
+        self.assertEqual(str(ctx.exception), "Could not read game data: ESI returned HTTP 500.")
+        for value in (str(ctx.exception), "\n".join(logs.output)):
+            self.assertNotIn("header-secret-value", value)
 
     def test_a_killmail_is_read_as_plain_data_without_a_token(self):
         self.server.routes[self.killmail_route] = (200, self.killmail_body())

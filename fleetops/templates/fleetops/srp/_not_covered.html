@@ -1,0 +1,15 @@
+{% load i18n %}
+{% if not_covered %}
+<details class="card mb-3" id="srp-not-covered">
+  <summary class="card-header"><strong>{% translate "Not covered" %}</strong></summary>
+  <div class="card-body">
+    <ul class="mb-2">
+      {% if not_covered.groups %}<li>{% translate "Ship groups" %}: {{ not_covered.groups|join:", " }}</li>{% endif %}
+      {% if not_covered.ships %}<li>{% translate "Ships" %}: {{ not_covered.ships|join:", " }}</li>{% endif %}
+      {% if not_covered.bands %}<li>{% translate "Space" %}: {{ not_covered.bands|join:", " }}{% if not_covered.war_covered %} ({% translate "except losses in a war" %}){% endif %}</li>{% endif %}
+      {% if not_covered.capsules %}<li>{% translate "Capsules are only covered when the payout table lists them." %}</li>{% endif %}
+    </ul>
+    {% if not_covered.lifted_by_rule %}<div class="small text-muted">{% translate "A ship that is in the payout table is covered even when its group or the ship itself is listed above." %}</div>{% endif %}
+  </div>
+</details>
+{% endif %}

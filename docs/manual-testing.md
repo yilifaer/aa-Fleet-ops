@@ -174,6 +174,16 @@ Tick **Incentive enabled** first; the FC Incentive entry (in the More menu) appe
   zKillboard link after ten minutes; claim an out-of-fleet loss from My SRP.
 - [ ] Try an over-limit claim in both modes, approve with a changed amount, mark paid, revoke, and open the
   summaries and the Excel file.
+- [ ] Standing links: make a category with **Make a standing link every day**; after the next beat the link of the
+  day exists and My SRP lists it. A loss of yesterday claimed through today's link shows the warning "The loss
+  happened on ... EVE; the link is for ...". With **Close links after (hours)** set, the link closes at its time
+  and the audit log has `srp.link_close` without an actor.
+- [ ] Not covered: on SRP Settings press **Fill in the recommended list** (nothing is saved or audited yet), save it,
+  then check a Covetor loss and a high security loss: both are refused with their reason; with a payout table entry
+  for the Covetor it is accepted. A loss in low security is accepted. My SRP shows the "Not covered" card.
+- [ ] SRP ban (reviewer): ban a member for 7 days with the pending claims rejected; the member sees the banner, cannot
+  check or submit, can still withdraw. Lift the ban: the member can check again. Payers and members get 403 on
+  **SRP** > **SRP Bans**.
 - [ ] If aa-srp or Alliance Auth SRP holds a request for the same killmail, the preview shows "Also claimed in …".
 - [ ] With aa-srp or Alliance Auth SRP as the provider, the fleet gets a link there; with no SRP app, the start
   continues and the SRP step shows the reason.

@@ -8,6 +8,7 @@ with ``review``, which decides on the claims created here.
 """
 
 from dataclasses import dataclass
+from datetime import timezone as dt_timezone
 from decimal import ROUND_HALF_UP, Decimal
 
 from allianceauth.services.hooks import get_extension_logger
@@ -22,7 +23,7 @@ from fleetops.providers.zkillboard import MIN_KILL_AGE
 from fleetops.services.audit import audit
 from fleetops.services.identity import character_label
 from fleetops.services.periods import format_eve
-from fleetops.srp import access, categories, display, killmails, legacy, notify, presence, quota
+from fleetops.srp import access, bans, categories, display, killmails, legacy, notify, presence, quota
 from fleetops.srp import policy as rules
 from fleetops.srp import values as srp_values
 from fleetops.srp.types import (
@@ -63,6 +64,11 @@ CALCULATION_WARNING_CODES = frozenset({"over_limit", "reduced_by_limit", "value_
 PRESENCE_WARNING_CODES = frozenset(
     {display.NEAR, display.NOT_IN_FLEET, display.NEVER_SEEN, display.REGISTERED, display.OUTSIDE_WINDOW, "ship_mismatch"}
 )
+
+# Warnings that follow from the link of the claim (a loss of another day than the standing link's) and are replaced
+# whenever the link, the scope or the category changes. They are kept apart from the presence codes on purpose:
+# checking the fleet presence again must not drop them.
+LINK_WARNING_CODES = frozenset({"outside_link_date"})
 
 # Stored messages (English): the pages show them through ``translate_stored``.
 EXPIRED_TEXT = texts.SRP_CHECK_EXPIRED()
@@ -346,6 +352,42 @@ def apply_presence(claim, result, now) -> None:
     claim.fleet_check_params = dict(result.params)
     claim.fleet_checked_at = now
     claim.warnings = replace_warnings(claim.warnings, PRESENCE_WARNING_CODES, presence_warnings(result))
+    # The link warnings are renewed on every path that sets the presence (submit, recheck, change of scope).
+    apply_link_warnings(claim)
+
+
+def outside_link_date(link, killmail_time) -> bool:
+    """Whether a loss happened on another EVE day than the date of the standing link it is claimed through."""
+    link_date = getattr(link, "link_date", None)
+    if link is None or link_date is None or killmail_time is None:
+        return False
+    return killmail_time.astimezone(dt_timezone.utc).date() != link_date
+
+
+def link_warnings_for(link, killmail_time) -> list[ClaimWarning]:
+    """The warnings that follow from the link: ``outside_link_date`` (batch approval skips such a claim)."""
+    if not outside_link_date(link, killmail_time):
+        return []
+    return [
+        ClaimWarning(
+            "outside_link_date",
+            display.LEVEL_WARNING,
+            {
+                "loss_date": killmail_time.astimezone(dt_timezone.utc).date().isoformat(),
+                "link_date": link.link_date.isoformat(),
+            },
+        )
+    ]
+
+
+def link_warnings(claim) -> list[ClaimWarning]:
+    """The link warnings of a claim as it is now."""
+    return link_warnings_for(claim.link if claim.link_id else None, claim.killmail_time)
+
+
+def apply_link_warnings(claim) -> None:
+    """Replace the link warnings of the claim (in memory); other warnings stay."""
+    claim.warnings = replace_warnings(claim.warnings, LINK_WARNING_CODES, link_warnings(claim))
 
 
 def calculation_snapshot(claim) -> dict:
@@ -534,6 +576,30 @@ def _chosen_category(category_id) -> SrpCategory | None:
         raise SrpError("category_unavailable", texts.SRP_CATEGORY_UNAVAILABLE()) from None
 
 
+def is_standing(link) -> bool:
+    return link is not None and link.kind == SrpFleetLink.Kind.STANDING
+
+
+def standing_target(*, scope, link, category, killmail_time, srp):
+    """``(link, blocker)`` for a loss outside a fleet that was not made through a link but with a category.
+
+    The category's open standing link of the day of the loss is used when there is one. Without one the claim only
+    records the category, unless the settings (``category_claims_without_link``) ask for a link: then ``blocker`` says
+    that the category has no open link for that day. Other claims (in a fleet, through a link, without a category)
+    are left as they are.
+    """
+    if scope != Scope.OUT_OF_FLEET or link is not None or category is None:
+        return link, None
+    from fleetops.srp import links
+
+    found = links.resolve_standing_link(category, links.eve_date_of(killmail_time))
+    if found is not None:
+        return found, None
+    if not srp.category_claims_without_link:
+        return None, texts.SRP_NO_LINK_FOR_DAY()
+    return None, None
+
+
 def prepare_claim(
     user, text: str, *, link: SrpFleetLink | None = None, category: SrpCategory | None = None
 ) -> ClaimPreview:
@@ -565,9 +631,23 @@ def prepare_claim(
         scope=scope, link=link, operation=operation, chosen=category, settings_obj=srp
     )
     preview.category = resolved
-    preview.blockers = rules.eligibility(
-        km=km, user=user, scope=scope, link=link, settings_obj=srp, now=now, category=resolved
+    # A category without a link: the standing link of that category for the day of the loss, if there is one.
+    link, no_link = standing_target(
+        scope=scope, link=link, category=resolved, killmail_time=km.killmail_time, srp=srp
     )
+    preview.link = link
+    preview.blockers = rules.eligibility(
+        km=km,
+        user=user,
+        scope=scope,
+        link=link,
+        settings_obj=srp,
+        now=now,
+        category=resolved,
+        via_standing_link=is_standing(link),
+    )
+    if no_link:
+        preview.blockers.append(no_link)
     preview.identity = claim_identity(user, km)
     identity = preview.identity
     if identity is None or identity.main_character_id is None:
@@ -597,6 +677,7 @@ def prepare_claim(
     preview.warnings = [
         *presence_warnings(preview.presence),
         *calculation_warnings(evaluation.calculation, evaluation.policy, km),
+        *link_warnings_for(link, km.killmail_time),
         *_external_warnings(km.killmail_id),
     ]
     preview.eligible = not preview.blockers
@@ -606,7 +687,7 @@ def prepare_claim(
                 "km": km.pk,
                 "link": link.code if link is not None else None,
                 "u": user.pk,
-                "cat": category.pk if category is not None and scope == Scope.OUT_OF_FLEET else None,
+                "cat": category.pk if category is not None and scope == Scope.OUT_OF_FLEET and not is_standing(link) else None,
             },
             salt=PREVIEW_SALT,
         )
@@ -685,9 +766,26 @@ def submit_claim(user, token: str, *, comment: str = "") -> SrpClaim:
         category = categories.resolve_category(
             scope=scope, link=link, operation=operation, chosen=chosen, settings_obj=srp
         )
-        blockers = rules.eligibility(
-            km=km, user=user, scope=scope, link=link, settings_obj=srp, now=now, category=category
+        # A category without a link: the standing link of the day of the loss as it is now.
+        token_link = link
+        link, no_link = standing_target(
+            scope=scope, link=link, category=category, killmail_time=km.killmail_time, srp=srp
         )
+        if link is not token_link:
+            # A standing link has no roster: the presence is "not applicable" and costs no query.
+            presence_result = loss_presence(scope, link, km)
+        blockers = rules.eligibility(
+            km=km,
+            user=user,
+            scope=scope,
+            link=link,
+            settings_obj=srp,
+            now=now,
+            category=category,
+            via_standing_link=is_standing(link),
+        )
+        if no_link:
+            blockers.append(no_link)
         if blockers:
             raise SrpError("not_eligible", blockers[0])
         identity = claim_identity(user, km)
@@ -740,6 +838,8 @@ def submit_claim(user, token: str, *, comment: str = "") -> SrpClaim:
             if duplicate is None:
                 raise
             raise duplicate from None
+        # A member who keeps submitting although a personal monthly limit is used up (setting, off by default).
+        auto_ban = bans.auto_ban_for_cap(user, claim, evaluation.calculation, srp, now=now)
         action = Action.AUTO_REJECT if claim.auto_rejected else Action.SUBMIT
         record_event(
             claim,
@@ -756,6 +856,7 @@ def submit_claim(user, token: str, *, comment: str = "") -> SrpClaim:
                 "link": link.code if link is not None else None,
                 "category": category.key if category is not None else None,
                 **({"auto_reject": rejection} if rejection else {}),
+                **({"auto_banned": True} if auto_ban is not None else {}),
             },
             new={
                 "status": claim.status,
@@ -810,17 +911,20 @@ def resubmit_claim(claim: SrpClaim, *, actor) -> SrpClaim:
         if locked.status != Status.WITHDRAWN:
             raise wrong_state(locked, texts.SRP_ONLY_WITHDRAWN_RESUBMITTED(), Status.PENDING)
         km = locked.killmail
-        # No link is given: a closed link does not stop a claim that exists, but the payout rules of its fleet
-        # still apply, as they do in the calculation below.
+        # The claim's own link is passed but not checked for being open: a closed link does not stop a claim that
+        # exists. A claim under a standing link is not held back by the switch for losses outside a fleet; the payout
+        # rules of its fleet still apply, as they do in the calculation below.
         blockers = rules.eligibility(
             km=km,
             user=actor,
             scope=locked.scope,
-            link=None,
+            link=locked.link,
             operation=locked.operation,
             settings_obj=srp,
             now=now,
             category=locked.category,
+            via_standing_link=is_standing(locked.link),
+            check_link_open=False,
         )
         if blockers:
             raise SrpError("not_eligible", blockers[0])
@@ -846,6 +950,7 @@ def resubmit_claim(claim: SrpClaim, *, actor) -> SrpClaim:
         locked.decided_by = None
         locked.decided_at = now if status == Status.REJECTED else None
         locked.save()
+        auto_ban = bans.auto_ban_for_cap(actor, locked, evaluation.calculation, srp, now=now)
         record_event(
             locked,
             Action.AUTO_REJECT if locked.auto_rejected else Action.RESUBMIT,
@@ -858,6 +963,7 @@ def resubmit_claim(claim: SrpClaim, *, actor) -> SrpClaim:
                 "limited_amount": locked.limited_amount,
                 "over_limit": locked.over_limit,
                 **({"auto_reject": rejection} if rejection else {}),
+                **({"auto_banned": True} if auto_ban is not None else {}),
             },
             old={"status": previous},
             new={"status": locked.status, "suggested_amount": locked.suggested_amount},

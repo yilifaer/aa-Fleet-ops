@@ -17,7 +17,7 @@ from fleetops.models import MAX_DATABASE_ID, SrpKillmail, SrpSettings
 from fleetops.providers import zkillboard
 from fleetops.providers.esi import FleetESIError
 from fleetops.providers.esi_killmails import KILLMAIL_NOT_FOUND, get_killmail
-from fleetops.services import names, sde
+from fleetops.services import names, sde, universe
 from fleetops.services.errors import log_failure
 from fleetops.srp import values
 from fleetops.srp.types import KillmailRef, SrpError, ZkillResult
@@ -258,6 +258,7 @@ def fetch_killmail(ref: KillmailRef, *, zkill_ok: bool) -> SrpKillmail:
     elif ref.killmail_hash and ref.killmail_hash.lower() != km.killmail_hash:
         # The same answer as for a hash ESI does not know, so the stored hash is not given away.
         raise SrpError("not_found", KILLMAIL_NOT_FOUND)
+    ensure_location(km)
     try:
         _update_value(km, zkill_ok, zkill_result)
     except Exception as exc:  # the value is a convenience here; the claim check goes on without it
@@ -282,6 +283,44 @@ def _names(ship_type_id: int, solar_system_id: int) -> tuple[str, str]:
     return ship[:SHIP_NAME_LENGTH], system[:SYSTEM_NAME_LENGTH]
 
 
+def location_fields(ship_type_id: int, solar_system_id: int, *, now: datetime | None = None) -> dict:
+    """The location fields of a killmail: ship group, security status, constellation and region.
+
+    Values that cannot be found are None; ``location_checked_at`` is always set, so a failed lookup is not made
+    again for every look at the killmail. Never raises, and must run outside ``quota_lock`` (it may call ESI).
+    """
+    fields = {
+        "ship_group_id": None,
+        "solar_system_security": None,
+        "constellation_id": None,
+        "region_id": None,
+        "location_checked_at": now or timezone.now(),
+    }
+    try:
+        info = universe.system_infos([solar_system_id]).get(solar_system_id)
+        group_id = universe.type_groups([ship_type_id]).get(ship_type_id)
+    except Exception as exc:  # the lookups are a convenience; a claim is never refused for a missing value
+        log_failure(logger, "SRP killmail location lookup", exc)
+        return fields
+    if info is not None:
+        fields.update(
+            solar_system_security=info.security, constellation_id=info.constellation_id, region_id=info.region_id
+        )
+    fields["ship_group_id"] = group_id
+    return fields
+
+
+def ensure_location(km: SrpKillmail) -> SrpKillmail:
+    """Look up the location fields of a killmail stored before they existed (once), outside ``quota_lock``."""
+    if km.location_checked_at is not None:
+        return km
+    fields = location_fields(km.ship_type_id, km.solar_system_id)
+    # Only the first request writes; another one that got there first has the same values.
+    SrpKillmail.objects.filter(pk=km.pk, location_checked_at__isnull=True).update(**fields)
+    km.refresh_from_db()
+    return km
+
+
 def store_killmail(payload: dict, killmail_hash: str) -> SrpKillmail:
     """Create the ``SrpKillmail`` row for an ESI killmail (a concurrent create returns the existing row),
     with ship and system names, and schedule the zKillboard lookup."""
@@ -294,6 +333,7 @@ def store_killmail(payload: dict, killmail_hash: str) -> SrpKillmail:
     if existing is not None:
         return existing
     ship_name, system_name = _names(fields["ship_type_id"], fields["solar_system_id"])
+    fields.update(location_fields(fields["ship_type_id"], fields["solar_system_id"]))
     try:
         with transaction.atomic():
             km = SrpKillmail.objects.create(

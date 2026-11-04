@@ -164,6 +164,14 @@ def _text_external_claim(params):
     return gettext("Also claimed in another SRP system.")
 
 
+def _text_outside_link_date(params):
+    params = params or {}
+    return gettext("The loss happened on %(loss)s EVE; the link is for %(link)s.") % {
+        "loss": params.get("loss_date") or "?",
+        "link": params.get("link_date") or "?",
+    }
+
+
 def _text_ship_mismatch(params):
     params = params or {}
     type_id = params.get("ship_type_id")
@@ -232,6 +240,7 @@ WARNING_TEXTS = {
     "value_pending": lambda params: gettext("The value from zKillboard is not available yet."),
     "value_missing": lambda params: gettext("No value available."),
     "external_claim": _text_external_claim,
+    "outside_link_date": _text_outside_link_date,
     "ship_mismatch": _text_ship_mismatch,
 }
 

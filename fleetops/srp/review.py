@@ -646,6 +646,7 @@ def recategorize_claim(claim: SrpClaim, *, actor, category, reason: str) -> SrpC
             now=now,
         )
         claims.apply_evaluation(locked, evaluation, km)
+        claims.apply_link_warnings(locked)
         locked.save()
         new_key = category.key if category is not None else None
         claims.record_event(

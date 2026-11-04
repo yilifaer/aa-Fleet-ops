@@ -296,6 +296,62 @@ def settle_after_commit(*link_ids) -> None:
         transaction.on_commit(lambda link_id=link_id: maybe_complete(link_id))
 
 
+# The minute beat runs the maintenance of the standing links at most once in this many seconds (cache key).
+STANDING_LINKS_KEY = "fleetops:srp:standing-links"
+STANDING_LINKS_SECONDS = 600
+
+
+def auto_close_time(category, link_date):
+    """When a standing link of the category closes by itself: ``auto_close_after_hours`` after 00:00 EVE of its
+    date; None when the category never closes its links."""
+    hours = getattr(category, "auto_close_after_hours", None)
+    if not hours:
+        return None
+    return datetime.combine(link_date, datetime.min.time(), tzinfo=dt_timezone.utc) + timedelta(hours=hours)
+
+
+def _has_standing_link(category, link_date) -> bool:
+    """Whether the category has a standing link (made by hand or by the upkeep) for the date."""
+    return SrpFleetLink.objects.filter(kind=SrpFleetLink.Kind.STANDING, category=category, link_date=link_date).exists()
+
+
+def maintain_standing_links(now=None) -> tuple[int, int]:
+    """The daily upkeep of the standing links; returns ``(links created, links closed)``.
+
+    While SRP is enabled, every active category with ``auto_create_daily`` that has no standing link for today (EVE
+    date) gets one (the system makes it: no actor, ``auto_created``); past days are never filled in. Then every open
+    standing link whose ``auto_close_at`` has passed is closed (audited as ``srp.link_close`` without an actor).
+    Closing only stops new claims; claims that exist go on to review and payment. Safe to run twice and from two
+    workers at once: the daily key allows one link per category and day.
+    """
+    now = now or timezone.now()
+    created = closed = 0
+    if SrpSettings.get_solo().enabled:
+        today = eve_today(now)
+        for category in SrpCategory.objects.filter(is_active=True, auto_create_daily=True).order_by("sort_order", "pk"):
+            if _has_standing_link(category, today):
+                continue
+            key = daily_key(category, today)
+            link = create_standing_link(
+                actor=None,
+                category=category,
+                link_date=today,
+                doctrine_text=category.default_doctrine_text,
+                auto_close_at=auto_close_time(category, today),
+                daily=True,
+                auto_created=True,
+            )
+            # Another worker may have made the link between the check and the creation.
+            created += 1 if link.daily_key == key and link.auto_created else 0
+    due = SrpFleetLink.objects.filter(
+        kind=SrpFleetLink.Kind.STANDING, is_open=True, auto_close_at__isnull=False, auto_close_at__lte=now
+    )
+    for link in due:
+        set_link_open(link, actor=None, is_open=False, reason=texts.SRP_LINK_AUTO_CLOSED())
+        closed += 1
+    return created, closed
+
+
 def link_label(link) -> str:
     """The name of a link for lists and messages: its name, else the fleet, else its code."""
     if link.name:
@@ -310,6 +366,39 @@ def link_label(link) -> str:
 def eve_today(now=None) -> date:
     """The current date in EVE time (UTC)."""
     return (now or timezone.now()).astimezone(dt_timezone.utc).date()
+
+
+def eve_date_of(moment) -> date:
+    """The EVE (UTC) date of a moment."""
+    return moment.astimezone(dt_timezone.utc).date()
+
+
+def resolve_standing_link(category, eve_date) -> SrpFleetLink | None:
+    """The open standing link of ``category`` for the EVE date; the one made last when there are several. None when
+    the category has none that day (or no category is given)."""
+    if category is None or eve_date is None:
+        return None
+    return (
+        SrpFleetLink.objects.filter(
+            kind=SrpFleetLink.Kind.STANDING, category=category, link_date=eve_date, is_open=True
+        )
+        .select_related("category")
+        .order_by("-created_at", "-pk")
+        .first()
+    )
+
+
+# Standing links the "My SRP" card lists.
+STANDING_LINKS_SHOWN = 30
+
+
+def open_standing_links(limit: int = STANDING_LINKS_SHOWN) -> list[SrpFleetLink]:
+    """The open standing links for the "My SRP" card: newest date first, then by category; at most ``limit``."""
+    return list(
+        SrpFleetLink.objects.filter(kind=SrpFleetLink.Kind.STANDING, is_open=True)
+        .select_related("category")
+        .order_by("-link_date", "category__sort_order", "category__name", "-pk")[:limit]
+    )
 
 
 def daily_key(category, link_date) -> str:

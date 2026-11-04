@@ -642,6 +642,7 @@ KILLMAIL_NOT_FOUND = StoredText(gettext_noop("Killmail not found. Check the link
 KILLMAIL_READ_FAILED = StoredText(gettext_noop("Could not read the killmail: %(detail)s"), nested=("detail",))
 KILLMAIL_EMPTY = StoredText(gettext_noop("Could not read the killmail: ESI returned an empty answer."))
 MARKET_READ_FAILED = StoredText(gettext_noop("Could not read market prices: %(detail)s"), nested=("detail",))
+UNIVERSE_READ_FAILED = StoredText(gettext_noop("Could not read game data: %(detail)s"), nested=("detail",))
 ESI_ERROR_LIMIT_MINUTE = StoredText(gettext_noop("ESI error limit reached; try again in a minute."))
 ESI_HTTP_PLAIN = StoredText(gettext_noop("ESI returned HTTP %(status)s."))
 
@@ -1218,6 +1219,27 @@ SRP_LINK_TOO_MANY = StoredText(gettext_noop("Choose at most %(count)s links at a
 SRP_LINK_AUTO_COMPLETED = StoredText(gettext_noop("Completed automatically: every claim of the link is settled."))
 SRP_LINK_AUTO_UNCOMPLETED = StoredText(gettext_noop("A claim of the link is waiting for review or payment again."))
 SRP_LINK_NO_DAILY_CATEGORY = StoredText(gettext_noop("Choose a category for the link."))
+SRP_LINK_AUTO_CLOSED = StoredText(gettext_noop("Closed automatically at the time set for the link."))
+SRP_NO_LINK_FOR_DAY = StoredText(gettext_noop("This category has no open SRP link for the day of the loss."))
+
+# SRP bans.
+SRP_BAN_NOT_ALLOWED = StoredText(gettext_noop("Only SRP reviewers can make or lift an SRP ban."))
+SRP_BAN_SELF = StoredText(gettext_noop("You cannot ban yourself."))
+SRP_BAN_EXISTS = StoredText(gettext_noop("This member is banned already. Lift the ban first to make a new one."))
+SRP_BAN_REASON_REQUIRED = StoredText(gettext_noop("Give the reason the member will see."))
+SRP_BAN_NOTE_TOO_LONG = StoredText(gettext_noop("The internal note is too long (at most %(max)s characters)."), numbers=("max",))
+SRP_BAN_DAYS = StoredText(gettext_noop("Choose a length between 1 and %(max)s days, or a permanent ban."), numbers=("max",))
+SRP_BAN_PERMANENT_OR_DAYS = StoredText(gettext_noop("A permanent ban has no length in days."))
+SRP_BAN_REJECT_REASON_REQUIRED = StoredText(gettext_noop("Give the reason for rejecting the pending claims."))
+SRP_BAN_NOT_FOUND = StoredText(gettext_noop("This ban does not exist."))
+SRP_BAN_NOT_IN_FORCE = StoredText(gettext_noop("This ban is not in force."))
+SRP_BAN_LIFT_REASON_REQUIRED = StoredText(gettext_noop("Give a reason for lifting the ban."))
+SRP_AUTO_BANNED_MONTHLY_CAP = StoredText(
+    gettext_noop(
+        "The %(limit)s is used up and another claim was submitted. Submitting is not possible until the end of the month."
+    ),
+    nested=("limit",),
+)
 SRP_SAME_FLEET = StoredText(gettext_noop("The claim is already a loss of this fleet."))
 SRP_SAME_OUT_OF_FLEET = StoredText(gettext_noop("The claim is already an out-of-fleet loss."))
 SRP_FLEET_GONE = StoredText(gettext_noop("The fleet of this claim no longer exists."))

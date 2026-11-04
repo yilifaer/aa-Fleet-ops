@@ -35,7 +35,7 @@
           <dt class="col-sm-4">{% translate "Ship" %}</dt>
           <dd class="col-sm-8">{{ claim.ship_type_name|default:claim.ship_type_id }}</dd>
           <dt class="col-sm-4">{% translate "Time" %}</dt>
-          <dd class="col-sm-8">{{ claim.killmail_time|eve_time }} EVE{% if claim.solar_system_name %} &middot; {{ claim.solar_system_name }}{% endif %}</dd>
+          <dd class="col-sm-8">{{ claim.killmail_time|eve_time }} EVE{% if claim.solar_system_name %} &middot; {{ claim.solar_system_name }}{% endif %} &middot; {{ killmail|srp_security }}</dd>
           <dt class="col-sm-4">{% translate "Killmail" %}</dt>
           <dd class="col-sm-8"><a href="{{ claim.killmail_id|zkill_url }}" target="_blank" rel="noopener noreferrer">{% blocktranslate trimmed with id=claim.killmail_id %}{{ id }} on zKillboard{% endblocktranslate %}</a></dd>
           <dt class="col-sm-4">{% translate "Where" %}</dt>
@@ -114,6 +114,28 @@
           <div class="small text-muted mb-2">{% translate "The claim is calculated again with the current rules." %}</div>
           <button type="submit" class="btn btn-primary">{% translate "Submit again" %}</button>
         </form>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if is_reviewer and claim.user_id and not is_owner %}
+    <div class="card mb-3" id="srp-ban-panel">
+      <div class="card-header"><strong>{% translate "SRP ban" %}</strong></div>
+      <div class="card-body">
+        {% if member_ban %}
+        <p class="mb-2">{% if member_ban.expires_at %}{% blocktranslate trimmed with time=member_ban.expires_at|eve_time %}This member cannot submit SRP claims until {{ time }} EVE.{% endblocktranslate %}{% else %}{% translate "This member is banned from submitting SRP claims, with no end date." %}{% endif %}</p>
+        <div class="small mb-1"><strong>{% translate "Reason" %}:</strong> {{ member_ban.reason|stored_text|linebreaksbr }}</div>
+        {% if member_ban.internal_note %}<div class="small mb-2"><strong>{% translate "Internal note" %}:</strong> {{ member_ban.internal_note|linebreaksbr }}</div>{% endif %}
+        <form method="post" action="{% url 'fleetops:srp_ban_lift' member_ban.pk %}" class="fleetops-srp-form" data-srp-once>
+          {% csrf_token %}<input type="hidden" name="next" value="{% url 'fleetops:srp_claim' claim.uuid %}">
+          <label class="form-label" for="{{ ban_lift_form.reason.id_for_label }}">{% translate "Reason for lifting the ban" %}</label>
+          {{ ban_lift_form.reason }}
+          <button type="submit" class="btn btn-outline-danger mt-2">{% translate "Lift ban" %}</button>
+        </form>
+        {% else %}
+        <p class="text-muted mb-2">{% translate "This member is not banned." %}</p>
+        <a class="btn btn-outline-danger" href="{% url 'fleetops:srp_ban_new' %}?user={{ claim.user_id }}&amp;claim={{ claim.uuid }}">{% translate "Ban this member from submitting…" %}</a>
         {% endif %}
       </div>
     </div>

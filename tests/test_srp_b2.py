@@ -182,7 +182,6 @@ class OutdatedClaimsTests(TestCase):
             ("personal_monthly_cap", 100_000_000),
             ("corporation_monthly_cap", 100_000_000),
             ("capsules_need_rule", not self.srp.capsules_need_rule),
-            ("claim_deadline_days", 12),
             ("over_limit_action", SrpSettings.OverLimitAction.REJECT),
         ):
             with self.subTest(setting=name):
@@ -191,6 +190,16 @@ class OutdatedClaimsTests(TestCase):
                 self.assertEqual(policy.outdated_pending_claim_count(), 1)
                 self.change(**{name: original})
                 self.assertEqual(policy.outdated_pending_claim_count(), 0)
+
+    def test_the_deadline_is_stored_in_the_snapshot_but_does_not_make_claims_outdated(self):
+        # INT-12 (0.3.0b1): this setting used to be in the list above. A deadline is checked when a loss is submitted;
+        # changing it leaves the claims that wait for review as they are.
+        claim = self.submit()
+        self.assertEqual(claim.policy["claim_deadline_days"], 0)
+
+        self.change(claim_deadline_days=7)
+        self.assertEqual(policy.outdated_pending_claim_count(), 0)
+        self.change(claim_deadline_days=0)
 
     def test_a_corporation_limit_changes_only_the_claims_of_that_corporation(self):
         far = f.create_user("far-pilot", perms=f.SRP_MEMBER_PERMS, corporation=f.OTHER_CORP)

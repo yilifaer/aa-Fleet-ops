@@ -376,6 +376,14 @@ class DefaultsInDocsTests(SimpleTestCase):
         "SRP reviewers may decide on their own claims": "allow_self_review",
         "SRP payers may mark their own claims paid": "allow_self_payment",
         "The approver of a claim may not pay it": "require_different_payer",
+        # 0.3.0b1 (INT-12, RUL-2, REV-8): the new settings of the intake blocks. The block lists are empty by default
+        # (they are checked by test_block_lists_are_documented_as_empty).
+        "A category claim needs no standing link": "category_claims_without_link",
+        "A payout table entry for the ship lifts the ship block": "payout_rule_lifts_ship_block",
+        "Wartime losses in high security are covered": "highsec_war_losses_covered",
+        "Default length of an SRP ban (days)": "ban_default_days",
+        "Longest SRP ban (days)": "ban_max_days",
+        "Ban members who keep submitting over their monthly cap until the end of the month": "auto_ban_over_monthly_cap",
     }
 
     @staticmethod
@@ -422,6 +430,21 @@ class DefaultsInDocsTests(SimpleTestCase):
     def test_chinese_value_source_default(self):
         with translation.override("zh-hans"):
             self.check_value_source(ZH / "configuration.md", {})
+
+    def test_block_lists_are_documented_as_empty(self):
+        # RUL-2: nothing is blocked on a new site or after an upgrade, and the documents say so.
+        for name in ("blocked_ship_group_ids", "blocked_ship_type_ids", "blocked_security_bands"):
+            self.assertEqual(SrpSettings._meta.get_field(name).default, "")
+        for path, labels, empty in (
+            (DOCS / "configuration.md", ("Ships that are not covered", "Kinds of space that are not covered"), "empty"),
+            (ZH / "configuration.md", ("不赔付的舰船", "不赔付的空域"), "空"),
+        ):
+            text = read(path)
+            for label in labels:
+                cells = self.row(text, label)
+                with self.subTest(path=path.parent.name, setting=label):
+                    self.assertIsNotNone(cells)
+                    self.assertEqual(cells[1], empty)
 
     def test_english_defaults(self):
         self.check(DOCS / "configuration.md", {True: "on", False: "off"})

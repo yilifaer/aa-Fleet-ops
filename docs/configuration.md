@@ -463,12 +463,12 @@ history; it never moves ISK.
 |---|---|---|
 | Enabled | off | Members can submit claims, and fleets get FleetOps SRP links. |
 | Out-of-fleet losses | on | Allow claims for losses outside fleets. Off limits claims to the SRP links of fleets. |
-| Claim deadline (days) | 0 | Losses older than this cannot be submitted. 0 means no deadline. |
+| Claim deadline (days) | 0 | Losses older than this cannot be submitted (checked when a loss is submitted, submitted again or moved to another loss). 0 means no deadline, and a site that upgrades keeps the value it had. Members are told the number of days on My SRP and on the SRP pages of links. Reopening a claim is not checked against the deadline. Changing the deadline does not make pending claims "calculated with earlier settings". |
 | Use zKillboard | on | Use zKillboard for killmail hashes and values. Off means only in-game links work, and **Value source** must be the ESI estimate. |
 | Value source | zKillboard total value | zKillboard total value (includes cargo; this is what aa-srp pays), zKillboard fitted value (ship, modules, drones, implants; no cargo), or the ESI market estimate. The estimate is also the fallback when zKillboard has no value. The value only matters for ships that are not in the payout table. Sites that never saved their SRP settings and have no claim get the total value when they upgrade to 0.3.0b1; a site that saved its settings once keeps its choice. |
 | Payout percentage | 0 | Share of the loss value paid for ships not in the payout table (rounded down to whole ISK). 0 gives no automatic amount, and the reviewer decides. A [category](#srp-categories) can have its own percentage. |
 | In-fleet loss cap, Out-of-fleet loss cap | empty | Most one loss can pay, whatever its rule or percentage. Type amounts the way players write ISK (`250m`, `1.2b`). Empty means no cap. A [category](#srp-categories) can have its own cap, or none. |
-| Capsules need a payout rule | on | Capsule losses are paid only from a capsule entry of the payout table. The value of a pod includes its implants, so neither the percentage nor a doctrine rule covers a pod. |
+| A category claim needs no standing link | on | A member who chooses a category for a loss on a day when the category has no open [standing link](#srp-links) can still submit; the claim only records the category. Off requires the link: the check then says "This category has no open SRP link for the day of the loss." |
 | Default category | empty | The category of a loss outside a fleet when nothing else is chosen. Only an active category that members can choose is offered. Empty means no category: the claim follows the general settings. |
 | Members must choose a category for losses outside a fleet | off | Without a default category, a claim outside a fleet cannot be checked until a category is chosen. Losses in a fleet always get their fleet's category. |
 | Over limit action | Send to review with a warning | What happens to a claim that does not fit the remaining monthly limit: **Send to review with a warning** keeps it and flags it red. **Reject automatically** cuts a claim that fits only partly to what is left (amber warning, normal review) and rejects it, with the cap in the reason, only when nothing is left. |
@@ -476,12 +476,54 @@ history; it never moves ISK.
 | In-fleet losses count toward the personal cap | on | |
 | Corporation monthly cap | empty | Default cap per corporation and EVE month. [SRP Corporation Limits](#srp-corporation-limits) override it. |
 | In-fleet losses count toward the corporation cap | on | |
+| Default length of an SRP ban (days) | 7 | Preselected when a reviewer makes an [SRP ban](#srp-bans). Between 1 and 3650, and not longer than the longest ban. |
+| Longest SRP ban (days) | 365 | The longest ban a reviewer can make for a number of days. A permanent ban is not limited by it. |
+| Ban members who keep submitting over their monthly cap until the end of the month | off | See [SRP bans](#srp-bans). |
 | Notify members | on | Send an Alliance Auth notification when a claim is approved, changed, paid, rejected, revoked or reopened. |
 | SRP reviewers may decide on their own claims | off | Normally another reviewer decides on a reviewer's own claims. Allow this for small alliances. |
 | SRP payers may mark their own claims paid | off | Normally another payer pays a payer's own claims. Allow this for small alliances. Before 0.3.0b1 the setting above also covered payments; the upgrade copies it here, so a site that allowed one keeps allowing the other. |
 | The approver of a claim may not pay it | off | Four-eyes rule: the person who approved a claim cannot mark it paid, another payer has to. Undoing a payment is not bound by it. |
 | Complete SRP links automatically | off | A closed [SRP link](#srp-links) is marked completed as soon as none of its claims waits for review or payment. A completed link whose claim becomes unsettled again (payment undone, claim reopened or submitted again) goes back to closed whatever this says. |
 | Member instructions | empty | Free text, up to 2000 characters, shown on My SRP and on the SRP page of a fleet. |
+
+The group **Not covered** of the settings page refuses losses when a claim is checked. **Nothing is refused on a new
+installation and none of these lists is filled in by an upgrade**; everything a site could submit before it can still
+submit:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| Capsules need a payout rule | on | Capsule losses are paid only from a capsule entry of the payout table. The value of a pod includes its implants, so neither the percentage nor a doctrine rule covers a pod. |
+| Ship groups that are not covered, Other ship group IDs | empty | Losses of ships in the ticked ship groups are refused ("Mining Barge ships are not covered."). The list offers the ship groups of django-eveonline-sde, or a built-in list without it. A group ID that the list does not offer goes into **Other ship group IDs**: with django-eveonline-sde an ID that is not a ship group is refused, without it the ID is saved and the page says it could not be checked. |
+| Ships that are not covered | empty | Ship type IDs, separated by commas, for ships that sit in a group that is otherwise covered (the Venture is a frigate). The page names the ships that are in force. |
+| Kinds of space that are not covered | empty | High security (0.5 and above), low security (0.1 to 0.4), null security (0.0 and below), wormhole space, abyssal space and Pochven. A loss in a ticked kind of space is refused ("Losses in high security space are not covered (Jita 0.9)."). |
+| A payout table entry for the ship lifts the ship block | on | A ship that has its own entry in the [payout table](#srp-payout-table) (for the claim's scope, fleet and category) is covered although its ship group or the ship is on the lists. Kinds of space are not lifted. |
+| Wartime losses in high security are covered | off | A loss whose killmail names a war is not refused for high security even when high security is ticked. Off means such a loss is refused like any other. |
+
+**Fill in the recommended list** (a button in that group) adds the recommended lists to what is entered and shows the
+page again. It saves nothing and writes no audit entry: check the lists and press **Save SRP Settings**, which writes
+the usual `configuration.update` entry with the old and new values. The recommended lists are the mining, industrial
+and exploration ship groups (Mining Barge, Exhumer, Hauler, Deep Space Transport, Blockade Runner, Freighter, Jump
+Freighter, Industrial Command Ship, Capital Industrial Ship, Expedition Frigate, Expedition Command Ship, Prototype
+Exploration Ship), the ships Venture, Heron, Imicus, Magnate and Probe, and high security. Shuttles, Navy exploration
+frigates and the Pioneer ships are not part of it; add what your site needs.
+
+The check looks at what FleetOps stored with the killmail when it was first read: the ship group, the security status
+and the region of the solar system. A value that is not known (the lookup failed, or the killmail was stored before
+0.3.0b1) **refuses nothing and adds no warning**. So a claim that exists and is submitted again after its killmail
+was stored by an older version is not checked for the lists. Reopening a claim is never checked either: that is how a
+reviewer makes an exception. Members read the lists on **My SRP** and on the SRP page of a link ("Not covered").
+
+Where the data comes from: django-eveonline-sde when it is installed (no ESI request is made then); otherwise the
+public ESI reads `GET /universe/systems/{id}`, `GET /universe/constellations/{id}` and `GET /universe/types/{id}`,
+which need no token. django-esi keeps each answer as long as ESI's `Expires` header says, and FleetOps keeps what it
+learned for 7 days (these are static game data) and a failed lookup for one hour. A lookup that fails never stops a
+killmail from being stored. The lookups run when the killmail is stored, never while the SRP lock is held and never in
+a page that only shows a claim.
+
+Without django-eveonline-sde the lookup therefore runs inside the first web request that reads the killmail (for example checking
+or submitting a claim), with at most three ESI reads (system, constellation,
+ship type), each cached as described above; later requests find the stored values. **Installing django-eveonline-sde is
+recommended**: with it no ESI request is made and the first request is not slowed down.
 
 To enable FleetOps SRP:
 
@@ -519,8 +561,15 @@ To enable FleetOps SRP:
 - Killmails nobody claimed are removed after 7 days.
 - Warnings never block a claim: a pilot who was not in the fleet at the time of the loss, a value that is
   missing or only an estimate, a ship that differs from the tracked one, a claim over a limit, a killmail also
-  claimed in aa-srp or Alliance Auth SRP. Blockers (a loss of somebody else, a capsule without a rule, a closed
-  link, a loss older than the deadline) are shown without a submit button.
+  claimed in aa-srp or Alliance Auth SRP. Blockers (an SRP ban, a loss of somebody else, a capsule without a rule, a
+  closed link, a loss older than the deadline, a ship group, ship or kind of space that is [not covered](#fleetops-srp))
+  are shown without a submit button.
+- A claim through a [standing link](#srp-links) is not held back by **Out-of-fleet losses** being off, in any of its
+  steps: checking, submitting, submitting again after withdrawing, even when the link was closed meanwhile.
+  A withdrawn claim without a link is still refused when that switch is off.
+- If the day's standing link closes between checking and submitting, the submit is refused ("This SRP link is closed.")
+  and nothing is dropped silently. Submitting a withdrawn claim again under a standing link that has closed since skips
+  only the open-link and out-of-fleet checks; an SRP ban and the claim deadline still apply.
 - Usage of a monthly limit is the sum of approved and paid claims; claims in review are shown but not
   deducted. A revoked approval releases its amount; a paid claim keeps counting. A claim counts in the EVE (UTC)
   month of the loss, whenever it is submitted or decided. The most restrictive limit wins. Limits are checked
@@ -570,6 +619,29 @@ ends its role as the link of the day (the one place per category and day is free
 original category can be made again). The link of a fleet can only get a doctrine text and a report, and only a
 reviewer edits them: the FC of the fleet gets 403 on the edit page.
 
+**My SRP** has a card **Standing SRP links** with the open standing links (newest date first, then by category, at
+most 30). A member who picks a category for a loss on My SRP, without a link, is put under the open standing link of
+that category for the **EVE day of the loss** (the newest one when there are several); without one the claim only
+records the category, unless **A category claim needs no standing link** is off. A standing link is not limited by
+**Out-of-fleet losses**. When the EVE day of the loss is not the date of the link (for example a loss of 11-03 claimed
+through the link of 11-04), the claim gets the warning "The loss happened on 2026-11-03 EVE; the link is for
+2026-11-04." Batch approval skips a claim with a warning, so a reviewer looks at it. The warning stays when the
+fleet presence is checked again and goes when the claim leaves the link.
+
+**Daily links and closing.** A [category](#srp-categories) with **Make a standing link every day** gets a standing link
+for the current EVE day: its name from the name template, its doctrine text from the category and, when the
+category has **Close links after (hours)**, a closing time of 00:00 EVE of its date plus those hours (48 closes it at
+the end of the next day). The same upkeep closes every open standing link whose closing time has passed, also links made
+by hand, and writes `srp.link_close` to the audit log without a person as the actor. It only fills in today, never past
+days (a beat that was down from 00:00 to 02:10 makes today's link and not yesterday's), makes at most one link per
+category and day however many workers run, and does nothing while FleetOps SRP is off, except closing. Closing only stops
+new claims; the claims made go on to review and payment. Off by default: a new site makes and closes no link by itself.
+
+**This needs no new beat entry and the app schedules nothing itself.** The upkeep runs inside the task
+`fleetops.tasks.schedule_active_fleet_tracking`, which the installation notes already have in `CELERYBEAT_SCHEDULE`
+(`fleetops_track_active_fleets`, every minute); the upkeep itself runs at most once every ten minutes. Keep that
+entry, the Celery worker and Celery beat running. No migration or code of FleetOps creates a periodic task.
+
 A link is **open** (members can submit), **closed** (no new claims; claims already made go on as usual) or
 **completed**. Tick links in the list and choose **Close selected**, **Complete selected** or **Open selected** (reviewers
 only); each link is done on its own and the ones that cannot be done are listed with the reason. **Completing** needs a
@@ -602,6 +674,7 @@ Chinese word for fleet in the Chinese interface until you rename it. FleetOps cr
 | Fleet types | none | Claims through fleets of these types get this category instead of **Fleet**. A fleet type belongs to at most one active category. Leave empty for no mapping. |
 | Name template of links | `{category} {date}` | The name of a new [standing link](#srp-links) of this category when none is typed. Only `{category}` and `{date}` can be used. |
 | Default doctrine text | empty | Filled in as the doctrine of a new standing link of this category. |
+| Make a standing link every day | off | FleetOps makes this category's [standing link](#srp-links) for the current EVE day by itself (see "Daily links and closing"). Off for every category until you tick it. |
 | Close links after (hours) | empty | A standing link of this category closes this many hours after 00:00 EVE of its date (1 to 720). Empty means the link stays open until someone closes it. The new-link form fills in the closing time. |
 | Active, Sort | on, 0 | A switched-off category is not offered to members; claims that have it keep it and are calculated with its current settings. |
 
@@ -615,6 +688,37 @@ pages as well; **Recalculate** applies the new settings.
 A category cannot be deleted while claims or payout rules use it: switch it off instead. Every change is audited
 as `configuration.create`, `configuration.update` or `configuration.delete`. Categories have no Django permissions
 of their own; the pages need `fleetops.manage_configuration`, and Django admin shows them to superusers only.
+
+## SRP Bans
+
+A reviewer can ban a member from submitting SRP claims: **SRP** > **SRP Bans** (reviewers only; a reviewer can also start it
+from a claim page). The ban belongs to the **Alliance Auth account**, so it covers all characters
+of the member; a member who moves to another account is not followed by it.
+
+A ban has a **reason** that the member sees (also in the audit log and in the Alliance Auth notification, when
+**Notify members** is on) and an **internal note** that only SRP staff see; the note is never written to the audit log. It
+lasts a number of days (1 to the longest ban, 7 preselected) or is **permanent**: a permanent ban has no end date, is not
+limited by the longest ban and stays until a reviewer lifts it. Nobody can ban themselves, and a member who is banned
+already cannot be banned again until the ban is lifted or over. A ban that has run out needs no task: it simply stops
+counting. **Lift ban** (with a reason) ends it at once.
+
+While a ban is in force the member cannot check, submit or **submit again** a claim ("You are banned from submitting
+SRP claims until ... EVE: reason"), and **My SRP** shows a red banner with the reason and the end. Claims that wait
+for a decision stay as they are and the member can still **withdraw** them, but cannot submit them again while the ban
+lasts. When a reviewer ticks **Reject the member's pending claims** while banning (the rejection reason is required), every
+pending claim of the member is rejected one by one with that reason, with the usual event, audit entry and notification;
+a claim that changed meanwhile is skipped and listed. Approved claims are never touched. Nothing is rejected unless that box is ticked.
+
+**Automatic ban over the monthly cap.** The setting *Ban members who keep submitting over their monthly cap until the
+end of the month* is **off** by default. When it is on, a member whose **personal** monthly limit (the general one or
+one of a category) is already used up, and who still submits a claim or submits a withdrawn claim again, gets a ban
+until 00:00 UTC of the first day of the next EVE month (the month of the day it happens, not of the loss). The claim is
+made as usual and treated by **Over limit action**. Not triggered: the preview, a claim that only runs over the limit
+(the limit still had some left before it), a used-up corporation limit (not the member's doing), member edits and the
+actions of reviewers. The ban is of the kind "Over the monthly cap", audited as `srp.ban_create` without an actor and with the
+number of the claim, and a reviewer can lift it like any other. A site without monthly caps never triggers it.
+
+All steps are audited: `srp.ban_create` (member, end, days, permanent, kind, number of claims rejected) and `srp.ban_lift`.
 
 ## SRP Payout Table
 
@@ -656,8 +760,15 @@ on the pages named; nothing in FleetOps sets them for you.
 | | Over limit action | Send to review with a warning |
 | | Capsules need a payout rule | on |
 | | Claim deadline (days) | 7 |
+| | Ship groups, ships and kinds of space that are not covered | Press **Fill in the recommended list**, check it and save: mining, industrial and exploration ship groups, Venture, Heron, Imicus, Magnate, Probe, and high security |
+| | A payout table entry for the ship lifts the ship block | on |
+| | Wartime losses in high security are covered | off (such a loss is refused like any other) |
+| | A category claim needs no standing link | on |
+| | Ban default and longest length | 7 and 365 days (permanent bans are chosen per ban) |
+| | Ban members who keep submitting over their monthly cap | off (without monthly caps it would never trigger) |
 | SRP Categories | `fleet` (built in) | Per-loss cap: **No per-loss cap**; percentage inherited |
 | | `alliance-fleets`, `home-defense`, `home-defense-ess`, `corp-roaming`, `corp-roaming-ess`, `solo-pvp` | Members can choose it; per-loss cap: **Own per-loss cap**, 250m; percentage inherited; monthly caps empty |
+| | Make a standing link every day, Close links after (hours) | on for the six categories above; 48 (the link closes at the end of the next day), or empty to let links stay open |
 | SRP Payout Table | | Not used at first; add rules per category when needed |
 
 With these values, a solo loss of 300m in the `solo-pvp` category is suggested at 250m, and a 571m loss claimed
@@ -669,5 +780,6 @@ through a fleet link at 571m.
 left the alliances in **Member alliance IDs**, old member events and the old texts of pings sent without a fleet
 (their audit entries stay); add `--dry-run` to see the counts first.
 The daily beat task `fleetops.tasks.prune_attendance_history` does the same and also deletes SRP killmails
-nobody claimed. `python manage.py fleetops_refresh_names` rewrites ship and solar system names of fleet member
+nobody claimed (their location fields go with them). SRP bans are never deleted by retention: the reason, the end and
+who lifted the ban stay as a history; lifted and expired bans cost nothing. `python manage.py fleetops_refresh_names` rewrites ship and solar system names of fleet member
 records in English from the SDE (`--dry-run` available). Ship and solar system names are English everywhere.

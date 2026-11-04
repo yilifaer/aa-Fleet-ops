@@ -21,7 +21,7 @@ from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
-from fleetops.models import IncentivePeriod
+from fleetops.models import IncentivePeriod, SrpSettings
 from fleetops.services.incentives import rebuild_period
 
 from . import factories as f
@@ -265,6 +265,90 @@ class MySrpBudgetTests(TestCase):
             f.srp_claim(pilot, category=category)
 
         self.assertEqual(self.count(pilot), one)
+
+
+class IntakeBudgetTests(TestCase):
+    """INT-10, RUL-4, REV-8: the standing-link card, the "Not covered" card and the ban list do not grow with
+    their rows, and the preview costs at most one query for the ban."""
+
+    def count(self, user, url):
+        self.client.force_login(user)
+        self.client.get(url)
+        cache.clear()
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        return len(queries)
+
+    def test_my_srp_does_not_grow_with_standing_links_or_blocked_ships(self):
+        pilot = f.create_user("budget_intake_pilot", perms=f.SRP_MEMBER_PERMS)
+        f.standing_link(category=f.srp_category("Intake 0"))
+        SrpSettings.objects.filter(pk=1).update(blocked_ship_group_ids="463", blocked_ship_type_ids="32880")
+        one = self.count(pilot, route("srp_home"))
+        for index in range(1, 8):
+            f.standing_link(category=f.srp_category(f"Intake {index}"))
+        SrpSettings.objects.filter(pk=1).update(
+            blocked_ship_group_ids="463,543,28,380", blocked_ship_type_ids="32880,605,607,29248,586"
+        )
+
+        self.assertEqual(self.count(pilot, route("srp_home")), one)
+
+    def test_the_ban_list_does_not_grow_with_the_bans(self):
+        from fleetops.models import SrpBan
+
+        reviewer = f.create_user("budget_intake_reviewer", perms=f.SRP_REVIEWER_PERMS)
+
+        def add(number):
+            for index in range(number):
+                member = f.create_user(f"budget_banned_{number}_{index}", perms=f.SRP_MEMBER_PERMS)
+                SrpBan.objects.create(user=member, reason="Test", created_by=reviewer)
+
+        add(2)
+        small = self.count(reviewer, route("srp_bans"))
+        add(8)
+
+        self.assertEqual(self.count(reviewer, route("srp_bans")), small)
+
+    def test_the_claim_page_costs_one_query_more_for_the_ban_of_a_reviewer(self):
+        reviewer = f.create_user("budget_claim_reviewer", perms=f.SRP_REVIEWER_PERMS)
+        payer = f.create_user("budget_claim_payer", perms=f.SRP_PAYER_PERMS)
+        claim = f.srp_claim(f.create_user("budget_claim_member", perms=f.SRP_MEMBER_PERMS))
+        url = route("srp_claim", claim.uuid)
+
+        # The reviewer's page also reads the ban of the member: one query for the ban, the form needs none.
+        self.assertLessEqual(self.count(reviewer, url) - self.count(payer, url), 6)
+
+    def test_the_preview_costs_at_most_one_query_more_for_the_ban(self):
+        """REV-8: the whole preview (``prepare_claim``) on one fixture, with the ban lookup patched away and for real."""
+        from fleetops.srp import bans, claims
+
+        pilot = f.create_user("budget_elig_pilot", perms=f.SRP_MEMBER_PERMS)
+        km = f.srp_killmail(f.main_of(pilot), fitted="1000000")
+        f.srp_settings()
+        text = f"<url=killReport:{km.killmail_id}:{km.killmail_hash}>Loss</url>"
+
+        def preview_queries(ban_lookup=None):
+            cache.delete(f"fleetops:srp:check:{pilot.pk}")
+            patches = [mock.patch.object(claims.killmails, "fetch_killmail", return_value=km)]
+            if ban_lookup is not None:
+                patches.append(mock.patch.object(bans, "active_ban", ban_lookup))
+            with CaptureQueriesContext(connection) as queries:
+                for patch in patches:
+                    patch.start()
+                try:
+                    preview = claims.prepare_claim(pilot, text)
+                finally:
+                    for patch in patches:
+                        patch.stop()
+            self.assertEqual(preview.blockers, [])
+            return len(queries)
+
+        preview_queries()  # warm the caches both runs share
+        without = preview_queries(lambda user, now=None: None)
+        with_ban = preview_queries()
+
+        self.assertLessEqual(with_ban - without, 1)
+        self.assertGreaterEqual(with_ban, without)
 
 
 class SrpRoleBudgetTests(TestCase):

@@ -51,6 +51,8 @@ from fleetops.services.fleet_rules import (
 from fleetops.services.links import extract_ingame_channel_id, extract_link_text, strip_url_userinfo
 from fleetops.services.names import entity_names
 from fleetops.services.periods import current_year_month
+from fleetops.srp import blocks
+from fleetops.srp.blocks import BAND_CHOICES
 from fleetops.srp.display import category_label
 from fleetops.texts import translate_stored
 
@@ -612,10 +614,26 @@ class SrpSettingsForm(forms.ModelForm):
             [
                 "in_fleet_loss_cap",
                 "out_of_fleet_loss_cap",
-                "capsules_need_rule",
                 "over_limit_action",
                 "default_category",
                 "out_of_fleet_category_required",
+                "category_claims_without_link",
+            ],
+        ),
+        (
+            _("Not covered"),
+            _(
+                "Losses that are refused when a claim is checked. Nothing is refused until you choose something here. "
+                "A ship that is in the payout table is still covered when the switch below says so."
+            ),
+            [
+                "capsules_need_rule",
+                "blocked_groups",
+                "blocked_other_group_ids",
+                "blocked_ship_type_ids",
+                "blocked_bands",
+                "payout_rule_lifts_ship_block",
+                "highsec_war_losses_covered",
             ],
         ),
         (
@@ -643,8 +661,40 @@ class SrpSettingsForm(forms.ModelForm):
                 "member_instructions",
             ],
         ),
+        (
+            _("SRP bans"),
+            _("Reviewers can ban a member from submitting SRP claims, for a number of days or for good."),
+            ["ban_default_days", "ban_max_days", "auto_ban_over_monthly_cap"],
+        ),
     ]
     ISK_FIELDS = ("in_fleet_loss_cap", "out_of_fleet_loss_cap", "personal_monthly_cap", "corporation_monthly_cap")
+
+    # The ship groups and security bands that are not covered: the stored comma lists are edited as ticked boxes (and a
+    # field for group IDs the list does not offer), like the ship groups without bridge on the general settings.
+    blocked_groups = forms.TypedMultipleChoiceField(
+        label=_("Ship groups that are not covered"),
+        required=False,
+        coerce=int,
+        widget=forms.CheckboxSelectMultiple,
+        help_text=_("Losses of ships in these groups are refused."),
+    )
+    blocked_other_group_ids = forms.CharField(
+        label=_("Other ship group IDs"),
+        required=False,
+        max_length=500,
+        help_text=_("Ship group IDs that are not in the list above, separated by commas."),
+    )
+    blocked_bands = forms.MultipleChoiceField(
+        label=_("Kinds of space that are not covered"),
+        required=False,
+        choices=BAND_CHOICES,
+        widget=forms.CheckboxSelectMultiple,
+        help_text=_("Losses in these kinds of space are refused, whatever the ship."),
+    )
+    BLOCK_FIELDS = ("blocked_groups", "blocked_other_group_ids", "blocked_ship_type_ids", "blocked_bands")
+    # The lists the page asks to store; None leaves the stored lists as they are (see clean()).
+    block_group_ids = None
+    block_bands = None
 
     class Meta:
         model = SrpSettings
@@ -664,7 +714,14 @@ class SrpSettingsForm(forms.ModelForm):
             "capsules_need_rule",
             "default_category",
             "out_of_fleet_category_required",
+            "category_claims_without_link",
             "claim_deadline_days",
+            "blocked_ship_type_ids",
+            "payout_rule_lifts_ship_block",
+            "highsec_war_losses_covered",
+            "ban_default_days",
+            "ban_max_days",
+            "auto_ban_over_monthly_cap",
             "allow_self_review",
             "allow_self_payment",
             "require_different_payer",
@@ -675,6 +732,8 @@ class SrpSettingsForm(forms.ModelForm):
         widgets = {
             "percentage": forms.NumberInput(attrs={"step": "0.01", "min": "0", "max": "100"}),
             "claim_deadline_days": forms.NumberInput(attrs={"min": "0", "max": "3650"}),
+            "ban_default_days": forms.NumberInput(attrs={"min": "1", "max": "3650"}),
+            "ban_max_days": forms.NumberInput(attrs={"min": "1", "max": "3650"}),
             "member_instructions": forms.Textarea(attrs={"rows": 4, "maxlength": "2000"}),
         }
 
@@ -686,6 +745,116 @@ class SrpSettingsForm(forms.ModelForm):
                 required=False, label=model_field.verbose_name, help_text=model_field.help_text
             )
         self.fields["default_category"].label_from_instance = category_label
+        # A submission without the ban lengths (a script, an older form) keeps the stored ones.
+        for name in ("ban_default_days", "ban_max_days"):
+            self.fields[name].required = False
+        self.warnings = []
+        self._set_up_blocks()
+
+    def _set_up_blocks(self):
+        """Offer the ship groups of the SDE (or the built-in list) and keep every stored ID reachable."""
+        from fleetops.services.composition_config import group_id_names, ship_group_choices
+
+        choices = ship_group_choices()
+        self.fields["blocked_groups"].choices = [(group_id, label) for group_id, label in choices]
+        offered = {group_id for group_id, _label in choices}
+        stored = blocks.parse_id_list_ordered(self.instance.blocked_ship_group_ids)
+        self.initial["blocked_groups"] = [group_id for group_id in stored if group_id in offered]
+        self.initial["blocked_other_group_ids"] = ", ".join(str(group_id) for group_id in stored if group_id not in offered)
+        self.initial["blocked_bands"] = sorted(blocks.blocked_bands(self.instance.blocked_security_bands))
+        self.fields["blocked_ship_type_ids"].label = _("Ships that are not covered")
+        # The page names the groups and ships that are in force.
+        self.blocked_now = group_id_names(self.instance.blocked_ship_group_ids)
+        type_ids = blocks.parse_id_list_ordered(self.instance.blocked_ship_type_ids)
+        found = blocks.ship_names(type_ids) if type_ids else {}
+        self.blocked_type_names = [(type_id, found.get(type_id) or f"Type {type_id}") for type_id in type_ids]
+
+    @classmethod
+    def with_recommended(cls, data):
+        """A copy of the submitted ``data`` with the recommended block lists added to what is entered (the
+        union, without duplicates). Nothing is saved."""
+        merged = data.copy()
+        offered = {group_id for group_id, _label in cls._group_choices()}
+        groups = [int(value) for value in merged.getlist("blocked_groups") if str(value).isdigit()]
+        others = blocks.parse_id_list_ordered(merged.get("blocked_other_group_ids", ""))
+        for group_id in blocks.RECOMMENDED_SHIP_GROUP_IDS:
+            if group_id in offered and group_id not in groups:
+                groups.append(group_id)
+            elif group_id not in offered and group_id not in others:
+                others.append(group_id)
+        merged.setlist("blocked_groups", [str(group_id) for group_id in groups])
+        merged["blocked_other_group_ids"] = ", ".join(str(group_id) for group_id in others)
+        types = blocks.parse_id_list_ordered(merged.get("blocked_ship_type_ids", ""))
+        types += [type_id for type_id in blocks.RECOMMENDED_SHIP_TYPE_IDS if type_id not in types]
+        merged["blocked_ship_type_ids"] = ", ".join(str(type_id) for type_id in types)
+        bands = list(merged.getlist("blocked_bands"))
+        bands += [band for band in blocks.RECOMMENDED_SECURITY_BANDS if band not in bands]
+        merged.setlist("blocked_bands", bands)
+        return merged
+
+    @staticmethod
+    def _group_choices():
+        from fleetops.services.composition_config import ship_group_choices
+
+        return ship_group_choices()
+
+    def clean_blocked_ship_type_ids(self):
+        # Stored the way the lists of the bridge setting are: IDs separated by commas, without duplicates.
+        value = self.cleaned_data.get("blocked_ship_type_ids") or ""
+        try:
+            return format_id_list(value)
+        except FleetRuleError as exc:
+            raise ValidationError(translate_stored(str(exc)), code="invalid") from None
+
+    def clean_ban_default_days(self):
+        return self.cleaned_data.get("ban_default_days") or self.instance.ban_default_days
+
+    def clean_ban_max_days(self):
+        return self.cleaned_data.get("ban_max_days") or self.instance.ban_max_days
+
+    def clean(self):
+        cleaned = super().clean()
+        # A submission without any of the four fields (a script, an older form) leaves the lists as they are; a
+        # browser always sends the text fields, so an empty selection there does mean "nothing".
+        self.block_group_ids = None
+        self.block_bands = None
+        if not any(name in self.data for name in self.BLOCK_FIELDS):
+            return cleaned
+        offered = {group_id for group_id, _label in self.fields["blocked_groups"].choices}
+        try:
+            other = parse_id_list(cleaned.get("blocked_other_group_ids"))
+        except FleetRuleError as exc:
+            self.add_error("blocked_other_group_ids", translate_stored(str(exc)))
+            return cleaned
+        ids = list(cleaned.get("blocked_groups") or [])
+        ids += [group_id for group_id in other if group_id not in ids]
+        unknown = [group_id for group_id in other if group_id not in offered]
+        if unknown and sde_service.ship_groups() is not None:
+            # With the SDE every ID can be checked, and nothing is dropped without saying so.
+            self.add_error(
+                "blocked_other_group_ids",
+                _("Not ship groups: %(ids)s.") % {"ids": ", ".join(str(group_id) for group_id in unknown)},
+            )
+        elif unknown:
+            self.warnings.append(
+                _(
+                    "The ship group IDs %(ids)s were saved, but could not be checked without "
+                    "django-eveonline-sde."
+                )
+                % {"ids": ", ".join(str(group_id) for group_id in unknown)}
+            )
+        if len(format_id_list(ids)) > BRIDGE_LIST_MAX_LENGTH:
+            self.add_error("blocked_groups", _("That is too many ship groups; the list may hold at most 500 characters."))
+        self.block_group_ids = ids
+        self.block_bands = blocks.format_bands(cleaned.get("blocked_bands") or [])
+        return cleaned
+
+    def _post_clean(self):
+        super()._post_clean()
+        if self.block_group_ids is not None:
+            self.instance.blocked_ship_group_ids = format_id_list(self.block_group_ids)
+        if self.block_bands is not None:
+            self.instance.blocked_security_bands = self.block_bands
 
     def field_groups(self):
         """``(title, description, bound fields)`` for each group of the page."""
@@ -901,6 +1070,7 @@ class SrpCategoryForm(forms.ModelForm):
             "personal_monthly_cap",
             "corporation_monthly_cap",
             "fleet_types",
+            "auto_create_daily",
             "daily_link_name",
             "default_doctrine_text",
             "auto_close_after_hours",

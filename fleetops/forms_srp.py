@@ -16,7 +16,7 @@ from django.utils.translation import pgettext_lazy
 from fleetops.constants import MAX_ISK
 from fleetops.forms import _style
 from fleetops.forms_operation import EveDateTimeField
-from fleetops.models import SrpCategory, SrpFleetLink, SrpSettings
+from fleetops.models import SrpBan, SrpCategory, SrpFleetLink, SrpSettings
 from fleetops.srp.categories import default_category, selectable_categories
 from fleetops.srp.display import category_label
 from fleetops.srp.killmails import parse_killmail_reference
@@ -630,3 +630,91 @@ class StandingLinkForm(forms.Form):
             }
             for category in self.fields["category"].queryset
         }
+
+
+class BanFilterForm(forms.Form):
+    """The filters of the ban list; a value that does not check out is ignored by the view."""
+
+    STATE_CHOICES = [
+        ("active", _("In force")),
+        ("lifted", _("Lifted")),
+        ("expired", _("Expired")),
+        ("all", _("All")),
+    ]
+    state = forms.ChoiceField(label=_("State"), required=False, choices=STATE_CHOICES)
+    kind = forms.ChoiceField(
+        label=_("Kind"),
+        required=False,
+        choices=[("", _("Any kind")), *SrpBan.Kind.choices],
+    )
+    member = forms.CharField(label=_("Member"), required=False, max_length=100, strip=True)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _style(self.fields)
+
+
+class BanForm(forms.Form):
+    """Ban a member from submitting SRP claims.
+
+    The member is named by the main character (the exact name) or arrives as ``user`` from the claim page. The
+    reason is shown to the member; the internal note is for SRP staff only.
+    """
+
+    user = forms.IntegerField(required=False, widget=forms.HiddenInput())
+    member = forms.CharField(
+        label=pgettext_lazy("FleetOps", "Main character"),
+        required=False,
+        max_length=100,
+        strip=True,
+        help_text=_("The exact name of the member's main character."),
+    )
+    days = forms.IntegerField(label=_("Length (days)"), required=False, min_value=1)
+    permanent = forms.BooleanField(
+        label=_("Permanent"),
+        required=False,
+        help_text=_("The ban has no end date until a reviewer lifts it."),
+    )
+    reason = forms.CharField(
+        label=_("Reason"),
+        max_length=REASON_LENGTH,
+        strip=True,
+        widget=forms.Textarea(attrs={"rows": 2}),
+        help_text=_("The member sees this reason."),
+    )
+    internal_note = forms.CharField(
+        label=_("Internal note"),
+        required=False,
+        max_length=REASON_LENGTH,
+        strip=True,
+        widget=forms.Textarea(attrs={"rows": 2}),
+        help_text=_("Only SRP staff see this."),
+    )
+    reject_pending = forms.BooleanField(
+        label=_("Reject the member's pending claims"),
+        required=False,
+        help_text=_("Approved claims are not touched."),
+    )
+    reject_reason = forms.CharField(
+        label=_("Reason for the rejection"),
+        required=False,
+        max_length=REASON_LENGTH,
+        strip=True,
+        widget=forms.Textarea(attrs={"rows": 2}),
+        help_text=_("Required when the pending claims are rejected. The member sees it."),
+    )
+
+    def __init__(self, *args, default_days=7, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["days"].initial = default_days
+        _style(self.fields)
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("reject_pending") and not cleaned.get("reject_reason"):
+            self.add_error("reject_reason", _("Give the reason for rejecting the pending claims."))
+        if not cleaned.get("permanent") and not cleaned.get("days") and "days" not in self.errors:
+            self.add_error("days", _("Enter the length in days, or tick Permanent."))
+        if cleaned.get("permanent") and cleaned.get("days"):
+            cleaned["days"] = None
+        return cleaned

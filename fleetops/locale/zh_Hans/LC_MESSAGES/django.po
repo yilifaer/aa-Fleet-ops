@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-04 11:41+0000\n"
+"POT-Creation-Date: 2026-11-04 18:35+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -490,6 +490,14 @@ msgstr "赔付与上限"
 msgid "Ships in the payout table get their fixed amount; every other ship gets the percentage of its value. The per-loss caps apply to both. A category can have its own payout table entries, percentage and caps."
 msgstr "赔付表中的舰船获得固定金额；其他舰船获得其价值的一定比例。单笔上限对两者都适用。类别可以有自己的赔付表条目、比例和上限。"
 
+#: forms_config.py templates/fleetops/srp/_not_covered.html
+msgid "Not covered"
+msgstr "不赔付"
+
+#: forms_config.py
+msgid "Losses that are refused when a claim is checked. Nothing is refused until you choose something here. A ship that is in the payout table is still covered when the switch below says so."
+msgstr "检查申请时会被拒绝的损失。在这里选择之前什么都不会被拒绝。按下面的开关，赔付表里有的舰船仍然照赔。"
+
 #: forms_config.py templates/fleetops/srp/claim.html
 msgid "Monthly limits"
 msgstr "月度限额"
@@ -501,6 +509,34 @@ msgstr "按损失发生的 EVE 月统计已通过的 SRP。以最严格的限额
 #: forms_config.py
 msgid "Members and review"
 msgstr "成员与审核"
+
+#: forms_config.py models.py
+msgid "SRP bans"
+msgstr "SRP 封禁"
+
+#: forms_config.py
+msgid "Reviewers can ban a member from submitting SRP claims, for a number of days or for good."
+msgstr "审核人可以禁止成员提交 SRP 申请，封禁若干天或永久。"
+
+#: forms_config.py models.py
+msgid "Ship groups that are not covered"
+msgstr "不赔付的舰船组"
+
+#: forms_config.py
+msgid "Losses of ships in these groups are refused."
+msgstr "这些组里的舰船损失会被拒绝。"
+
+#: forms_config.py
+msgid "Kinds of space that are not covered"
+msgstr "不赔付的空域"
+
+#: forms_config.py
+msgid "Losses in these kinds of space are refused, whatever the ship."
+msgstr "发生在这些空域的损失会被拒绝，不论什么舰船。"
+
+#: forms_config.py models.py
+msgid "Ships that are not covered"
+msgstr "不赔付的舰船"
 
 #: forms_config.py
 #, python-format
@@ -1116,7 +1152,8 @@ msgstr "同一位玩家在这支舰队里最多有几个角色获得 PAP，上�
 
 #: forms_pap_limit.py forms_srp.py models.py services/export_datasets.py
 #: templates/fleetops/audit_log.html
-#: templates/fleetops/srp/_decision_forms.html
+#: templates/fleetops/srp/_decision_forms.html templates/fleetops/srp/bans.html
+#: templates/fleetops/srp/claim.html
 msgid "Reason"
 msgstr "原因"
 
@@ -1351,7 +1388,7 @@ msgid "Choose the fleet's SRP link for an in-fleet loss."
 msgstr "舰队内损失请选择舰队的 SRP 链接。"
 
 #: forms_srp.py models.py templates/fleetops/srp/_decision_forms.html
-#: templates/fleetops/srp/claim.html
+#: templates/fleetops/srp/bans.html templates/fleetops/srp/claim.html
 msgid "Internal note"
 msgstr "内部备注"
 
@@ -1494,7 +1531,8 @@ msgstr "任意状态"
 msgid "Any kind"
 msgstr "任意种类"
 
-#: forms_srp.py templates/fleetops/srp/links.html
+#: forms_srp.py templates/fleetops/srp/bans.html
+#: templates/fleetops/srp/links.html
 msgid "State"
 msgstr "状态"
 
@@ -1550,6 +1588,82 @@ msgstr "设为该类别的当日链接"
 #: forms_srp.py
 msgid "There is one such link per category and day; the automatic daily link takes the same place."
 msgstr "每个类别每天只能有一条当日链接；自动创建的每日链接占用同一个名额。"
+
+#: forms_srp.py templates/fleetops/srp/bans.html
+msgid "In force"
+msgstr "生效中"
+
+#: forms_srp.py templates/fleetops/srp/bans.html
+msgid "Lifted"
+msgstr "已解除"
+
+#: forms_srp.py templates/fleetops/operation/_links.html
+#: templates/fleetops/srp/bans.html
+msgid "Expired"
+msgstr "已过期"
+
+#: forms_srp.py
+msgid "All"
+msgstr "全部"
+
+#: forms_srp.py templates/fleetops/srp/bans.html
+msgid "Member"
+msgstr "成员"
+
+#: forms_srp.py models.py services/export_datasets.py
+#: templates/fleetops/srp/_summary_table.html
+#: templates/fleetops/statistics/members.html
+msgctxt "FleetOps"
+msgid "Main character"
+msgstr "大号"
+
+#: forms_srp.py
+msgid "The exact name of the member's main character."
+msgstr "成员大号的准确名称。"
+
+#: forms_srp.py
+msgid "Length (days)"
+msgstr "时长（天）"
+
+#: forms_srp.py templates/fleetops/srp/bans.html
+msgid "Permanent"
+msgstr "永久"
+
+#: forms_srp.py
+msgid "The ban has no end date until a reviewer lifts it."
+msgstr "封禁没有结束日期，直到审核人解除。"
+
+#: forms_srp.py
+msgid "The member sees this reason."
+msgstr "成员会看到这个理由。"
+
+#: forms_srp.py models.py
+msgid "Only SRP staff see this."
+msgstr "只有 SRP 人员能看到。"
+
+#: forms_srp.py
+msgid "Reject the member's pending claims"
+msgstr "驳回该成员的待审申请"
+
+#: forms_srp.py
+msgid "Approved claims are not touched."
+msgstr "已通过的申请不受影响。"
+
+#: forms_srp.py
+msgid "Reason for the rejection"
+msgstr "驳回理由"
+
+#: forms_srp.py
+msgid "Required when the pending claims are rejected. The member sees it."
+msgstr "驳回待审申请时必填。成员会看到它。"
+
+#: forms_srp.py texts.py
+msgid "Give the reason for rejecting the pending claims."
+msgstr "请填写驳回待审申请的理由。"
+
+#: forms_srp.py
+msgid "Enter the length in days, or tick Permanent."
+msgstr "请输入封禁天数，或勾选“永久”。"
 
 #: models.py
 #, python-format
@@ -3292,6 +3406,62 @@ msgid "Four-eyes rule: the person who approved a claim cannot mark it paid. Undo
 msgstr "四眼规则：批准某条申请的人不能把它标记为已付款。撤销付款不受影响。"
 
 #: models.py
+msgid "SDE ship group IDs whose losses are refused when a claim is checked. Empty = none."
+msgstr "检查申请时，这些 SDE 舰船组 ID 的损失会被拒绝。留空表示没有。"
+
+#: models.py
+msgid "Ship type IDs whose losses are refused when a claim is checked. Empty = none."
+msgstr "检查申请时，这些舰船类型 ID 的损失会被拒绝。留空表示没有。"
+
+#: models.py
+msgid "Security bands that are not covered"
+msgstr "不赔付的安全等级区间"
+
+#: models.py
+msgid "Losses in these kinds of space are refused when a claim is checked. Empty = none."
+msgstr "检查申请时，发生在这些空域的损失会被拒绝。留空表示没有。"
+
+#: models.py
+msgid "A payout table entry for the ship lifts the ship block"
+msgstr "赔付表里有这艘船的条目时解除舰船拦截"
+
+#: models.py
+msgid "A ship that has its own entry in the payout table is covered even when its ship group or the ship is not covered. Security bands are not affected."
+msgstr "赔付表里有这艘船自己的条目时，即使它的舰船组或这艘船在不赔付列表里，也照赔。安全等级区间不受影响。"
+
+#: models.py
+msgid "Wartime losses in high security are covered"
+msgstr "高安的战争损失照赔"
+
+#: models.py
+msgid "Losses in a war (the killmail names a war) are not refused for high security space."
+msgstr "战争中的损失（KM 里带有战争）在高安不会被拒绝。"
+
+#: models.py
+msgid "Default length of an SRP ban (days)"
+msgstr "SRP 封禁默认天数"
+
+#: models.py
+msgid "Preselected when an SRP ban is made."
+msgstr "做出 SRP 封禁时预选。"
+
+#: models.py
+msgid "Longest SRP ban (days)"
+msgstr "SRP 最长封禁天数"
+
+#: models.py
+msgid "A permanent ban is not limited by this."
+msgstr "永久封禁不受它限制。"
+
+#: models.py
+msgid "Ban members who keep submitting over their monthly cap until the end of the month"
+msgstr "超过个人月度上限还继续提交的成员封到月底"
+
+#: models.py
+msgid "A member whose personal monthly limit is used up and who submits another claim cannot submit until the end of the EVE month."
+msgstr "个人月度限额已用完却又提交申请的成员，在本 EVE 月结束之前不能再提交。"
+
+#: models.py
 msgid "Notify members"
 msgstr "通知成员"
 
@@ -3326,6 +3496,15 @@ msgstr "关闭 zKillboard 时，请选择 ESI 市场估价。"
 #: models.py
 msgid "Choose an active category that members can choose."
 msgstr "请选择一个启用的、成员可以选择的类别。"
+
+#: models.py
+msgid "The default length cannot be longer than the longest ban."
+msgstr "默认天数不能超过最长封禁天数。"
+
+#: models.py
+#, python-format
+msgid "Unknown security band: %(bands)s."
+msgstr "未知的安全等级区间：%(bands)s。"
 
 #: models.py templates/fleetops/srp/_summary_table.html
 msgid "In fleet and out of fleet"
@@ -3396,6 +3575,51 @@ msgstr "SRP 军团限额"
 #: models.py
 msgid "SRP corporation limits"
 msgstr "SRP 军团限额"
+
+#: models.py
+msgid "By a reviewer"
+msgstr "审核人做出"
+
+#: models.py
+msgid "Over the monthly cap"
+msgstr "超过月度上限"
+
+#: models.py
+msgid "User"
+msgstr "用户"
+
+#: models.py
+msgid "Shown to the member."
+msgstr "显示给成员。"
+
+#: models.py
+msgid "Starts at"
+msgstr "开始时间"
+
+#: models.py
+msgid "Empty = permanent."
+msgstr "留空表示永久。"
+
+#: models.py
+msgid "Lifted at"
+msgstr "解除时间"
+
+#: models.py
+msgid "Lifted by"
+msgstr "解除人"
+
+#: models.py
+msgid "Reason for lifting"
+msgstr "解除理由"
+
+#: models.py templates/fleetops/srp/claim.html
+msgid "SRP ban"
+msgstr "SRP 封禁"
+
+#: models.py
+#, python-format
+msgid "SRP ban of %(name)s"
+msgstr "%(name)s 的 SRP 封禁"
 
 #: models.py services/export_datasets.py templates/fleetops/approvals.html
 #: templates/fleetops/attendance_history.html templates/fleetops/dashboard.html
@@ -3535,6 +3759,14 @@ msgid "zKillboard disabled"
 msgstr "zKillboard 已停用"
 
 #: models.py
+msgid "ESI"
+msgstr "ESI"
+
+#: models.py
+msgid "aa-srp import"
+msgstr "aa-srp 导入"
+
+#: models.py
 msgid "Killmail ID"
 msgstr "KM ID"
 
@@ -3565,6 +3797,26 @@ msgstr "攻击者数量"
 #: models.py
 msgid "War ID"
 msgstr "战争 ID"
+
+#: models.py
+msgid "Ship group ID"
+msgstr "舰船组 ID"
+
+#: models.py
+msgid "Security status"
+msgstr "安全等级"
+
+#: models.py
+msgid "Constellation ID"
+msgstr "星座 ID"
+
+#: models.py
+msgid "Region ID"
+msgstr "星域 ID"
+
+#: models.py
+msgid "Location checked at"
+msgstr "位置查询时间"
 
 #: models.py
 msgid "Items"
@@ -3658,10 +3910,6 @@ msgstr "无自动金额"
 #: models.py
 msgid "Fleet label"
 msgstr "舰队名称"
-
-#: models.py
-msgid "User"
-msgstr "用户"
 
 #: models.py
 msgid "Corporation ticker"
@@ -3971,7 +4219,7 @@ msgstr "未分类"
 msgid "Unknown ship"
 msgstr "未知舰船"
 
-#: services/composition.py srp/display.py views_srp.py
+#: services/composition.py srp/blocks.py srp/display.py views_srp.py
 #, python-format
 msgid "Type %(id)s"
 msgstr "类型 %(id)s"
@@ -3985,7 +4233,7 @@ msgstr "未知星系"
 msgid "System %(id)s"
 msgstr "星系 %(id)s"
 
-#: services/composition.py
+#: services/composition.py srp/blocks.py
 #, python-format
 msgid "Group %(id)s"
 msgstr "舰船组 %(id)s"
@@ -4227,12 +4475,6 @@ msgstr "排序：%(value)s"
 #: templates/fleetops/statistics/member_detail.html
 msgid "Rank"
 msgstr "排名"
-
-#: services/export_datasets.py templates/fleetops/srp/_summary_table.html
-#: templates/fleetops/statistics/members.html
-msgctxt "FleetOps"
-msgid "Main character"
-msgstr "大号"
 
 #: services/export_datasets.py templates/fleetops/all_fc_statistics.html
 #: templates/fleetops/approvals.html templates/fleetops/base.html
@@ -4735,6 +4977,90 @@ msgid "The fleet could not be read: it no longer exists or the FC left it — th
 msgid_plural "The fleet could not be read: it no longer exists or the FC left it — this fleet will end automatically after %(remaining)s more checks unless it can be read again."
 msgstr[0] "无法读取舰队：舰队已解散或 FC 已离队 —— 除非能再次读取，否则这支舰队再检查 %(remaining)s 次后将自动结束。"
 
+#: srp/bans.py
+#, python-format
+msgid "You are banned from submitting SRP claims: %(reason)s"
+msgstr "你被禁止提交 SRP 申请：%(reason)s"
+
+#: srp/bans.py
+#, python-format
+msgid "You are banned from submitting SRP claims until %(until)s EVE: %(reason)s"
+msgstr "你被禁止提交 SRP 申请，直到 %(until)s EVE：%(reason)s"
+
+#: srp/blocks.py
+msgid "high security"
+msgstr "高安"
+
+#: srp/blocks.py
+msgid "low security"
+msgstr "低安"
+
+#: srp/blocks.py
+msgid "null security"
+msgstr "00"
+
+#: srp/blocks.py
+msgid "wormhole"
+msgstr "虫洞"
+
+#: srp/blocks.py
+msgid "abyssal"
+msgstr "深渊"
+
+#: srp/blocks.py
+msgid "Pochven"
+msgstr "Pochven"
+
+#: srp/blocks.py
+msgctxt "security band"
+msgid "High security (0.5 and above)"
+msgstr "高安（0.5 及以上）"
+
+#: srp/blocks.py
+msgctxt "security band"
+msgid "Low security (0.1 to 0.4)"
+msgstr "低安（0.1 到 0.4）"
+
+#: srp/blocks.py
+msgctxt "security band"
+msgid "Null security (0.0 and below)"
+msgstr "00（0.0 及以下）"
+
+#: srp/blocks.py
+msgctxt "security band"
+msgid "Wormhole space"
+msgstr "虫洞空间"
+
+#: srp/blocks.py
+msgctxt "security band"
+msgid "Abyssal space"
+msgstr "深渊空间"
+
+#: srp/blocks.py
+msgctxt "security band"
+msgid "Pochven"
+msgstr "Pochven"
+
+#: srp/blocks.py
+#, python-format
+msgid "%(ship)s losses are not covered."
+msgstr "不赔付 %(ship)s 的损失。"
+
+#: srp/blocks.py
+#, python-format
+msgid "%(group)s ships are not covered."
+msgstr "不赔付 %(group)s 舰船。"
+
+#: srp/blocks.py
+#, python-format
+msgid "Losses in %(band)s space are not covered (%(system)s %(security)s)."
+msgstr "不赔付发生在%(band)s空间的损失（%(system)s %(security)s）。"
+
+#: srp/blocks.py
+#, python-format
+msgid "Losses in %(band)s space are not covered."
+msgstr "不赔付发生在%(band)s空间的损失。"
+
 #: srp/display.py
 msgid "per-loss cap"
 msgstr "单笔上限"
@@ -4802,6 +5128,11 @@ msgstr "也已在 %(systems)s 申请过。"
 #: srp/display.py
 msgid "Also claimed in another SRP system."
 msgstr "也已在另一个 SRP 系统中申请过。"
+
+#: srp/display.py
+#, python-format
+msgid "The loss happened on %(loss)s EVE; the link is for %(link)s."
+msgstr "损失发生在 %(loss)s EVE；这条链接是 %(link)s 的。"
 
 #: srp/display.py
 msgid "another ship"
@@ -4947,6 +5278,19 @@ msgstr "金额：%(amount)s"
 #, python-format
 msgid "Reason: %(reason)s"
 msgstr "原因：%(reason)s"
+
+#: srp/notify.py
+msgid "SRP submissions blocked"
+msgstr "SRP 提交已被禁止"
+
+#: srp/notify.py
+msgid "The ban has no end date."
+msgstr "封禁没有结束日期。"
+
+#: srp/notify.py
+#, python-format
+msgid "Until: %(time)s EVE"
+msgstr "直到：%(time)s EVE"
 
 #: srp/policy.py templates/fleetops/srp/home.html
 #: templates/fleetops/srp/link.html texts.py views_srp.py
@@ -5398,15 +5742,15 @@ msgstr "首页"
 
 #: templates/fleetops/attendance_history.html templates/fleetops/audit_log.html
 #: templates/fleetops/fleet_operations.html
-#: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/links.html
-#: templates/fleetops/statistics/members.html
+#: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/bans.html
+#: templates/fleetops/srp/links.html templates/fleetops/statistics/members.html
 msgid "Previous"
 msgstr "上一页"
 
 #: templates/fleetops/attendance_history.html templates/fleetops/audit_log.html
 #: templates/fleetops/fleet_operations.html
-#: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/links.html
-#: templates/fleetops/statistics/members.html
+#: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/bans.html
+#: templates/fleetops/srp/links.html templates/fleetops/statistics/members.html
 msgid "Next"
 msgstr "下一页"
 
@@ -5530,6 +5874,10 @@ msgstr "审核"
 msgid "SRP Links"
 msgstr "SRP 链接"
 
+#: templates/fleetops/base.html templates/fleetops/srp/bans.html
+msgid "SRP Bans"
+msgstr "SRP 封禁"
+
 #: templates/fleetops/base.html
 msgid "Payments"
 msgstr "付款"
@@ -5603,10 +5951,12 @@ msgstr "语音链接"
 msgid "If your voice client does not open, install it, or copy the link and open it in the client."
 msgstr "如果语音客户端没有打开，请先安装它，或复制链接后在客户端中打开。"
 
+#: templates/fleetops/configuration/_blocked_groups.html
 #: templates/fleetops/configuration/_bridge_groups.html
 msgid "Filter ship groups"
 msgstr "筛选舰船组"
 
+#: templates/fleetops/configuration/_blocked_groups.html
 #: templates/fleetops/configuration/_bridge_groups.html
 msgid "No ship group matches."
 msgstr "没有匹配的舰船组。"
@@ -5729,7 +6079,8 @@ msgstr "保存"
 #: templates/fleetops/operation/_members.html
 #: templates/fleetops/operation_edit.html
 #: templates/fleetops/partials/confirm_modal.html
-#: templates/fleetops/srp/link_form.html templates/fleetops/srp/preview.html
+#: templates/fleetops/srp/ban_form.html templates/fleetops/srp/link_form.html
+#: templates/fleetops/srp/preview.html
 msgid "Cancel"
 msgstr "取消"
 
@@ -5876,12 +6227,28 @@ msgid "SRP auto create is off in the general settings: fleets get no SRP link at
 msgstr "常规设置中的 SRP 自动创建已关闭：舰队开队时不会获得 SRP 链接。FC 仍可在舰队页面创建。"
 
 #: templates/fleetops/configuration/srp_settings.html
-msgid "(a limit for one corporation replaces the default corporation cap)"
-msgstr "（某个军团的限额会取代默认的军团上限）"
-
-#: templates/fleetops/configuration/srp_settings.html
 msgid "Save SRP Settings"
 msgstr "保存 SRP 设置"
+
+#: templates/fleetops/configuration/srp_settings.html
+msgid "Ship groups in force"
+msgstr "生效的舰船组"
+
+#: templates/fleetops/configuration/srp_settings.html
+msgid "Ships in force"
+msgstr "生效的舰船"
+
+#: templates/fleetops/configuration/srp_settings.html
+msgid "Fill in the recommended list"
+msgstr "填入推荐列表"
+
+#: templates/fleetops/configuration/srp_settings.html
+msgid "Adds mining, industrial and exploration ship groups, the mining and exploration frigates and high security space to what is entered. Nothing is saved until you save the settings."
+msgstr "把采矿、工业和探索舰船组、采矿和探索护卫舰以及高安空间并入已填的内容。保存设置之前什么都不会保存。"
+
+#: templates/fleetops/configuration/srp_settings.html
+msgid "(a limit for one corporation replaces the default corporation cap)"
+msgstr "（某个军团的限额会取代默认的军团上限）"
 
 #: templates/fleetops/corporation_statistics.html
 #, python-format
@@ -6214,16 +6581,17 @@ msgstr "FC 名称"
 msgid "Form up, FC, doctrine or notes"
 msgstr "集结地、FC、教义或备注"
 
-#: templates/fleetops/fleet_operations.html templates/fleetops/srp/links.html
-#: templates/fleetops/srp/payments.html templates/fleetops/srp/review.html
+#: templates/fleetops/fleet_operations.html templates/fleetops/srp/bans.html
+#: templates/fleetops/srp/links.html templates/fleetops/srp/payments.html
+#: templates/fleetops/srp/review.html
 #: templates/fleetops/statistics/members.html
 msgctxt "FleetOps"
 msgid "Filter"
 msgstr "筛选"
 
 #: templates/fleetops/fleet_operations.html
-#: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/links.html
-#: templates/fleetops/srp/review.html
+#: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/bans.html
+#: templates/fleetops/srp/links.html templates/fleetops/srp/review.html
 #: templates/fleetops/statistics/members.html
 msgid "Reset"
 msgstr "重置"
@@ -6593,6 +6961,7 @@ msgid "No character data."
 msgstr "没有角色数据。"
 
 #: templates/fleetops/my_statistics.html
+#: templates/fleetops/srp/_not_covered.html
 msgid "Ships"
 msgstr "舰船"
 
@@ -7516,10 +7885,6 @@ msgstr "撤销此 PAP 登记链接？飞行员将无法再用它登记。"
 #: templates/fleetops/operation/_links.html
 msgid "Revoked"
 msgstr "已撤销"
-
-#: templates/fleetops/operation/_links.html
-msgid "Expired"
-msgstr "已过期"
 
 #: templates/fleetops/operation/_links.html
 msgid "PAP Links"
@@ -8689,7 +9054,8 @@ msgstr "第 %(start)s&ndash;%(end)s 条申请，共 %(total)s 条"
 msgid "Pages"
 msgstr "页码"
 
-#: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/links.html
+#: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/bans.html
+#: templates/fleetops/srp/links.html
 #, python-format
 msgid "Page %(number)s of %(pages)s"
 msgstr "第 %(number)s / %(pages)s 页"
@@ -8873,6 +9239,26 @@ msgstr "此类别的个人月度限额。"
 msgid "No monthly limit applies."
 msgstr "没有适用的月度限额。"
 
+#: templates/fleetops/srp/_not_covered.html
+msgid "Ship groups"
+msgstr "舰船组"
+
+#: templates/fleetops/srp/_not_covered.html
+msgid "Space"
+msgstr "空域"
+
+#: templates/fleetops/srp/_not_covered.html
+msgid "except losses in a war"
+msgstr "战争中的损失除外"
+
+#: templates/fleetops/srp/_not_covered.html
+msgid "Capsules are only covered when the payout table lists them."
+msgstr "只有赔付表里列出了胶囊时，才赔付胶囊。"
+
+#: templates/fleetops/srp/_not_covered.html
+msgid "A ship that is in the payout table is covered even when its group or the ship itself is listed above."
+msgstr "赔付表里有的舰船，即使它的组或这艘船在上面的列表里，也照赔。"
+
 #: templates/fleetops/srp/_summary_table.html
 #, python-format
 msgid "%(pending)s pending &middot; %(approved)s approved &middot; %(rejected)s rejected"
@@ -8951,6 +9337,71 @@ msgstr "导出申请"
 #, python-format
 msgid "Showing the latest %(limit)s claims; the export has all of them."
 msgstr "显示最近 %(limit)s 条申请；导出文件包含全部。"
+
+#: templates/fleetops/srp/ban_form.html
+msgid "New SRP ban"
+msgstr "新建 SRP 封禁"
+
+#: templates/fleetops/srp/ban_form.html
+msgid "A banned member cannot check or submit SRP claims. Claims that wait for a decision can still be withdrawn. The ban covers all characters of the member."
+msgstr "被封禁的成员不能检查或提交 SRP 申请。等待决定的申请仍然可以撤回。封禁覆盖该成员的所有角色。"
+
+#: templates/fleetops/srp/ban_form.html texts.py
+msgid "This member is banned already. Lift the ban first to make a new one."
+msgstr "该成员已被封禁。先解除封禁才能做新的封禁。"
+
+#: templates/fleetops/srp/ban_form.html
+#, python-format
+msgid "Member: <strong>%(name)s</strong>"
+msgstr "成员：<strong>%(name)s</strong>"
+
+#: templates/fleetops/srp/ban_form.html
+#, python-format
+msgid "At most %(max)s days. A permanent ban has no limit."
+msgstr "最多 %(max)s 天。永久封禁没有限制。"
+
+#: templates/fleetops/srp/ban_form.html
+#, python-format
+msgid "Reject the %(counter)s pending claim of the member"
+msgid_plural "Reject the %(counter)s pending claims of the member"
+msgstr[0] "驳回该成员的 %(counter)s 笔待审申请"
+
+#: templates/fleetops/srp/ban_form.html
+msgid "Ban member"
+msgstr "封禁成员"
+
+#: templates/fleetops/srp/bans.html
+msgid "Members who may not submit SRP claims for now"
+msgstr "目前不能提交 SRP 申请的成员"
+
+#: templates/fleetops/srp/bans.html
+msgid "New ban"
+msgstr "新建封禁"
+
+#: templates/fleetops/srp/bans.html
+msgid "Since (EVE)"
+msgstr "开始（EVE）"
+
+#: templates/fleetops/srp/bans.html
+msgid "Until (EVE)"
+msgstr "结束（EVE）"
+
+#: templates/fleetops/srp/bans.html templates/fleetops/srp/claim.html
+msgid "Reason for lifting the ban"
+msgstr "解除封禁的理由"
+
+#: templates/fleetops/srp/bans.html templates/fleetops/srp/claim.html
+msgid "Lift ban"
+msgstr "解除封禁"
+
+#: templates/fleetops/srp/bans.html
+msgid "There are no bans here."
+msgstr "这里没有封禁。"
+
+#: templates/fleetops/srp/bans.html
+#, python-format
+msgid "Bans %(start)s&ndash;%(end)s of %(total)s"
+msgstr "第 %(start)s&ndash;%(end)s 条封禁，共 %(total)s 条"
 
 #: templates/fleetops/srp/claim.html
 #, python-format
@@ -9072,6 +9523,23 @@ msgid "Submit again"
 msgstr "重新提交"
 
 #: templates/fleetops/srp/claim.html
+#, python-format
+msgid "This member cannot submit SRP claims until %(time)s EVE."
+msgstr "该成员在 %(time)s EVE 之前不能提交 SRP 申请。"
+
+#: templates/fleetops/srp/claim.html
+msgid "This member is banned from submitting SRP claims, with no end date."
+msgstr "该成员被禁止提交 SRP 申请，没有结束日期。"
+
+#: templates/fleetops/srp/claim.html
+msgid "This member is not banned."
+msgstr "该成员没有被封禁。"
+
+#: templates/fleetops/srp/claim.html
+msgid "Ban this member from submitting…"
+msgstr "禁止该成员提交…"
+
+#: templates/fleetops/srp/claim.html
 msgid "Nothing has happened to this claim yet."
 msgstr "这条申请还没有任何动态。"
 
@@ -9099,6 +9567,25 @@ msgstr "你的舰船补损 &middot; %(label)s（EVE 时间）"
 #: templates/fleetops/srp/home.html
 msgid "Ship replacement for your losses"
 msgstr "你的舰船补损"
+
+#: templates/fleetops/srp/home.html
+#, python-format
+msgid "You cannot submit SRP claims until %(time)s EVE."
+msgstr "在 %(time)s EVE 之前你不能提交 SRP 申请。"
+
+#: templates/fleetops/srp/home.html
+msgid "You are permanently banned from submitting SRP claims."
+msgstr "你被永久禁止提交 SRP 申请。"
+
+#: templates/fleetops/srp/home.html
+msgid "You can still withdraw claims that are waiting for a decision."
+msgstr "等待决定的申请你仍然可以撤回。"
+
+#: templates/fleetops/srp/home.html templates/fleetops/srp/link.html
+#, python-format
+msgid "A loss can be claimed within %(counter)s day after it happened."
+msgid_plural "A loss can be claimed within %(counter)s days after it happened."
+msgstr[0] "损失发生后 %(counter)s 天内可以申请。"
 
 #: templates/fleetops/srp/home.html
 #, python-format
@@ -9155,6 +9642,10 @@ msgstr "检查损失"
 #: templates/fleetops/srp/home.html
 msgid "Only losses in FleetOps fleets are covered. Use the SRP link of the fleet."
 msgstr "只赔付 FleetOps 舰队内的损失。请使用舰队的 SRP 链接。"
+
+#: templates/fleetops/srp/home.html
+msgid "Standing SRP links"
+msgstr "常驻 SRP 链接"
 
 #: templates/fleetops/srp/home.html
 msgid "My claims"
@@ -9906,6 +10397,11 @@ msgid "@role %(id)s"
 msgstr "@身份组 %(id)s"
 
 #: templatetags/fleetops_srp.py
+msgctxt "SRP location"
+msgid "Security status unknown"
+msgstr "安全等级未知"
+
+#: templatetags/fleetops_srp.py
 msgctxt "claim history actor"
 msgid "System"
 msgstr "系统"
@@ -10441,6 +10937,11 @@ msgstr "无法读取 KM：ESI 返回了空的回答。"
 #, python-format
 msgid "Could not read market prices: %(detail)s"
 msgstr "无法读取市场价格：%(detail)s"
+
+#: texts.py
+#, python-format
+msgid "Could not read game data: %(detail)s"
+msgstr "无法读取游戏数据：%(detail)s"
 
 #: texts.py
 msgid "ESI error limit reached; try again in a minute."
@@ -11906,6 +12407,57 @@ msgid "Choose a category for the link."
 msgstr "请为链接选择类别。"
 
 #: texts.py
+msgid "Closed automatically at the time set for the link."
+msgstr "已在链接设定的时间自动关闭。"
+
+#: texts.py
+msgid "This category has no open SRP link for the day of the loss."
+msgstr "该类别在损失当天没有开放的 SRP 链接。"
+
+#: texts.py
+msgid "Only SRP reviewers can make or lift an SRP ban."
+msgstr "只有 SRP 审核人可以做出或解除 SRP 封禁。"
+
+#: texts.py
+msgid "You cannot ban yourself."
+msgstr "你不能封禁自己。"
+
+#: texts.py
+msgid "Give the reason the member will see."
+msgstr "请填写成员会看到的理由。"
+
+#: texts.py
+#, python-format
+msgid "The internal note is too long (at most %(max)s characters)."
+msgstr "内部备注太长（最多 %(max)s 个字符）。"
+
+#: texts.py
+#, python-format
+msgid "Choose a length between 1 and %(max)s days, or a permanent ban."
+msgstr "请选择 1 到 %(max)s 天之间的时长，或永久封禁。"
+
+#: texts.py
+msgid "A permanent ban has no length in days."
+msgstr "永久封禁没有天数。"
+
+#: texts.py
+msgid "This ban does not exist."
+msgstr "这个封禁不存在。"
+
+#: texts.py
+msgid "This ban is not in force."
+msgstr "这个封禁已不在生效。"
+
+#: texts.py
+msgid "Give a reason for lifting the ban."
+msgstr "请填写解除封禁的理由。"
+
+#: texts.py
+#, python-format
+msgid "The %(limit)s is used up and another claim was submitted. Submitting is not possible until the end of the month."
+msgstr "%(limit)s已用完，却又提交了申请。到月底之前不能再提交。"
+
+#: texts.py
 msgid "The claim is already a loss of this fleet."
 msgstr "这条申请已经是这支舰队的损失。"
 
@@ -12635,6 +13187,10 @@ msgid "FleetOps settings updated."
 msgstr "FleetOps 设置已更新。"
 
 #: views_config.py
+msgid "The recommended lists were filled in. Check them and save."
+msgstr "已填入推荐列表。请检查后保存。"
+
+#: views_config.py
 msgid "SRP settings updated."
 msgstr "SRP 设置已更新。"
 
@@ -13265,6 +13821,24 @@ msgstr "%(reference)s 已撤回。在期限内你可以重新提交。"
 #, python-format
 msgid "%(reference)s submitted again with the current rules."
 msgstr "%(reference)s 已按当前规则重新提交。"
+
+#: views_srp_bans.py
+msgid "No member with this main character was found."
+msgstr "没有找到这位大号对应的成员。"
+
+#: views_srp_bans.py
+#, python-format
+msgid "%(name)s can no longer submit SRP claims."
+msgstr "%(name)s 不能再提交 SRP 申请了。"
+
+#: views_srp_bans.py
+#, python-format
+msgid "%(count)s pending claims were rejected."
+msgstr "已驳回 %(count)s 笔待审申请。"
+
+#: views_srp_bans.py
+msgid "The SRP ban was lifted."
+msgstr "SRP 封禁已解除。"
 
 #: views_srp_links.py
 msgid "This category has a link of the day for this date already."

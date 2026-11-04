@@ -2,11 +2,12 @@
 # SPDX-License-Identifier: GPL-3.0-only
 
 from django import template
+from django.utils.html import format_html
 from django.utils.translation import pgettext
 
 from fleetops.models import SrpCategory, SrpClaim, SrpClaimEvent, SrpFleetLink
 from fleetops.providers.zkillboard import kill_url
-from fleetops.srp import display
+from fleetops.srp import blocks, display
 from fleetops.srp.types import (
     Calculation,
     CalcNote,
@@ -29,6 +30,32 @@ SYSTEM_ACTIONS = frozenset({SrpClaimEvent.Action.AUTO_REJECT, SrpClaimEvent.Acti
 
 ROW_OVER_LIMIT = "fleetops-srp-over-limit"
 ROW_WARNING = "fleetops-srp-warning"
+
+
+# --- Location -----------------------------------------------------------------------------------------
+
+BAND_TONES = {
+    blocks.HIGHSEC: "ok",
+    blocks.LOWSEC: "warn",
+    blocks.NULLSEC: "bad",
+    blocks.WORMHOLE: "info",
+    blocks.ABYSSAL: "info",
+    blocks.POCHVEN: "neutral",
+}
+
+
+@register.filter
+def srp_security(killmail):
+    """The security status (one decimal) and the band pill of a stored killmail, or 'Security status unknown' when
+    the lookup failed. The words are always shown, colour is never the only signal."""
+    if killmail is None:
+        return ""
+    band = blocks.security_band(killmail)
+    value = blocks.format_security(getattr(killmail, "solar_system_security", None))
+    if band is None:
+        return format_html('<span class="text-muted">{}</span>', pgettext("SRP location", "Security status unknown"))
+    pill = pill_html(BAND_TONES.get(band, TONE_NEUTRAL), blocks.band_label(band))
+    return format_html("{} {}", value, pill) if value else pill
 
 
 # --- ISK ---------------------------------------------------------------------------------------------

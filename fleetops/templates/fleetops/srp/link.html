@@ -26,6 +26,8 @@
 <div class="alert alert-warning">{% if operation %}{% translate "This fleet's SRP link is closed. No new claims can be made through it." %}{% else %}{% translate "This SRP link is closed. No new claims can be made through it." %}{% endif %}</div>
 {% else %}
 {% if srp_settings.member_instructions %}<div class="alert alert-secondary">{{ srp_settings.member_instructions|linebreaksbr }}</div>{% endif %}
+{% include "fleetops/srp/_not_covered.html" %}
+{% if srp_settings.claim_deadline_days %}<div class="small text-muted mb-3" id="srp-deadline">{% blocktranslate trimmed count counter=srp_settings.claim_deadline_days %}A loss can be claimed within {{ counter }} day after it happened.{% plural %}A loss can be claimed within {{ counter }} days after it happened.{% endblocktranslate %}</div>{% endif %}
 <div class="card mb-3">
   <div class="card-header"><strong>{% if operation %}{% translate "Claim a loss of this fleet" %}{% else %}{% translate "Claim a loss through this link" %}{% endif %}</strong></div>
   <div class="card-body">

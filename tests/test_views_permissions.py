@@ -759,6 +759,15 @@ class PermissionMatrixTests(SrpViewTestCase):
             Case("srp_links_bulk open", "post", r("fleetops:srp_links_bulk"),
                  {"action": "open", "codes": [self.srp_closed_link.code]},
                  by_srp_role(SRP_STAFF, granted=REDIRECT, srp_payer=DENIED)),
+            # SRP bans (REV-8): reviewers only; payers and members are refused.
+            Case("srp_bans", "get", r("fleetops:srp_bans"), None, reviewers),
+            Case("srp_bans filters", "get", r("fleetops:srp_bans"),
+                 {"state": "zzz", "kind": "zzz", "member": "x", "page": "abc"}, reviewers),
+            Case("srp_ban_new", "get", r("fleetops:srp_ban_new"), None, reviewers),
+            Case("srp_ban_new for a member", "get", r("fleetops:srp_ban_new"), {"user": "999999", "claim": "nonsense"},
+                 reviewers),
+            Case("srp_ban_lift unknown", "post", r("fleetops:srp_ban_lift", args=[999999]), None,
+                 by_srp_role(SRP_REVIEWERS, granted=HIDDEN, otherwise=DENIED)),
             Case("srp_link_open unknown", "post", r("fleetops:srp_link_open", args=["nosuchcode"]), None,
                  by_srp_role(SRP_STAFF, granted=HIDDEN)),
             # Summaries: SRP staff and view_all_stats read all of them, corporation managers their own

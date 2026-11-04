@@ -39,6 +39,8 @@ from fleetops.validators import (  # noqa: F401 - VOICE_URL_SCHEMES re-exported
     validate_voice_url,
 )
 
+# Kinds of space an SRP loss can be refused for (see fleetops.srp.blocks, which defines the thresholds).
+SECURITY_BANDS = ("highsec", "lowsec", "nullsec", "wormhole", "abyssal", "pochven")
 MIN_RETENTION_DAYS = 365
 MAX_RETENTION_DAYS = 36500
 # Largest value a BigIntegerField id can hold.
@@ -2065,6 +2067,60 @@ class SrpSettings(models.Model):
             "Four-eyes rule: the person who approved a claim cannot mark it paid. Undoing a payment is not affected."
         ),
     )
+    blocked_ship_group_ids = models.CharField(
+        _("Ship groups that are not covered"),
+        max_length=500,
+        blank=True,
+        default="",
+        help_text=_("SDE ship group IDs whose losses are refused when a claim is checked. Empty = none."),
+    )
+    blocked_ship_type_ids = models.CharField(
+        _("Ships that are not covered"),
+        max_length=500,
+        blank=True,
+        default="",
+        help_text=_("Ship type IDs whose losses are refused when a claim is checked. Empty = none."),
+    )
+    blocked_security_bands = models.CharField(
+        _("Security bands that are not covered"),
+        max_length=100,
+        blank=True,
+        default="",
+        help_text=_("Losses in these kinds of space are refused when a claim is checked. Empty = none."),
+    )
+    payout_rule_lifts_ship_block = models.BooleanField(
+        _("A payout table entry for the ship lifts the ship block"),
+        default=True,
+        help_text=_(
+            "A ship that has its own entry in the payout table is covered even when its ship group or the ship "
+            "is not covered. Security bands are not affected."
+        ),
+    )
+    highsec_war_losses_covered = models.BooleanField(
+        _("Wartime losses in high security are covered"),
+        default=False,
+        help_text=_("Losses in a war (the killmail names a war) are not refused for high security space."),
+    )
+    ban_default_days = models.PositiveSmallIntegerField(
+        _("Default length of an SRP ban (days)"),
+        default=7,
+        validators=[MinValueValidator(1), MaxValueValidator(3650)],
+        help_text=_("Preselected when an SRP ban is made."),
+    )
+    ban_max_days = models.PositiveSmallIntegerField(
+        _("Longest SRP ban (days)"),
+        default=365,
+        validators=[MinValueValidator(1), MaxValueValidator(3650)],
+        help_text=_("A permanent ban is not limited by this."),
+    )
+    auto_ban_over_monthly_cap = models.BooleanField(
+        _("Ban members who keep submitting over their monthly cap until the end of the month"),
+        default=False,
+        help_text=_(
+            "A member whose personal monthly limit is used up and who submits another claim cannot submit "
+            "until the end of the EVE month."
+        ),
+    )
     notify_members = models.BooleanField(
         _("Notify members"),
         default=True,
@@ -2094,6 +2150,20 @@ class SrpSettings(models.Model):
         category = self.default_category
         if category is not None and not (category.is_active and category.member_selectable):
             raise ValidationError({"default_category": _("Choose an active category that members can choose.")})
+        if self.ban_default_days and self.ban_max_days and self.ban_default_days > self.ban_max_days:
+            raise ValidationError(
+                {"ban_default_days": _("The default length cannot be longer than the longest ban.")}
+            )
+        # Validated here, not by field validators, so that the migration needs no FleetOps code.
+        for name in ("blocked_ship_group_ids", "blocked_ship_type_ids"):
+            try:
+                validate_id_list(getattr(self, name))
+            except ValidationError as exc:
+                raise ValidationError({name: exc.messages}) from None
+        bands = [band for band in (self.blocked_security_bands or "").replace(" ", "").split(",") if band]
+        unknown = [band for band in bands if band not in SECURITY_BANDS]
+        if unknown:
+            raise ValidationError({"blocked_security_bands": _("Unknown security band: %(bands)s.") % {"bands": ", ".join(unknown)}})
 
     @classmethod
     def get_solo(cls):
@@ -2222,6 +2292,76 @@ class SrpCorporationLimit(models.Model):
 
     def __str__(self):
         return self.corporation_name or str(self.corporation_id)
+
+
+class SrpBan(models.Model):
+    """A ban from submitting SRP claims, bound to the Alliance Auth account (so it covers every character).
+
+    A ban is in force from ``starts_at`` until ``expires_at`` (empty = permanent) unless it was lifted.
+    The reason is shown to the member; the internal note is for SRP staff only.
+    """
+
+    class Kind(models.TextChoices):
+        MANUAL = "manual", _("By a reviewer")
+        AUTO_MONTHLY_CAP = "auto_monthly_cap", _("Over the monthly cap")
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name=_("User"), on_delete=models.CASCADE, related_name="fleetops_srp_bans"
+    )
+    main_character_name = models.CharField(verbose_name=pgettext_lazy("FleetOps", "Main character"), max_length=255, blank=True)
+    reason = models.TextField(
+        verbose_name=_("Reason"),
+        validators=[MaxLengthValidator(1000)],
+        help_text=_("Shown to the member."),
+    )
+    internal_note = models.TextField(
+        verbose_name=_("Internal note"),
+        blank=True,
+        validators=[MaxLengthValidator(1000)],
+        help_text=_("Only SRP staff see this."),
+    )
+    kind = models.CharField(verbose_name=_("Kind"), max_length=20, choices=Kind.choices, default=Kind.MANUAL)
+    starts_at = models.DateTimeField(verbose_name=_("Starts at"), default=timezone.now)
+    expires_at = models.DateTimeField(
+        verbose_name=_("Expires at"), null=True, blank=True, help_text=_("Empty = permanent.")
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("Created by"),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    created_at = models.DateTimeField(verbose_name=_("Created at"), default=timezone.now)
+    lifted_at = models.DateTimeField(verbose_name=_("Lifted at"), null=True, blank=True)
+    lifted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("Lifted by"),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    lift_reason = models.TextField(verbose_name=_("Reason for lifting"), blank=True)
+
+    class Meta:
+        verbose_name = _("SRP ban")
+        verbose_name_plural = _("SRP bans")
+        ordering = ["-created_at", "-pk"]
+        default_permissions = ()
+        indexes = [models.Index(fields=["user", "expires_at"], name="fleetops_srpban_user_exp")]
+
+    def __str__(self):
+        return gettext("SRP ban of %(name)s") % {"name": self.main_character_name or self.user_id}
+
+    @property
+    def is_permanent(self) -> bool:
+        return self.expires_at is None
+
+    def in_force(self, now=None) -> bool:
+        now = now or timezone.now()
+        return self.lifted_at is None and self.starts_at <= now and (self.expires_at is None or now < self.expires_at)
 
 
 class SrpFleetLink(models.Model):
@@ -2394,6 +2534,10 @@ class SrpKillmail(models.Model):
         UNAVAILABLE = "unavailable", _("zKillboard value unavailable")
         DISABLED = "disabled", _("zKillboard disabled")
 
+    class Origin(models.TextChoices):
+        ESI = "esi", _("ESI")
+        AASRP = "aasrp", _("aa-srp import")
+
     killmail_id = models.BigIntegerField(verbose_name=_("Killmail ID"), primary_key=True)
     killmail_hash = models.CharField(verbose_name=_("Killmail hash"), max_length=40)
     killmail_time = models.DateTimeField(verbose_name=_("Killmail time"), db_index=True)
@@ -2411,6 +2555,18 @@ class SrpKillmail(models.Model):
     ship_type_name = models.CharField(verbose_name=_("Ship type name"), max_length=255, blank=True)
     attacker_count = models.PositiveIntegerField(verbose_name=_("Attacker count"), default=0)
     war_id = models.BigIntegerField(verbose_name=_("War ID"), null=True, blank=True)
+    # Where the ship was lost and what kind of ship it was, looked up when the killmail is stored (empty when the
+    # lookup failed; a claim is never refused for an unknown value).
+    ship_group_id = models.BigIntegerField(verbose_name=_("Ship group ID"), null=True, blank=True, db_index=True)
+    solar_system_security = models.DecimalField(
+        verbose_name=_("Security status"), max_digits=5, decimal_places=4, null=True, blank=True
+    )
+    constellation_id = models.BigIntegerField(verbose_name=_("Constellation ID"), null=True, blank=True)
+    region_id = models.BigIntegerField(verbose_name=_("Region ID"), null=True, blank=True)
+    location_checked_at = models.DateTimeField(verbose_name=_("Location checked at"), null=True, blank=True)
+    origin = models.CharField(
+        verbose_name=_("Origin"), max_length=10, choices=Origin.choices, default=Origin.ESI
+    )
     # The victim's items as ESI returns them: flag, type, quantities, singleton and nested items.
     items = models.JSONField(verbose_name=_("Items"), default=list, blank=True)
     fetched_at = models.DateTimeField(verbose_name=_("Fetched at"), default=timezone.now)

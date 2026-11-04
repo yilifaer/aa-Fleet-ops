@@ -83,6 +83,10 @@ Status: beta. The current pre-release is 0.3.0b1 (0.2.0b1 was a test build that 
   moves ISK.
 - Standing SRP links (a name, a category and a date, no fleet) and one page that lists, closes and completes all
   SRP links.
+- Standing links as an entry point: a card on My SRP, the category's link of the day for a claim, optional daily
+  links and automatic closing (inside the beat task that is installed already).
+- Losses that are not covered (ship groups, ships, kinds of space; nothing is blocked until you save a list) and SRP
+  bans from submitting.
 
 **Administration**
 

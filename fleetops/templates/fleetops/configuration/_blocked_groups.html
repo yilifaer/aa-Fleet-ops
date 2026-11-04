@@ -1,0 +1,20 @@
+{% load i18n %}{% comment %}The ship groups that are not covered: a filter, the ticked groups and the IDs the list does not offer. Context: form (SrpSettingsForm).{% endcomment %}
+<div class="mb-3" id="blocked-groups">
+  <label class="form-label" id="blocked-groups-label" for="blocked-groups-filter">{{ form.blocked_groups.label }}</label>
+  <div class="form-text mb-2">{{ form.blocked_groups.help_text }}</div>
+  {% translate "Filter ship groups" as filter_label %}
+  <input type="search" class="form-control mb-2" id="blocked-groups-filter" data-fo-filter="blocked-groups-list" placeholder="{{ filter_label }}" aria-label="{{ filter_label }}" autocomplete="off">
+  <div class="fo-checklist" id="blocked-groups-list" role="group" aria-labelledby="blocked-groups-label">
+    {% for option in form.blocked_groups %}
+    <div class="form-check" data-fo-filter-item="{{ option.choice_label }}">{{ option.tag }} <label class="form-check-label" for="{{ option.id_for_label }}">{{ option.choice_label }}</label></div>
+    {% endfor %}
+    <div class="text-muted small p-2" data-fo-filter-empty="blocked-groups-list" hidden>{% translate "No ship group matches." %}</div>
+  </div>
+  <div class="text-danger small">{{ form.blocked_groups.errors }}</div>
+</div>
+<div class="mb-3">
+  <label class="form-label" for="{{ form.blocked_other_group_ids.id_for_label }}">{{ form.blocked_other_group_ids.label }}</label>
+  {{ form.blocked_other_group_ids }}
+  {% if form.blocked_other_group_ids.help_text %}<div class="form-text">{{ form.blocked_other_group_ids.help_text }}</div>{% endif %}
+  <div class="text-danger small">{{ form.blocked_other_group_ids.errors }}</div>
+</div>

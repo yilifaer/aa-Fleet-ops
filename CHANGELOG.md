@@ -61,6 +61,35 @@ Install it like the previous pre-release (`pip install --no-deps aa-fleetops==0.
   goes back to closed by itself. The setting **Complete SRP links automatically** (off by default) completes a closed link
   as soon as nothing on it waits any more. All of this is audited (`srp.link_create`, `srp.link_update`,
   `srp.link_open`, `srp.link_close`, `srp.link_complete`, `srp.link_uncomplete`).
+- **Standing links as an entry point.** **My SRP** has a card with the open standing links. A member who picks a
+  category for a loss without a link is put under the open standing link of that category for the EVE day of the loss;
+  without one the claim only records the category (the new setting **A category claim needs no standing link** is on by
+  default; off requires the link). A claim through a standing link is not held back by **Out-of-fleet losses** being
+  off, and a claim under a standing link can be submitted again after the link was closed. A loss of another EVE day
+  than the link's date carries the warning "outside link date" (batch approval skips it; it stays when the fleet
+  presence is checked again).
+- **Daily standing links.** A category can **make a standing link every day** and close its links after a number of
+  hours (empty = never; 48 closes a link at the end of the next day). The upkeep runs inside the existing task
+  `schedule_active_fleet_tracking` (at most every ten minutes); it makes today's link only, once per category and day,
+  and closes the links whose time has passed (`srp.link_close` without an actor). Both are off by default. **No new
+  beat entry is needed**, and FleetOps creates no periodic task.
+- **Not covered.** New group in the SRP settings: ship groups, ships and kinds of space (high, low and null security,
+  wormhole, abyssal, Pochven) whose losses are refused when a claim is checked, a switch that lets a payout table entry
+  for the ship lift the ship block (on) and one that lets wartime losses in high security through (off). A button
+  **Fill in the recommended list** (mining, industrial and exploration ship groups, five frigates, high security) shows
+  the lists in the form without saving them. Members read the lists on My SRP and on the SRP page of a link.
+  **Nothing is blocked after an install or an upgrade until an administrator saves a list.**
+- **Where a loss happened.** A killmail now stores its ship group, the security status, the constellation and the region of
+  its solar system, looked up when it is stored: from django-eveonline-sde when it is installed, otherwise from the public
+  ESI reads for systems, constellations and types (no token; kept as long as ESI's `Expires` says, and for 7 days
+  afterwards; a failed lookup for one hour). A lookup that fails leaves the fields empty and never stops a killmail from
+  being stored. A value that is empty blocks nothing and adds no warning.
+- **SRP bans.** **SRP** > **SRP Bans** (reviewers): a member can be banned from checking and submitting claims (also
+  from submitting a withdrawn claim again) for a number of days or permanently; the member sees the reason, staff also see
+  an internal note that is never written to the audit log. The ban can reject the member's pending claims in the same
+  step (reason required). The ban belongs to the account, ends by itself and can be lifted at once. Withdrawing a pending claim stays possible. New
+  settings: default and longest length, and **Ban members who keep submitting over their monthly cap until the end of the
+  month** (off by default). Audited as `srp.ban_create` and `srp.ban_lift`.
 
 ### Changed
 
@@ -81,6 +110,11 @@ Install it like the previous pre-release (`pip install --no-deps aa-fleetops==0.
 - **The default value source is now the zKillboard total value** (it includes cargo; aa-srp pays the total value).
   Existing sites that saved their SRP settings once, or have claims, keep their choice. Only a site that never saved
   its SRP settings and has no claim is switched, by the upgrade.
+- **The claim deadline** is checked as before but no longer makes pending claims "calculated with earlier settings"
+  when it changes. Its default stays 0 (no deadline) and an upgrade keeps the value a site had. The deadline is shown to
+  members on My SRP and on the SRP page of a link.
+- Checking a claim looks at the ban, the not-covered lists and, for a claim under a link, the link, in this order. The
+  capsule rule moved to the new **Not covered** group of the settings page; it behaves as before.
 - The stored calculation of a claim (policy snapshot) is version 2 and carries the category. Claims calculated before
   keep their snapshot and are not reported as "calculated with earlier settings" by the upgrade.
 
@@ -98,6 +132,14 @@ own claims paid**. Nothing is granted to anybody: add `fleetops.review_srp` and 
 the people who should only review or only pay. Migration `0028` makes the fleet of an SRP link optional and adds the
 fields of a standing link, the name template, doctrine text and closing hours of a category and the two settings;
 migration `0029` only checks on the way back. Every existing link stays a fleet link and behaves as before.
+Migration `0030` adds the block lists and their switches and the ban settings to the SRP settings, the location fields
+and the origin to the SRP killmails, and the table of SRP bans. It fills in nothing: the block lists are empty (nothing is
+refused), killmails stored before keep empty location fields (they are looked up once, the next time somebody checks a
+claim for them, and never block anything while they are empty) and nobody is banned. The migration makes no request and
+grants no permission. The ban pages use the permissions of reviewers (`manage_srp` or `review_srp`), which the upgrade
+does not give to anybody. Keep the beat entry `fleetops_track_active_fleets` that the installation notes already name:
+the daily standing links and their closing run inside it. To use the block lists, open **SRP Settings**, press **Fill
+in the recommended list** (or tick your own), check it and save.
 
 ### Rollback notes
 
@@ -117,6 +159,11 @@ category and the other new fields of every link, links of a fleet included; expo
 rollback; the fleet of a link is required again. The permission rows `review_srp` and `pay_srp` stay in the database, harmless, and nobody holds them unless you gave
 them out; remove them from your groups before rolling back, because the older version does not know them and its
 pages need `manage_srp`.
+Rolling back `0030` drops the block lists and their switches, the ban settings, the location fields of the SRP
+killmails and the table of SRP bans: the bans, with the reasons and internal notes, are lost (export them first if you
+need them), and a ban that was in force no longer stops anybody. Claims are not changed. Before rolling back, switch
+the functions off: untick **Make a standing link every day** and clear the block lists, which is enough to behave like the
+previous version.
 
 ## [0.2.0b3] - Unreleased
 

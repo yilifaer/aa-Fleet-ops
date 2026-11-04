@@ -615,7 +615,12 @@ def configuration_srp(request):
     """The FleetOps SRP settings (``configuration/srp/``); every change is audited with the old and new values."""
     obj = SrpSettings.get_solo()
     old = config_snapshot(obj)
-    if request.method == "POST":
+    if request.method == "POST" and "fill_recommended" in request.POST:
+        # Add the recommended block lists to what is entered and show the page again. Nothing is saved or audited;
+        # the administrator checks the lists and saves them.
+        form = SrpSettingsForm(SrpSettingsForm.with_recommended(request.POST), instance=obj)
+        messages.info(request, _("The recommended lists were filled in. Check them and save."))
+    elif request.method == "POST":
         form = SrpSettingsForm(request.POST, instance=obj)
         if form.is_valid():
             obj = form.save()
@@ -628,6 +633,8 @@ def configuration_srp(request):
                 reason=texts.AUDIT_CONFIG_UPDATED(),
             )
             messages.success(request, _("SRP settings updated."))
+            for warning in form.warnings:
+                messages.warning(request, warning)
             # Claims that wait for a decision keep the settings they were calculated with: stay on this page,
             # where the notice offers to recalculate them.
             if srp_policy.outdated_pending_claim_count(obj):

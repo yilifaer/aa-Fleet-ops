@@ -65,3 +65,23 @@ def notify_claimant(claim: SrpClaim, action: str) -> None:
     except Exception as exc:
         # The decision stands; the claimant sees it on the claim page.
         logger.warning("FleetOps: SRP notification for claim %s failed (%s).", claim.pk, type(exc).__name__)
+
+
+def notify_banned(ban) -> None:
+    """Tell the member that an SRP ban started. Plain text; does nothing when ``notify_members`` is off, and a
+    failure is logged and ignored. The internal note is never part of it."""
+    try:
+        if not SrpSettings.get_solo().notify_members:
+            return
+        with translation.override(user_language(ban.user)):
+            title = gettext("SRP submissions blocked")
+            lines = [gettext("Reason: %(reason)s") % {"reason": translate_stored(ban.reason)}]
+            if ban.expires_at is None:
+                lines.append(gettext("The ban has no end date."))
+            else:
+                lines.append(gettext("Until: %(time)s EVE") % {"time": format_eve(ban.expires_at)})
+            message = "\n".join(lines)
+        notify.danger(ban.user, title, message)
+    except Exception as exc:
+        # The ban stands; the member sees it on the SRP pages.
+        logger.warning("FleetOps: SRP ban notification for ban %s failed (%s).", ban.pk, type(exc).__name__)
