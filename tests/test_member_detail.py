@@ -578,6 +578,6 @@ class MemberDetailBudgetTests(DetailPageTestCase):
         large = {"stats": self.count(self.stats, self.alice), "manager": self.count(self.manager, self.alice)}
 
         self.assertEqual(small, large)
-        # Including the login, permission and menu queries of the framework, and the menu's group lookup for
-        # viewers without start_fleet.
-        self.assertLessEqual(max(large.values()), 35)
+        # Including the login, permission and menu queries of the framework and its notification badge, and the
+        # menu's group lookup for viewers without start_fleet.
+        self.assertLessEqual(max(large.values()), 35 + f.notification_badge_queries(self.stats))

@@ -17,8 +17,12 @@ from decimal import Decimal
 
 from allianceauth.authentication.models import CharacterOwnership
 from allianceauth.eveonline.models import EveCharacter
+from allianceauth.notifications.templatetags.auth_notifications import user_unread_notification_count
 from allianceauth.tests.auth_utils import AuthUtils
+from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from esi.models import Scope, Token
 
@@ -904,3 +908,20 @@ def standalone_ping(**fields) -> StandalonePing:
     }
     values.update(fields)
     return StandalonePing.objects.create(**values)
+
+
+def notification_badge_queries(user) -> int:
+    """The queries Alliance Auth's unread notification badge adds to every page this user opens.
+
+    The menu of every Alliance Auth page (menu/menu-notification-block.html) applies the
+    ``user_unread_notification_count`` filter to ``request.user`` once. Up to Alliance Auth 5.5 the filter only
+    accepted Alliance Auth's ``User`` proxy, so for ``request.user`` (a ``django.contrib.auth`` user) it answered -1
+    without a query. Since 5.6 it loads the user and counts their unread notifications: two queries on every
+    page, also after a warm-up request, because a cached count of 0 is taken for a missing one. Page budgets add
+    this number, so they hold the queries of FleetOps to the same limit on every Alliance Auth version.
+    """
+    request_user = get_user_model().objects.get(pk=user.pk)
+    user_unread_notification_count(request_user)
+    with CaptureQueriesContext(connection) as queries:
+        user_unread_notification_count(request_user)
+    return len(queries)

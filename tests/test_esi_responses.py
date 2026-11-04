@@ -16,6 +16,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import timedelta
 from decimal import Decimal
+from importlib import import_module
 from types import SimpleNamespace
 from unittest import mock
 
@@ -57,6 +58,9 @@ from fleetops.tasks import POLL_SLACK_SECONDS, schedule_active_fleet_tracking, t
 from . import factories as f
 
 FLEET_ID = 1_045_000_000_777
+# The response class of the HTTP client django-esi sends with: httpx for django-esi 9, httpx2 for
+# django-esi 10. django-esi 10.1 no longer imports it at runtime, so it is taken from the client's package.
+HTTPResponse = import_module(openapi_clients.Client.__module__.partition(".")[0]).Response
 # Public lookups (no token) FleetOps sends as POST requests.
 POST_OPERATIONS = ["PostUniverseNames", "PostCharactersAffiliation", "PostUniverseIds"]
 # Where a pilot is, what they fly and whether they are online, read when they register through a PAP link.
@@ -973,16 +977,16 @@ class RecordedESI:
             etag = f'"{hashlib.md5(json.dumps(payload, sort_keys=True).encode()).hexdigest()}"'
             headers["ETag"] = etag
             if request.headers.get("If-None-Match") == etag:
-                return openapi_clients.Response(304, headers=headers, request=request)
+                return HTTPResponse(304, headers=headers, request=request)
         if status == 204:
-            return openapi_clients.Response(204, headers=headers, request=request)
+            return HTTPResponse(204, headers=headers, request=request)
         if status >= 400:
             headers.update(self.error_headers)
         if isinstance(payload, bytes):
             # A gateway error page instead of an ESI JSON body.
             headers["Content-Type"] = "text/html"
-            return openapi_clients.Response(status, content=payload, headers=headers, request=request)
-        return openapi_clients.Response(status, json=payload, headers=headers, request=request)
+            return HTTPResponse(status, content=payload, headers=headers, request=request)
+        return HTTPResponse(status, json=payload, headers=headers, request=request)
 
     def requests_of(self, method):
         return [request for request in self.requests if request[0] == method]

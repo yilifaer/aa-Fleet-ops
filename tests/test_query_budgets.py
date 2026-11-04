@@ -6,9 +6,10 @@
 A page or file costs the same number of queries whatever the number of corporations, members, fleets and
 FCs: the dataset below grows to three times its size and every page is measured again. The ceilings count
 every query of the request, the framework's own included (login state, user and permissions, the menu, the
-settings and saving the login: about 24), and sit two queries above what the page needs today, so a query added
-to a page shows up here. The data queries of a page are the members, the user totals, the totals by corporation
-and fleet type, the fleet types, the target and the not-counted summary.
+settings and saving the login: about 24, and on Alliance Auth 5.6 and later two more for the notification badge
+of the page menu, see ``factories.notification_badge_queries``), and sit two queries above what the page needs
+today, so a query added to a page shows up here. The data queries of a page are the members, the user totals,
+the totals by corporation and fleet type, the fleet types, the target and the not-counted summary.
 """
 
 from datetime import datetime, timezone as dt_timezone
@@ -111,6 +112,8 @@ class StatisticsQueryBudgetTests(TestCase):
         self.data = Dataset()
         # The users of the pages are members with PAP, so their own pages are not empty.
         self.data.members.extend([self.corpmgr, self.pilot, self.statsmgr])
+        # None of the viewers has unread notifications, so the badge costs every one of them the same.
+        self.badge = f.notification_badge_queries(self.statsmgr)
 
     def request(self, viewer, url, params=None):
         self.client.force_login(viewer)
@@ -134,31 +137,33 @@ class StatisticsQueryBudgetTests(TestCase):
         own_corporation = f.DEFAULT_CORP[0]
         inactive = {**MONTH, "status": "inactive"}
         fc = data.fcs[0]
+        # Pages carry Alliance Auth's menu and its notification badge; the files do not.
+        badge = self.badge
         return [
-            ("dashboard", fc, route("dashboard"), {}, 40 + RUNNING_GROUP_FLEETS),
-            ("my statistics", self.pilot, route("my_statistics"), MONTH, 47 + GROUP_NAV),
-            ("all corporations", self.statsmgr, route("all_corporation_statistics"), MONTH, 36 + GROUP_NAV),
-            ("all corporations sorted", self.statsmgr, route("all_corporation_statistics"), {**MONTH, "sort": "-total"}, 36 + GROUP_NAV),
-            ("corporation", self.corpmgr, route("corporation_statistics"), MONTH, 35 + GROUP_NAV),
-            ("corporation by id", self.statsmgr, route("corporation_statistics_detail", own_corporation), MONTH, 37 + GROUP_NAV),
-            ("fc statistics", self.statsmgr, route("all_fc_statistics"), MONTH, 32 + GROUP_NAV),
-            ("fc detail", self.statsmgr, route("fc_statistics_detail", fc.pk), MONTH, 35 + GROUP_NAV),
-            ("alliance members", self.statsmgr, route("alliance_members"), MONTH, 37 + GROUP_NAV),
-            ("alliance inactive", self.statsmgr, route("alliance_members"), inactive, 37 + GROUP_NAV),
-            ("alliance members of a corporation", self.statsmgr, route("alliance_members"), {**MONTH, "corporation": own_corporation}, 37 + GROUP_NAV),
-            ("corporation members", self.corpmgr, route("corporation_members"), MONTH, 36 + GROUP_NAV),
-            ("corporation inactive", self.corpmgr, route("corporation_members"), inactive, 36 + GROUP_NAV),
-            ("corporation members by id", self.statsmgr, route("corporation_members_detail", own_corporation), MONTH, 38 + GROUP_NAV),
-            ("leaderboard", self.pilot, route("leaderboard"), MONTH, 37 + GROUP_NAV),
-            ("leaderboard of the manager", self.statsmgr, route("leaderboard"), MONTH, 37 + GROUP_NAV),
-            ("member detail", self.statsmgr, route("member_detail", self.pilot.pk), MONTH, 42 + GROUP_NAV),
-            ("member detail of the corporation", self.corpmgr, route("member_detail", self.pilot.pk), MONTH, 42 + GROUP_NAV),
-            ("member detail of a later registration", self.statsmgr, route("member_detail", data.late[0].pk), MONTH, 42 + GROUP_NAV),
-            ("history", self.pilot, route("attendance_history_me"), MONTH, 34 + GROUP_NAV),
-            ("corporation history", self.corpmgr, route("attendance_history_corporation"), MONTH, 34 + GROUP_NAV),
-            ("alliance history", self.statsmgr, route("attendance_history_alliance"), MONTH, 34 + GROUP_NAV),
-            ("alliance history of all months", self.statsmgr, route("attendance_history_alliance"), {}, 34 + GROUP_NAV),
-            ("incentive review", self.statsmgr, route("incentive_review"), MONTH, 35 + GROUP_NAV + INCENTIVE_STALENESS),
+            ("dashboard", fc, route("dashboard"), {}, 40 + RUNNING_GROUP_FLEETS + badge),
+            ("my statistics", self.pilot, route("my_statistics"), MONTH, 47 + GROUP_NAV + badge),
+            ("all corporations", self.statsmgr, route("all_corporation_statistics"), MONTH, 36 + GROUP_NAV + badge),
+            ("all corporations sorted", self.statsmgr, route("all_corporation_statistics"), {**MONTH, "sort": "-total"}, 36 + GROUP_NAV + badge),
+            ("corporation", self.corpmgr, route("corporation_statistics"), MONTH, 35 + GROUP_NAV + badge),
+            ("corporation by id", self.statsmgr, route("corporation_statistics_detail", own_corporation), MONTH, 37 + GROUP_NAV + badge),
+            ("fc statistics", self.statsmgr, route("all_fc_statistics"), MONTH, 32 + GROUP_NAV + badge),
+            ("fc detail", self.statsmgr, route("fc_statistics_detail", fc.pk), MONTH, 35 + GROUP_NAV + badge),
+            ("alliance members", self.statsmgr, route("alliance_members"), MONTH, 37 + GROUP_NAV + badge),
+            ("alliance inactive", self.statsmgr, route("alliance_members"), inactive, 37 + GROUP_NAV + badge),
+            ("alliance members of a corporation", self.statsmgr, route("alliance_members"), {**MONTH, "corporation": own_corporation}, 37 + GROUP_NAV + badge),
+            ("corporation members", self.corpmgr, route("corporation_members"), MONTH, 36 + GROUP_NAV + badge),
+            ("corporation inactive", self.corpmgr, route("corporation_members"), inactive, 36 + GROUP_NAV + badge),
+            ("corporation members by id", self.statsmgr, route("corporation_members_detail", own_corporation), MONTH, 38 + GROUP_NAV + badge),
+            ("leaderboard", self.pilot, route("leaderboard"), MONTH, 37 + GROUP_NAV + badge),
+            ("leaderboard of the manager", self.statsmgr, route("leaderboard"), MONTH, 37 + GROUP_NAV + badge),
+            ("member detail", self.statsmgr, route("member_detail", self.pilot.pk), MONTH, 42 + GROUP_NAV + badge),
+            ("member detail of the corporation", self.corpmgr, route("member_detail", self.pilot.pk), MONTH, 42 + GROUP_NAV + badge),
+            ("member detail of a later registration", self.statsmgr, route("member_detail", data.late[0].pk), MONTH, 42 + GROUP_NAV + badge),
+            ("history", self.pilot, route("attendance_history_me"), MONTH, 34 + GROUP_NAV + badge),
+            ("corporation history", self.corpmgr, route("attendance_history_corporation"), MONTH, 34 + GROUP_NAV + badge),
+            ("alliance history", self.statsmgr, route("attendance_history_alliance"), MONTH, 34 + GROUP_NAV + badge),
+            ("alliance history of all months", self.statsmgr, route("attendance_history_alliance"), {}, 34 + GROUP_NAV + badge),
+            ("incentive review", self.statsmgr, route("incentive_review"), MONTH, 35 + GROUP_NAV + INCENTIVE_STALENESS + badge),
             ("corporations file", self.statsmgr, export("corporations"), {**MONTH, "format": "csv"}, 29),
             ("corporations workbook", self.statsmgr, export("corporations"), {**MONTH, "format": "xlsx"}, 29),
             ("members file", self.statsmgr, export("members"), {**MONTH, "format": "csv"}, 29),

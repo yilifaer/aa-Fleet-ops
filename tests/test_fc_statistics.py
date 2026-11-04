@@ -311,8 +311,9 @@ class FcRowsQueryBudgetTests(TestCase):
         small = self.count(page)
         self.add_fcs(2, 6)
         self.assertEqual(small, self.count(page))
-        # Alliance Auth's own page chrome (login state, user, permissions, menu) takes about 16 of these.
-        self.assertLessEqual(small, 28)
+        # Alliance Auth's own page chrome (login state, user, permissions, menu) takes about 16 of these, its
+        # notification badge is counted apart.
+        self.assertLessEqual(small, 28 + f.notification_badge_queries(lead))
 
 
 class IncentiveRebuildMatchesTests(FcFixtureMixin, TestCase):

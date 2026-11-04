@@ -513,7 +513,8 @@ class QueryBudgetTests(HistoryTestCase):
             with self.subTest(scope=scope):
                 self.assertGreater(large[scope][1], small[scope][1])
                 self.assertEqual(large[scope][0], small[scope][0])
-                self.assertLessEqual(large[scope][0], 30)
+                # Alliance Auth's notification badge is counted apart.
+                self.assertLessEqual(large[scope][0], 30 + f.notification_badge_queries(self.pilot))
 
 
 class MonthRetentionDaysTests(TestCase):

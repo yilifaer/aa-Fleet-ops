@@ -656,5 +656,5 @@ class LeaderboardPageBudgetTests(PageTestCase):
         large = {name: self.count(user, **params) for name, (user, params) in cases.items()}
 
         self.assertEqual(small, large)
-        # Including the login, permission and menu queries of the framework.
-        self.assertLessEqual(max(large.values()), 30)
+        # Including the login, permission and menu queries of the framework and its notification badge.
+        self.assertLessEqual(max(large.values()), 30 + f.notification_badge_queries(self.stats))

@@ -21,6 +21,7 @@ version it has seen. Needs the network once (it honours HTTPS_PROXY and the usua
 
 import argparse
 import base64
+import binascii
 import hashlib
 import importlib.util
 import io
@@ -60,7 +61,9 @@ CONTENT_TYPES = {
 }
 
 PAIR = re.compile(r"""["']url["']\s*:\s*["'](https://[^"']+)["']\s*,\s*["']integrity["']\s*:\s*["'](sha\d+-[^"']+)["']""")
-TAG = re.compile(r"""<(?:script|link)\b[^>]*?(?:src|href)=["'](https://[^"']+)["'][^>]*?integrity=["'](sha\d+-[^"']+)["']""", re.S)
+TAG = re.compile(r"""<(?:script|link)\b[^>]*?(?:src|href)=["'](https://[^"']+)["'][^>]*?integrity=["']([^"']+)["']""", re.S)
+# The hash algorithm of a bare base64 digest, by the length of the digest.
+DIGEST_ALGORITHMS = {32: "sha256", 48: "sha384", 64: "sha512"}
 
 
 class AssetError(Exception):
@@ -78,19 +81,48 @@ def alliance_auth_dir():
     return Path(next(iter(spec.submodule_search_locations)))
 
 
+def integrity_value(value):
+    """``value`` as Subresource Integrity metadata (``sha512-...``), or "" when it holds no hash.
+
+    Alliance Auth 5.6 writes the hashes of its theme style sheets as the bare base64 SHA-512 digest, without the
+    algorithm prefix (``integrity="6cPf...=="``). The length of a digest names its algorithm.
+    """
+    items = []
+    for item in value.split():
+        if re.match(r"sha\d+-", item):
+            items.append(item)
+            continue
+        try:
+            digest = base64.b64decode(item, validate=True)
+        except (binascii.Error, ValueError):
+            continue
+        if len(digest) in DIGEST_ALGORITHMS:
+            items.append(f"{DIGEST_ALGORITHMS[len(digest)]}-{item}")
+    return " ".join(items)
+
+
+def _tags(path, found):
+    for url, value in TAG.findall(path.read_text(encoding="utf-8")):
+        integrity = integrity_value(value)
+        if integrity:
+            found[url] = integrity
+
+
 def pinned_urls(include_all=False):
     """``{url: integrity}`` of the files the installed Alliance Auth loads from the CDN."""
     root = alliance_auth_dir()
     found = {}
+    # Up to Alliance Auth 5.5 a theme names its files in auth_hooks.py, since 5.6 in its own templates.
     for path in sorted((root / "theme").glob("*/auth_hooks.py")):
         for url, integrity in PAIR.findall(path.read_text(encoding="utf-8")):
             found[url] = integrity
+    for path in sorted((root / "theme").rglob("*.html")):
+        _tags(path, found)
     bundles = root / "templates" / "bundles"
     for path in sorted(bundles.glob("*.html")):
         if not include_all and path.stem not in CORE_BUNDLES:
             continue
-        for url, integrity in TAG.findall(path.read_text(encoding="utf-8")):
-            found[url] = integrity
+        _tags(path, found)
     return found
 
 

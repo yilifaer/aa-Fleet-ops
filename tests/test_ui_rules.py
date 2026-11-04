@@ -499,6 +499,16 @@ class AssetCacheTests(SimpleTestCase):
         self.assertTrue(any("/jquery/" in url for url in pinned))
         self.assertTrue(all(value.startswith("sha") for value in pinned.values()))
 
+    def test_a_bare_digest_gets_the_prefix_of_its_algorithm(self):
+        data = b"body { color: red }"
+        digest = fetch_assets.sri(data).split("-", 1)[1]
+
+        self.assertEqual(fetch_assets.integrity_value(digest), f"sha512-{digest}")
+        self.assertTrue(fetch_assets.matches(data, fetch_assets.integrity_value(digest)))
+        self.assertEqual(fetch_assets.integrity_value(fetch_assets.sri(data, "sha384")), fetch_assets.sri(data, "sha384"))
+        self.assertEqual(fetch_assets.integrity_value("{{ x.integrity }}"), "")
+        self.assertEqual(fetch_assets.integrity_value("c2hvcnQ="), "")
+
     def test_a_cdn_library_url_is_split_into_package_parts(self):
         url = "https://cdnjs.cloudflare.com/ajax/libs/bootswatch/5.3.3/flatly/bootstrap.min.css"
 

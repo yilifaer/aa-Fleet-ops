@@ -954,8 +954,8 @@ class PaginationTests(MembersTestCase):
         large = {name: count(**params) for name, params in (("all", {}), ("inactive", {"status": "inactive"}), ("corporation", {"corporation": str(f.OTHER_CORP[0])}))}
 
         self.assertEqual(small, large)
-        # Including the login, permission and menu queries of the framework.
-        self.assertLessEqual(max(large.values()), 30)
+        # Including the login, permission and menu queries of the framework and its notification badge.
+        self.assertLessEqual(max(large.values()), 30 + f.notification_badge_queries(self.stats))
 
 
 class CorporationPageTests(MembersTestCase):
