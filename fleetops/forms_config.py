@@ -30,6 +30,7 @@ from fleetops.models import (
     MessageTemplate,
     PingRole,
     PingTarget,
+    SrpCategory,
     SrpCorporationLimit,
     SrpPayoutRule,
     SrpSettings,
@@ -50,6 +51,7 @@ from fleetops.services.fleet_rules import (
 from fleetops.services.links import extract_ingame_channel_id, extract_link_text, strip_url_userinfo
 from fleetops.services.names import entity_names
 from fleetops.services.periods import current_year_month
+from fleetops.srp.display import category_label
 from fleetops.texts import translate_stored
 
 logger = get_extension_logger(__name__)
@@ -604,9 +606,17 @@ class SrpSettingsForm(forms.ModelForm):
             _("Payouts and caps"),
             _(
                 "Ships in the payout table get their fixed amount; every other ship gets the percentage of its value. "
-                "The per-loss caps apply to both."
+                "The per-loss caps apply to both. A category can have its own payout table entries, percentage and "
+                "caps."
             ),
-            ["in_fleet_loss_cap", "out_of_fleet_loss_cap", "capsules_need_rule", "over_limit_action"],
+            [
+                "in_fleet_loss_cap",
+                "out_of_fleet_loss_cap",
+                "capsules_need_rule",
+                "over_limit_action",
+                "default_category",
+                "out_of_fleet_category_required",
+            ],
         ),
         (
             _("Monthly limits"),
@@ -645,6 +655,8 @@ class SrpSettingsForm(forms.ModelForm):
             "corporation_cap_includes_in_fleet",
             "over_limit_action",
             "capsules_need_rule",
+            "default_category",
+            "out_of_fleet_category_required",
             "claim_deadline_days",
             "allow_self_review",
             "notify_members",
@@ -663,6 +675,7 @@ class SrpSettingsForm(forms.ModelForm):
             self.fields[name] = _isk_field(
                 required=False, label=model_field.verbose_name, help_text=model_field.help_text
             )
+        self.fields["default_category"].label_from_instance = category_label
 
     def field_groups(self):
         """``(title, description, bound fields)`` for each group of the page."""
@@ -764,10 +777,11 @@ class SrpPayoutRuleForm(forms.ModelForm):
 
     class Meta:
         model = SrpPayoutRule
-        fields = ["label", "scope", "amount", "is_active", "notes"]
+        fields = ["label", "category", "scope", "amount", "is_active", "notes"]
         labels = {"amount": _("Amount (ISK)")}
         help_texts = {
             "label": _("Optional name, shown in the payout table and in a claim's calculation."),
+            "category": _("The rule only applies to claims of this category. Empty = all categories."),
             "amount": _("Paid as it is, before the per-loss cap and the monthly limits."),
             "notes": _("Optional remark for the other SRP managers."),
         }
@@ -778,6 +792,9 @@ class SrpPayoutRuleForm(forms.ModelForm):
         self.fields["amount"] = _isk_field(
             required=True, label=_("Amount (ISK)"), help_text=self.fields["amount"].help_text
         )
+        category = self.fields["category"]
+        category.empty_label = _("All categories")
+        category.label_from_instance = self._category_label
         choices = [("", _("Any doctrine")), (CUSTOM_DOCTRINE, _("Custom name"))]
         known = set()
         for doctrine in get_doctrines():
@@ -794,7 +811,14 @@ class SrpPayoutRuleForm(forms.ModelForm):
             self.initial["ship"] = self.instance.ship_type_name or (
                 str(self.instance.ship_type_id) if self.instance.ship_type_id else ""
             )
-        self.order_fields(["label", "ship", "doctrine_choice", "doctrine_custom", "scope", "amount", "is_active", "notes"])
+        self.order_fields(
+            ["label", "ship", "doctrine_choice", "doctrine_custom", "category", "scope", "amount", "is_active", "notes"]
+        )
+
+    @staticmethod
+    def _category_label(category):
+        name = category_label(category)
+        return name if category.is_active else _("%(name)s (inactive)") % {"name": name}
 
     def _initial_doctrine(self) -> str:
         rule = self.instance
@@ -841,6 +865,90 @@ class SrpPayoutRuleForm(forms.ModelForm):
             for error in found:
                 if error.code != "no_target":
                     self.add_error(None, error)
+
+
+class SrpCategoryForm(forms.ModelForm):
+    """An SRP category. The amounts are typed the way players write ISK (``250m``); empty means no cap.
+
+    The built-in category keeps its key, stays active and cannot be chosen by members; those fields are
+    read-only for it, and the model checks them again.
+    """
+
+    ISK_FIELDS = ("loss_cap", "personal_monthly_cap", "corporation_monthly_cap")
+    SYSTEM_FIXED = ("key", "is_active", "member_selectable")
+
+    class Meta:
+        model = SrpCategory
+        fields = [
+            "name",
+            "key",
+            "description",
+            "member_selectable",
+            "percentage",
+            "loss_cap_mode",
+            "loss_cap",
+            "cap_applies_to_rules",
+            "personal_monthly_cap",
+            "corporation_monthly_cap",
+            "fleet_types",
+            "is_active",
+            "sort_order",
+        ]
+        widgets = {
+            "percentage": forms.NumberInput(attrs={"step": "0.01", "min": "0", "max": "100"}),
+            "fleet_types": forms.CheckboxSelectMultiple(),
+        }
+        error_messages = {
+            "name": {"unique": _("A category with this name already exists.")},
+            "key": {"unique": _("A category with this key already exists.")},
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name in self.ISK_FIELDS:
+            model_field = SrpCategory._meta.get_field(name)
+            self.fields[name] = _isk_field(
+                required=False, label=model_field.verbose_name, help_text=model_field.help_text
+            )
+        self.fields["key"].required = False
+        self.fields["key"].help_text = _(
+            "Short identifier for links and exports. Left empty, it is made from the name."
+        )
+        self.fields["fleet_types"].queryset = FleetType.objects.order_by("sort_order", "name")
+        if self.instance.pk is not None and self.instance.is_system:
+            for name in self.SYSTEM_FIXED:
+                self.fields[name].disabled = True
+
+    def clean_key(self):
+        key = (self.cleaned_data.get("key") or "").strip()
+        if key or (self.instance.pk is not None and self.instance.is_system):
+            return key or self.instance.key
+        return ""
+
+    def clean(self):
+        cleaned = super().clean()
+        if not cleaned.get("key") and not self.errors.get("key"):
+            # The key follows from the name when it was left empty.
+            slug = slugify(cleaned.get("name") or "")[:40]
+            if slug:
+                cleaned["key"] = slug
+            elif not self.has_error("name"):
+                self.add_error("key", _("Enter a key."))
+        fleet_types = cleaned.get("fleet_types")
+        if fleet_types and cleaned.get("is_active"):
+            taken = {}
+            others = SrpCategory.objects.filter(is_active=True, fleet_types__in=fleet_types).exclude(pk=self.instance.pk)
+            for other in others.prefetch_related("fleet_types"):
+                for fleet_type in other.fleet_types.all():
+                    if fleet_type in fleet_types:
+                        taken.setdefault(fleet_type.pk, (fleet_type, other))
+            for fleet_type, other in taken.values():
+                self.add_error(
+                    "fleet_types",
+                    _("The fleet type %(type)s already belongs to the category %(category)s.")
+                    % {"type": fleet_type, "category": category_label(other)},
+                )
+        return cleaned
 
 
 class SrpCorporationLimitForm(forms.ModelForm):
@@ -908,6 +1016,7 @@ for _form_class in (
     MessageTemplateForm,
     SrpSettingsForm,
     SrpPayoutRuleForm,
+    SrpCategoryForm,
     SrpCorporationLimitForm,
 ):
     _original_init = _form_class.__init__

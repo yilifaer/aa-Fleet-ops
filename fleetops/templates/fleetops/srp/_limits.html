@@ -1,5 +1,5 @@
-{% load i18n fleetops_srp %}{# The monthly limits that apply to a claim. Context: limits, a list of LimitState. #}
-{% if limits %}
+{% load i18n fleetops_srp fleetops_i18n %}{# The monthly limits that apply to a claim. Context: limits, a list of LimitState; category_limits (My SRP only): the personal limit of each category that has one, as CategoryLimit rows. #}
+{% if limits or category_limits %}
 <div class="table-responsive">
   <table class="table table-sm align-middle mb-0 fleetops-srp-limits">
     <thead><tr><th scope="col">{% translate "Limit" %}</th><th scope="col" class="text-end">{% translate "Cap" %}</th><th scope="col" class="text-end">{% translate "Approved and paid" %}</th><th scope="col" class="text-end">{% translate "In review" %}</th><th scope="col" class="text-end">{% translate "Left" %}</th></tr></thead>
@@ -13,6 +13,15 @@
         <td class="text-end" data-label="{% translate 'Left' %}">{% if limit.cap is None or not limit.applies %}<span class="text-muted">&ndash;</span>{% else %}<strong>{{ limit.remaining|isk }}</strong>{% endif %}</td>
       </tr>
       {% endfor %}
+      {% for item in category_limits %}{% with limit=item.state %}
+      <tr{% if limit.cap is not None and limit.remaining == 0 %} class="fleetops-srp-over-limit"{% endif %}>
+        <th scope="row" class="fw-normal">{{ item.category_name|stored_text }}<div class="small text-muted">{% translate "Personal monthly limit of this category." %}</div></th>
+        <td class="text-end" data-label="{% translate 'Cap' %}">{{ limit.cap|isk }}</td>
+        <td class="text-end" data-label="{% translate 'Approved and paid' %}">{{ limit.used|isk }}</td>
+        <td class="text-end" data-label="{% translate 'In review' %}">{{ limit.pending|isk }}</td>
+        <td class="text-end" data-label="{% translate 'Left' %}"><strong>{{ limit.remaining|isk }}</strong></td>
+      </tr>
+      {% endwith %}{% endfor %}
     </tbody>
   </table>
 </div>

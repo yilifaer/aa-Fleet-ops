@@ -22,10 +22,10 @@ staff 或 superuser 账号。
 | `fleetops.view_all_stats` | Can view all FleetOps statistics | 查看全联盟统计：所有军团、全部成员和不活跃成员、每个成员页、FC 统计、PAP 历史、排行榜和所有统计导出。只看统计；打开舰队记录需要 `view_all_fleets` 或 `manage_fleets`。 |
 | `fleetops.manage_attendance` | Can manage attendance | 在自己可管理的舰队上补录 PAP（按名字、ID 或粘贴名单），在 FC 主管通过之前删除自己的记录，重新计算 PAP，在时长规则范围内修改已结束舰队的 PAP 倍率。与 `manage_fleets` 同时拥有时对所有舰队生效。 |
 | `fleetops.manage_incentives` | Can manage FC incentives | 审核、重新计算、放弃领取、定稿和解锁每月的 FC 奖金周期。只有在"常规设置"里勾选了"启用 FC 奖金"（Incentive enabled，默认关闭）时这些页面才存在。 |
-| `fleetops.manage_configuration` | Can manage FleetOps configuration | 使用 FleetOps 后台设置：常规设置、舰队类型、语音预设、后勤和加成频道、Ping 频道和 Ping 身份组（含"从 Discord 同步身份组"）、PAP 倍率、特殊角色、月度达标线、舰船功能及规则、结构模板、消息模板，以及 SRP 设置、赔付表和军团限额。在自己能打开的舰队里，从编成页快速归类舰船。 |
+| `fleetops.manage_configuration` | Can manage FleetOps configuration | 使用 FleetOps 后台设置：常规设置、舰队类型、语音预设、后勤和加成频道、Ping 频道和 Ping 身份组（含"从 Discord 同步身份组"）、PAP 倍率、特殊角色、月度达标线、舰船功能及规则、结构模板、消息模板，以及 SRP 设置、SRP 类别、赔付表和军团限额。在自己能打开的舰队里，从编成页快速归类舰船。 |
 | `fleetops.view_audit_log` | Can view FleetOps audit log | 打开"操作日志"页。 |
 | `fleetops.request_srp` | Can request SRP | 在 FleetOps SRP 中提交舰船损失申请（"我的 SRP"和舰队的 SRP 链接），查看自己的申请和本月额度。需要先启用 FleetOps SRP。加入 SRP 功能的那次迁移已经把它授予所有已拥有 `basic_access` 的用户组、状态和用户；之后新建的用户组需要自己加上。 |
-| `fleetops.manage_srp` | Can review and pay SRP claims | 审核并支付申请：通过、修改金额、拒绝、撤销、标记已付款、重新打开、重新归类、重新计算、重新检查在队情况、添加内部备注。打开和关闭舰队的 SRP 链接。查看所有 SRP 汇总和申请。因为它决定付款，所以不会默认授予任何人。 |
+| `fleetops.manage_srp` | Can review and pay SRP claims | 审核并支付申请：通过、修改金额、拒绝、撤销、标记已付款、重新打开、重新归类、更改类别、重新计算、重新检查在队情况、添加内部备注。打开和关闭舰队的 SRP 链接。查看所有 SRP 汇总和申请。因为它决定付款，所以不会默认授予任何人。 |
 
 ## 推荐的用户组
 
@@ -171,7 +171,7 @@ FC 统计不受影响。
 | SRP 汇总（联盟、军团、FC） | `manage_srp` 或 `view_all_stats`（只读） |
 | SRP 军团（本军团的合计、成员、申请） | 本军团的 `view_corp_stats`（没有大号的用户得到 404）；`manage_srp` 或 `view_all_stats` 可看任意军团 |
 | SRP 我的舰队（自己带过的舰队的申请和合计） | 拥有任一 FC 权限（`start_fleet`、`manage_own_fleet`、`manage_fleets`、`create_manual_fleet`）的用户，以及带过有 SRP 链接舰队的人，可看自己的页面；`manage_srp` 和 `view_all_stats` 还能看任意 FC 的页面 |
-| SRP 设置、SRP 赔付表、SRP 军团限额 | `fleetops.manage_configuration`；每次修改都会记录新旧值 |
+| SRP 设置、SRP 类别、SRP 赔付表、SRP 军团限额 | `fleetops.manage_configuration`；每次修改都会记录新旧值 |
 
 SRP 文件地址为 `/fleetops/statistics/export/<dataset>/`：
 
@@ -183,7 +183,7 @@ SRP 文件地址为 `/fleetops/statistics/export/<dataset>/`：
 `srp-claims` 里的"处理人"（Decided by）和"付款人"（Paid by）两列只对 `manage_srp` 填写。FC 和普通成员没有 SRP 文件。每次下载都记为 `srp.export`。
 其他 SRP 操作都会记入操作日志，并显示在申请自己的时间线上：`srp.link_create`、`srp.link_open`、`srp.link_close`、`srp.claim_submit`、
 `srp.claim_auto_reject`、`srp.claim_withdraw`、`srp.claim_resubmit`、`srp.claim_approve`、`srp.claim_amount_change`、`srp.claim_reject`、
-`srp.claim_revoke`、`srp.claim_paid`、`srp.claim_unpaid`、`srp.claim_reopen`、`srp.claim_reclassify`、`srp.claim_recalculate`、
+`srp.claim_revoke`、`srp.claim_paid`、`srp.claim_unpaid`、`srp.claim_reopen`、`srp.claim_reclassify`、`srp.claim_recategorize`、`srp.claim_recalculate`、
 `srp.claim_recheck`、`srp.claim_note`。记录里只有 ID、状态和金额，不会出现令牌或 Webhook 地址；`srp.claim_note` 只记录备注的长度。
 
 ## 预约舰队（预 Ping）
@@ -257,3 +257,8 @@ FC 把舰队 Boss 交给了别人、舰队读不出来、FC 角色没有带写�
 - Ping 频道的 Webhook 地址只能写入：拥有 `manage_configuration` 的用户可以替换地址，但没有任何页面会显示已保存的地址。在 Django 后台里，只有查看权限的用户看到的是 "已保存（已隐藏）"（Stored (hidden)）。
 - 语音加入页（`/fleetops/comms/<token>/join/`）是 FleetOps 中唯一不做权限检查的页面。如果 `APPS_WITH_PUBLIC_VIEWS` 里有 `"fleetops"`，不登录也能打开；
   否则像其他 Alliance Auth 页面一样，需要登录并设置了大号。
+
+## Django 后台里的 SRP 类别
+
+SRP 类别在 FleetOps 的"后台设置"里的 **SRP Categories** 页面配置，需要 `fleetops.manage_configuration`。这个模型没有自己的
+Django 权限（`default_permissions = ()`），所以在 Django 后台只有超级用户能看到，其他人不需要用它。

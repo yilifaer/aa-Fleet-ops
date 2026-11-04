@@ -22,6 +22,7 @@ from fleetops.forms_srp import (
     NoteForm,
     PaidForm,
     ReasonForm,
+    RecategorizeForm,
     ReclassifyForm,
     SubmitClaimForm,
     WithdrawForm,
@@ -52,11 +53,12 @@ DECISION_FORMS = {
     "unpaid": partial(ReasonForm, what="reason for undoing the payment"),
     "reopen": partial(ReasonForm, what="reason for reopening the claim"),
     "reclassify": ReclassifyForm,
+    "recategorize": RecategorizeForm,
     "note": NoteForm,
 }
 # What the state machine allows on a claim of each status; everything else is refused by the service as well.
 ACTIONS_BY_STATUS = {
-    SrpClaim.Status.PENDING: ("approve", "reject", "reclassify", "recalculate"),
+    SrpClaim.Status.PENDING: ("approve", "reject", "reclassify", "recategorize", "recalculate"),
     SrpClaim.Status.APPROVED: ("approve", "revoke", "paid"),
     SrpClaim.Status.PAID: ("unpaid",),
     SrpClaim.Status.REJECTED: ("reopen",),
@@ -130,7 +132,7 @@ def srp_render(request, template_name, context=None, *, settings_obj=None):
 def claim_queryset():
     """Claims with what the claim page and the decision checks read."""
     return SrpClaim.objects.select_related(
-        "killmail", "user__profile__main_character", "link", "operation", "decided_by", "paid_by"
+        "killmail", "user__profile__main_character", "link", "operation", "category", "decided_by", "paid_by"
     )
 
 
@@ -158,8 +160,10 @@ def home_context(request, year, month, claim_form, settings_obj):
     user = request.user
     personal = summaries.personal(user, year, month)
     start, end = month_bounds(year, month)
-    month_claims = SrpClaim.objects.filter(user=user, killmail_time__gte=start, killmail_time__lt=end).order_by(
-        "-killmail_time", "-pk"
+    month_claims = (
+        SrpClaim.objects.filter(user=user, killmail_time__gte=start, killmail_time__lt=end)
+        .select_related("category")
+        .order_by("-killmail_time", "-pk")
     )
     page = Paginator(month_claims, CLAIMS_PER_PAGE).get_page(request.GET.get("page"))
     context.update(
@@ -167,6 +171,7 @@ def home_context(request, year, month, claim_form, settings_obj):
             "personal": personal,
             "totals": personal.totals,
             "limits": personal.limits,
+            "category_limits": personal.category_limits,
             "recent_links": links.recent_links_for_user(user),
             "page": page,
             "claims": page.object_list,
@@ -181,7 +186,7 @@ def srp_home(request):
     """My SRP: this month's allowance, the out-of-fleet form, recent fleets with SRP and my claims."""
     year, month = _year_month(request)
     settings_obj = SrpSettings.get_solo()
-    context = home_context(request, year, month, ClaimInputForm(), settings_obj)
+    context = home_context(request, year, month, ClaimInputForm(with_category=True, settings_obj=settings_obj), settings_obj)
     return srp_render(request, "fleetops/srp/home.html", context, settings_obj=settings_obj)
 
 
@@ -204,7 +209,8 @@ def preview_response(request, preview, *, link=None, input_text="", settings_obj
 def check_loss(request, form, *, link=None):
     """Check what a member pasted. Returns the preview, or None after adding what is wrong to the form."""
     try:
-        return claims.prepare_claim(request.user, form.cleaned_data["killmail"], link=link)
+        extra = {"category": form.cleaned_data["category"]} if form.cleaned_data.get("category") else {}
+        return claims.prepare_claim(request.user, form.cleaned_data["killmail"], link=link, **extra)
     except (SrpError, FleetESIError) as exc:
         form.add_error(None, error_text(exc))
         return None
@@ -215,7 +221,7 @@ def check_loss(request, form, *, link=None):
 def srp_check(request):
     """Check an out-of-fleet loss: the preview, or the home page again with what is wrong with the input."""
     settings_obj = SrpSettings.get_solo()
-    form = ClaimInputForm(request.POST)
+    form = ClaimInputForm(request.POST, with_category=True, settings_obj=settings_obj)
     if settings_obj.enabled:
         if not settings_obj.out_of_fleet_enabled:
             form.is_valid()
@@ -252,7 +258,7 @@ def srp_link(request, code):
             )
     context = {"link": link, "operation": link.operation, "claim_form": form, "link_open": link.is_open}
     if settings_obj.enabled:
-        context["my_claims"] = SrpClaim.objects.filter(user=request.user, link=link).order_by("-killmail_time")
+        context["my_claims"] = SrpClaim.objects.filter(user=request.user, link=link).select_related("category").order_by("-killmail_time")
     return srp_render(request, "fleetops/srp/link.html", context, settings_obj=settings_obj)
 
 
@@ -357,6 +363,8 @@ def decision_form(action, data=None, claim=None):
     initial = {}
     if claim is not None and action == "approve":
         initial["amount"] = claim.approved_amount if claim.status == SrpClaim.Status.APPROVED else claim.suggested_amount
+    if claim is not None and action == "recategorize":
+        initial["category"] = claim.category_id
     if claim is not None and action == "reclassify":
         initial["scope"] = (
             ReclassifyForm.OUT_OF_FLEET if claim.scope == SrpClaim.Scope.IN_FLEET else ReclassifyForm.IN_FLEET
@@ -375,6 +383,10 @@ def within_limit_reason(claim) -> str:
         return texts.SRP_REDUCED_PERSONAL()
     if kind == "corporation":
         return texts.SRP_REDUCED_CORPORATION()
+    if kind == "category_personal":
+        return texts.SRP_REDUCED_CATEGORY_PERSONAL()
+    if kind == "category_corporation":
+        return texts.SRP_REDUCED_CATEGORY_CORPORATION()
     return texts.SRP_REDUCED_MONTHLY()
 
 

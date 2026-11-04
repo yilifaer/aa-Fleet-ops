@@ -465,10 +465,12 @@ history; it never moves ISK.
 | Out-of-fleet losses | on | Allow claims for losses outside fleets. Off limits claims to the SRP links of fleets. |
 | Claim deadline (days) | 0 | Losses older than this cannot be submitted. 0 means no deadline. |
 | Use zKillboard | on | Use zKillboard for killmail hashes and values. Off means only in-game links work, and **Value source** must be the ESI estimate. |
-| Value source | zKillboard fitted value | zKillboard fitted value (ship, modules, drones, implants; no cargo), zKillboard total value, or the ESI market estimate. The estimate is also the fallback when zKillboard has no value. The value only matters for ships that are not in the payout table. |
-| Payout percentage | 0 | Share of the loss value paid for ships not in the payout table (rounded down to whole ISK). 0 gives no automatic amount, and the reviewer decides. |
-| In-fleet loss cap, Out-of-fleet loss cap | empty | Most one loss can pay, whatever its rule or percentage. Type amounts the way players write ISK (`250m`, `1.2b`). Empty means no cap. |
+| Value source | zKillboard total value | zKillboard total value (includes cargo; this is what aa-srp pays), zKillboard fitted value (ship, modules, drones, implants; no cargo), or the ESI market estimate. The estimate is also the fallback when zKillboard has no value. The value only matters for ships that are not in the payout table. Sites that never saved their SRP settings and have no claim get the total value when they upgrade to 0.3.0b1; a site that saved its settings once keeps its choice. |
+| Payout percentage | 0 | Share of the loss value paid for ships not in the payout table (rounded down to whole ISK). 0 gives no automatic amount, and the reviewer decides. A [category](#srp-categories) can have its own percentage. |
+| In-fleet loss cap, Out-of-fleet loss cap | empty | Most one loss can pay, whatever its rule or percentage. Type amounts the way players write ISK (`250m`, `1.2b`). Empty means no cap. A [category](#srp-categories) can have its own cap, or none. |
 | Capsules need a payout rule | on | Capsule losses are paid only from a capsule entry of the payout table. The value of a pod includes its implants, so neither the percentage nor a doctrine rule covers a pod. |
+| Default category | empty | The category of a loss outside a fleet when nothing else is chosen. Only an active category that members can choose is offered. Empty means no category: the claim follows the general settings. |
+| Members must choose a category for losses outside a fleet | off | Without a default category, a claim outside a fleet cannot be checked until a category is chosen. Losses in a fleet always get their fleet's category. |
 | Over limit action | Send to review with a warning | What happens to a claim that does not fit the remaining monthly limit: **Send to review with a warning** keeps it and flags it red. **Reject automatically** cuts a claim that fits only partly to what is left (amber warning, normal review) and rejects it, with the cap in the reason, only when nothing is left. |
 | Personal monthly cap | empty | Most one player (all characters) can get approved per EVE month. |
 | In-fleet losses count toward the personal cap | on | |
@@ -517,7 +519,9 @@ To enable FleetOps SRP:
 - Usage of a monthly limit is the sum of approved and paid claims; claims in review are shown but not
   deducted. A revoked approval releases its amount; a paid claim keeps counting. A claim counts in the EVE (UTC)
   month of the loss, whenever it is submitted or decided. The most restrictive limit wins. Limits are checked
-  again under a lock when a claim is submitted or approved.
+  again under a lock when a claim is submitted or approved. The monthly limits of a [category](#srp-categories)
+  count only the claims of that category (in and out of fleets) and are not switched off by the "in-fleet losses
+  count" options, which belong to the general limits.
 
 ### Review and payment
 
@@ -525,8 +529,10 @@ To enable FleetOps SRP:
   rows need a look. A reviewer approves the suggested amount, the amount within the limit, or a typed amount.
   Any other amount needs a reason; more than the policy amount needs "Pay more than the policy amount"; more
   than the remaining monthly limit needs "Approve over the monthly limit". Reject, revoke, undo payment, reopen
-  and moving a claim between fleet and out of fleet need a reason. Internal notes are never copied into the
-  audit log.
+  and moving a claim between fleet and out of fleet need a reason. **Change the category** moves a pending claim
+  to another category (or to none) and calculates it again with the payout table, percentage, caps and limits of
+  that category; it needs a reason, is shown in the claim's timeline ("Category changed") and is audited as
+  `srp.claim_recategorize`. Internal notes are never copied into the audit log.
 - **SRP** > **Payments** groups approved claims by player and names each group after the player's main
   character as it is now. It has copy buttons for the name and the amount. Pay in game, tick the claims, add
   an optional note and **Mark selected paid**. **Mark paid** is refused when the approved amount is not the one
@@ -540,18 +546,54 @@ To enable FleetOps SRP:
   closed link takes no new claims), **Request SRP for this fleet** for pilots, and **Create SRP link** for a
   fleet without a link. Creating a link twice changes nothing.
 
+## SRP Categories
+
+A category is a kind of claim with its own rules: fleet losses, solo PVP, a standing doctrine. A claim has at most
+one category. A claim without one follows the general SRP settings exactly as before, so a site that creates no
+category sees no change.
+
+**Administration** > **FleetOps SRP** > **SRP Categories**. FleetOps creates one category, **Fleet** (key `fleet`),
+when you upgrade or install. It holds the losses claimed through a fleet link (the claims already made through
+fleets are moved into it when you upgrade). You can rename it and give it a percentage, caps or limits, but not
+delete it, switch it off, change its key or let members choose it. It is shown as "Fleet" in English and as the
+Chinese word for fleet in the Chinese interface until you rename it. FleetOps creates no other category.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| Name, Key | | The key is a short identifier (letters, digits, hyphens, underscores); left empty it is made from the name. Both are unique. |
+| Members can choose it | on | Members can pick this category for a loss outside a fleet. |
+| Payout percentage | empty | Share of the loss value for ships not in the payout table. Empty uses the percentage of the SRP settings; 0 means no automatic amount in this category. |
+| Per-loss cap | Use the in-fleet or out-of-fleet cap of the SRP settings | Or **No per-loss cap**, or **Own per-loss cap** with an amount. |
+| Per-loss cap also limits payout table amounts | on | Switch off to pay the fixed amounts of the payout table in full while the cap still limits percentage payouts. |
+| Personal monthly cap, Corporation monthly cap | empty | Most one player (or one corporation) can get approved in this category per EVE month. Empty means no limit. Checked together with the general limits; the most restrictive one wins. |
+| Fleet types | none | Claims through fleets of these types get this category instead of **Fleet**. A fleet type belongs to at most one active category. Leave empty for no mapping. |
+| Active, Sort | on, 0 | A switched-off category is not offered to members; claims that have it keep it and are calculated with its current settings. |
+
+Claims get their category like this: a claim through a fleet link gets the category of the fleet's type (if mapped)
+or **Fleet**; a claim outside a fleet gets the category the member chose, else the **Default category** of the
+SRP settings, else none. A category that cannot be used any more is refused with a message when the claim is
+submitted. Each claim keeps a copy of the category's settings it was calculated with. When a category changes while
+claims are pending, the notice "N pending claims were calculated with earlier SRP settings" appears on the category
+pages as well; **Recalculate** applies the new settings.
+
+A category cannot be deleted while claims or payout rules use it: switch it off instead. Every change is audited
+as `configuration.create`, `configuration.update` or `configuration.delete`. Categories have no Django permissions
+of their own; the pages need `fleetops.manage_configuration`, and Django admin shows them to superusers only.
+
 ## SRP Payout Table
 
 Fixed amounts. A rule names a ship type (ID or exact English name), a doctrine (a Fittings doctrine or a custom
-name), or both, and applies to losses in a fleet, outside a fleet, or both (**Scope**). The most specific
-active rule wins: doctrine and ship, then doctrine (any ship), then ship; a rule for the scope of the claim
-beats one for both scopes. Doctrine rules match losses in a fleet that has that doctrine. Ships without a rule
+name), or both, and applies to losses in a fleet, outside a fleet, or both (**Scope**). A rule can belong to a
+[category](#srp-categories) (**Category**); with **All categories** it applies to every claim, with a category only
+to claims of that category. The most specific active rule wins: doctrine and ship, then doctrine (any ship), then
+ship; at the same level a rule of the claim's category beats a general one, and then a rule for the scope of the claim
+beats one for both scopes. The same ship, doctrine and scope can have one rule per category. Doctrine rules match losses in a fleet that has that doctrine. Ships without a rule
 are paid the percentage of the loss value. Every claim keeps the rule and the settings it was calculated with;
 **Recalculate** applies the current ones to pending claims. The amount is paid as it is, before the per-loss cap
 and the monthly limits. The optional **Label** is shown in the payout table and in the calculation of a claim.
 
-When the SRP settings, the payout table or the corporation limits change while claims are pending, the three
-pages show a notice: "N pending claims were calculated with earlier SRP settings". SRP managers can press
+When the SRP settings, the categories, the payout table or the corporation limits change while claims are pending, the
+four pages show a notice: "N pending claims were calculated with earlier SRP settings". SRP managers can press
 **Recalculate** there (it asks first); everybody else sees that an SRP manager can recalculate them on the review
 page. Claims that were decided already are never changed.
 
@@ -559,6 +601,31 @@ page. Claims that were decided already are never changed.
 
 A monthly cap for one corporation, replacing the default corporation cap. An empty cap means no limit for that
 corporation.
+
+## Example: an alliance that moves from aa-srp
+
+These values are one alliance's choices, not defaults. A new installation keeps the defaults of the tables above
+(for example the claim deadline is 0, no category exists but **Fleet**, and nothing is required). Enter them by hand
+on the pages named; nothing in FleetOps sets them for you.
+
+| Where | Setting | Example value |
+|---|---|---|
+| SRP Settings | Value source | zKillboard total value |
+| | Payout percentage | 100 |
+| | In-fleet loss cap | empty (no cap) |
+| | Out-of-fleet loss cap | 250m (the fallback for a claim outside a fleet that has no category) |
+| | Members must choose a category for losses outside a fleet | on |
+| | Default category | none (a category must be chosen, so nothing is filed under the wrong one by accident) |
+| | Personal and corporation monthly caps | empty |
+| | Over limit action | Send to review with a warning |
+| | Capsules need a payout rule | on |
+| | Claim deadline (days) | 7 |
+| SRP Categories | `fleet` (built in) | Per-loss cap: **No per-loss cap**; percentage inherited |
+| | `alliance-fleets`, `home-defense`, `home-defense-ess`, `corp-roaming`, `corp-roaming-ess`, `solo-pvp` | Members can choose it; per-loss cap: **Own per-loss cap**, 250m; percentage inherited; monthly caps empty |
+| SRP Payout Table | | Not used at first; add rules per category when needed |
+
+With these values, a solo loss of 300m in the `solo-pvp` category is suggested at 250m, and a 571m loss claimed
+through a fleet link at 571m.
 
 ## History and retention
 

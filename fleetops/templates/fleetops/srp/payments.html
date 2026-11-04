@@ -43,7 +43,7 @@
             <td><a href="{% url 'fleetops:srp_claim' claim.uuid %}">{{ claim.reference }}</a></td>
             <td class="text-nowrap">{{ claim.killmail_time|eve_time }}</td>
             <td><span class="fleetops-srp-ship-cell"><img class="fo-render" src="{% ship_render_url claim.ship_type_id 32 %}" width="32" height="32" alt="" loading="lazy"><span>{{ claim.ship_type_name|default:claim.ship_type_id }}</span></span></td>
-            <td>{% if claim.scope == "in_fleet" %}<span class="small">{{ claim.fleet_label|default:_("In fleet") }}</span>{% else %}<span class="text-muted">{% translate "Out of fleet" %}</span>{% endif %}</td>
+            <td>{% if claim.scope == "in_fleet" %}<span class="small">{{ claim.fleet_label|default:_("In fleet") }}</span>{% else %}<span class="text-muted">{% translate "Out of fleet" %}</span>{% endif %}{% with category_name=claim|srp_category_name %}{% if category_name %}<div class="small text-muted">{{ category_name }}</div>{% endif %}{% endwith %}</td>
             <td class="text-end text-nowrap">{{ claim.approved_amount|isk }}</td>
             <td class="text-end"><button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ claim.approved_amount|isk_plain }}" hidden>{% translate "Copy" %}</button></td>
           </tr>
@@ -85,7 +85,7 @@
           <td class="text-nowrap">{{ claim.paid_at|eve_time }}</td>
           <td>{{ claim.main_character_name|default:claim.character_name }}</td>
           <td><a href="{% url 'fleetops:srp_claim' claim.uuid %}">{{ claim.reference }}</a></td>
-          <td>{{ claim.ship_type_name|default:claim.ship_type_id }}</td>
+          <td>{{ claim.ship_type_name|default:claim.ship_type_id }}{% with category_name=claim|srp_category_name %}{% if category_name %}<div class="small text-muted">{{ category_name }}</div>{% endif %}{% endwith %}</td>
           <td class="text-end text-nowrap">{{ claim.approved_amount|isk }}</td>
           <td>{{ claim.paid_by|default:"" }}</td>
           <td>{{ claim.payment_note }}</td>

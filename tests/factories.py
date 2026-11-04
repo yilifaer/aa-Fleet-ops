@@ -40,6 +40,7 @@ from fleetops.models import (
     ShipFunction,
     ShipFunctionRule,
     SpecialRole,
+    SrpCategory,
     SrpClaim,
     SrpClaimEvent,
     SrpFleetLink,
@@ -594,6 +595,19 @@ def srp_settings(**values) -> SrpSettings:
     return obj
 
 
+def fleet_category() -> SrpCategory:
+    """The built-in category of the claims made through a fleet link (created by the migration)."""
+    return SrpCategory.objects.get(key=SrpCategory.SYSTEM_KEY)
+
+
+def srp_category(name: str | None = None, **values) -> SrpCategory:
+    """An SRP category that members can choose; any field can be passed. The key follows from the name."""
+    number = next_id()
+    name = name or f"Category {number}"
+    values.setdefault("key", f"category-{number}")
+    return SrpCategory.objects.create(name=name, **values)
+
+
 def payout_rule(
     ship_type_id: int = 0,
     amount: int = 50_000_000,
@@ -814,6 +828,7 @@ def srp_claim(
     if link is not None:
         operation = link.operation
         values.update(
+            category=fleet_category(),
             scope=SrpClaim.Scope.IN_FLEET,
             link=link,
             operation=operation,

@@ -1752,12 +1752,124 @@ def srp_doctrine_key(source, external_id, name):
     return f"name:{name}" if name else ""
 
 
+class SrpCategory(models.Model):
+    """A kind of SRP claim (fleet, solo PVP, a standing doctrine, ...) with its own payout rules and caps.
+
+    A claim without a category behaves as before. The system category ``fleet`` (key ``fleet``) is created by the
+    migration and holds the claims made through a fleet link; it can be renamed but not deleted or switched off.
+    """
+
+    class LossCapMode(models.TextChoices):
+        DEFAULT = "default", _("Use the in-fleet or out-of-fleet cap of the SRP settings")
+        NONE = "none", _("No per-loss cap")
+        CUSTOM = "custom", _("Own per-loss cap")
+
+    SYSTEM_KEY = "fleet"
+
+    name = models.CharField(verbose_name=pgettext_lazy("FleetOps", "Name"), max_length=100, unique=True)
+    key = models.SlugField(
+        verbose_name=_("Key"),
+        max_length=40,
+        unique=True,
+        help_text=_("Short identifier for links and exports. Letters, digits, hyphens and underscores."),
+    )
+    description = models.CharField(verbose_name=pgettext_lazy("FleetOps", "Description"), max_length=255, blank=True)
+    is_system = models.BooleanField(verbose_name=_("Built in"), default=False, editable=False)
+    member_selectable = models.BooleanField(
+        verbose_name=_("Members can choose it"),
+        default=True,
+        help_text=_("Members can pick this category for a loss outside a fleet."),
+    )
+    percentage = models.DecimalField(
+        _("Payout percentage"),
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("100"))],
+        help_text=_(
+            "Share of the loss value paid for ships not in the payout table. Empty = the percentage of the SRP "
+            "settings. 0 = no automatic amount in this category."
+        ),
+    )
+    loss_cap_mode = models.CharField(
+        verbose_name=_("Per-loss cap"),
+        max_length=10,
+        choices=LossCapMode.choices,
+        default=LossCapMode.DEFAULT,
+    )
+    loss_cap = models.PositiveBigIntegerField(
+        verbose_name=_("Own per-loss cap"),
+        null=True,
+        blank=True,
+        validators=isk_validators(),
+        help_text=_("Maximum per loss in this category. Used with “Own per-loss cap”."),
+    )
+    cap_applies_to_rules = models.BooleanField(
+        verbose_name=_("Per-loss cap also limits payout table amounts"),
+        default=True,
+        help_text=_("Switch off to pay the fixed amounts of the payout table in full."),
+    )
+    personal_monthly_cap = models.PositiveBigIntegerField(
+        verbose_name=_("Personal monthly cap"),
+        null=True,
+        blank=True,
+        validators=isk_validators(),
+        help_text=_("Maximum approved SRP per player in this category per EVE month. Empty = no cap."),
+    )
+    corporation_monthly_cap = models.PositiveBigIntegerField(
+        verbose_name=_("Corporation monthly cap"),
+        null=True,
+        blank=True,
+        validators=isk_validators(),
+        help_text=_("Maximum approved SRP per corporation in this category per EVE month. Empty = no cap."),
+    )
+    fleet_types = models.ManyToManyField(
+        "FleetType",
+        verbose_name=_("Fleet types"),
+        blank=True,
+        related_name="srp_categories",
+        help_text=_("Claims through the fleets of these types get this category. Empty = no mapping."),
+    )
+    is_active = models.BooleanField(verbose_name=pgettext_lazy("enabled", "Active"), default=True)
+    sort_order = models.PositiveIntegerField(verbose_name=_("Sort order"), default=0)
+    updated_at = models.DateTimeField(verbose_name=_("Updated at"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("SRP category")
+        verbose_name_plural = _("SRP categories")
+        ordering = ["sort_order", "name"]
+        default_permissions = ()
+
+    def __str__(self):
+        return translate_stored(self.name)
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.is_system:
+            if not self.is_active:
+                errors["is_active"] = _("The built-in category cannot be switched off.")
+            if self.key != self.SYSTEM_KEY:
+                errors["key"] = _("The key of the built-in category cannot be changed.")
+            if self.member_selectable:
+                errors["member_selectable"] = _("Members cannot choose the built-in category.")
+        if self.loss_cap_mode == self.LossCapMode.CUSTOM:
+            if self.loss_cap is None:
+                errors["loss_cap"] = _("Enter the per-loss cap.")
+        else:
+            # Only the own cap mode reads the amount; do not keep one that has no effect.
+            self.loss_cap = None
+        if errors:
+            raise ValidationError(errors)
+
+
 class SrpSettings(models.Model):
     """FleetOps SRP configuration; one row (pk=1)."""
 
     class ValueSource(models.TextChoices):
         ZKILL_FITTED = "zkill_fitted", _("zKillboard fitted value (ship, modules, drones, implants)")
-        ZKILL_TOTAL = "zkill_total", _("zKillboard total value (includes cargo)")
+        ZKILL_TOTAL = "zkill_total", _("zKillboard total value (includes cargo, recommended)")
         ESI_ESTIMATE = "esi_estimate", _("ESI market estimate")
 
     class OverLimitAction(models.TextChoices):
@@ -1783,10 +1895,10 @@ class SrpSettings(models.Model):
         verbose_name=_("Value source"),
         max_length=20,
         choices=ValueSource.choices,
-        default=ValueSource.ZKILL_FITTED,
+        default=ValueSource.ZKILL_TOTAL,
         help_text=_(
             "Where the loss value comes from. The ESI market estimate is also the fallback when zKillboard "
-            "has no value."
+            "has no value. The total value includes cargo; aa-srp pays the total value."
         ),
     )
     percentage = models.DecimalField(
@@ -1858,6 +1970,21 @@ class SrpSettings(models.Model):
         validators=[MaxValueValidator(3650)],
         help_text=_("Losses older than this cannot be submitted. 0 = no deadline."),
     )
+    default_category = models.ForeignKey(
+        "SrpCategory",
+        verbose_name=_("Default category"),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        limit_choices_to={"is_active": True, "member_selectable": True},
+        help_text=_("The category of a loss outside a fleet when the member chooses none. Empty = no category."),
+    )
+    out_of_fleet_category_required = models.BooleanField(
+        _("Members must choose a category for losses outside a fleet"),
+        default=False,
+        help_text=_("Without a default category, a claim outside a fleet needs a category."),
+    )
     allow_self_review = models.BooleanField(
         _("SRP managers may decide on their own claims"),
         default=False,
@@ -1891,6 +2018,9 @@ class SrpSettings(models.Model):
             raise ValidationError(
                 {"value_source": _("Choose the ESI market estimate when zKillboard is turned off.")}
             )
+        category = self.default_category
+        if category is not None and not (category.is_active and category.member_selectable):
+            raise ValidationError({"default_category": _("Choose an active category that members can choose.")})
 
     @classmethod
     def get_solo(cls):
@@ -1907,7 +2037,7 @@ class SrpPayoutRule(models.Model):
         OUT_OF_FLEET = "out_of_fleet", _("Out-of-fleet losses only")
 
     # Fields of the unique constraint; validated even though doctrine_key is not a form field.
-    CONSTRAINT_FIELDS = frozenset({"ship_type_id", "doctrine_key", "scope"})
+    CONSTRAINT_FIELDS = frozenset({"ship_type_id", "doctrine_key", "scope", "category_key"})
 
     label = models.CharField(verbose_name=_("Label"), max_length=100, blank=True)
     ship_type_id = models.PositiveBigIntegerField(
@@ -1925,6 +2055,20 @@ class SrpPayoutRule(models.Model):
         editable=False,
     )
     scope = models.CharField(verbose_name=_("Scope"), max_length=12, choices=Scope.choices, default=Scope.ANY)
+    category = models.ForeignKey(
+        "SrpCategory",
+        verbose_name=_("Category"),
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="payout_rules",
+        help_text=_("The rule only applies to claims of this category. Empty = all categories."),
+    )
+    # ``category_id or 0``: part of the unique constraint, because MySQL and MariaDB cannot make a nullable
+    # column unique per value (no conditional constraints, no NULLS NOT DISTINCT).
+    category_key = models.PositiveBigIntegerField(
+        verbose_name=_("Category key"), default=0, editable=False, db_index=True
+    )
     amount = models.PositiveBigIntegerField(
         verbose_name=_("Amount"),
         validators=isk_validators(),
@@ -1940,8 +2084,8 @@ class SrpPayoutRule(models.Model):
         ordering = ["ship_type_name", "doctrine_name", "scope"]
         constraints = [
             models.UniqueConstraint(
-                fields=["ship_type_id", "doctrine_key", "scope"],
-                name="fleetops_unique_srp_rule",
+                fields=["ship_type_id", "doctrine_key", "scope", "category_key"],
+                name="fleetops_unique_srp_rule_v2",
                 violation_error_message=_("A rule for this ship, doctrine and scope already exists."),
             )
         ]
@@ -1956,22 +2100,31 @@ class SrpPayoutRule(models.Model):
     def compute_doctrine_key(self):
         return srp_doctrine_key(self.doctrine_source, self.doctrine_external_id, self.doctrine_name)
 
+    def compute_category_key(self):
+        return self.category_id or 0
+
     def clean(self):
         super().clean()
         self.doctrine_key = self.compute_doctrine_key()
+        self.category_key = self.compute_category_key()
         if not self.ship_type_id and not self.doctrine_key:
             raise ValidationError(_("Choose a ship type, a doctrine, or both."), code="no_target")
 
     def validate_constraints(self, exclude=None):
         # The key is derived, never a form field, but a duplicate rule must still be refused.
         self.doctrine_key = self.compute_doctrine_key()
+        self.category_key = self.compute_category_key()
         super().validate_constraints(set(exclude or ()) - self.CONSTRAINT_FIELDS)
 
     def save(self, *args, **kwargs):
         self.doctrine_key = self.compute_doctrine_key()
+        self.category_key = self.compute_category_key()
         update_fields = kwargs.get("update_fields")
-        if update_fields is not None and "doctrine_key" not in update_fields:
-            kwargs["update_fields"] = [*update_fields, "doctrine_key"]
+        if update_fields is not None:
+            kwargs["update_fields"] = [
+                *update_fields,
+                *(name for name in ("doctrine_key", "category_key") if name not in update_fields),
+            ]
         super().save(*args, **kwargs)
 
 
@@ -2194,6 +2347,14 @@ class SrpClaim(models.Model):
         on_delete=models.SET_NULL,
         related_name="srp_claims",
     )
+    category = models.ForeignKey(
+        SrpCategory,
+        verbose_name=_("Category"),
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="claims",
+    )
     # "<type> — <FC> — YYYY-MM-DD HH:MM EVE", kept when the fleet is deleted.
     fleet_label = models.CharField(verbose_name=_("Fleet label"), max_length=255, blank=True)
     fc_user = models.ForeignKey(
@@ -2313,6 +2474,7 @@ class SrpClaim(models.Model):
             models.Index(fields=["user", "killmail_time"], name="fleetops_srp_user_time_idx"),
             models.Index(fields=["corporation_id", "killmail_time"], name="fleetops_srp_corp_time_idx"),
             models.Index(fields=["fc_user", "killmail_time"], name="fleetops_srp_fc_time_idx"),
+            models.Index(fields=["category", "killmail_time"], name="fleetops_srp_cat_time_idx"),
         ]
 
     def __str__(self):
@@ -2339,6 +2501,7 @@ class SrpClaimEvent(models.Model):
         UNPAID = "unpaid", _("Payment undone")
         REOPEN = "reopen", _("Reopened")
         RECLASSIFY = "reclassify", _("Moved between in fleet and out of fleet")
+        RECATEGORIZE = "recategorize", _("Category changed")
         RECALCULATE = "recalculate", _("Recalculated")
         RECHECK = "recheck", _("Fleet presence checked again")
         VALUE_UPDATE = "value_update", _("Loss value updated")

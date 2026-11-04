@@ -9,7 +9,8 @@ from decimal import Decimal
 from pathlib import Path
 
 from django.apps import apps
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase, TestCase, tag
+from django.utils import translation
 
 import fleetops
 from fleetops import tasks
@@ -401,6 +402,23 @@ class DefaultsInDocsTests(SimpleTestCase):
                 with self.subTest(path=path.parent.name, setting=label):
                     self.assertIsNotNone(cells, f"{label} is not in a table of {path.name}")
                     self.assertEqual(cells[1], self.shown(model, field, words))
+
+    def check_value_source(self, path, words):
+        """The default value source is named in the table (CAT-9): the label of the choice without its remark."""
+        field = SrpSettings._meta.get_field("value_source")
+        label = dict(field.choices)[field.default]
+        shown = str(label).split(" (")[0].split("（")[0]
+        cells = self.row(read(path), "Value source")
+        self.assertIsNotNone(cells, f"Value source is not in a table of {path.name}")
+        self.assertEqual(cells[1], shown)
+
+    def test_english_value_source_default(self):
+        self.check_value_source(DOCS / "configuration.md", {})
+
+    @tag("catalog")
+    def test_chinese_value_source_default(self):
+        with translation.override("zh-hans"):
+            self.check_value_source(ZH / "configuration.md", {})
 
     def test_english_defaults(self):
         self.check(DOCS / "configuration.md", {True: "on", False: "off"})

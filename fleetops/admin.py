@@ -3,11 +3,12 @@
 
 from django.contrib import admin, messages
 from django.contrib.admin.utils import unquote
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.shortcuts import redirect
 from django.utils.translation import gettext_lazy as _
 
-from fleetops.forms_config import DiscordWebhookForm
+from fleetops.forms_config import DiscordWebhookForm, SrpCategoryForm
 from fleetops.models import (
     AttendanceRecord,
     AuditLog,
@@ -38,6 +39,7 @@ from fleetops.models import (
     ShipFunction,
     ShipFunctionRule,
     SpecialRole,
+    SrpCategory,
     SrpClaim,
     SrpClaimEvent,
     SrpCorporationLimit,
@@ -359,10 +361,38 @@ class SrpSettingsAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
         return False
 
 
+@admin.register(SrpCategory)
+class SrpCategoryAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
+    """The categories are managed on the FleetOps administration pages; this is the same form for superusers.
+
+    The model has no Django default permissions, so only superusers see it here.
+    """
+
+    form = SrpCategoryForm
+    list_display = ("__str__", "key", "member_selectable", "percentage", "loss_cap_mode", "is_active", "sort_order")
+    list_filter = ("is_active", "member_selectable")
+    search_fields = ("name", "key")
+
+    def has_delete_permission(self, request, obj=None):
+        # The built-in category stays; the bulk action asks for every selected row.
+        if obj is not None and obj.is_system:
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        # Never through the back door of a changelist action.
+        super().delete_queryset(request, queryset.filter(is_system=False))
+
+    def delete_model(self, request, obj):
+        if obj.is_system:
+            raise PermissionDenied
+        super().delete_model(request, obj)
+
+
 @admin.register(SrpPayoutRule)
 class SrpPayoutRuleAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
-    list_display = ("__str__", "scope", "amount", "is_active", "updated_at")
-    list_filter = ("scope", "is_active")
+    list_display = ("__str__", "category", "scope", "amount", "is_active", "updated_at")
+    list_filter = ("scope", "is_active", "category")
     search_fields = ("ship_type_name", "doctrine_name", "label")
 
 

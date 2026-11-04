@@ -21,7 +21,8 @@ from fleetops.forms_config import (
     lookup_ship,
     srp_provider_choices,
 )
-from fleetops.models import AuditLog, SrpClaim, SrpCorporationLimit, SrpPayoutRule, SrpSettings
+from fleetops.models import AuditLog, SrpCategory, SrpClaim, SrpCorporationLimit, SrpPayoutRule, SrpSettings
+from fleetops.srp.types import PolicySnapshot
 from fleetops.providers.doctrines import FITTINGS_DOCTRINE_SOURCE, DoctrineChoice
 from fleetops.providers.esi import FleetESIError
 
@@ -416,7 +417,11 @@ class PayoutTableTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         form = response.context["form"]
-        self.assertEqual(list(form.fields), ["label", "ship", "doctrine_choice", "doctrine_custom", "scope", "amount", "is_active", "notes"])
+        # 0.3.0b1: the payout rule has a category (CAT-8), placed before the scope.
+        self.assertEqual(
+            list(form.fields),
+            ["label", "ship", "doctrine_choice", "doctrine_custom", "category", "scope", "amount", "is_active", "notes"],
+        )
         self.assertEqual(
             [value for value, _label in form.fields["doctrine_choice"].choices],
             ["", "custom", f"{FITTINGS_DOCTRINE_SOURCE}|12|Muninn Fleet", f"{FITTINGS_DOCTRINE_SOURCE}|13|Logistics"],
@@ -883,3 +888,364 @@ class ProviderChoiceTests(TestCase):
         keys = [key for key, _label in srp_provider_choices()]
         self.assertLess(keys.index("fleetops"), keys.index("aasrp"))
         self.assertLess(keys.index("aasrp"), keys.index("allianceauth_builtin"))
+
+
+class SrpCategoryPageTests(TestCase):
+    """CAT-8: the category pages, the category of a payout rule and the category settings."""
+
+    def setUp(self):
+        self.admin = f.create_user("category_admin", perms=CONFIG_PERMS)
+        self.client.force_login(self.admin)
+        self.list_url = reverse("fleetops:configuration_list", args=["srp-categories"])
+        self.add_url = reverse("fleetops:configuration_add", args=["srp-categories"])
+
+    def post(self, **fields):
+        data = {
+            "name": "Solo PVP",
+            "key": "",
+            "description": "",
+            "member_selectable": "on",
+            "percentage": "",
+            "loss_cap_mode": "default",
+            "loss_cap": "",
+            "personal_monthly_cap": "",
+            "corporation_monthly_cap": "",
+            "cap_applies_to_rules": "on",
+            "is_active": "on",
+            "sort_order": "0",
+        }
+        data.update(fields)
+        return self.client.post(self.add_url, {key: value for key, value in data.items() if value is not None})
+
+    def edit_url(self, category):
+        return reverse("fleetops:configuration_edit", args=["srp-categories", category.pk])
+
+    def delete_url(self, category):
+        return reverse("fleetops:configuration_delete", args=["srp-categories", category.pk])
+
+    def test_the_section_is_on_the_index_between_the_settings_and_the_payout_table(self):
+        from fleetops.views_config import INDEX_GROUPS
+
+        keys = next(keys for title, _icon, keys in INDEX_GROUPS if "srp" in keys)
+
+        self.assertEqual(keys, ["srp", "srp-categories", "srp-rules", "srp-corporation-limits"])
+        response = self.client.get(reverse("fleetops:configuration_index"))
+        self.assertContains(response, "SRP Categories")
+
+    def test_the_list_shows_the_built_in_category_and_the_defaults(self):
+        f.srp_settings(percentage=Decimal("80"))
+        f.srp_category("Solo PVP", percentage=None, loss_cap_mode="custom", loss_cap=250_000_000, personal_monthly_cap=1_000_000_000)
+
+        response = self.client.get(self.list_url)
+
+        self.assertContains(response, "Fleet")
+        self.assertContains(response, "Default (80%)")
+        self.assertContains(response, "250,000,000 ISK")
+        self.assertContains(response, "1,000,000,000 ISK")
+        self.assertContains(response, "No limit")
+
+    def test_the_list_shows_the_notice_about_claims_with_old_settings(self):
+        solo = f.srp_category("Solo PVP", loss_cap_mode="custom", loss_cap=250_000_000)
+        user = f.create_user("pilot", perms=f.SRP_MEMBER_PERMS)
+        claim = f.srp_claim(user, category=solo)
+        claim.policy = PolicySnapshot(percentage=Decimal("0")).as_json()
+        claim.save()
+
+        response = self.client.get(self.list_url)
+
+        self.assertEqual(response.context["outdated_claims"], 1)
+
+    def test_a_category_is_added_with_amounts_in_isk_notation_and_audited(self):
+        response = self.post(
+            name="Solo PVP",
+            loss_cap_mode="custom",
+            loss_cap="250m",
+            personal_monthly_cap="1b",
+            corporation_monthly_cap="5,000,000,000",
+            percentage="50",
+        )
+
+        self.assertRedirects(response, self.list_url, fetch_redirect_response=False)
+        category = SrpCategory.objects.get(name="Solo PVP")
+        self.assertEqual(category.key, "solo-pvp")
+        self.assertEqual(
+            (category.loss_cap, category.personal_monthly_cap, category.corporation_monthly_cap),
+            (250_000_000, 1_000_000_000, 5_000_000_000),
+        )
+        self.assertEqual(category.percentage, Decimal("50"))
+        self.assertFalse(category.is_system)
+        entry = AuditLog.objects.get(action="configuration.create", object_type="SrpCategory")
+        self.assertEqual(entry.actor, self.admin)
+        self.assertEqual(entry.new_value["loss_cap"], 250_000_000)
+        self.assertEqual(entry.new_value["key"], "solo-pvp")
+
+    def test_a_typed_key_is_kept(self):
+        self.post(name="Solo PVP", key="solo")
+
+        self.assertTrue(SrpCategory.objects.filter(key="solo").exists())
+
+    def test_the_own_cap_mode_needs_an_amount(self):
+        response = self.post(loss_cap_mode="custom", loss_cap="")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("loss_cap", response.context["form"].errors)
+        self.assertFalse(SrpCategory.objects.filter(name="Solo PVP").exists())
+
+    def test_a_wrong_amount_is_refused(self):
+        response = self.post(personal_monthly_cap="a lot")
+
+        self.assertIn("personal_monthly_cap", response.context["form"].errors)
+
+    def test_a_name_or_key_that_exists_is_refused(self):
+        f.srp_category("Solo PVP", key="solo")
+
+        same_name = self.post(name="Solo PVP", key="another")
+        same_key = self.post(name="Other", key="solo")
+
+        self.assertIn("name", same_name.context["form"].errors)
+        self.assertIn("key", same_key.context["form"].errors)
+        self.assertEqual(SrpCategory.objects.count(), 2)
+
+    def test_a_name_that_makes_no_key_is_refused(self):
+        response = self.post(name="---")
+
+        self.assertIn("key", response.context["form"].errors)
+
+    def test_a_percentage_over_100_is_refused(self):
+        response = self.post(percentage="101")
+
+        self.assertIn("percentage", response.context["form"].errors)
+
+    def test_a_fleet_type_belongs_to_one_active_category(self):
+        strat = f.fleet_type("StratOp")
+        first = f.srp_category("Strat ops")
+        first.fleet_types.add(strat)
+
+        clash = self.post(name="Other", fleet_types=[strat.pk])
+        inactive = self.post(name="Closed", fleet_types=[strat.pk], is_active=None)
+
+        self.assertIn("fleet_types", clash.context["form"].errors)
+        self.assertEqual(inactive.status_code, 302)
+        self.assertEqual(list(SrpCategory.objects.get(name="Closed").fleet_types.all()), [strat])
+
+    def test_a_category_can_keep_its_own_fleet_type_when_edited(self):
+        strat = f.fleet_type("StratOp")
+        category = f.srp_category("Strat ops")
+        category.fleet_types.add(strat)
+
+        response = self.client.post(
+            self.edit_url(category),
+            {"name": "Strat operations", "key": category.key, "member_selectable": "on", "loss_cap_mode": "default",
+             "cap_applies_to_rules": "on", "is_active": "on", "sort_order": "0", "fleet_types": [strat.pk]},
+        )
+
+        self.assertRedirects(response, self.list_url, fetch_redirect_response=False)
+        self.assertEqual(SrpCategory.objects.get(pk=category.pk).name, "Strat operations")
+
+    def test_editing_is_audited_with_the_old_and_the_new_values(self):
+        category = f.srp_category("Solo PVP", key="solo")
+
+        self.client.post(
+            self.edit_url(category),
+            {"name": "Solo PVP", "key": "solo", "member_selectable": "on", "loss_cap_mode": "custom",
+             "loss_cap": "300m", "cap_applies_to_rules": "on", "is_active": "on", "sort_order": "3"},
+        )
+
+        entry = AuditLog.objects.get(action="configuration.update", object_type="SrpCategory")
+        self.assertEqual(entry.old_value["loss_cap"], None)
+        self.assertEqual(entry.new_value["loss_cap"], 300_000_000)
+        self.assertEqual(entry.new_value["sort_order"], 3)
+
+    def test_the_built_in_category_can_be_renamed_and_given_caps(self):
+        fleet = f.fleet_category()
+
+        response = self.client.post(
+            self.edit_url(fleet),
+            {"name": "Line fleets", "description": "", "loss_cap_mode": "none", "cap_applies_to_rules": "on",
+             "sort_order": "0"},
+        )
+
+        self.assertRedirects(response, self.list_url, fetch_redirect_response=False)
+        fleet.refresh_from_db()
+        self.assertEqual((fleet.name, fleet.loss_cap_mode, fleet.key), ("Line fleets", "none", "fleet"))
+        self.assertTrue(fleet.is_active)
+        self.assertFalse(fleet.member_selectable)
+
+    def test_a_forged_post_cannot_change_the_fixed_fields_of_the_built_in_category(self):
+        fleet = f.fleet_category()
+
+        self.client.post(
+            self.edit_url(fleet),
+            {"name": "Fleet", "key": "hijacked", "member_selectable": "on", "loss_cap_mode": "default",
+             "cap_applies_to_rules": "on", "sort_order": "0"},
+        )
+
+        fleet.refresh_from_db()
+        self.assertEqual(fleet.key, "fleet")
+        self.assertTrue(fleet.is_active)
+        self.assertFalse(fleet.member_selectable)
+
+    def test_the_fixed_fields_are_read_only_on_the_page(self):
+        response = self.client.get(self.edit_url(f.fleet_category()))
+
+        form = response.context["form"]
+        self.assertTrue(all(form.fields[name].disabled for name in ("key", "is_active", "member_selectable")))
+
+    def test_the_built_in_category_cannot_be_deleted(self):
+        fleet = f.fleet_category()
+
+        response = self.client.post(self.delete_url(fleet))
+
+        self.assertRedirects(response, self.list_url, fetch_redirect_response=False)
+        self.assertEqual(messages_of(response), ["The fleet category is built in; rename it instead."])
+        self.assertTrue(SrpCategory.objects.filter(pk=fleet.pk).exists())
+        self.assertFalse(AuditLog.objects.filter(action="configuration.delete").exists())
+
+    def test_a_category_with_claims_cannot_be_deleted(self):
+        solo = f.srp_category("Solo PVP")
+        f.srp_claim(f.create_user("pilot", perms=f.SRP_MEMBER_PERMS), category=solo)
+
+        response = self.client.post(self.delete_url(solo))
+
+        self.assertEqual(messages_of(response), ["This category has claims or payout rules. Deactivate it instead."])
+        self.assertTrue(SrpCategory.objects.filter(pk=solo.pk).exists())
+
+    def test_a_category_with_payout_rules_cannot_be_deleted(self):
+        solo = f.srp_category("Solo PVP")
+        f.payout_rule(587, category=solo)
+
+        response = self.client.post(self.delete_url(solo))
+
+        self.assertEqual(messages_of(response), ["This category has claims or payout rules. Deactivate it instead."])
+        self.assertTrue(SrpCategory.objects.filter(pk=solo.pk).exists())
+
+    def test_an_unused_category_is_deleted_and_audited(self):
+        solo = f.srp_category("Solo PVP")
+
+        response = self.client.post(self.delete_url(solo))
+
+        self.assertRedirects(response, self.list_url, fetch_redirect_response=False)
+        self.assertFalse(SrpCategory.objects.filter(pk=solo.pk).exists())
+        entry = AuditLog.objects.get(action="configuration.delete", object_type="SrpCategory")
+        self.assertEqual(entry.object_id, str(solo.pk))
+
+    def test_deleting_needs_post(self):
+        solo = f.srp_category("Solo PVP")
+
+        self.assertEqual(self.client.get(self.delete_url(solo)).status_code, 405)
+
+    def test_the_pages_need_the_configuration_permission(self):
+        member = f.create_user("plain_member", perms=f.MEMBER_PERMS)
+        self.client.force_login(member)
+        solo = f.srp_category("Solo PVP")
+
+        self.assertEqual(self.client.get(self.list_url).status_code, 403)
+        self.assertEqual(self.client.get(self.add_url).status_code, 403)
+        self.assertEqual(self.client.post(self.add_url, {"name": "X"}).status_code, 403)
+        self.assertEqual(self.client.post(self.delete_url(solo)).status_code, 403)
+        self.assertTrue(SrpCategory.objects.filter(pk=solo.pk).exists())
+
+    def test_the_payout_rule_form_has_the_category_before_the_scope(self):
+        self.ships = {RIFTER: "Rifter"}
+        with mock.patch.object(forms_config, "get_doctrines", return_value=[]):
+            response = self.client.get(reverse("fleetops:configuration_add", args=["srp-rules"]))
+
+        form = response.context["form"]
+        self.assertEqual(
+            list(form.fields),
+            ["label", "ship", "doctrine_choice", "doctrine_custom", "category", "scope", "amount", "is_active", "notes"],
+        )
+        self.assertEqual(form.fields["category"].empty_label, "All categories")
+
+    def test_the_payout_rule_form_marks_inactive_categories(self):
+        f.srp_category("Solo PVP")
+        f.srp_category("Old", is_active=False)
+        with mock.patch.object(forms_config, "get_doctrines", return_value=[]):
+            form = SrpPayoutRuleForm()
+
+        labels = [label for _value, label in form.fields["category"].choices]
+        self.assertIn("Solo PVP", labels)
+        self.assertIn("Old (inactive)", labels)
+        self.assertIn("Fleet", labels)
+
+    def test_a_payout_rule_is_saved_with_its_category_and_listed(self):
+        solo = f.srp_category("Solo PVP")
+        with (
+            mock.patch.object(forms_config.sde_service, "item_type_names", return_value={RIFTER: "Rifter"}),
+            mock.patch.object(forms_config, "get_doctrines", return_value=[]),
+        ):
+            response = self.client.post(
+                reverse("fleetops:configuration_add", args=["srp-rules"]),
+                {"ship": str(RIFTER), "doctrine_choice": "", "doctrine_custom": "", "category": solo.pk,
+                 "scope": "any", "amount": "50m", "is_active": "on"},
+            )
+
+        self.assertRedirects(response, reverse("fleetops:configuration_list", args=["srp-rules"]), fetch_redirect_response=False)
+        rule = SrpPayoutRule.objects.get()
+        self.assertEqual((rule.category, rule.category_key), (solo, solo.pk))
+        entry = AuditLog.objects.get(action="configuration.create", object_type="SrpPayoutRule")
+        self.assertEqual(entry.new_value["category"], solo.pk)
+        listed = self.client.get(reverse("fleetops:configuration_list", args=["srp-rules"]))
+        self.assertContains(listed, "Solo PVP")
+
+    def test_the_payout_table_lists_general_rules_as_all_categories(self):
+        f.payout_rule(RIFTER)
+
+        listed = self.client.get(reverse("fleetops:configuration_list", args=["srp-rules"]))
+
+        self.assertContains(listed, "All categories")
+
+    def test_the_same_ship_in_the_same_category_is_refused_with_the_known_message(self):
+        solo = f.srp_category("Solo PVP")
+        f.payout_rule(RIFTER, category=solo)
+        with (
+            mock.patch.object(forms_config.sde_service, "item_type_names", return_value={RIFTER: "Rifter"}),
+            mock.patch.object(forms_config, "get_doctrines", return_value=[]),
+        ):
+            same = self.client.post(
+                reverse("fleetops:configuration_add", args=["srp-rules"]),
+                {"ship": str(RIFTER), "doctrine_choice": "", "doctrine_custom": "", "category": solo.pk,
+                 "scope": "any", "amount": "50m", "is_active": "on"},
+            )
+            general = self.client.post(
+                reverse("fleetops:configuration_add", args=["srp-rules"]),
+                {"ship": str(RIFTER), "doctrine_choice": "", "doctrine_custom": "", "category": "",
+                 "scope": "any", "amount": "50m", "is_active": "on"},
+            )
+
+        self.assertContains(same, "A rule for this ship, doctrine and scope already exists.")
+        self.assertEqual(general.status_code, 302)
+        self.assertEqual(SrpPayoutRule.objects.count(), 2)
+
+    def test_the_settings_page_has_the_category_fields(self):
+        solo = f.srp_category("Solo PVP")
+        f.srp_category("Hidden", member_selectable=False)
+        url = reverse("fleetops:configuration_list", args=["srp"])
+
+        page = self.client.get(url)
+        form = page.context["form"]
+        self.assertIn("default_category", form.fields)
+        self.assertIn("out_of_fleet_category_required", form.fields)
+        self.assertEqual([obj.name for obj in form.fields["default_category"].queryset], ["Solo PVP"])
+
+        response = self.client.post(
+            url, settings_post(default_category=solo.pk, out_of_fleet_category_required="on")
+        )
+
+        self.assertEqual(response.status_code, 302)
+        saved = SrpSettings.get_solo()
+        self.assertEqual(saved.default_category, solo)
+        self.assertTrue(saved.out_of_fleet_category_required)
+        entry = AuditLog.objects.filter(action="configuration.update", object_type="SrpSettings").latest("pk")
+        self.assertEqual(entry.new_value["default_category"], solo.pk)
+
+    def test_the_settings_page_refuses_a_default_category_members_cannot_choose(self):
+        hidden = f.srp_category("Hidden", member_selectable=False)
+
+        response = self.client.post(
+            reverse("fleetops:configuration_list", args=["srp"]), settings_post(default_category=hidden.pk)
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("default_category", response.context["form"].errors)
+        self.assertIsNone(SrpSettings.get_solo().default_category)

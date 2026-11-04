@@ -155,7 +155,10 @@ def personal(user, year: int, month: int) -> PersonalSrp:
         killmail_time=start,
         policy=policy,
     )
-    return PersonalSrp(year=year, month=month, totals=totals, claims=listed, limits=limits)
+    category_limits = quota.category_personal_limits(user_id=user.pk, killmail_time=start)
+    return PersonalSrp(
+        year=year, month=month, totals=totals, claims=listed, limits=limits, category_limits=category_limits
+    )
 
 
 # --- Members, corporations, FCs ----------------------------------------------------------------------------

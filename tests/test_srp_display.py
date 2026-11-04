@@ -221,7 +221,8 @@ class ValueObjectTests(SimpleTestCase):
         stored = json.loads(json.dumps(policy.as_json()))
 
         self.assertEqual(PolicySnapshot.from_json(stored), policy)
-        self.assertEqual(stored["version"], 1)
+        # 0.3.0b1: the snapshot is version 2 (it carries the category of the claim).
+        self.assertEqual(stored["version"], 2)
         self.assertEqual(stored["percentage"], "80.50")
         self.assertEqual(stored["rule"]["match"], "doctrine_ship")
 
@@ -249,6 +250,8 @@ class ValueObjectTests(SimpleTestCase):
                 "capsules_need_rule",
                 "claim_deadline_days",
                 "rule",
+                # 0.3.0b1 (CAT-3): the category of the claim.
+                "category",
             },
         )
 
@@ -536,7 +539,7 @@ class TemplateFilterTests(TestCase):
             c=claim,
         )
 
-        self.assertEqual(html, "rule|12,000,000 ISK|No payout rule for this ship.|1")
+        self.assertEqual(html, "rule|12,000,000 ISK|No payout rule for this ship.|2")  # 0.3.0b1: snapshot version 2
 
     def test_limit_and_match_labels(self):
         self.assertEqual(render("{{ k|srp_limit_label }}|{{ m|srp_match_label }}", k="corporation", m="doctrine"), "corporation monthly limit|Doctrine")

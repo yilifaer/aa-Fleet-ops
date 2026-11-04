@@ -500,7 +500,7 @@ class ConcurrentApprovalTests(TransactionTestCase):
     def test_a_value_that_arrives_while_the_claim_is_made_reaches_the_claim(self):
         # The sweep stores the value while the claim is being made. Its update of the killmail waits for the
         # claim (the killmail row is locked with the quota lock), and then finds the claim and calculates it.
-        f.srp_settings(enabled=True, percentage=Decimal("80"))
+        f.srp_settings(enabled=True, percentage=Decimal("80"), value_source="zkill_fitted")
         when = timezone.now() - timedelta(hours=2)
         km = f.srp_killmail(
             f.main_of(self.user), time=when, zkill_status="pending",

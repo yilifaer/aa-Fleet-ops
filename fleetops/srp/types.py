@@ -83,7 +83,21 @@ class ZkillResult:
 
 LIMIT_PERSONAL = "personal"
 LIMIT_CORPORATION = "corporation"
+LIMIT_CATEGORY_PERSONAL = "category_personal"
+LIMIT_CATEGORY_CORPORATION = "category_corporation"
 LIMIT_LOSS_CAP = "loss_cap"
+
+# Ties between limits that leave the same amount: the monthly limits come before the per-loss cap, the player's
+# before the corporation's, and a limit of the category right after the general one of its kind.
+BINDING_ORDER = {
+    LIMIT_PERSONAL: 0,
+    LIMIT_CATEGORY_PERSONAL: 1,
+    LIMIT_CORPORATION: 2,
+    LIMIT_CATEGORY_CORPORATION: 3,
+    LIMIT_LOSS_CAP: 4,
+}
+# The limits that are counted per month (all but the per-loss cap).
+MONTHLY_KINDS = (LIMIT_PERSONAL, LIMIT_CATEGORY_PERSONAL, LIMIT_CORPORATION, LIMIT_CATEGORY_CORPORATION)
 
 MATCH_DOCTRINE_SHIP = "doctrine_ship"
 MATCH_DOCTRINE = "doctrine"
@@ -109,9 +123,13 @@ class RuleSnapshot:
     scope: str = "any"
     amount: int = 0
     match: str = MATCH_SHIP
+    category_id: int | None = None
+    category_name: str = ""
 
     def as_json(self) -> dict:
         return {
+            "category_id": self.category_id,
+            "category_name": self.category_name,
             "id": self.id,
             "label": self.label,
             "ship_type_id": self.ship_type_id,
@@ -135,14 +153,80 @@ class RuleSnapshot:
             scope=data.get("scope") or "any",
             amount=data.get("amount") or 0,
             match=data.get("match") or MATCH_SHIP,
+            category_id=data.get("category_id"),
+            category_name=data.get("category_name") or "",
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class CategorySnapshot:
+    """The settings of the claim's category when it was calculated: what differs from the general policy."""
+
+    id: int | None = None
+    key: str = ""
+    name: str = ""
+    percentage: Decimal | None = None
+    loss_cap_mode: str = "default"
+    loss_cap: int | None = None
+    cap_applies_to_rules: bool = True
+    personal_monthly_cap: int | None = None
+    corporation_monthly_cap: int | None = None
+
+    @classmethod
+    def from_category(cls, category) -> "CategorySnapshot | None":
+        if category is None:
+            return None
+        return cls(
+            id=category.pk,
+            key=category.key,
+            name=category.name,
+            percentage=display.to_decimal(category.percentage),
+            loss_cap_mode=category.loss_cap_mode,
+            loss_cap=category.loss_cap,
+            cap_applies_to_rules=category.cap_applies_to_rules,
+            personal_monthly_cap=category.personal_monthly_cap,
+            corporation_monthly_cap=category.corporation_monthly_cap,
+        )
+
+    def as_json(self) -> dict:
+        return {
+            "id": self.id,
+            "key": self.key,
+            "name": self.name,
+            "percentage": None if self.percentage is None else str(self.percentage),
+            "loss_cap_mode": self.loss_cap_mode,
+            "loss_cap": self.loss_cap,
+            "cap_applies_to_rules": self.cap_applies_to_rules,
+            "personal_monthly_cap": self.personal_monthly_cap,
+            "corporation_monthly_cap": self.corporation_monthly_cap,
+        }
+
+    @classmethod
+    def from_json(cls, data) -> "CategorySnapshot | None":
+        if not isinstance(data, dict) or data.get("id") is None:
+            return None
+        return cls(
+            id=data.get("id"),
+            key=data.get("key") or "",
+            name=data.get("name") or "",
+            percentage=_decimal(data.get("percentage")),
+            loss_cap_mode=data.get("loss_cap_mode") or "default",
+            loss_cap=data.get("loss_cap"),
+            cap_applies_to_rules=data.get("cap_applies_to_rules", True),
+            personal_monthly_cap=data.get("personal_monthly_cap"),
+            corporation_monthly_cap=data.get("corporation_monthly_cap"),
         )
 
 
 @dataclass(frozen=True, slots=True)
 class PolicySnapshot:
-    """The SRP settings a claim was calculated with, kept on the claim as JSON."""
+    """The SRP settings a claim was calculated with, kept on the claim as JSON.
 
-    version: int = 1
+    ``percentage`` is the general percentage of the settings; ``effective_percentage`` is the one that pays the
+    claim (the category's own when it has one).
+    """
+
+    version: int = 2
     value_source: str = "zkill_fitted"
     percentage: Decimal = Decimal("0")
     in_fleet_loss_cap: int | None = None
@@ -156,6 +240,13 @@ class PolicySnapshot:
     capsules_need_rule: bool = True
     claim_deadline_days: int = 0
     rule: RuleSnapshot | None = None
+    category: CategorySnapshot | None = None
+
+    @property
+    def effective_percentage(self) -> Decimal:
+        if self.category is not None and self.category.percentage is not None:
+            return self.category.percentage
+        return self.percentage
 
     def as_json(self) -> dict:
         return {
@@ -173,6 +264,7 @@ class PolicySnapshot:
             "capsules_need_rule": self.capsules_need_rule,
             "claim_deadline_days": self.claim_deadline_days,
             "rule": self.rule.as_json() if self.rule else None,
+            "category": self.category.as_json() if self.category else None,
         }
 
     @classmethod
@@ -196,12 +288,14 @@ class PolicySnapshot:
             capsules_need_rule=data.get("capsules_need_rule", True),
             claim_deadline_days=data.get("claim_deadline_days") or 0,
             rule=RuleSnapshot.from_json(data.get("rule")),
+            category=CategorySnapshot.from_json(data.get("category")),
         )
 
 
 @dataclass(frozen=True, slots=True)
 class LimitState:
-    """One monthly limit for a claim: ``kind`` is ``personal`` or ``corporation``.
+    """One monthly limit for a claim: ``kind`` is ``personal``, ``corporation`` or the same two of the claim's
+    category (``category_personal``, ``category_corporation``).
 
     ``cap`` is None without a limit; ``used`` are approved and paid amounts of the month, ``pending`` the
     amounts of claims still in review. ``remaining`` is ``max(cap - used, 0)`` or None without a cap, and
@@ -428,6 +522,7 @@ class ClaimPreview:
     killmail: Any
     scope: str
     link: Any = None
+    category: Any = None
     user: Any = None
     identity: ClaimIdentity | None = None
     eligible: bool = False
@@ -469,6 +564,14 @@ class SrpTotals:
     outstanding: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class CategoryLimit:
+    """The personal monthly limit of one SRP category, with the name of the category as stored."""
+
+    category_name: str
+    state: LimitState
+
+
 @dataclass(slots=True)
 class PersonalSrp:
     """The claims of one player in a month with the limits that apply to the player now."""
@@ -478,6 +581,7 @@ class PersonalSrp:
     totals: SrpTotals = field(default_factory=SrpTotals)
     claims: list = field(default_factory=list)
     limits: tuple[LimitState, ...] = ()
+    category_limits: tuple[CategoryLimit, ...] = ()
 
 
 @dataclass(slots=True)

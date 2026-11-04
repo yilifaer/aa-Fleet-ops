@@ -1,5 +1,65 @@
 # Changelog
 
+## [0.3.0b1] - Unreleased
+
+The SRP rework. This pre-release is built phase by phase; this section lists what is in the build so far.
+Install it like the previous pre-release (`pip install --no-deps aa-fleetops==0.3.0b1`).
+
+### Added
+
+- **SRP categories.** A new page, **Administration** > **FleetOps SRP** > **SRP Categories**, manages kinds of claims
+  (fleet losses, solo PVP, a standing doctrine, ...). Each category can have its own payout percentage, its own
+  per-loss cap (or none), its own payout table entries, and a personal and a corporation monthly cap. A claim has at
+  most one category: a claim through a fleet link gets the built-in **Fleet** category (or the category its fleet
+  type is mapped to), a claim outside a fleet gets the category a reviewer or the settings give it. A claim without
+  a category is calculated as before. FleetOps creates only the **Fleet** category; the documents show an example set
+  of categories.
+- **Payout table by category.** A payout rule can belong to a category. At the same level of specificity, a rule of the
+  claim's category beats a general rule; the same ship, doctrine and scope can have one rule per category. A rule of
+  one category never applies to another.
+- **Category limits.** The monthly limits of a category count only the claims of that category, and are checked
+  together with the general limits (the most restrictive wins). They are named "monthly category personal limit" and
+  "monthly category corporation limit" on the claim, in the audit log and in the reason of an automatic rejection.
+- **Change the category.** A reviewer can move a pending claim to another category, or to none. The claim is calculated
+  again, the reason is required, and the change is shown in the claim's timeline and audited as `srp.claim_recategorize`.
+  Moving a claim between fleet and out of fleet also sets its category (the fleet's category, or the default category,
+  or the one the reviewer names).
+- **Default category** and **Members must choose a category for losses outside a fleet** in the SRP settings.
+- **Category choice for members.** The form for a loss outside a fleet has a **Category** list (only the active
+  categories members can choose; the default category is preselected, and the list is required while the setting above
+  is on). Without such a category the form is unchanged. The category is shown on the check page, the claim, the
+  member's table, the review queue and the payment page, and "My SRP" lists the personal monthly limit of each category
+  that has one. A category switched off between the check and the submission gives a clear error.
+- **Old settings.** The notice "N pending claims were calculated with earlier SRP settings" also appears on the category
+  pages and notices a changed category as well.
+
+### Changed
+
+- **The default value source is now the zKillboard total value** (it includes cargo; aa-srp pays the total value).
+  Existing sites that saved their SRP settings once, or have claims, keep their choice. Only a site that never saved
+  its SRP settings and has no claim is switched, by the upgrade.
+- The stored calculation of a claim (policy snapshot) is version 2 and carries the category. Claims calculated before
+  keep their snapshot and are not reported as "calculated with earlier settings" by the upgrade.
+
+### Upgrade notes
+
+Back up the database first, install the release with `--no-deps`, then run `python manage.py migrate fleetops` and
+restart the web process, the Celery worker and Celery beat. Migration `0024` adds the category table and columns and
+replaces the unique constraint of the payout table by one that includes the category. Migration `0025` creates the
+**Fleet** category, puts the claims made through a fleet link into it, and switches the value source of a site that
+never saved its SRP settings. Nothing else changes: amounts, statuses and limits of existing claims stay as they are,
+and the number of claims "calculated with earlier settings" is 0 after the upgrade. No new Alliance Auth permission is
+created and nothing is granted to anybody.
+
+### Rollback notes
+
+Roll back the migrations first (`python manage.py migrate fleetops 0023`), then install the previous package.
+The rollback is refused, and the database is left as it is, while any payout rule belongs to a category: without the
+category column such a rule would apply to every claim and could pay too much. The message lists the rule IDs only.
+Delete those rules or make them general (**All categories**) first. The categories themselves, the category of each
+claim and the category settings are lost by the rollback; export what you need before. Claims, amounts and statuses
+stay. The value source is not changed back.
+
 ## [0.2.0b3] - Unreleased
 
 A small addition for alliances that keep two Alliance Auth groups per small group and record no group leaders.

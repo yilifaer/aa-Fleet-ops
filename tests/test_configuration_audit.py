@@ -34,6 +34,7 @@ from fleetops.models import (
     ShipFunction,
     ShipFunctionRule,
     SpecialRole,
+    SrpCategory,
     SrpCorporationLimit,
     SrpPayoutRule,
     StatisticsTarget,
@@ -75,7 +76,12 @@ FLEET_SECTION_MODELS = {
     "structure-templates": FleetStructureTemplate,
 }
 # Sections of FleetOps SRP; tests/test_srp_config.py covers their pages.
-SRP_SECTION_MODELS = {"srp-rules": SrpPayoutRule, "srp-corporation-limits": SrpCorporationLimit}
+# 0.3.0b1: the SRP categories section (CAT-8).
+SRP_SECTION_MODELS = {
+    "srp-categories": SrpCategory,
+    "srp-rules": SrpPayoutRule,
+    "srp-corporation-limits": SrpCorporationLimit,
+}
 # The Groups section; tests/test_discord_config.py covers its hooks.
 GROUP_SECTION_MODELS = {"groups": GroupAccess}
 

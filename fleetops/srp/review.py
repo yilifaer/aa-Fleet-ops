@@ -17,9 +17,9 @@ from django.utils import timezone
 from fleetops.constants import MAX_ISK
 from fleetops import texts
 from fleetops.models import SrpClaim, SrpClaimEvent, SrpFleetLink, SrpSettings
-from fleetops.srp import access, claims, display, quota
+from fleetops.srp import access, categories, claims, display, quota
 from fleetops.srp import policy as rules
-from fleetops.srp.types import LIMIT_PERSONAL, BulkResult, PolicySnapshot, SrpError, SrpLimitError, SrpStateError
+from fleetops.srp.types import BINDING_ORDER, BulkResult, PolicySnapshot, SrpError, SrpLimitError, SrpStateError
 
 Status = SrpClaim.Status
 Scope = SrpClaim.Scope
@@ -63,7 +63,7 @@ def _amount(value) -> int:
 def _tightest(states):
     """``(remaining, kind)`` of the limit that leaves least for a claim; ``(None, "")`` without one."""
     tight = [
-        (state.effective_remaining, 0 if state.kind == LIMIT_PERSONAL else 1, state.kind)
+        (state.effective_remaining, BINDING_ORDER.get(state.kind, 9), state.kind)
         for state in states
         if state.effective_remaining is not None
     ]
@@ -441,6 +441,7 @@ def reopen_claim(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
             scope=locked.scope,
             operation=locked.operation,
             settings_obj=srp,
+            category=locked.category,
             exclude_claim_id=locked.pk,
             locking=True,
             now=now,
@@ -468,8 +469,11 @@ def reopen_claim(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
     return claims.sync_claim(claim, locked)
 
 
-def reclassify_claim(claim: SrpClaim, *, actor, scope: str, link=None, reason: str) -> SrpClaim:
+def reclassify_claim(claim: SrpClaim, *, actor, scope: str, link=None, reason: str, category=None) -> SrpClaim:
     """Move a pending claim between in fleet and out of fleet; in fleet needs an open fleet link.
+
+    The category follows the move: a claim moved into a fleet gets the category of that fleet; a claim moved out
+    of the fleet gets ``category`` (an active one) or the default category of the settings, else none.
 
     The claim is calculated again (payout rule, caps and which limits count) and the fleet presence is
     checked against the new fleet.
@@ -502,11 +506,23 @@ def reclassify_claim(claim: SrpClaim, *, actor, scope: str, link=None, reason: s
             if not srp.out_of_fleet_enabled:
                 raise SrpError("fleet_only", str(rules.BLOCK_FLEET_ONLY))
 
+        if scope == Scope.IN_FLEET:
+            new_category = categories.resolve_category(
+                scope=scope, link=target, operation=target.operation, chosen=None, settings_obj=srp
+            )
+        elif category is not None:
+            if not category.is_active:
+                raise SrpError("category_unavailable", texts.SRP_CATEGORY_UNAVAILABLE())
+            new_category = category
+        else:
+            new_category = categories.default_category(srp)
+
         previous = claims.calculation_snapshot(locked)
         previous_link = locked.link.code if locked.link_id and locked.link else None
+        previous_category = locked.category.key if locked.category_id else None
         km = locked.killmail
         locked.scope = scope
-        for field, value in claims.fleet_fields(target).items():
+        for field, value in claims.fleet_fields(target, new_category).items():
             setattr(locked, field, value)
         evaluation = claims.evaluate(
             km=km,
@@ -515,6 +531,7 @@ def reclassify_claim(claim: SrpClaim, *, actor, scope: str, link=None, reason: s
             scope=scope,
             operation=locked.operation,
             settings_obj=srp,
+            category=new_category,
             exclude_claim_id=locked.pk,
             locking=True,
             now=now,
@@ -534,10 +551,63 @@ def reclassify_claim(claim: SrpClaim, *, actor, scope: str, link=None, reason: s
                 "to_scope": scope,
                 "from_link": previous_link,
                 "to_link": target.code if target is not None else None,
+                "from_category": previous_category,
+                "to_category": new_category.key if new_category is not None else None,
                 "previous": previous,
             },
             old={"scope": previous["scope"], "suggested_amount": previous["suggested_amount"]},
             new={"scope": scope, "suggested_amount": locked.suggested_amount},
+        )
+    return claims.sync_claim(claim, locked)
+
+
+def recategorize_claim(claim: SrpClaim, *, actor, category, reason: str) -> SrpClaim:
+    """Change the category of a pending claim (``None`` for no category) and calculate it again: the payout
+    rules, the percentage, the caps and the monthly limits of the new category apply. A reason is required.
+
+    The new category has to be active; the reviewer is not limited to the categories members can choose.
+    """
+    reason = claims.clean_reason(reason, required=True, what="reason")
+    if category is not None and not category.is_active:
+        raise SrpError("category_unavailable", texts.SRP_CATEGORY_UNAVAILABLE())
+    now = timezone.now()
+    with quota.quota_lock() as srp:
+        locked = claims.lock_claim(claim)
+        _require_reviewer(actor, locked, srp)
+        if locked.status != Status.PENDING:
+            raise claims.wrong_state(locked, texts.SRP_ONLY_PENDING_RECATEGORIZED())
+        new_id = category.pk if category is not None else None
+        if locked.category_id == new_id:
+            raise SrpError("unchanged", texts.SRP_CATEGORY_UNCHANGED())
+        previous = claims.calculation_snapshot(locked)
+        previous_key = locked.category.key if locked.category_id else None
+        km = locked.killmail
+        locked.category = category
+        evaluation = claims.evaluate(
+            km=km,
+            user_id=locked.user_id,
+            corporation_id=locked.corporation_id,
+            scope=locked.scope,
+            operation=locked.operation,
+            settings_obj=srp,
+            category=category,
+            exclude_claim_id=locked.pk,
+            locking=True,
+            now=now,
+        )
+        claims.apply_evaluation(locked, evaluation, km)
+        locked.save()
+        new_key = category.key if category is not None else None
+        claims.record_event(
+            locked,
+            Action.RECATEGORIZE,
+            actor=actor,
+            from_status=Status.PENDING,
+            amount=locked.suggested_amount,
+            reason=reason,
+            data={"from_category": previous_key, "to_category": new_key, "previous": previous},
+            old={"category": previous_key, "suggested_amount": previous["suggested_amount"]},
+            new={"category": new_key, "suggested_amount": locked.suggested_amount},
         )
     return claims.sync_claim(claim, locked)
 

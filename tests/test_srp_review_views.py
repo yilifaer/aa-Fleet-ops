@@ -725,7 +725,11 @@ class ClaimActionTests(ManagerPagesTestCase):
 
         args, kwargs = reclassify.call_args
         self.assertEqual(args[0].pk, claim.pk)
-        self.assertEqual(kwargs, {"actor": self.manager, "scope": "out_of_fleet", "link": None, "reason": "Lost on the way home"})
+        # 0.3.0b1: the form also passes the category (CAT-6).
+        self.assertEqual(
+            kwargs,
+            {"actor": self.manager, "scope": "out_of_fleet", "link": None, "reason": "Lost on the way home", "category": None},
+        )
         self.assertIn(f"{claim.reference} moved to out of fleet and recalculated.", messages_of(response))
 
     def test_move_into_a_fleet_by_its_link_code(self):

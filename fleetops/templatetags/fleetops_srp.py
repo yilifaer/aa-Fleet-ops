@@ -4,7 +4,7 @@
 from django import template
 from django.utils.translation import pgettext
 
-from fleetops.models import SrpClaim, SrpClaimEvent
+from fleetops.models import SrpCategory, SrpClaim, SrpClaimEvent
 from fleetops.providers.zkillboard import kill_url
 from fleetops.srp import display
 from fleetops.srp.types import (
@@ -248,6 +248,23 @@ def srp_note_text(note):
 def srp_limit_label(kind):
     """The name of a limit: ``loss_cap``, ``personal`` or ``corporation``."""
     return display.limit_kind_label(kind)
+
+
+@register.filter
+def srp_category_label(category):
+    """A category named in the language of the viewer."""
+    return display.category_label(category)
+
+
+@register.filter
+def srp_category_name(claim):
+    """The category of a claim in the language of the viewer, for a table cell. Empty without a category and for
+    the built-in fleet category (a loss in a fleet needs no extra line). Read the claims with
+    ``select_related("category")``."""
+    category = claim.category if claim.category_id else None
+    if category is None or category.key == SrpCategory.SYSTEM_KEY:
+        return ""
+    return display.category_label(category)
 
 
 @register.filter

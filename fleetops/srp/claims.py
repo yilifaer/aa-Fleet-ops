@@ -17,17 +17,21 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from fleetops import texts
-from fleetops.models import SrpClaim, SrpClaimEvent, SrpFleetLink, SrpKillmail, SrpSettings
+from fleetops.models import SrpCategory, SrpClaim, SrpClaimEvent, SrpFleetLink, SrpKillmail, SrpSettings
 from fleetops.providers.zkillboard import MIN_KILL_AGE
 from fleetops.services.audit import audit
 from fleetops.services.identity import character_label
 from fleetops.services.periods import format_eve
-from fleetops.srp import access, display, killmails, legacy, notify, presence, quota
+from fleetops.srp import access, categories, display, killmails, legacy, notify, presence, quota
 from fleetops.srp import policy as rules
 from fleetops.srp import values as srp_values
 from fleetops.srp.types import (
+    BINDING_ORDER,
+    LIMIT_CATEGORY_CORPORATION,
+    LIMIT_CATEGORY_PERSONAL,
     LIMIT_CORPORATION,
     LIMIT_PERSONAL,
+    MONTHLY_KINDS,
     Calculation,
     ClaimIdentity,
     ClaimPreview,
@@ -53,7 +57,6 @@ Status = SrpClaim.Status
 Scope = SrpClaim.Scope
 Action = SrpClaimEvent.Action
 
-MONTHLY_KINDS = (LIMIT_PERSONAL, LIMIT_CORPORATION)
 # Warnings that follow from the calculation and are replaced when a claim is calculated again.
 CALCULATION_WARNING_CODES = frozenset({"over_limit", "reduced_by_limit", "value_estimate", "value_pending", "value_missing"})
 # Warnings that follow from the fleet presence check and are replaced when it is checked again.
@@ -94,6 +97,10 @@ def limit_name(kind) -> str:
         return texts.SRP_LIMIT_PERSONAL()
     if kind == LIMIT_CORPORATION:
         return texts.SRP_LIMIT_CORPORATION()
+    if kind == LIMIT_CATEGORY_PERSONAL:
+        return texts.SRP_LIMIT_CATEGORY_PERSONAL()
+    if kind == LIMIT_CATEGORY_CORPORATION:
+        return texts.SRP_LIMIT_CATEGORY_CORPORATION()
     return f"monthly {kind} limit" if kind else texts.SRP_LIMIT_MONTHLY()
 
 
@@ -200,11 +207,15 @@ def evaluate(
     scope: str,
     operation,
     settings_obj,
+    category,
     exclude_claim_id=None,
     locking: bool = False,
     now=None,
 ) -> Evaluation:
     """Match the payout rule, snapshot the policy, pick the loss value and calculate with the monthly limits.
+
+    ``category`` is the claim's category (None for none). It has no default on purpose: a caller that forgot
+    it would quietly calculate the claim as one without a category.
 
     ``locking`` reads the usage rows for update: use it inside ``quota.quota_lock()`` when the result is stored.
     """
@@ -213,8 +224,11 @@ def evaluate(
         scope=scope,
         operation=operation,
         capsules_need_rule=settings_obj.capsules_need_rule,
+        category=category,
     )
-    policy = rules.current_policy(corporation_id=corporation_id, rule=rule, settings_obj=settings_obj)
+    policy = rules.current_policy(
+        corporation_id=corporation_id, rule=rule, settings_obj=settings_obj, category=category
+    )
     value, source = srp_values.loss_value(km, policy.value_source)
     limits = quota.limit_states(
         user_id=user_id,
@@ -238,13 +252,14 @@ def evaluate(
 
 
 def monthly_limit_kind(calculation) -> str:
-    """The monthly limit that kept an amount down: ``personal`` or ``corporation``; empty without one."""
+    """The monthly limit that kept an amount down (``personal``, ``corporation`` or one of the category's two);
+    empty without one."""
     if calculation.binding_limit in MONTHLY_KINDS:
         return calculation.binding_limit
     states = [state for state in calculation.limits if state.effective_remaining is not None]
     if not states:
         return ""
-    return min(states, key=lambda state: (state.effective_remaining, 0 if state.kind == LIMIT_PERSONAL else 1)).kind
+    return min(states, key=lambda state: (state.effective_remaining, BINDING_ORDER.get(state.kind, 9))).kind
 
 
 def calculation_warnings(calculation, policy, km) -> list[ClaimWarning]:
@@ -332,6 +347,7 @@ def calculation_snapshot(claim) -> dict:
     """What a recalculation replaces, kept in the claim event."""
     return {
         "scope": claim.scope,
+        "category_id": claim.category_id,
         "payout_basis": claim.payout_basis,
         "loss_value": None if claim.loss_value is None else str(claim.loss_value),
         "value_source": claim.value_source,
@@ -354,12 +370,21 @@ def fleet_label(operation) -> str:
     return f"{operation.fleet_type} — {fc} — {format_eve(operation.started_at or operation.created_at)} EVE"
 
 
-def fleet_fields(link) -> dict:
-    """The claim fields that name the fleet of an in-fleet claim (all empty for an out-of-fleet claim)."""
+def fleet_fields(link, category=None) -> dict:
+    """The claim fields that name the fleet of an in-fleet claim (all empty for an out-of-fleet claim) and the
+    claim's category."""
     if link is None:
-        return {"link": None, "operation": None, "fleet_label": "", "fc_user": None, "fc_main_character_name": ""}
+        return {
+            "link": None,
+            "operation": None,
+            "fleet_label": "",
+            "fc_user": None,
+            "fc_main_character_name": "",
+            "category": category,
+        }
     operation = link.operation
     return {
+        "category": category,
         "link": link,
         "operation": operation,
         "fleet_label": fleet_label(operation),
@@ -483,12 +508,25 @@ def _external_warnings(killmail_id) -> list[ClaimWarning]:
     return [ClaimWarning("external_claim", display.LEVEL_WARNING, {"claims": list(found)})] if found else []
 
 
-def prepare_claim(user, text: str, *, link: SrpFleetLink | None = None) -> ClaimPreview:
+def _chosen_category(category_id) -> SrpCategory | None:
+    """The category named in a preview token; an ID that no longer exists is refused like an unavailable one."""
+    if category_id is None:
+        return None
+    try:
+        return SrpCategory.objects.get(pk=category_id)
+    except (SrpCategory.DoesNotExist, TypeError, ValueError):
+        raise SrpError("category_unavailable", texts.SRP_CATEGORY_UNAVAILABLE()) from None
+
+
+def prepare_claim(
+    user, text: str, *, link: SrpFleetLink | None = None, category: SrpCategory | None = None
+) -> ClaimPreview:
     """Read the pasted killmail and check it for ``user``: ownership, eligibility, fleet presence, payout
     rule, policy and limits. Throttled to 20 checks per 10 minutes and user. Raises ``SrpError``.
 
-    ``link`` makes it a loss of that fleet. A loss that is not the user's, or that is claimed already, gets
-    its blockers only: no calculation, presence or policy.
+    ``link`` makes it a loss of that fleet. ``category`` is the category a member chose for a loss outside a
+    fleet (ignored in a fleet). A loss that is not the user's, or that is claimed already, gets its blockers
+    only: no calculation, presence or policy.
     """
     _throttle(user)
     srp = SrpSettings.get_solo()
@@ -504,7 +542,16 @@ def prepare_claim(user, text: str, *, link: SrpFleetLink | None = None) -> Claim
         preview.blockers = [duplicate_message(user, existing)]
         return preview
 
-    preview.blockers = rules.eligibility(km=km, user=user, scope=scope, link=link, settings_obj=srp, now=now)
+    operation = link.operation if link is not None else None
+    # The category first: its payout rules decide, for example, whether a capsule is covered. A category that is
+    # required but not chosen stops the check with a message instead of becoming a blocker.
+    resolved = categories.resolve_category(
+        scope=scope, link=link, operation=operation, chosen=category, settings_obj=srp
+    )
+    preview.category = resolved
+    preview.blockers = rules.eligibility(
+        km=km, user=user, scope=scope, link=link, settings_obj=srp, now=now, category=resolved
+    )
     preview.identity = claim_identity(user, km)
     identity = preview.identity
     if identity is None or identity.main_character_id is None:
@@ -513,7 +560,6 @@ def prepare_claim(user, text: str, *, link: SrpFleetLink | None = None) -> Claim
     preview.presence = loss_presence(scope, link, km)
     if scope == Scope.OUT_OF_FLEET and srp.enabled:
         preview.suggested_link = presence.find_fleet_for_loss(km.victim_character_id, km.killmail_time)
-    operation = link.operation if link is not None else None
     evaluation_args = {
         "km": km,
         "user_id": user.pk,
@@ -521,6 +567,7 @@ def prepare_claim(user, text: str, *, link: SrpFleetLink | None = None) -> Claim
         "scope": scope,
         "operation": operation,
         "settings_obj": srp,
+        "category": resolved,
         "now": now,
     }
     evaluation = evaluate(**evaluation_args)
@@ -539,7 +586,13 @@ def prepare_claim(user, text: str, *, link: SrpFleetLink | None = None) -> Claim
     preview.eligible = not preview.blockers
     if preview.eligible:
         preview.token = signing.dumps(
-            {"km": km.pk, "link": link.code if link is not None else None, "u": user.pk}, salt=PREVIEW_SALT
+            {
+                "km": km.pk,
+                "link": link.code if link is not None else None,
+                "u": user.pk,
+                "cat": category.pk if category is not None and scope == Scope.OUT_OF_FLEET else None,
+            },
+            salt=PREVIEW_SALT,
         )
     return preview
 
@@ -591,6 +644,7 @@ def submit_claim(user, token: str, *, comment: str = "") -> SrpClaim:
         if link is None:
             raise SrpError("expired", EXPIRED_TEXT)
     scope = Scope.IN_FLEET if link is not None else Scope.OUT_OF_FLEET
+    chosen = _chosen_category(data.get("cat")) if scope == Scope.OUT_OF_FLEET else None
     now = timezone.now()
     presence_result = loss_presence(scope, link, km)
     external = _external_warnings(km.killmail_id)
@@ -605,7 +659,13 @@ def submit_claim(user, token: str, *, comment: str = "") -> SrpClaim:
         duplicate = _duplicate(user, km)
         if duplicate is not None:
             raise duplicate
-        blockers = rules.eligibility(km=km, user=user, scope=scope, link=link, settings_obj=srp, now=now)
+        operation = link.operation if link is not None else None
+        category = categories.resolve_category(
+            scope=scope, link=link, operation=operation, chosen=chosen, settings_obj=srp
+        )
+        blockers = rules.eligibility(
+            km=km, user=user, scope=scope, link=link, settings_obj=srp, now=now, category=category
+        )
         if blockers:
             raise SrpError("not_eligible", blockers[0])
         identity = claim_identity(user, km)
@@ -614,8 +674,9 @@ def submit_claim(user, token: str, *, comment: str = "") -> SrpClaim:
             user_id=user.pk,
             corporation_id=identity.corporation_id,
             scope=scope,
-            operation=link.operation if link is not None else None,
+            operation=operation,
             settings_obj=srp,
+            category=category,
             locking=True,
             now=now,
         )
@@ -640,7 +701,7 @@ def submit_claim(user, token: str, *, comment: str = "") -> SrpClaim:
             member_comment=comment,
             status=status,
             submitted_at=now,
-            **fleet_fields(link),
+            **fleet_fields(link, category),
         )
         apply_evaluation(claim, evaluation, km)
         apply_presence(claim, presence_result, now)
@@ -671,11 +732,13 @@ def submit_claim(user, token: str, *, comment: str = "") -> SrpClaim:
                 "limited_amount": claim.limited_amount,
                 "over_limit": claim.over_limit,
                 "link": link.code if link is not None else None,
+                "category": category.key if category is not None else None,
                 **({"auto_reject": rejection} if rejection else {}),
             },
             new={
                 "status": claim.status,
                 "scope": scope,
+                "category": category.key if category is not None else None,
                 "killmail_id": km.pk,
                 "ship_type_id": km.ship_type_id,
                 "suggested_amount": claim.suggested_amount,
@@ -728,7 +791,14 @@ def resubmit_claim(claim: SrpClaim, *, actor) -> SrpClaim:
         # No link is given: a closed link does not stop a claim that exists, but the payout rules of its fleet
         # still apply, as they do in the calculation below.
         blockers = rules.eligibility(
-            km=km, user=actor, scope=locked.scope, link=None, operation=locked.operation, settings_obj=srp, now=now
+            km=km,
+            user=actor,
+            scope=locked.scope,
+            link=None,
+            operation=locked.operation,
+            settings_obj=srp,
+            now=now,
+            category=locked.category,
         )
         if blockers:
             raise SrpError("not_eligible", blockers[0])
@@ -740,6 +810,7 @@ def resubmit_claim(claim: SrpClaim, *, actor) -> SrpClaim:
             scope=locked.scope,
             operation=locked.operation,
             settings_obj=srp,
+            category=locked.category,
             exclude_claim_id=locked.pk,
             locking=True,
             now=now,
@@ -794,6 +865,7 @@ def recalculate_under_lock(claim, *, actor, reason: str, action: str = Action.RE
             scope=locked.scope,
             operation=locked.operation,
             settings_obj=srp,
+            category=locked.category,
             exclude_claim_id=locked.pk,
             locking=True,
             now=now,

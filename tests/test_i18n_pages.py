@@ -378,6 +378,10 @@ class PageWorld:
         )
         cls.preset = FleetStartPreset.objects.create(owner=cls.fc, name="Roam")
         cls.data = database_strings()
+        # 0.3.0b1: the built-in SRP category is stored under an English name but shown in the language of the
+        # viewer (texts.SRP_CATEGORY_FLEET), so its name is interface text and the Chinese pages must not show it
+        # in English.
+        cls.data.discard(texts.SRP_CATEGORY_FLEET.msgid)
         cls.data.update(ESI_TEXT)
         cls.data_pattern = data_regex(cls.data)
         cls.allowed = KEPT_WORDS | EXAMPLE_NAMES | catalog_words()

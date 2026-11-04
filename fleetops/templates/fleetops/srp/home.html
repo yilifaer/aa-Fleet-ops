@@ -21,7 +21,7 @@
 
 <div class="card mb-3">
   <div class="card-header"><strong>{% translate "Your monthly allowance" %}</strong></div>
-  <div class="card-body p-0">{% include "fleetops/srp/_limits.html" %}</div>
+  <div class="card-body p-0">{% include "fleetops/srp/_limits.html" with category_limits=category_limits %}</div>
   <div class="card-footer small text-muted">{% translate "A loss counts in the EVE month (UTC) it happened in, whenever it is submitted or approved." %}</div>
 </div>
 

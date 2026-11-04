@@ -14,6 +14,9 @@ from django.utils.translation import pgettext_lazy
 
 from fleetops.constants import MAX_ISK
 from fleetops.forms import _style
+from fleetops.models import SrpCategory, SrpSettings
+from fleetops.srp.categories import default_category, selectable_categories
+from fleetops.srp.display import category_label
 from fleetops.srp.killmails import parse_killmail_reference
 from fleetops.srp.types import SrpError
 from fleetops.texts import translate_stored
@@ -186,9 +189,33 @@ class ClaimInputForm(forms.Form):
         help_text=_("Paste the in-game killmail link (works immediately) or a zKillboard link."),
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, with_category=False, settings_obj=None, **kwargs):
+        """``with_category`` adds the category choice of a loss outside a fleet: only the active categories members
+        can choose, preselected with the default category of the settings, required while the settings say so.
+        Without such a category the field is not there and the form is the one of 0.2.0b3."""
         super().__init__(*args, **kwargs)
+        if with_category:
+            self._add_category(settings_obj)
         _style(self.fields)
+
+    def _add_category(self, settings_obj):
+        srp = settings_obj or SrpSettings.get_solo()
+        choices = selectable_categories().order_by("sort_order", "pk")
+        if not choices.exists():
+            return
+        default = default_category(srp)
+        required = srp.out_of_fleet_category_required
+        self.fields["category"] = CategoryChoiceField(
+            queryset=choices,
+            required=required,
+            label=_("Category"),
+            # With a default category there is no empty choice: the default would apply to it anyway.
+            empty_label=None if default is not None else (_("Choose a category") if required else _("No category (general rules)")),
+            initial=default.pk if default is not None else None,
+            help_text=_("Pick the kind of loss. The category decides the payout table and the limits.")
+            if required
+            else _("Optional. The category decides the payout table and the limits."),
+        )
 
     def clean_killmail(self):
         """The text must hold a killmail the service can look up; the person is told what to paste otherwise."""
@@ -347,6 +374,17 @@ class PaidForm(forms.Form):
         _style(self.fields)
 
 
+class CategoryChoiceField(forms.ModelChoiceField):
+    """A choice of the active SRP categories; the built-in category is named in the language of the viewer."""
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("queryset", SrpCategory.objects.filter(is_active=True))
+        super().__init__(**kwargs)
+
+    def label_from_instance(self, obj):
+        return category_label(obj)
+
+
 class ReclassifyForm(forms.Form):
     """Move a pending claim between fleet and out-of-fleet."""
 
@@ -359,6 +397,12 @@ class ReclassifyForm(forms.Form):
     link = forms.CharField(
         label=_("Fleet SRP link code"), required=False, max_length=32, strip=True,
         help_text=_("The code of the fleet's SRP link; needed for an in-fleet loss."),
+    )
+    category = CategoryChoiceField(
+        label=_("Category"),
+        required=False,
+        empty_label=_("Default category"),
+        help_text=_("For a loss moved out of the fleet. A loss moved into a fleet gets the category of the fleet."),
     )
     reason = forms.CharField(
         label=_("Reason"), max_length=REASON_LENGTH, strip=True, widget=forms.Textarea(attrs={"rows": 2})
@@ -373,6 +417,23 @@ class ReclassifyForm(forms.Form):
         if data.get("scope") == self.IN_FLEET and not data.get("link"):
             self.add_error("link", _("Choose the fleet's SRP link for an in-fleet loss."))
         return data
+
+
+class RecategorizeForm(forms.Form):
+    """Change the category of a pending claim; the claim is calculated again with the category's rules."""
+
+    category = CategoryChoiceField(
+        label=_("Category"),
+        required=False,
+        empty_label=_("No category (general rules)"),
+    )
+    reason = forms.CharField(
+        label=_("Reason"), max_length=REASON_LENGTH, strip=True, widget=forms.Textarea(attrs={"rows": 2})
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _style(self.fields)
 
 
 class NoteForm(forms.Form):

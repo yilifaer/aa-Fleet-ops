@@ -26,7 +26,7 @@
       <h3 class="card-title mb-0"><i class="fa-solid {{ icons.srp }} me-2" aria-hidden="true"></i>{% translate "FleetOps SRP" %}</h3>
       {% if srp_settings.enabled %}{% translate "Enabled" context "FleetOps" as srp_state %}{% pill "ok" srp_state %}{% else %}{% translate "Disabled" context "FleetOps" as srp_state %}{% pill "neutral" srp_state %}{% endif %}
     </div>
-    <p class="fo-admin-text mb-0">{% translate "Turn SRP on, choose the value source, the payout percentage, the per-loss caps and the monthly limits. The payout table and the corporation limits are managed separately." %}</p>
+    <p class="fo-admin-text mb-0">{% translate "Turn SRP on, choose the value source, the payout percentage, the per-loss caps and the monthly limits. The categories, the payout table and the corporation limits are managed separately." %}</p>
     <div class="fo-admin-actions">
       <a class="btn btn-primary" href="{% url 'fleetops:configuration_list' 'srp' %}">{% translate "SRP Settings" %}</a>
       <a class="btn btn-outline-primary" href="{% url 'fleetops:configuration_list' 'srp-rules' %}">{% translate "Payout Table" %}</a>

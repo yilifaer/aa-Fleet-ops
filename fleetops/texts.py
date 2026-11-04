@@ -1076,6 +1076,8 @@ SHIP_NOW_COUNTS = StoredText(gettext_noop("%(ship)s now counts as %(function)s."
 SRP_LIMIT_PERSONAL = StoredText(gettext_noop("monthly personal limit"))
 SRP_LIMIT_CORPORATION = StoredText(gettext_noop("monthly corporation limit"))
 SRP_LIMIT_MONTHLY = StoredText(gettext_noop("monthly limit"))
+SRP_LIMIT_CATEGORY_PERSONAL = StoredText(gettext_noop("monthly category personal limit"))
+SRP_LIMIT_CATEGORY_CORPORATION = StoredText(gettext_noop("monthly category corporation limit"))
 SRP_REJECTED_LIMIT_USED_UP = StoredText(
     gettext_noop("Rejected automatically: the %(limit)s is used up (cap %(cap)s)."), nested=("limit",)
 )
@@ -1087,6 +1089,23 @@ SRP_REASON_RECALCULATED = StoredText(gettext_noop("Recalculated with the current
 SRP_REDUCED_PERSONAL = StoredText(gettext_noop("Reduced to the remaining monthly personal limit."))
 SRP_REDUCED_CORPORATION = StoredText(gettext_noop("Reduced to the remaining monthly corporation limit."))
 SRP_REDUCED_MONTHLY = StoredText(gettext_noop("Reduced to the remaining monthly limit."))
+SRP_REDUCED_CATEGORY_PERSONAL = StoredText(
+    gettext_noop("Reduced to the remaining monthly personal limit of the category.")
+)
+SRP_REDUCED_CATEGORY_CORPORATION = StoredText(
+    gettext_noop("Reduced to the remaining monthly corporation limit of the category.")
+)
+
+# SRP categories. The built-in category is stored under this name and shown in the language of the viewer.
+SRP_CATEGORY_FLEET = StoredText(gettext_noop("Fleet"))
+SRP_CATEGORY_REQUIRED = StoredText(gettext_noop("Choose a category for this loss."))
+SRP_CATEGORY_UNAVAILABLE = StoredText(gettext_noop("This category is not available. Check the loss again."))
+SRP_CATEGORY_UNCHANGED = StoredText(gettext_noop("The claim already has this category."))
+SRP_ONLY_PENDING_RECATEGORIZED = StoredText(gettext_noop("Only pending claims can change their category."))
+SRP_CATEGORY_DELETE_SYSTEM = StoredText(gettext_noop("The fleet category is built in; rename it instead."))
+SRP_CATEGORY_DELETE_USED = StoredText(
+    gettext_noop("This category has claims or payout rules. Deactivate it instead.")
+)
 
 # SRP: why a request cannot go ahead (the member or the reviewer is told; the pages show the English text
 # through translate_stored).

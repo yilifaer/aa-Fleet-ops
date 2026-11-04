@@ -98,11 +98,39 @@
     {{ form.link.errors }}
   </div>
   <div class="mb-2">
+    <label class="form-label" for="{{ form.category.id_for_label }}">{{ form.category.label }}</label>
+    {{ form.category }}
+    <div class="form-text">{{ form.category.help_text }}</div>
+    {{ form.category.errors }}
+  </div>
+  <div class="mb-2">
     <label class="form-label" for="{{ form.reason.id_for_label }}">{% translate "Reason" %}</label>
     {{ form.reason }}
     {{ form.reason.errors }}
   </div>
   <button type="submit" class="btn btn-outline-primary">{% translate "Move and recalculate" %}</button>
+</form>
+{% endwith %}
+{% endif %}
+
+{% if "recategorize" in actions %}
+{% with form=forms.recategorize %}
+<form method="post" action="{% url 'fleetops:srp_claim_action' claim.uuid 'recategorize' %}" class="fleetops-srp-form mb-4" data-srp-once>
+  {% csrf_token %}
+  <h3 class="h6">{% translate "Change the category" %}</h3>
+  {{ form.non_field_errors }}
+  <div class="mb-2">
+    <label class="form-label" for="{{ form.category.id_for_label }}">{{ form.category.label }}</label>
+    {{ form.category }}
+    <div class="form-text">{% translate "The claim is calculated again with the payout table, percentage, caps and monthly limits of the category." %}</div>
+    {{ form.category.errors }}
+  </div>
+  <div class="mb-2">
+    <label class="form-label" for="{{ form.reason.id_for_label }}">{% translate "Reason" %}</label>
+    {{ form.reason }}
+    {{ form.reason.errors }}
+  </div>
+  <button type="submit" class="btn btn-outline-primary">{% translate "Change category and recalculate" %}</button>
 </form>
 {% endwith %}
 {% endif %}

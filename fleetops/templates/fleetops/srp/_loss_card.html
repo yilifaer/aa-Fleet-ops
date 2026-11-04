@@ -6,7 +6,7 @@
     <a class="stretched-link small" href="{% url 'fleetops:srp_claim' claim.uuid %}">{{ claim.reference }}</a>
     <div class="fo-loss-amount fo-num">{% if claim.status == "approved" or claim.status == "paid" %}{{ claim.approved_amount|isk }}{% elif claim.status == "rejected" or claim.status == "withdrawn" %}<span class="text-muted">&ndash;</span>{% else %}{{ claim.limited_amount|isk }}{% endif %}</div>
     <div class="small text-muted">{{ claim.killmail_time|eve_time }} EVE{% if claim.solar_system_name %} &middot; {{ claim.solar_system_name }}{% endif %}</div>
-    <div class="small text-muted">{% if claim.scope == "in_fleet" %}{{ claim.fleet_label|default:_("In fleet") }}{% else %}{% translate "Out of fleet" %}{% endif %}</div>
+    <div class="small text-muted">{% if claim.scope == "in_fleet" %}{{ claim.fleet_label|default:_("In fleet") }}{% else %}{% translate "Out of fleet" %}{% endif %}{% with category_name=claim|srp_category_name %}{% if category_name %} &middot; {{ category_name }}{% endif %}{% endwith %}</div>
   </div>
   {{ claim|srp_status_badge }}
 </div>

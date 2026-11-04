@@ -26,6 +26,7 @@ from fleetops.forms_config import (
     FleetTypeForm,
     MessageTemplateForm,
     PingRoleForm,
+    SrpCategoryForm,
     SrpCorporationLimitForm,
     SrpPayoutRuleForm,
     SrpSettingsForm,
@@ -49,6 +50,8 @@ from fleetops.models import (
     ShipFunction,
     ShipFunctionRule,
     SpecialRole,
+    SrpCategory,
+    SrpClaim,
     SrpCorporationLimit,
     SrpPayoutRule,
     SrpSettings,
@@ -69,7 +72,14 @@ UNSUPPORTED_VOICE_LINK = gettext_lazy("Not a supported voice link")
 # The SRP settings page has the address of a list ("configuration/srp/"); it is not a list of rows.
 SRP_SETTINGS_SECTION = "srp"
 # The lists whose changes make pending claims outdated (the payout table and the corporation limits).
-OUTDATED_CLAIM_SECTIONS = ("srp-rules", "srp-corporation-limits")
+OUTDATED_CLAIM_SECTIONS = ("srp-categories", "srp-rules", "srp-corporation-limits")
+
+def srp_category_prepare(objects):
+    """The list of categories shows the general percentage next to a category that has none of its own."""
+    general = SrpSettings.get_solo().percentage
+    for obj in objects:
+        obj._general_percentage = general
+
 
 CONFIG_SECTIONS = {
     "fleet-types": {
@@ -253,6 +263,27 @@ CONFIG_SECTIONS = {
             (gettext_lazy("Sort"), "sort_order"),
         ],
     },
+    "srp-categories": {
+        "title": gettext_lazy("SRP Categories"),
+        "description": gettext_lazy(
+            "Kinds of claims, such as fleet or solo PVP, with their own payout table entries, percentage, "
+            "per-loss cap and monthly limits. A claim without a category follows the general SRP settings."
+        ),
+        "model": SrpCategory,
+        "form": SrpCategoryForm,
+        "columns": [
+            (pgettext_lazy("FleetOps", "Name"), "name"),
+            (gettext_lazy("Key"), "key"),
+            (gettext_lazy("Members can choose"), "member_selectable"),
+            (gettext_lazy("Percentage"), "percentage"),
+            (gettext_lazy("Per-loss cap"), "loss_cap"),
+            (gettext_lazy("Personal monthly cap"), "personal_monthly_cap"),
+            (gettext_lazy("Corporation monthly cap"), "corporation_monthly_cap"),
+            (pgettext_lazy("enabled", "Active"), "is_active"),
+            (gettext_lazy("Sort"), "sort_order"),
+        ],
+        "prepare": srp_category_prepare,
+    },
     "srp-rules": {
         "title": gettext_lazy("SRP Payout Table"),
         "description": gettext_lazy(
@@ -261,10 +292,12 @@ CONFIG_SECTIONS = {
         ),
         "model": SrpPayoutRule,
         "form": SrpPayoutRuleForm,
+        "queryset": lambda queryset: queryset.select_related("category"),
         "columns": [
             (gettext_lazy("Label"), "label"),
             (gettext_lazy("Ship"), "ship"),
             (pgettext_lazy("FleetOps", "Doctrine"), "doctrine"),
+            (gettext_lazy("Category"), "category"),
             (gettext_lazy("Scope"), "scope"),
             (gettext_lazy("Amount"), "amount"),
             (pgettext_lazy("enabled", "Active"), "is_active"),
@@ -327,7 +360,7 @@ INDEX_GROUPS = [
     ),
     (gettext_lazy("Composition"), "fa-layer-group", ["ship-functions", "ship-function-rules"]),
     (gettext_lazy("Statistics"), "fa-bullseye", ["statistics-targets"]),
-    (gettext_lazy("SRP"), "fa-shield-halved", ["srp", "srp-rules", "srp-corporation-limits"]),
+    (gettext_lazy("SRP"), "fa-shield-halved", ["srp", "srp-categories", "srp-rules", "srp-corporation-limits"]),
 ]
 OTHER_GROUP = gettext_lazy("Other")
 # Font Awesome 6 icon of each card.
@@ -346,6 +379,7 @@ INDEX_ICONS = {
     "ship-functions": "fa-layer-group",
     "ship-function-rules": "fa-filter",
     "structure-templates": "fa-sitemap",
+    "srp-categories": "fa-tags",
     "srp-rules": "fa-coins",
     "groups": "fa-users",
     "srp-corporation-limits": "fa-building",
@@ -362,6 +396,10 @@ NUMERIC_COLUMNS = frozenset(
         "member_minimum_pap",
         "amount",
         "monthly_cap",
+        "percentage",
+        "loss_cap",
+        "personal_monthly_cap",
+        "corporation_monthly_cap",
     }
 )
 
@@ -439,6 +477,23 @@ def _cell_value(obj, field_name):
             return obj.doctrine_name or obj.doctrine_key or _("Any doctrine")
         if field_name == "amount":
             return srp_display.format_isk(obj.amount)
+    if isinstance(obj, SrpPayoutRule) and field_name == "category":
+        return srp_display.category_label(obj.category) if obj.category_id else _("All categories")
+    if isinstance(obj, SrpCategory):
+        if field_name == "name":
+            return srp_display.category_label(obj)
+        if field_name == "percentage":
+            if obj.percentage is not None:
+                return f"{obj.percentage.normalize():f}%"
+            general = getattr(obj, "_general_percentage", None)
+            return _("Default (%(percentage)s%%)") % {"percentage": f"{general.normalize():f}"} if general is not None else _("Default")
+        if field_name == "loss_cap":
+            if obj.loss_cap_mode == SrpCategory.LossCapMode.CUSTOM:
+                return srp_display.format_isk(obj.loss_cap)
+            return _("No cap") if obj.loss_cap_mode == SrpCategory.LossCapMode.NONE else _("Default")
+        if field_name in ("personal_monthly_cap", "corporation_monthly_cap"):
+            value = getattr(obj, field_name)
+            return srp_display.format_isk(value) if value is not None else _("No limit")
     if isinstance(obj, SrpCorporationLimit):
         if field_name == "corporation":
             return obj.corporation_name or str(obj.corporation_id)
@@ -476,6 +531,11 @@ def _delete_refusal(obj):
     """Why an item must not be deleted, or ""."""
     if isinstance(obj, PingRole):
         return role_delete_refusal(obj)
+    if isinstance(obj, SrpCategory):
+        if obj.is_system:
+            return texts.translate_stored(texts.SRP_CATEGORY_DELETE_SYSTEM())
+        if SrpClaim.objects.filter(category=obj).exists() or SrpPayoutRule.objects.filter(category=obj).exists():
+            return texts.translate_stored(texts.SRP_CATEGORY_DELETE_USED())
     return ""
 
 
@@ -596,6 +656,8 @@ def configuration_list(request, section):
         return configuration_srp(request)
     config = _configuration_section(section)
     queryset = config["model"].objects.all()
+    if config.get("queryset") is not None:
+        queryset = config["queryset"](queryset)
     if config["model"] is DiscordWebhook:
         queryset = queryset.prefetch_related("allowed_roles", "allowed_groups")
     elif config["model"] is GroupAccess:

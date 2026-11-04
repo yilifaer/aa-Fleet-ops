@@ -190,3 +190,73 @@ class StatisticsQueryBudgetTests(TestCase):
                 large = self.queries(viewer, url, params)
                 self.assertEqual(large, small[name], f"{name}: {small[name]} queries, then {large} for the larger dataset")
                 self.assertLessEqual(large, ceiling, f"{name} needs {large} queries")
+
+
+class SrpCategoryPageBudgetTests(TestCase):
+    """The pages of the SRP categories (CAT-8) cost the same number of queries whatever the number of rows."""
+
+    def count(self, url, user):
+        self.client.force_login(user)
+        # The first request of a login also loads the permissions and the menu; measure the second.
+        self.client.get(url)
+        cache.clear()
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        return len(queries)
+
+    def grow(self, step):
+        for index in range(step):
+            category = f.srp_category(percentage=None)
+            f.payout_rule(587 + index + step * 100, category=category)
+
+    def test_the_category_list_and_the_payout_table_do_not_grow_with_the_rows(self):
+        admin = f.create_user("budget_admin", perms=f.MEMBER_PERMS + ["fleetops.manage_configuration"])
+        pages = [
+            route("configuration_list", "srp-categories"),
+            route("configuration_list", "srp-rules"),
+            route("configuration_add", "srp-rules"),
+        ]
+        self.grow(2)
+        small = [self.count(url, admin) for url in pages]
+        self.grow(6)
+
+        large = [self.count(url, admin) for url in pages]
+
+        self.assertEqual(small, large)
+
+    def test_the_claim_page_does_not_query_the_category_again(self):
+        manager = f.create_user("budget_manager", perms=f.SRP_MANAGER_PERMS)
+        solo = f.srp_category("Solo PVP")
+        pilot = f.create_user("budget_pilot", perms=f.SRP_MEMBER_PERMS)
+        with_category = f.srp_claim(pilot, category=solo)
+        plain = f.srp_claim(pilot, category=None)
+
+        self.assertEqual(
+            self.count(route("srp_claim", with_category.uuid), manager),
+            self.count(route("srp_claim", plain.uuid), manager),
+        )
+
+
+class MySrpBudgetTests(TestCase):
+    """My SRP: the limits of the capped categories come from one query, whatever their number."""
+
+    def count(self, user):
+        self.client.force_login(user)
+        url = route("srp_home")
+        self.client.get(url)
+        cache.clear()
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        return len(queries)
+
+    def test_capped_categories_do_not_add_queries(self):
+        pilot = f.create_user("budget_my_srp", perms=f.SRP_MEMBER_PERMS)
+        f.srp_category("Capped 0", personal_monthly_cap=1_000_000)
+        one = self.count(pilot)
+        for index in range(1, 6):
+            category = f.srp_category(f"Capped {index}", personal_monthly_cap=1_000_000)
+            f.srp_claim(pilot, category=category)
+
+        self.assertEqual(self.count(pilot), one)

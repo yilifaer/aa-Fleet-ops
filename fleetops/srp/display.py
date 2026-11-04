@@ -12,6 +12,8 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from django.utils.translation import gettext, gettext_lazy, pgettext_lazy
 
+from fleetops.texts import translate_stored
+
 LEVEL_INFO = "info"
 LEVEL_WARNING = "warning"
 LEVEL_DANGER = "danger"
@@ -33,9 +35,16 @@ LIMIT_KIND_LABELS = {
     "loss_cap": gettext_lazy("per-loss cap"),
     "personal": gettext_lazy("personal monthly limit"),
     "corporation": gettext_lazy("corporation monthly limit"),
+    "category_personal": gettext_lazy("category personal monthly limit"),
+    "category_corporation": gettext_lazy("category corporation monthly limit"),
 }
 # Name of the limit inside "the monthly ... limit".
-MONTHLY_KIND_LABELS = {"personal": "personal", "corporation": "corporation"}
+MONTHLY_KIND_LABELS = {
+    "personal": "personal",
+    "corporation": "corporation",
+    "category_personal": "category personal",
+    "category_corporation": "category corporation",
+}
 
 MATCH_LABELS = {
     "doctrine_ship": gettext_lazy("Doctrine and ship"),
@@ -45,6 +54,13 @@ MATCH_LABELS = {
 
 # Amounts with more digits than this are not ISK; they are shown as missing instead of failing the page.
 MAX_DISPLAY_DIGITS = 30
+
+
+def category_label(category) -> str:
+    """The name of a category in the language of the viewer; the built-in category is stored in English."""
+    if category is None:
+        return ""
+    return translate_stored(category.name)
 
 
 def to_decimal(value) -> Decimal | None:
@@ -116,6 +132,10 @@ def _monthly_limit(params) -> str:
         return gettext("monthly personal limit")
     if kind == "corporation":
         return gettext("monthly corporation limit")
+    if kind == "category_personal":
+        return gettext("monthly category personal limit")
+    if kind == "category_corporation":
+        return gettext("monthly category corporation limit")
     if kind:
         return gettext("monthly %(kind)s limit") % {"kind": kind}
     return gettext("monthly limit")

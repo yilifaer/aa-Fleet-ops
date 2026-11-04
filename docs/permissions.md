@@ -23,10 +23,10 @@ A Simplified Chinese version is in [zh-CN/permissions.md](zh-CN/permissions.md).
 | `fleetops.view_all_stats` | Can view all FleetOps statistics | Alliance-wide statistics: every corporation, all members and inactive members, every member page, FC statistics, PAP history, the leaderboard and every statistics export. Statistics only; opening fleet records needs `view_all_fleets` or `manage_fleets`. |
 | `fleetops.manage_attendance` | Can manage attendance | Add manual PAP (by name, ID or pasted roster), delete the user's own entries until an FC lead approves them, recalculate PAP and change the PAP multiplier of closed fleets within the duration rule, on fleets the user may manage. Together with `manage_fleets` it applies to every fleet. |
 | `fleetops.manage_incentives` | Can manage FC incentives | Review, recalculate, waive, finalize and unlock monthly FC incentive periods. The pages exist only while **Incentive enabled** is ticked in the general settings (off by default). |
-| `fleetops.manage_configuration` | Can manage FleetOps configuration | Use the FleetOps Administration pages: settings, fleet types, comms presets, Logi and Boost channels, ping channels and roles (including **Sync roles from Discord**), PAP multipliers, special roles, monthly targets, ship functions and rules, structure templates, message templates and the SRP settings, payout table and corporation limits. Classify a ship from the composition of a fleet the user can open. |
+| `fleetops.manage_configuration` | Can manage FleetOps configuration | Use the FleetOps Administration pages: settings, fleet types, comms presets, Logi and Boost channels, ping channels and roles (including **Sync roles from Discord**), PAP multipliers, special roles, monthly targets, ship functions and rules, structure templates, message templates and the SRP settings, SRP categories, payout table and corporation limits. Classify a ship from the composition of a fleet the user can open. |
 | `fleetops.view_audit_log` | Can view FleetOps audit log | Open the **Audit** page. |
 | `fleetops.request_srp` | Can request SRP | Claim ship losses in FleetOps SRP (My SRP and the SRP links of fleets) and see the user's own claims and monthly allowance. Needs FleetOps SRP to be enabled. The migration that added SRP gave it to every group, state and user that already held `basic_access`; add it to groups you create later. |
-| `fleetops.manage_srp` | Can review and pay SRP claims | Review and pay claims: approve, change amounts, reject, revoke, mark paid, reopen, reclassify, recalculate, check the fleet presence again and add internal notes. Open and close fleet SRP links. See every SRP summary and claim. Not granted to anybody by default because it decides on money. |
+| `fleetops.manage_srp` | Can review and pay SRP claims | Review and pay claims: approve, change amounts, reject, revoke, mark paid, reopen, reclassify, change the category, recalculate, check the fleet presence again and add internal notes. Open and close fleet SRP links. See every SRP summary and claim. Not granted to anybody by default because it decides on money. |
 
 ## Recommended groups
 
@@ -204,7 +204,7 @@ download is audited as `statistics.export` with the dataset, scope, month, forma
 | SRP Summary (alliance, corporations, FCs) | `manage_srp` or `view_all_stats` (read-only) |
 | SRP Corporation (totals, members, claims of the own corporation) | `view_corp_stats` for the own corporation (a user without a main gets 404); `manage_srp` or `view_all_stats` for any corporation |
 | SRP My fleets (claims and totals of the fleets the user led) | Users with an FC permission (`start_fleet`, `manage_own_fleet`, `manage_fleets` or `create_manual_fleet`) and anybody who led a fleet with an SRP link see their own page; `manage_srp` and `view_all_stats` also see any FC's page |
-| SRP settings, SRP Payout Table, SRP Corporation Limits | `fleetops.manage_configuration`; every change is audited with the old and new values |
+| SRP settings, SRP Categories, SRP Payout Table, SRP Corporation Limits | `fleetops.manage_configuration`; every change is audited with the old and new values |
 
 SRP files are at `/fleetops/statistics/export/<dataset>/`:
 
@@ -218,7 +218,7 @@ SRP file. Every download is audited as `srp.export`. Every other SRP action is a
 claim's timeline: `srp.link_create`, `srp.link_open`, `srp.link_close`, `srp.claim_submit`,
 `srp.claim_auto_reject`, `srp.claim_withdraw`, `srp.claim_resubmit`, `srp.claim_approve`,
 `srp.claim_amount_change`, `srp.claim_reject`, `srp.claim_revoke`, `srp.claim_paid`, `srp.claim_unpaid`,
-`srp.claim_reopen`, `srp.claim_reclassify`, `srp.claim_recalculate`, `srp.claim_recheck`, `srp.claim_note`.
+`srp.claim_reopen`, `srp.claim_reclassify`, `srp.claim_recategorize`, `srp.claim_recalculate`, `srp.claim_recheck`, `srp.claim_note`.
 The entries hold IDs, statuses and amounts, never a token or a webhook URL; `srp.claim_note` holds only the
 length of the note.
 
@@ -303,3 +303,9 @@ audited as `approval.*`, `attendance.multiplier`, `fleet.stats_mode`, `pap_link.
 - The comms join page (`/fleetops/comms/<token>/join/`) is the only FleetOps page without a permission check.
   It needs no login when `"fleetops"` is in `APPS_WITH_PUBLIC_VIEWS`; otherwise it needs an Alliance Auth login
   with a main character, like every Alliance Auth page.
+
+## SRP categories in the Django admin
+
+The SRP categories are configured on the FleetOps **Administration** > **SRP Categories** page with
+`fleetops.manage_configuration`. The model has no Django permissions of its own (`default_permissions = ()`), so in the
+Django admin only a superuser sees it; nobody else needs it.

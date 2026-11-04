@@ -1,5 +1,9 @@
-{% load i18n fleetops_srp fleetops_ui %}{# How the amount came about. Context: calculation (Calculation) and policy (PolicySnapshot). #}
+{% load i18n fleetops_srp fleetops_ui fleetops_i18n %}{# How the amount came about. Context: calculation (Calculation) and policy (PolicySnapshot). #}
 <dl class="row mb-0 fleetops-srp-calculation">
+  {% if policy.category %}
+  <dt class="col-sm-5">{% translate "SRP category" %}</dt>
+  <dd class="col-sm-7">{{ policy.category.name|stored_text }}</dd>
+  {% endif %}
   <dt class="col-sm-5">{% translate "Loss value" %}</dt>
   <dd class="col-sm-7">
     {% if calculation.loss_value is None %}<span class="text-muted">{% translate "Not available yet" %}</span>
@@ -11,13 +15,13 @@
   <dd class="col-sm-7">
     {% if calculation.basis == "rule" %}{% translate "Payout table" %}
       {% with rule=policy.rule %}{% if rule %}<div class="small text-muted">{{ rule.label|default:rule.ship_type_name|default:_("Any ship") }}{% if rule.ship_type_name and rule.label %} &middot; {{ rule.ship_type_name }}{% endif %}{% if rule.doctrine_name %} &middot; {% blocktranslate trimmed with doctrine=rule.doctrine_name %}doctrine {{ doctrine }}{% endblocktranslate %}{% endif %} &middot; {{ rule.match|srp_match_label }} &middot; {{ rule.amount|isk }}</div>{% endif %}{% endwith %}
-    {% elif calculation.basis == "percentage" %}{% blocktranslate trimmed with percentage=policy.percentage|floatformat:"-2" %}{{ percentage }}% of the loss value{% endblocktranslate %}
+    {% elif calculation.basis == "percentage" %}{% blocktranslate trimmed with percentage=policy.effective_percentage|floatformat:"-2" %}{{ percentage }}% of the loss value{% endblocktranslate %}
     {% else %}<span class="text-muted">{% translate "No automatic amount" %}</span>{% endif %}
   </dd>
   <dt class="col-sm-5">{% translate "Amount before caps" %}</dt>
   <dd class="col-sm-7">{{ calculation.base|isk }}</dd>
   <dt class="col-sm-5">{% translate "Per-loss cap" %}</dt>
-  <dd class="col-sm-7">{% if calculation.cap is None %}<span class="text-muted">{% translate "No cap" %}</span>{% else %}{{ calculation.cap|isk }}{% endif %}</dd>
+  <dd class="col-sm-7">{% if calculation.cap is None %}<span class="text-muted">{% translate "No cap" %}</span>{% else %}{{ calculation.cap|isk }}{% if policy.category.loss_cap_mode == "custom" %} <span class="small text-muted">{% translate "(category cap)" %}</span>{% endif %}{% endif %}</dd>
   <dt class="col-sm-5">{% translate "Suggested amount" %}</dt>
   <dd class="col-sm-7"><strong>{{ calculation.suggested|isk }}</strong></dd>
   <dt class="col-sm-5">{% translate "Within the monthly limits" %}</dt>

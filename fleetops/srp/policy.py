@@ -18,19 +18,26 @@ from django.utils import timezone
 from django.utils.translation import gettext, gettext_lazy
 
 from fleetops.constants import CAPSULE_TYPE_IDS, MAX_ISK  # noqa: F401 - CAPSULE_TYPE_IDS is part of the interface
-from fleetops.models import SrpClaim, SrpCorporationLimit, SrpPayoutRule, SrpSettings, srp_doctrine_key
+from fleetops.models import (
+    SrpCategory,
+    SrpClaim,
+    SrpCorporationLimit,
+    SrpPayoutRule,
+    SrpSettings,
+    srp_doctrine_key,
+)
 from fleetops.srp import display
 from fleetops.srp.types import (
+    BINDING_ORDER,
     CORPORATION_CAP_DEFAULT,
     CORPORATION_CAP_OVERRIDE,
-    LIMIT_CORPORATION,
     LIMIT_LOSS_CAP,
-    LIMIT_PERSONAL,
     MATCH_DOCTRINE,
     MATCH_DOCTRINE_SHIP,
     MATCH_SHIP,
     CalcNote,
     Calculation,
+    CategorySnapshot,
     LimitState,
     PolicySnapshot,
     RuleSnapshot,
@@ -53,9 +60,7 @@ BLOCK_NO_MAIN = gettext_lazy("Set a main character first.")
 BLOCK_FLEET_ONLY = gettext_lazy("Only losses in FleetOps fleets are covered.")
 BLOCK_CAPSULE = gettext_lazy("Capsule losses are not covered.")
 
-# Ties between limits that leave the same amount: the monthly limits come before the per-loss cap,
-# and the personal limit before the corporation's.
-_BINDING_ORDER = {LIMIT_PERSONAL: 0, LIMIT_CORPORATION: 1, LIMIT_LOSS_CAP: 2}
+_BINDING_ORDER = BINDING_ORDER
 
 
 def doctrine_key(source: str, external_id: str, name: str) -> str:
@@ -83,22 +88,32 @@ def operation_doctrine_keys(operation) -> set[str]:
 
 
 def _rule_rank(rule, scope):
-    """Lower is more specific: doctrine and ship, doctrine, ship; a rule of the scope beats ``any``; a
-    doctrine of a doctrine app beats a custom doctrine name."""
+    """Lower is more specific: doctrine and ship, doctrine, ship; within a level a rule of the claim's category
+    beats a general one, a rule of the scope beats ``any`` and a doctrine of a doctrine app beats a custom
+    doctrine name."""
     if rule.doctrine_key and rule.ship_type_id:
         level = 0
     elif rule.doctrine_key:
         level = 1
     else:
         level = 2
-    return level, 0 if rule.scope == scope else 1, 1 if rule.doctrine_key.startswith("name:") else 0, rule.pk
+    return (
+        level,
+        0 if rule.category_id is not None else 1,
+        0 if rule.scope == scope else 1,
+        1 if rule.doctrine_key.startswith("name:") else 0,
+        rule.pk,
+    )
 
 
 def match_rule(
-    *, ship_type_id: int, scope: str, operation=None, capsules_need_rule: bool = False
+    *, ship_type_id: int, scope: str, operation=None, capsules_need_rule: bool = False, category=None
 ) -> SrpPayoutRule | None:
     """The active payout rule for a loss, most specific first: doctrine and ship, doctrine, ship; within a
-    level a rule of the scope beats ``any``. Doctrine rules need an in-fleet loss of a fleet with that doctrine.
+    level a rule of the claim's ``category`` beats a general one and a rule of the scope beats ``any``. Doctrine
+    rules need an in-fleet loss of a fleet with that doctrine.
+
+    A rule of another category never matches; without a category only the general rules do.
 
     With ``capsules_need_rule`` a capsule is only matched by a rule that names the capsule, so a doctrine rule
     for any ship never takes the place of the capsule entry of the payout table.
@@ -108,7 +123,15 @@ def match_rule(
     if keys:
         any_ship = () if capsules_need_rule and ship_type_id in CAPSULE_TYPE_IDS else (0,)
         condition |= Q(doctrine_key__in=keys, ship_type_id__in=(ship_type_id, *any_ship))
-    candidates = SrpPayoutRule.objects.filter(is_active=True, scope__in=(ANY_SCOPE, scope)).filter(condition)
+    category_condition = Q(category__isnull=True)
+    if category is not None:
+        category_condition |= Q(category=category)
+    candidates = (
+        SrpPayoutRule.objects.filter(is_active=True, scope__in=(ANY_SCOPE, scope))
+        .filter(category_condition)
+        .filter(condition)
+        .select_related("category")
+    )
     return min(candidates, key=lambda rule: _rule_rank(rule, scope), default=None)
 
 
@@ -131,6 +154,8 @@ def rule_snapshot(rule) -> RuleSnapshot | None:
         scope=rule.scope,
         amount=rule.amount,
         match=rule_match(rule),
+        category_id=rule.category_id,
+        category_name=rule.category.name if rule.category_id else "",
     )
 
 
@@ -155,8 +180,11 @@ def corporation_cap(corporation_id, srp, overrides=None) -> tuple[int | None, st
     return srp.corporation_monthly_cap, CORPORATION_CAP_DEFAULT
 
 
-def current_policy(*, corporation_id: int | None, rule=None, settings_obj=None, overrides=None) -> PolicySnapshot:
-    """The SRP settings as a snapshot, with the corporation's cap (override or default) and ``rule``.
+def current_policy(
+    *, corporation_id: int | None, rule=None, settings_obj=None, overrides=None, category=None
+) -> PolicySnapshot:
+    """The SRP settings as a snapshot, with the corporation's cap (override or default), ``rule`` and the
+    ``category`` of the claim.
 
     ``overrides`` is ``{corporation_id: monthly_cap}`` for callers that snapshot many claims at once.
     """
@@ -176,11 +204,19 @@ def current_policy(*, corporation_id: int | None, rule=None, settings_obj=None, 
         capsules_need_rule=srp.capsules_need_rule,
         claim_deadline_days=srp.claim_deadline_days,
         rule=rule_snapshot(rule),
+        category=CategorySnapshot.from_category(category),
     )
 
 
 def loss_cap(policy: PolicySnapshot, scope: str) -> int | None:
-    """The per-loss cap of the scope."""
+    """The per-loss cap of the claim: the category's own cap or no cap when it says so, else the cap of the
+    scope."""
+    category = policy.category
+    if category is not None:
+        if category.loss_cap_mode == SrpCategory.LossCapMode.CUSTOM:
+            return category.loss_cap
+        if category.loss_cap_mode == SrpCategory.LossCapMode.NONE:
+            return None
     return policy.in_fleet_loss_cap if scope == IN_FLEET else policy.out_of_fleet_loss_cap
 
 
@@ -189,7 +225,7 @@ def percentage_applies(policy: PolicySnapshot, ship_type_id: int) -> bool:
     need a rule, and not at 0%."""
     if ship_type_id in CAPSULE_TYPE_IDS and policy.capsules_need_rule:
         return False
-    return policy.percentage > 0
+    return policy.effective_percentage > 0
 
 
 def counts_toward_personal(policy: PolicySnapshot, scope: str) -> bool:
@@ -237,15 +273,18 @@ def calculate(
         basis, base = BASIS_RULE, rule.amount
     elif capsule_rule_only:
         notes.append(CalcNote("no_rule"))
-    elif policy.percentage <= 0:
+    elif policy.effective_percentage <= 0:
         notes += [CalcNote("no_rule"), CalcNote("percentage_zero")]
     elif value is None:
         notes.append(CalcNote("no_value"))
     else:
-        basis, base = BASIS_PERCENTAGE, _percentage_amount(value, policy.percentage)
+        basis, base = BASIS_PERCENTAGE, _percentage_amount(value, policy.effective_percentage)
     base = max(0, min(base, MAX_ISK))
 
     cap = loss_cap(policy, scope)
+    if basis == BASIS_RULE and policy.category is not None and not policy.category.cap_applies_to_rules:
+        # The category pays the fixed amounts of the payout table in full.
+        cap = None
     suggested = base if cap is None else min(base, cap)
     if suggested < base:
         notes.append(CalcNote("loss_cap", {"cap": cap}))
@@ -311,13 +350,14 @@ def owned_character(user, character_id):
     return ownership.character if ownership else None
 
 
-def eligibility(*, km, user, scope: str, link, settings_obj, now=None, operation=None) -> list[str]:
+def eligibility(*, km, user, scope: str, link, settings_obj, now=None, operation=None, category=None) -> list[str]:
     """Reasons (texts for the member) why the loss cannot be claimed; empty when it can.
 
     A claim that exists for the killmail is not a reason here; the preview and the submit step look for it.
     ``link`` is the fleet link the claim is made through; only an open link accepts new claims. ``operation``
     is the fleet whose payout rules apply, the one of ``link`` unless given: a claim that exists already is
-    checked without its link (it may be closed) but against the rules of its fleet.
+    checked without its link (it may be closed) but against the rules of its fleet. ``category`` is the claim's
+    category, whose payout rules apply too.
     """
     srp = settings_obj or SrpSettings.get_solo()
     now = now or timezone.now()
@@ -343,13 +383,20 @@ def eligibility(*, km, user, scope: str, link, settings_obj, now=None, operation
     if km.ship_type_id in CAPSULE_TYPE_IDS and srp.capsules_need_rule:
         if operation is None and link is not None:
             operation = link.operation
-        rule = match_rule(ship_type_id=km.ship_type_id, scope=scope, operation=operation, capsules_need_rule=True)
+        rule = match_rule(
+            ship_type_id=km.ship_type_id,
+            scope=scope,
+            operation=operation,
+            capsules_need_rule=True,
+            category=category,
+        )
         if not names_capsule(rule):
             blockers.append(str(BLOCK_CAPSULE))
     return blockers
 
 
-# The settings a claim is calculated with; the version of the snapshot and the rule are compared separately.
+# The settings a claim is calculated with; the version of the snapshot, the category and the rule are compared
+# separately.
 _POLICY_FIELDS = (
     "value_source",
     "percentage",
@@ -366,36 +413,72 @@ _POLICY_FIELDS = (
 )
 
 
+def category_effects(policy: PolicySnapshot, scope: str) -> tuple:
+    """What the claim's category changes in the calculation: the percentage that pays it, the per-loss cap, whether
+    the cap also limits payout table amounts and the two monthly caps of the category.
+
+    A snapshot without a category (an older one, an imported claim, a claim without a category) has none of these
+    effects, whatever its version says.
+    """
+    category = policy.category
+    return (
+        policy.effective_percentage,
+        loss_cap(policy, scope),
+        True if category is None else category.cap_applies_to_rules,
+        None if category is None else category.personal_monthly_cap,
+        None if category is None else category.corporation_monthly_cap,
+    )
+
+
 def outdated_pending_claims(settings_obj=None) -> list[int]:
     """The IDs of the pending claims that were calculated with other SRP settings than the current ones.
 
-    A claim keeps the policy of its submission (a snapshot of the settings, the corporation's cap and the payout
-    rule it matched); only a recalculation applies new settings. A claim is outdated when any setting of its
-    snapshot differs from the current one, or when its payout rule has been deleted, switched off or has another
-    amount since. A rule added later that would match the claim more closely is not detected: the reviewer can
-    always recalculate. Three queries (the claims, the corporation limits, the rules), whatever the number of
-    claims.
+    A claim keeps the policy of its submission (a snapshot of the settings, the corporation's cap, the settings of
+    its category and the payout rule it matched); only a recalculation applies new settings. A claim is outdated
+    when any setting of its snapshot differs from the current one, when what its category changes differs, or when
+    its payout rule has been deleted, switched off or has another amount or category since. A rule added later that
+    would match the claim more closely is not detected: the reviewer can always recalculate. Four queries at most (the
+    claims, the corporation limits, the categories of the claims, the rules), whatever the number of claims.
     """
     srp = settings_obj or SrpSettings.get_solo()
-    pending = list(SrpClaim.objects.filter(status=SrpClaim.Status.PENDING).values_list("pk", "corporation_id", "policy"))
+    pending = list(
+        SrpClaim.objects.filter(status=SrpClaim.Status.PENDING).values_list(
+            "pk", "corporation_id", "category_id", "scope", "policy"
+        )
+    )
     if not pending:
         return []
     overrides = dict(SrpCorporationLimit.objects.values_list("corporation_id", "monthly_cap"))
-    current_by_corporation: dict = {}
-    snapshots = {pk: PolicySnapshot.from_json(policy) for pk, _corporation, policy in pending}
+    category_ids = {category_id for _pk, _corporation, category_id, _scope, _policy in pending if category_id}
+    categories = (
+        {category.pk: category for category in SrpCategory.objects.filter(pk__in=category_ids)} if category_ids else {}
+    )
+    current_by_key: dict = {}
+    snapshots = {pk: PolicySnapshot.from_json(policy) for pk, _corporation, _category, _scope, policy in pending}
     rule_ids = {snapshot.rule.id for snapshot in snapshots.values() if snapshot.rule is not None and snapshot.rule.id}
-    rules = dict(SrpPayoutRule.objects.filter(pk__in=rule_ids, is_active=True).values_list("pk", "amount"))
+    rules = {
+        pk: (amount, category_id)
+        for pk, amount, category_id in SrpPayoutRule.objects.filter(pk__in=rule_ids, is_active=True).values_list(
+            "pk", "amount", "category_id"
+        )
+    }
     outdated = []
-    for pk, corporation_id, _policy in pending:
+    for pk, corporation_id, category_id, scope, _policy in pending:
         stored = snapshots[pk]
-        if corporation_id not in current_by_corporation:
-            current_by_corporation[corporation_id] = current_policy(
-                corporation_id=corporation_id, settings_obj=srp, overrides=overrides
+        key = (corporation_id, category_id)
+        if key not in current_by_key:
+            current_by_key[key] = current_policy(
+                corporation_id=corporation_id,
+                settings_obj=srp,
+                overrides=overrides,
+                category=categories.get(category_id),
             )
-        current = current_by_corporation[corporation_id]
+        current = current_by_key[key]
         changed = any(getattr(stored, name) != getattr(current, name) for name in _POLICY_FIELDS)
+        if not changed:
+            changed = category_effects(stored, scope) != category_effects(current, scope)
         if not changed and stored.rule is not None and stored.rule.id:
-            changed = rules.get(stored.rule.id) != stored.rule.amount
+            changed = rules.get(stored.rule.id) != (stored.rule.amount, stored.rule.category_id)
         if changed:
             outdated.append(pk)
     return outdated

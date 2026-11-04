@@ -58,7 +58,8 @@ class SettingsModelTests(TestCase):
                 row.notify_members,
                 row.member_instructions,
             ),
-            (False, True, True, "zkill_fitted", Decimal("0"), "review", True, 0, False, True, ""),
+            # 0.3.0b1 (CAT-9): the default value source is the zKillboard total value.
+            (False, True, True, "zkill_total", Decimal("0"), "review", True, 0, False, True, ""),
         )
         self.assertEqual(
             (
@@ -377,7 +378,8 @@ class KillmailAndClaimTests(TestCase):
         self.assertEqual(claim.main_character_id, f.main_of(self.pilot).character_id)
         self.assertEqual(claim.killmail_time, claim.killmail.killmail_time)
         self.assertIsNone(claim.approved_amount)
-        self.assertEqual(claim.policy["version"], 1)
+        # 0.3.0b1: the snapshot of the factory is version 2 (CAT-3).
+        self.assertEqual(claim.policy["version"], 2)
 
     def test_claim_statuses(self):
         approved = f.srp_claim(self.pilot, status="approved", amount=5_000_000, approved_amount=4_000_000)

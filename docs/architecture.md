@@ -56,6 +56,8 @@ FleetOperation
 
 IncentivePeriod ── MonthlyFCStatistic           FC incentives per month
 
+SrpCategory ── SrpClaim, SrpPayoutRule         SRP categories: kinds of claims with their own payout table entries, caps and limits
+
 GroupAccess ── fleet types                      what the leaders of an Alliance Auth group may do
 StandalonePing                                  a ping sent without a fleet (Send Ping)
 ```
@@ -108,7 +110,8 @@ top each time PAP is calculated, so recalculating is safe. Statistics read the r
 **SRP.** The fleet's SRP link is created by the SRP provider that the settings select (`providers/srp.py`).
 Members claim a loss through the link or **My SRP**; `srp/claims.py` reads the killmail from ESI, `srp/values.py`
 finds the value (zKillboard, with the ESI market estimate as the fallback), `srp/policy.py` and `srp/quota.py`
-calculate the amount and the limits, and `srp/review.py` makes the decisions under a lock, writing a claim event
+calculate the amount and the limits, `srp/categories.py` decides the category of a claim (the one place that
+does), and `srp/review.py` makes the decisions under a lock, writing a claim event
 and an audit entry for each one. The beat starts the value sweep for claims that wait for a zKillboard value.
 
 ## Failure model

@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-28 01:37+0000\n"
+"POT-Creation-Date: 2026-11-04 03:27+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -487,8 +487,8 @@ msgid "Payouts and caps"
 msgstr "赔付与上限"
 
 #: forms_config.py
-msgid "Ships in the payout table get their fixed amount; every other ship gets the percentage of its value. The per-loss caps apply to both."
-msgstr "赔付表中的舰船获得固定金额；其他舰船获得其价值的一定比例。单笔上限对两者都适用。"
+msgid "Ships in the payout table get their fixed amount; every other ship gets the percentage of its value. The per-loss caps apply to both. A category can have its own payout table entries, percentage and caps."
+msgstr "赔付表中的舰船获得固定金额；其他舰船获得其价值的一定比例。单笔上限对两者都适用。类别可以有自己的赔付表条目、比例和上限。"
 
 #: forms_config.py templates/fleetops/srp/claim.html
 msgid "Monthly limits"
@@ -560,6 +560,10 @@ msgstr "金额（ISK）"
 msgid "Optional name, shown in the payout table and in a claim's calculation."
 msgstr "可选名称，显示在赔付表和申请的计算说明中。"
 
+#: forms_config.py models.py
+msgid "The rule only applies to claims of this category. Empty = all categories."
+msgstr "这条规则只适用于该类别的申请。留空表示所有类别。"
+
 #: forms_config.py
 msgid "Paid as it is, before the per-loss cap and the monthly limits."
 msgstr "按此金额计算，之后再应用单笔上限和月度限额。"
@@ -567,6 +571,10 @@ msgstr "按此金额计算，之后再应用单笔上限和月度限额。"
 #: forms_config.py
 msgid "Optional remark for the other SRP managers."
 msgstr "可选，给其他 SRP 管理员的备注。"
+
+#: forms_config.py views_config.py
+msgid "All categories"
+msgstr "所有类别"
 
 #: forms_config.py views_config.py
 msgid "Any doctrine"
@@ -582,8 +590,34 @@ msgid "%(name)s (no longer listed)"
 msgstr "%(name)s（已不在列表中）"
 
 #: forms_config.py
+#, python-format
+msgid "%(name)s (inactive)"
+msgstr "%(name)s（已停用）"
+
+#: forms_config.py
 msgid "Enter the doctrine name."
 msgstr "请输入教义名称。"
+
+#: forms_config.py
+msgid "A category with this name already exists."
+msgstr "已经有同名的类别。"
+
+#: forms_config.py
+msgid "A category with this key already exists."
+msgstr "已经有相同 key 的类别。"
+
+#: forms_config.py
+msgid "Short identifier for links and exports. Left empty, it is made from the name."
+msgstr "用于链接和导出的简短标识。留空时由名称生成。"
+
+#: forms_config.py
+msgid "Enter a key."
+msgstr "请输入 key。"
+
+#: forms_config.py
+#, python-format
+msgid "The fleet type %(type)s already belongs to the category %(category)s."
+msgstr "舰队类型 %(type)s 已经属于类别 %(category)s。"
 
 #: forms_config.py models.py
 msgid "Corporation ID"
@@ -1210,6 +1244,26 @@ msgstr "游戏内 KM 链接、zKillboard 链接，或 KM ID 与哈希"
 msgid "Paste the in-game killmail link (works immediately) or a zKillboard link."
 msgstr "粘贴游戏内 KM 链接（立即可用）或 zKillboard 链接。"
 
+#: forms_srp.py models.py templates/fleetops/srp/claim.html views_config.py
+msgid "Category"
+msgstr "类别"
+
+#: forms_srp.py
+msgid "Choose a category"
+msgstr "选择类别"
+
+#: forms_srp.py
+msgid "No category (general rules)"
+msgstr "无类别（通用规则）"
+
+#: forms_srp.py
+msgid "Pick the kind of loss. The category decides the payout table and the limits."
+msgstr "选择这次损失的种类。类别决定赔付表和限额。"
+
+#: forms_srp.py
+msgid "Optional. The category decides the payout table and the limits."
+msgstr "可选。类别决定赔付表和限额。"
+
 #: forms_srp.py templates/fleetops/srp/claim.html
 msgctxt "FleetOps"
 msgid "Comment"
@@ -1282,6 +1336,14 @@ msgstr "舰队 SRP 链接代码"
 #: forms_srp.py
 msgid "The code of the fleet's SRP link; needed for an in-fleet loss."
 msgstr "舰队 SRP 链接的代码；舰队内损失需要填写。"
+
+#: forms_srp.py models.py
+msgid "Default category"
+msgstr "默认类别"
+
+#: forms_srp.py
+msgid "For a loss moved out of the fleet. A loss moved into a fleet gets the category of the fleet."
+msgstr "用于移出舰队的损失。移入舰队的损失使用该舰队的类别。"
 
 #: forms_srp.py
 msgid "Choose the fleet's SRP link for an in-fleet loss."
@@ -2482,7 +2544,7 @@ msgstr "PAP 记录"
 msgid "PAP records"
 msgstr "PAP 记录"
 
-#: models.py
+#: models.py views_config.py
 msgid "Key"
 msgstr "键"
 
@@ -2818,10 +2880,6 @@ msgid "ID"
 msgstr "ID"
 
 #: models.py
-msgid "Category"
-msgstr "类别"
-
-#: models.py
 msgid "ESI category, or \"unresolved\"."
 msgstr "ESI 类别，或 \"unresolved\"（未解析）。"
 
@@ -2866,12 +2924,119 @@ msgid "audit logs"
 msgstr "操作日志"
 
 #: models.py
+msgid "Use the in-fleet or out-of-fleet cap of the SRP settings"
+msgstr "使用 SRP 设置里的舰队内或舰队外上限"
+
+#: models.py
+msgid "No per-loss cap"
+msgstr "不设单笔上限"
+
+#: models.py
+msgid "Own per-loss cap"
+msgstr "自己的单笔上限"
+
+#: models.py
+msgid "Short identifier for links and exports. Letters, digits, hyphens and underscores."
+msgstr "用于链接和导出的简短标识。字母、数字、连字符和下划线。"
+
+#: models.py
+msgid "Built in"
+msgstr "内置"
+
+#: models.py
+msgid "Members can choose it"
+msgstr "成员可以选择"
+
+#: models.py
+msgid "Members can pick this category for a loss outside a fleet."
+msgstr "成员可以为舰队外的损失选择这个类别。"
+
+#: models.py
+msgid "Payout percentage"
+msgstr "赔付比例"
+
+#: models.py
+msgid "Share of the loss value paid for ships not in the payout table. Empty = the percentage of the SRP settings. 0 = no automatic amount in this category."
+msgstr "不在赔付表中的舰船按损失价值的这一比例赔付。留空表示使用 SRP 设置里的比例。0 表示这个类别没有自动金额。"
+
+#: models.py templates/fleetops/srp/_calculation.html views_config.py
+msgid "Per-loss cap"
+msgstr "单笔上限"
+
+#: models.py
+msgid "Maximum per loss in this category. Used with “Own per-loss cap”."
+msgstr "这个类别里一笔损失最多赔多少。与“自己的单笔上限”一起使用。"
+
+#: models.py
+msgid "Per-loss cap also limits payout table amounts"
+msgstr "单笔上限同样限制赔付表金额"
+
+#: models.py
+msgid "Switch off to pay the fixed amounts of the payout table in full."
+msgstr "关闭后，赔付表的固定金额全额赔付。"
+
+#: models.py views_config.py
+msgid "Personal monthly cap"
+msgstr "个人月度上限"
+
+#: models.py
+msgid "Maximum approved SRP per player in this category per EVE month. Empty = no cap."
+msgstr "每位玩家每个 EVE 月在这个类别里可通过的 SRP 上限。留空表示不设上限。"
+
+#: models.py views_config.py
+msgid "Corporation monthly cap"
+msgstr "军团月度上限"
+
+#: models.py
+msgid "Maximum approved SRP per corporation in this category per EVE month. Empty = no cap."
+msgstr "每个军团每个 EVE 月在这个类别里可通过的 SRP 上限。留空表示不设上限。"
+
+#: models.py templates/fleetops/all_corporation_statistics.html
+#: templates/fleetops/all_fc_statistics.html
+#: templates/fleetops/statistics/member_detail.html views_config.py
+msgid "Fleet types"
+msgstr "舰队类型"
+
+#: models.py
+msgid "Claims through the fleets of these types get this category. Empty = no mapping."
+msgstr "通过这些类型的舰队提交的申请使用这个类别。留空表示不映射。"
+
+#: models.py views_config.py
+msgctxt "enabled"
+msgid "Active"
+msgstr "启用"
+
+#: models.py templates/fleetops/srp/_calculation.html
+msgid "SRP category"
+msgstr "SRP 类别"
+
+#: models.py
+msgid "SRP categories"
+msgstr "SRP 类别"
+
+#: models.py
+msgid "The built-in category cannot be switched off."
+msgstr "内置类别不能停用。"
+
+#: models.py
+msgid "The key of the built-in category cannot be changed."
+msgstr "内置类别的 key 不能修改。"
+
+#: models.py
+msgid "Members cannot choose the built-in category."
+msgstr "成员不能选择内置类别。"
+
+#: models.py
+msgid "Enter the per-loss cap."
+msgstr "请输入单笔上限。"
+
+#: models.py
 msgid "zKillboard fitted value (ship, modules, drones, implants)"
 msgstr "zKillboard 装配价值（舰船、装备、无人机、植入体）"
 
 #: models.py
-msgid "zKillboard total value (includes cargo)"
-msgstr "zKillboard 总价值（含货舱）"
+msgid "zKillboard total value (includes cargo, recommended)"
+msgstr "zKillboard 总价值（含货舱，推荐）"
 
 #: models.py templates/fleetops/srp/_calculation.html
 msgid "ESI market estimate"
@@ -2915,12 +3080,8 @@ msgid "Value source"
 msgstr "价值来源"
 
 #: models.py
-msgid "Where the loss value comes from. The ESI market estimate is also the fallback when zKillboard has no value."
-msgstr "损失价值的来源。zKillboard 没有价值时，也会回退到 ESI 市场估价。"
-
-#: models.py
-msgid "Payout percentage"
-msgstr "赔付比例"
+msgid "Where the loss value comes from. The ESI market estimate is also the fallback when zKillboard has no value. The total value includes cargo; aa-srp pays the total value."
+msgstr "损失价值的来源。zKillboard 没有价值时，也会回退到 ESI 市场估价。总价值含货舱；aa-srp 按总价值赔付。"
 
 #: models.py
 msgid "Share of the loss value paid for ships not in the payout table. 0 = no automatic amount."
@@ -2943,20 +3104,12 @@ msgid "Maximum per out-of-fleet loss. Empty = no cap."
 msgstr "舰队外每笔损失的上限。留空表示不设上限。"
 
 #: models.py
-msgid "Personal monthly cap"
-msgstr "个人月度上限"
-
-#: models.py
 msgid "Maximum approved SRP per player (all characters) per EVE month. Empty = no cap."
 msgstr "每位玩家（所有角色）每个 EVE 月可通过的 SRP 上限。留空表示不设上限。"
 
 #: models.py
 msgid "In-fleet losses count toward the personal cap"
 msgstr "舰队内损失计入个人上限"
-
-#: models.py
-msgid "Corporation monthly cap"
-msgstr "军团月度上限"
 
 #: models.py
 msgid "Maximum approved SRP per corporation and EVE month; the default for every corporation. Corporation limits override it. Empty = no cap."
@@ -2989,6 +3142,18 @@ msgstr "申请期限（天）"
 #: models.py
 msgid "Losses older than this cannot be submitted. 0 = no deadline."
 msgstr "超过这个天数的损失不能再提交。0 表示没有期限。"
+
+#: models.py
+msgid "The category of a loss outside a fleet when the member chooses none. Empty = no category."
+msgstr "舰队外损失在成员没有选择时使用的类别。留空表示没有类别。"
+
+#: models.py
+msgid "Members must choose a category for losses outside a fleet"
+msgstr "舰队外损失必须选择类别"
+
+#: models.py
+msgid "Without a default category, a claim outside a fleet needs a category."
+msgstr "没有默认类别时，舰队外的申请必须选择类别。"
 
 #: models.py
 msgid "SRP managers may decide on their own claims"
@@ -3030,6 +3195,10 @@ msgstr "FleetOps SRP 设置"
 msgid "Choose the ESI market estimate when zKillboard is turned off."
 msgstr "关闭 zKillboard 时，请选择 ESI 市场估价。"
 
+#: models.py
+msgid "Choose an active category that members can choose."
+msgstr "请选择一个启用的、成员可以选择的类别。"
+
 #: models.py templates/fleetops/srp/_summary_table.html
 msgid "In fleet and out of fleet"
 msgstr "舰队内和舰队外"
@@ -3049,6 +3218,10 @@ msgstr "0 表示任意舰船（仅教义规则）。"
 #: models.py
 msgid "Doctrine key"
 msgstr "教义键"
+
+#: models.py
+msgid "Category key"
+msgstr "类别 key"
 
 #: models.py
 msgid "Whole ISK."
@@ -3409,6 +3582,10 @@ msgid "Moved between in fleet and out of fleet"
 msgstr "在舰队内与舰队外之间移动"
 
 #: models.py
+msgid "Category changed"
+msgstr "类别已更改"
+
+#: models.py
 msgid "Recalculated"
 msgstr "已重新计算"
 
@@ -3455,12 +3632,6 @@ msgstr "发送 Ping 和开带 PAP 的舰队"
 #: models.py views_config.py
 msgid "Leaders may"
 msgstr "组长可以"
-
-#: models.py templates/fleetops/all_corporation_statistics.html
-#: templates/fleetops/all_fc_statistics.html
-#: templates/fleetops/statistics/member_detail.html views_config.py
-msgid "Fleet types"
-msgstr "舰队类型"
 
 #: models.py
 msgid "Fleet types the leaders may start. Only used for pings and fleets with PAP."
@@ -4011,6 +4182,7 @@ msgstr "星系"
 #: templates/fleetops/srp/_claims_table.html
 #: templates/fleetops/srp/_summary_table.html
 #: templates/fleetops/srp/payments.html templates/fleetops/start_fleet.html
+#: texts.py
 msgid "Fleet"
 msgstr "舰队"
 
@@ -4369,6 +4541,14 @@ msgid "corporation monthly limit"
 msgstr "军团月度限额"
 
 #: srp/display.py
+msgid "category personal monthly limit"
+msgstr "类别个人月度限额"
+
+#: srp/display.py
+msgid "category corporation monthly limit"
+msgstr "类别军团月度限额"
+
+#: srp/display.py
 msgid "Doctrine and ship"
 msgstr "教义和舰船"
 
@@ -4379,6 +4559,14 @@ msgstr "个人月度限额"
 #: srp/display.py texts.py
 msgid "monthly corporation limit"
 msgstr "军团月度限额"
+
+#: srp/display.py texts.py
+msgid "monthly category personal limit"
+msgstr "类别个人月度限额"
+
+#: srp/display.py texts.py
+msgid "monthly category corporation limit"
+msgstr "类别军团月度限额"
 
 #: srp/display.py
 #, python-format
@@ -5367,8 +5555,8 @@ msgid "FleetOps SRP"
 msgstr "FleetOps SRP"
 
 #: templates/fleetops/configuration/index.html
-msgid "Turn SRP on, choose the value source, the payout percentage, the per-loss caps and the monthly limits. The payout table and the corporation limits are managed separately."
-msgstr "开启 SRP，选择价值来源、赔付比例、单笔上限和月度限额。赔付表和军团限额单独管理。"
+msgid "Turn SRP on, choose the value source, the payout percentage, the per-loss caps and the monthly limits. The categories, the payout table and the corporation limits are managed separately."
+msgstr "开启 SRP，选择价值来源、赔付比例、单笔上限和月度限额。类别、赔付表和军团限额单独管理。"
 
 #: templates/fleetops/configuration/index.html
 #: templates/fleetops/configuration/srp_settings.html
@@ -8200,13 +8388,13 @@ msgstr "损失价值的 %(percentage)s%%"
 msgid "Amount before caps"
 msgstr "应用上限前的金额"
 
-#: templates/fleetops/srp/_calculation.html
-msgid "Per-loss cap"
-msgstr "单笔上限"
-
-#: templates/fleetops/srp/_calculation.html
+#: templates/fleetops/srp/_calculation.html views_config.py
 msgid "No cap"
 msgstr "无上限"
+
+#: templates/fleetops/srp/_calculation.html
+msgid "(category cap)"
+msgstr "（类别上限）"
 
 #: templates/fleetops/srp/_calculation.html
 msgid "Within the monthly limits"
@@ -8384,6 +8572,18 @@ msgid "Move and recalculate"
 msgstr "移动并重新计算"
 
 #: templates/fleetops/srp/_decision_forms.html
+msgid "Change the category"
+msgstr "更改类别"
+
+#: templates/fleetops/srp/_decision_forms.html
+msgid "The claim is calculated again with the payout table, percentage, caps and monthly limits of the category."
+msgstr "申请会按该类别的赔付表、比例、上限和月度限额重新计算。"
+
+#: templates/fleetops/srp/_decision_forms.html
+msgid "Change category and recalculate"
+msgstr "更改类别并重新计算"
+
+#: templates/fleetops/srp/_decision_forms.html
 msgid "Apply the current payout table, caps and limits to this claim."
 msgstr "把当前的赔付表、上限和限额应用到这条申请上。"
 
@@ -8443,6 +8643,10 @@ msgstr "剩余"
 #: templates/fleetops/srp/_limits.html
 msgid "In-fleet losses do not count toward this limit."
 msgstr "舰队内损失不计入此限额。"
+
+#: templates/fleetops/srp/_limits.html
+msgid "Personal monthly limit of this category."
+msgstr "此类别的个人月度限额。"
 
 #: templates/fleetops/srp/_limits.html
 msgid "No monthly limit applies."
@@ -11030,6 +11234,38 @@ msgid "Reduced to the remaining monthly limit."
 msgstr "已削减到月度限额的剩余额度。"
 
 #: texts.py
+msgid "Reduced to the remaining monthly personal limit of the category."
+msgstr "已削减到类别个人月度限额的剩余额度。"
+
+#: texts.py
+msgid "Reduced to the remaining monthly corporation limit of the category."
+msgstr "已削减到类别军团月度限额的剩余额度。"
+
+#: texts.py
+msgid "Choose a category for this loss."
+msgstr "请为这笔损失选择类别。"
+
+#: texts.py
+msgid "This category is not available. Check the loss again."
+msgstr "这个类别已不可用。请重新核对这笔损失。"
+
+#: texts.py
+msgid "The claim already has this category."
+msgstr "这份申请已经属于这个类别。"
+
+#: texts.py
+msgid "Only pending claims can change their category."
+msgstr "只有待审核的申请可以更改类别。"
+
+#: texts.py
+msgid "The fleet category is built in; rename it instead."
+msgstr "“舰队”类别是内置的；请改为重命名。"
+
+#: texts.py
+msgid "This category has claims or payout rules. Deactivate it instead."
+msgstr "这个类别有申请或赔付规则在使用。请改为停用。"
+
+#: texts.py
 msgid "This check has expired. Check the loss again."
 msgstr "这次核对已过期。请重新核对这笔损失。"
 
@@ -11781,11 +12017,6 @@ msgid "Fleet categories and the FC point weight attached to each type."
 msgstr "舰队分类，以及每种类型的 FC 积分权重。"
 
 #: views_config.py
-msgctxt "enabled"
-msgid "Active"
-msgstr "启用"
-
-#: views_config.py
 msgid "Sort"
 msgstr "排序"
 
@@ -11896,6 +12127,22 @@ msgid "Wing and squad names FCs can apply to a running fleet from its Fleet tab.
 msgstr "FC 可以在进行中舰队的“舰队”标签里应用的联队和中队名称。"
 
 #: views_config.py
+msgid "SRP Categories"
+msgstr "SRP 类别"
+
+#: views_config.py
+msgid "Kinds of claims, such as fleet or solo PVP, with their own payout table entries, percentage, per-loss cap and monthly limits. A claim without a category follows the general SRP settings."
+msgstr "申请的种类，例如舰队或 Solo PVP，各有自己的赔付表条目、比例、单笔上限和月度限额。没有类别的申请按通用 SRP 设置计算。"
+
+#: views_config.py
+msgid "Members can choose"
+msgstr "成员可以选择"
+
+#: views_config.py
+msgid "Percentage"
+msgstr "赔付比例"
+
+#: views_config.py
 msgid "SRP Payout Table"
 msgstr "SRP 赔付表"
 
@@ -11942,6 +12189,11 @@ msgstr "已同步"
 #: views_config.py
 msgid "Added manually"
 msgstr "手动添加"
+
+#: views_config.py
+#, python-format
+msgid "Default (%(percentage)s%%)"
+msgstr "默认（%(percentage)s%%）"
 
 #: views_config.py
 msgid "Every active role"
@@ -12658,6 +12910,11 @@ msgstr "%(reference)s 已移到舰队内并重新计算。"
 #, python-format
 msgid "%(reference)s moved to out of fleet and recalculated."
 msgstr "%(reference)s 已移到舰队外并重新计算。"
+
+#: views_srp_review.py
+#, python-format
+msgid "%(reference)s moved to another category and recalculated."
+msgstr "%(reference)s 已移到另一个类别并重新计算。"
 
 #: views_srp_review.py
 #, python-format

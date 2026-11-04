@@ -12,16 +12,21 @@ from django.apps import apps
 from django.contrib.auth.models import Group, Permission, User
 from django.core.management import call_command
 from django.db import connection
+from django.db.migrations.exceptions import IrreversibleError
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TestCase, TransactionTestCase
 
 from fleetops.constants import DEFAULT_MOTD_TEMPLATE
-from fleetops.models import FleetOpsSettings, MessageTemplate, SrpSettings
+from fleetops.models import AuditLog, FleetOpsSettings, MessageTemplate, SrpCategory, SrpClaim, SrpPayoutRule, SrpSettings
+
+from . import factories as f
 
 schema = importlib.import_module("fleetops.migrations.0016_srp_schema")
 upgrade = importlib.import_module("fleetops.migrations.0017_srp_data")
 motd_0009 = importlib.import_module("fleetops.migrations.0009_convert_ping_targets_and_presets")
 data_0020 = importlib.import_module("fleetops.migrations.0020_b2_data")
+categories_schema = importlib.import_module("fleetops.migrations.0024_srp_categories")
+categories_data = importlib.import_module("fleetops.migrations.0025_srp_categories_data")
 
 NEW_CODENAMES = ("request_srp", "manage_srp")
 SRP_LINE = '{% if srp_url %}<br>SRP: <a href="{{ srp_url }}">Request SRP</a>{% endif %}'
@@ -46,7 +51,7 @@ def holders_of(codename):
 class MigrationModuleTests(TestCase):
     def test_migrations_do_not_import_fleetops_code(self):
         # They must keep working when the constants or models they were written against change.
-        for module in (schema, upgrade):
+        for module in (schema, upgrade, categories_schema, categories_data):
             source = inspect.getsource(module)
             with self.subTest(module=module.__name__):
                 self.assertNotIn("from fleetops", source)
@@ -71,6 +76,24 @@ class MigrationModuleTests(TestCase):
     def test_dependencies(self):
         self.assertIn(("fleetops", "0016_srp_schema"), upgrade.Migration.dependencies)
         self.assertEqual(schema.Migration.dependencies[0], ("fleetops", "0015_statistics_targets"))
+        self.assertIn(("fleetops", "0023_group_members_are_leaders_help"), categories_schema.Migration.dependencies)
+        self.assertEqual(categories_data.Migration.dependencies, [("fleetops", "0024_srp_categories")])
+
+    def test_the_migrations_start_with_the_plain_header(self):
+        for module in (categories_schema, categories_data):
+            with self.subTest(module=module.__name__):
+                self.assertTrue(inspect.getsource(module).startswith("# AA FleetOps 0.3.0b1:"))
+
+    def test_the_constants_copied_into_the_data_migration_match_the_app(self):
+        from fleetops.models import SrpCategory, SrpClaim, SrpSettings
+        from fleetops.texts import SRP_CATEGORY_FLEET
+
+        self.assertEqual(categories_data.SYSTEM_KEY, SrpCategory.SYSTEM_KEY)
+        self.assertEqual(categories_data.SYSTEM_NAME, SRP_CATEGORY_FLEET.msgid)
+        self.assertEqual(categories_data.IN_FLEET, SrpClaim.Scope.IN_FLEET)
+        self.assertEqual(categories_data.ZKILL_FITTED, SrpSettings.ValueSource.ZKILL_FITTED)
+        self.assertEqual(categories_data.ZKILL_TOTAL, SrpSettings.ValueSource.ZKILL_TOTAL)
+        self.assertEqual(SrpSettings._meta.get_field("value_source").default, categories_data.ZKILL_TOTAL)
 
     def test_models_and_migrations_are_in_sync(self):
         out = StringIO()
@@ -388,3 +411,257 @@ class UpgradeFrom0015Tests(TransactionTestCase):
 
         self.assertEqual(Killmail.objects.count(), 1)
         self.assertEqual(PayoutRule.objects.count(), 1)
+
+
+class CategoryDataFunctionTests(TestCase):
+    """The functions of migration 0025, run on the current models."""
+
+    def setUp(self):
+        self.user = f.create_user("pilot", perms=f.SRP_MEMBER_PERMS)
+
+    def switch(self):
+        categories_data.switch_untouched_value_source(apps, None)
+        return SrpSettings.get_solo().value_source
+
+    def test_a_new_database_uses_the_total_value(self):
+        self.assertEqual(SrpSettings.get_solo().value_source, "zkill_total")
+        self.assertEqual(SrpSettings._meta.get_field("value_source").default, "zkill_total")
+
+    def test_untouched_settings_switch_to_the_total_value(self):
+        SrpSettings.objects.filter(pk=1).update(value_source="zkill_fitted")
+
+        self.assertEqual(self.switch(), "zkill_total")
+
+    def test_settings_that_were_saved_once_keep_their_value(self):
+        SrpSettings.objects.filter(pk=1).update(value_source="zkill_fitted")
+        AuditLog.objects.create(action="configuration.update", object_type="SrpSettings", object_id="1")
+
+        self.assertEqual(self.switch(), "zkill_fitted")
+
+    def test_settings_with_claims_keep_their_value(self):
+        SrpSettings.objects.filter(pk=1).update(value_source="zkill_fitted")
+        f.srp_claim(self.user)
+
+        self.assertEqual(self.switch(), "zkill_fitted")
+
+    def test_an_audit_entry_of_another_object_does_not_count(self):
+        SrpSettings.objects.filter(pk=1).update(value_source="zkill_fitted")
+        AuditLog.objects.create(action="configuration.update", object_type="SrpPayoutRule", object_id="1")
+
+        self.assertEqual(self.switch(), "zkill_total")
+
+    def test_another_value_source_is_left_alone(self):
+        SrpSettings.objects.filter(pk=1).update(value_source="esi_estimate")
+
+        self.assertEqual(self.switch(), "esi_estimate")
+
+    def test_the_fleet_category_is_created_once(self):
+        categories_data.create_fleet_category(apps, None)
+        categories_data.create_fleet_category(apps, None)
+
+        self.assertEqual(list(SrpCategory.objects.values_list("key", flat=True)), ["fleet"])
+
+    def test_the_backfill_puts_fleet_claims_into_the_fleet_category(self):
+        operation = f.create_operation(f.create_user("fc", perms=f.FC_PERMS))
+        link = f.fleet_link(operation)
+        inside = f.srp_claim(self.user, link=link, category=None)
+        outside = f.srp_claim(f.create_user("other", perms=f.SRP_MEMBER_PERMS))
+        SrpClaim.objects.update(category=None)
+
+        categories_data.backfill_claims(apps, None)
+
+        self.assertEqual(SrpClaim.objects.get(pk=inside.pk).category.key, "fleet")
+        self.assertIsNone(SrpClaim.objects.get(pk=outside.pk).category)
+
+    def test_the_guard_lists_only_rule_ids(self):
+        solo = f.srp_category("Solo PVP")
+        first = f.payout_rule(587, category=solo, label="Secret label")
+        second = f.payout_rule(588, category=solo)
+        f.payout_rule(589)
+
+        with self.assertRaises(IrreversibleError) as caught:
+            categories_data.refuse_rollback(apps, None)
+
+        message = str(caught.exception)
+        self.assertIn(f"{first.pk}, {second.pk}", message)
+        self.assertNotIn("Secret label", message)
+        self.assertNotIn("Solo PVP", message)
+
+    def test_the_guard_says_when_the_list_is_cut(self):
+        solo = f.srp_category("Solo PVP")
+        for index in range(categories_data.MAX_LISTED + 7):
+            f.payout_rule(1000 + index, category=solo)
+
+        with self.assertRaises(IrreversibleError) as caught:
+            categories_data.refuse_rollback(apps, None)
+
+        message = str(caught.exception)
+        self.assertIn("7 more", message)
+        self.assertIn(f"{categories_data.MAX_LISTED + 7} rules in total", message)
+
+    def test_the_guard_does_not_mention_more_when_the_list_is_complete(self):
+        solo = f.srp_category("Solo PVP")
+        for index in range(categories_data.MAX_LISTED):
+            f.payout_rule(1000 + index, category=solo)
+
+        with self.assertRaises(IrreversibleError) as caught:
+            categories_data.refuse_rollback(apps, None)
+
+        self.assertNotIn("more", str(caught.exception))
+
+    def test_the_guard_and_the_cleanup_see_a_stale_category_key(self):
+        solo = f.srp_category("Solo PVP")
+        rule = f.payout_rule(587, category=solo)
+        SrpPayoutRule.objects.filter(pk=rule.pk).update(category=None)
+
+        with self.assertRaises(IrreversibleError) as caught:
+            categories_data.refuse_rollback(apps, None)
+        self.assertIn(str(rule.pk), str(caught.exception))
+
+        categories_data.clear_categories(apps, None)
+        self.assertEqual(SrpPayoutRule.objects.get(pk=rule.pk).category_key, 0)
+
+    def test_the_guard_passes_without_category_rules(self):
+        f.payout_rule(587)
+
+        categories_data.refuse_rollback(apps, None)
+
+
+class CategoryRoundTripTests(TransactionTestCase):
+    """0.2.0b3 data goes through 0024 and 0025 and back to 0023."""
+
+    serialized_rollback = True
+    before = [("fleetops", "0023_group_members_are_leaders_help")]
+    after = [("fleetops", "0025_srp_categories_data")]
+
+    def migrate(self, nodes):
+        executor = MigrationExecutor(connection)
+        executor.loader.build_graph()
+        executor.migrate(nodes)
+        return executor.loader.project_state(nodes).apps
+
+    def migrate_to_latest(self):
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes("fleetops"))
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(self.migrate_to_latest)
+        old = self.migrate(self.before)
+        self.insert_rows(old)
+
+    def insert_rows(self, old):
+        from django.utils import timezone
+
+        Killmail = old.get_model("fleetops", "SrpKillmail")
+        Claim = old.get_model("fleetops", "SrpClaim")
+        Rule = old.get_model("fleetops", "SrpPayoutRule")
+        Settings = old.get_model("fleetops", "SrpSettings")
+        Settings.objects.update_or_create(pk=1, defaults={"value_source": "zkill_fitted", "percentage": "80"})
+        for index, scope in enumerate(("in_fleet", "out_of_fleet", "in_fleet"), start=1):
+            km = Killmail.objects.create(
+                killmail_id=index, killmail_hash=f"{index:040d}", killmail_time=timezone.now(), solar_system_id=2, ship_type_id=3
+            )
+            Claim.objects.create(
+                killmail=km,
+                scope=scope,
+                character_id=index,
+                character_name=f"Pilot {index}",
+                killmail_time=km.killmail_time,
+                ship_type_id=3,
+                suggested_amount=100 * index,
+                status="approved" if index == 3 else "pending",
+            )
+        Rule.objects.create(ship_type_id=587, doctrine_key="", scope="any", amount=1_000_000)
+
+    def test_the_upgrade_keeps_the_amounts_and_sorts_the_claims(self):
+        new = self.migrate(self.after)
+
+        Claim = new.get_model("fleetops", "SrpClaim")
+        Category = new.get_model("fleetops", "SrpCategory")
+        Rule = new.get_model("fleetops", "SrpPayoutRule")
+        Settings = new.get_model("fleetops", "SrpSettings")
+        self.assertEqual(list(Category.objects.values_list("key", "is_system", "member_selectable")), [("fleet", True, False)])
+        self.assertEqual(
+            list(Claim.objects.order_by("character_id").values_list("scope", "category__key", "suggested_amount", "status")),
+            [("in_fleet", "fleet", 100, "pending"), ("out_of_fleet", None, 200, "pending"), ("in_fleet", "fleet", 300, "approved")],
+        )
+        self.assertEqual(list(Rule.objects.values_list("amount", "category_id", "category_key")), [(1_000_000, None, 0)])
+        # The settings were never saved and there were no audit entries: the new default applies. There were claims,
+        # so this site keeps what it had.
+        self.assertEqual(Settings.objects.get().value_source, "zkill_fitted")
+        self.assertEqual(Settings.objects.get().percentage, 80)
+
+    def test_the_way_back_restores_0023(self):
+        self.migrate(self.after)
+
+        old = self.migrate(self.before)
+
+        Claim = old.get_model("fleetops", "SrpClaim")
+        self.assertEqual(
+            list(Claim.objects.order_by("character_id").values_list("scope", "suggested_amount", "status")),
+            [("in_fleet", 100, "pending"), ("out_of_fleet", 200, "pending"), ("in_fleet", 300, "approved")],
+        )
+        self.assertFalse(hasattr(Claim, "category"))
+        self.assertEqual(old.get_model("fleetops", "SrpPayoutRule").objects.count(), 1)
+        self.assertNotIn("srpcategory", {model._meta.model_name for model in old.get_models() if model._meta.app_label == "fleetops"})
+        # And forward again.
+        again = self.migrate(self.after)
+        self.assertEqual(again.get_model("fleetops", "SrpCategory").objects.count(), 1)
+        self.assertEqual(again.get_model("fleetops", "SrpClaim").objects.filter(category__isnull=False).count(), 2)
+
+    def test_a_rule_of_a_category_stops_the_way_back_and_changes_nothing(self):
+        new = self.migrate(self.after)
+        Category = new.get_model("fleetops", "SrpCategory")
+        Rule = new.get_model("fleetops", "SrpPayoutRule")
+        solo = Category.objects.create(name="Solo PVP", key="solo")
+        rule = Rule.objects.create(ship_type_id=589, doctrine_key="", scope="any", amount=5, category=solo, category_key=solo.pk)
+
+        with self.assertRaises(IrreversibleError) as caught:
+            self.migrate(self.before)
+
+        self.assertIn(str(rule.pk), str(caught.exception))
+        self.assertNotIn("Solo PVP", str(caught.exception))
+        # Nothing was undone: the category data is still there.
+        current = MigrationExecutor(connection).loader.project_state(self.after).apps
+        self.assertEqual(current.get_model("fleetops", "SrpCategory").objects.count(), 2)
+        self.assertEqual(current.get_model("fleetops", "SrpClaim").objects.filter(category__key="fleet").count(), 2)
+
+        # A general rule instead: the way back works.
+        current.get_model("fleetops", "SrpPayoutRule").objects.filter(pk=rule.pk).update(category=None, category_key=0)
+        old = self.migrate(self.before)
+        self.assertEqual(old.get_model("fleetops", "SrpPayoutRule").objects.count(), 2)
+
+    def test_a_rule_with_a_stale_category_key_stops_the_way_back_before_anything_is_undone(self):
+        new = self.migrate(self.after)
+        Category = new.get_model("fleetops", "SrpCategory")
+        Rule = new.get_model("fleetops", "SrpPayoutRule")
+        solo = Category.objects.create(name="Solo PVP", key="solo")
+        Rule.objects.create(ship_type_id=587, doctrine_key="", scope="any", amount=5, category=solo, category_key=solo.pk)
+        # A write that skips save() clears the category and leaves the key.
+        Rule.objects.filter(category=solo).update(category=None)
+
+        with self.assertRaises(IrreversibleError):
+            self.migrate(self.before)
+
+        current = MigrationExecutor(connection).loader.project_state(self.after).apps
+        self.assertEqual(current.get_model("fleetops", "SrpCategory").objects.count(), 2)
+
+    def test_a_rule_pointing_to_the_fleet_category_is_caught_by_the_guard_too(self):
+        new = self.migrate(self.after)
+        fleet = new.get_model("fleetops", "SrpCategory").objects.get(key="fleet")
+        new.get_model("fleetops", "SrpPayoutRule").objects.create(
+            ship_type_id=588, doctrine_key="", scope="any", amount=5, category=fleet, category_key=fleet.pk
+        )
+
+        with self.assertRaises(IrreversibleError):
+            self.migrate(self.before)
+
+    def test_the_site_without_claims_and_audit_entries_switches_to_the_total_value(self):
+        old = MigrationExecutor(connection).loader.project_state(self.before).apps
+        old.get_model("fleetops", "SrpClaim").objects.all().delete()
+        old.get_model("fleetops", "SrpKillmail").objects.all().delete()
+
+        new = self.migrate(self.after)
+
+        self.assertEqual(new.get_model("fleetops", "SrpSettings").objects.get().value_source, "zkill_total")

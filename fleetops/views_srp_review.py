@@ -50,7 +50,7 @@ SKIPPED_SHOWN = 5
 
 # The buttons of the claim page. Deciding on a claim (everything but a re-check and an internal note) follows
 # the self-review rule: managers do not decide their own claims unless the settings allow it.
-DECISION_ACTIONS = frozenset({"approve", "reject", "revoke", "paid", "unpaid", "reopen", "reclassify", "recalculate"})
+DECISION_ACTIONS = frozenset({"approve", "reject", "revoke", "paid", "unpaid", "reopen", "reclassify", "recategorize", "recalculate"})
 CLAIM_ACTIONS = DECISION_ACTIONS | {"recheck", "note"}
 
 # Fleet checks that are not a warning.
@@ -138,7 +138,7 @@ def filter_choices():
 
 def filtered_claims(filters, bounds=None):
     """Claims for the queue's filters (``ReviewFilterForm.cleaned_data``), the month of the loss when given."""
-    claims = SrpClaim.objects.all()
+    claims = SrpClaim.objects.select_related("category")
     status = filters.get("status") or SrpClaim.Status.PENDING
     if status != ReviewFilterForm.ANY_STATUS:
         claims = claims.filter(status=status)
@@ -334,12 +334,26 @@ def do_reclassify(request, claim, form):
             problem = _("There is no fleet with this SRP link.")
             form.add_error("link", problem)
             raise SrpError("unknown_link", problem)
-    review.reclassify_claim(claim, actor=request.user, scope=scope, link=link, reason=form.cleaned_data["reason"])
+    review.reclassify_claim(
+        claim,
+        actor=request.user,
+        scope=scope,
+        link=link,
+        reason=form.cleaned_data["reason"],
+        category=form.cleaned_data.get("category"),
+    )
     if scope == SrpClaim.Scope.IN_FLEET:
         text = _("%(reference)s moved to in fleet and recalculated.")
     else:
         text = _("%(reference)s moved to out of fleet and recalculated.")
     return text % {"reference": claim.reference}
+
+
+def do_recategorize(request, claim, form):
+    review.recategorize_claim(
+        claim, actor=request.user, category=form.cleaned_data.get("category"), reason=form.cleaned_data["reason"]
+    )
+    return _("%(reference)s moved to another category and recalculated.") % {"reference": claim.reference}
 
 
 def do_recalculate(request, claim, form):
@@ -365,6 +379,7 @@ HANDLERS = {
     "unpaid": do_unpaid,
     "reopen": do_reopen,
     "reclassify": do_reclassify,
+    "recategorize": do_recategorize,
     "recalculate": do_recalculate,
     "recheck": do_recheck,
     "note": do_note,
@@ -374,8 +389,8 @@ HANDLERS = {
 @require_POST
 @fleetops_permission_required(MANAGE_SRP, page=False)
 def claim_action(request, claim_uuid, action):
-    """One decision on one claim: approve, reject, revoke, paid, unpaid, reopen, reclassify, recalculate,
-    recheck (the presence check) or note. An unknown action or claim is a 404.
+    """One decision on one claim: approve, reject, revoke, paid, unpaid, reopen, reclassify, recategorize,
+    recalculate, recheck (the presence check) or note. An unknown action or claim is a 404.
 
     A decision on the manager's own claim is a 403 unless ``allow_self_review`` is on; the claim page does not
     offer those buttons then. A re-check and an internal note only need ``manage_srp``.
@@ -509,7 +524,7 @@ def payments(request):
         base = base.filter(killmail_time__gte=bounds[0], killmail_time__lt=bounds[1])
     to_pay = list(
         base.filter(status=SrpClaim.Status.APPROVED)
-        .select_related("user__profile__main_character")
+        .select_related("user__profile__main_character", "category")
         .order_by("killmail_time", "pk")
     )
     for claim in to_pay:
@@ -533,7 +548,7 @@ def payments(request):
             pay_rows=rows,
             to_pay_total=sum(row.total for row in rows),
             to_pay_count=len(to_pay),
-            paid_claims=list(paid.select_related("paid_by").order_by("-paid_at", "-pk")[:PAID_SHOWN]),
+            paid_claims=list(paid.select_related("paid_by", "category").order_by("-paid_at", "-pk")[:PAID_SHOWN]),
             paid_total=paid_sums["total"] or 0,
             paid_count=paid_sums["count"],
             paid_shown=PAID_SHOWN,
