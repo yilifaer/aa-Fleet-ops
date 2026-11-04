@@ -41,6 +41,7 @@ self_payment_data = importlib.import_module("fleetops.migrations.0027_srp_self_p
 links_schema = importlib.import_module("fleetops.migrations.0028_srp_links")
 links_guard = importlib.import_module("fleetops.migrations.0029_srp_links_guard")
 intake_blocks = importlib.import_module("fleetops.migrations.0030_srp_intake_blocks")
+discovery_schema = importlib.import_module("fleetops.migrations.0031_srp_discovery")
 
 NEW_CODENAMES = ("request_srp", "manage_srp")
 # Permissions of 0.3.0b1 (REV-1): registered with the model options, granted to nobody.
@@ -77,6 +78,7 @@ class MigrationModuleTests(TestCase):
             links_schema,
             links_guard,
             intake_blocks,
+            discovery_schema,
         ):
             source = inspect.getsource(module)
             with self.subTest(module=module.__name__):
@@ -109,6 +111,7 @@ class MigrationModuleTests(TestCase):
         self.assertEqual(links_schema.Migration.dependencies[0], ("fleetops", "0027_srp_self_payment_data"))
         self.assertEqual(links_guard.Migration.dependencies, [("fleetops", "0028_srp_links")])
         self.assertEqual(intake_blocks.Migration.dependencies[0], ("fleetops", "0029_srp_links_guard"))
+        self.assertEqual(discovery_schema.Migration.dependencies[0], ("fleetops", "0030_srp_intake_blocks"))
 
     def test_the_migrations_start_with_the_plain_header(self):
         for module in (
@@ -119,6 +122,7 @@ class MigrationModuleTests(TestCase):
             links_schema,
             links_guard,
             intake_blocks,
+            discovery_schema,
         ):
             with self.subTest(module=module.__name__):
                 self.assertTrue(inspect.getsource(module).startswith("# AA FleetOps 0.3.0b1:"))
@@ -135,7 +139,7 @@ class MigrationModuleTests(TestCase):
         self.assertEqual(declared["pay_srp"], "Can pay SRP claims")
 
     def test_no_migration_of_this_phase_grants_a_permission_or_creates_a_task(self):
-        for module in (review_schema, self_payment_data, links_schema, links_guard, intake_blocks):
+        for module in (review_schema, self_payment_data, links_schema, links_guard, intake_blocks, discovery_schema):
             source = inspect.getsource(module)
             with self.subTest(module=module.__name__):
                 for word in ("Permission", "permissions.add", "user_permissions", "PeriodicTask", "Group"):
@@ -1131,5 +1135,88 @@ class IntakeBlocksRoundTripTests(TransactionTestCase):
 
     def test_the_migration_grants_nothing_and_creates_no_task(self):
         source = inspect.getsource(intake_blocks)
+        for word in ("Permission", "user_permissions", "PeriodicTask", "Group", "RunPython", "requests", "urllib"):
+            self.assertNotIn(word, source)
+
+
+class DiscoveryRoundTripTests(TransactionTestCase):
+    """0031: claims get the source "paste", the settings start with discovery off, and the way back to 0023 works."""
+
+    serialized_rollback = True
+    before = [("fleetops", "0030_srp_intake_blocks")]
+    after = [("fleetops", "0031_srp_discovery")]
+    oldest = [("fleetops", "0023_group_members_are_leaders_help")]
+
+    def migrate(self, nodes):
+        executor = MigrationExecutor(connection)
+        executor.loader.build_graph()
+        executor.migrate(nodes)
+        return executor.loader.project_state(nodes).apps
+
+    def migrate_to_latest(self):
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes("fleetops"))
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(self.migrate_to_latest)
+        old = self.migrate(self.before)
+        from django.utils import timezone
+
+        self.killmail = old.get_model("fleetops", "SrpKillmail").objects.create(
+            killmail_id=4712, killmail_hash="0" * 40, killmail_time=timezone.now(), solar_system_id=30000142, ship_type_id=587
+        )
+        old.get_model("fleetops", "SrpSettings").objects.update_or_create(pk=1, defaults={"claim_deadline_days": 9})
+
+    def make_claim(self, apps):
+        from django.utils import timezone
+
+        return apps.get_model("fleetops", "SrpClaim").objects.create(
+            killmail_id=4712,
+            scope="out_of_fleet",
+            character_id=90000001,
+            character_name="Example Pilot",
+            killmail_time=timezone.now(),
+            ship_type_id=587,
+            status="pending",
+            suggested_amount=1000,
+        )
+
+    def test_old_claims_are_pasted_and_the_feature_starts_off(self):
+        old = self.migrate(self.before)
+        claim = self.make_claim(old)
+
+        new = self.migrate(self.after)
+
+        self.assertEqual(new.get_model("fleetops", "SrpClaim").objects.get(pk=claim.pk).source, "paste")
+        row = new.get_model("fleetops", "SrpSettings").objects.get()
+        self.assertEqual(
+            (row.loss_discovery_enabled, row.loss_discovery_interval_minutes, row.require_all_alts_authorized, row.claim_deadline_days),
+            (False, 60, False, 9),
+        )
+        self.assertEqual(new.get_model("fleetops", "SrpLoss").objects.count(), 0)
+        self.assertEqual(new.get_model("fleetops", "SrpLossScan").objects.count(), 0)
+
+    def test_the_way_back_drops_the_tables_and_forward_works_again(self):
+        old = self.migrate(self.before)
+        claim = self.make_claim(old)
+        new = self.migrate(self.after)
+        new.get_model("fleetops", "SrpLossScan").objects.create(character_id=90000001)
+        new.get_model("fleetops", "SrpLoss").objects.create(character_id=90000001, killmail_id=1, kind="loss")
+
+        oldest = self.migrate(self.oldest)
+
+        for name in ("SrpLoss", "SrpLossScan"):
+            with self.assertRaises(LookupError):
+                oldest.get_model("fleetops", name)
+        Claim = oldest.get_model("fleetops", "SrpClaim")
+        self.assertEqual(Claim.objects.filter(pk=claim.pk).count(), 1)
+        self.assertNotIn("source", {field.name for field in Claim._meta.get_fields()})
+        again = self.migrate(self.after)
+        self.assertEqual(again.get_model("fleetops", "SrpLoss").objects.count(), 0)
+        self.assertEqual(again.get_model("fleetops", "SrpClaim").objects.get(pk=claim.pk).source, "paste")
+
+    def test_the_migration_grants_nothing_and_creates_no_task(self):
+        source = inspect.getsource(discovery_schema)
         for word in ("Permission", "user_permissions", "PeriodicTask", "Group", "RunPython", "requests", "urllib"):
             self.assertNotIn(word, source)

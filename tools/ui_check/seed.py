@@ -557,6 +557,8 @@ def build_data(login_count):
         blocked_ship_group_ids="463,543,28",
         blocked_ship_type_ids="32880,605",
         blocked_security_bands="highsec",
+        loss_discovery_enabled=True,
+        loss_discovery_interval_minutes=60,
     )
     f.payout_rule(f.RIFTER, 20_000_000, ship_name="Rifter")
     f.payout_rule(623, 45_000_000, ship_name="Moa", doctrine="Example Doctrine")
@@ -587,6 +589,30 @@ def build_data(login_count):
     f.claim_event(ctx.claim_paid, m.SrpClaimEvent.Action.PAID, actor=users["srp"], amount=20_000_000)
     f.srp_claim(users["pilot04"], status=m.SrpClaim.Status.REJECTED, amount=20_000_000, decided_by=users["srp"])
     f.srp_claim(users["pilot05"], status=m.SrpClaim.Status.WITHDRAWN, amount=20_000_000)
+
+    # Loss discovery: the main character is authorized and the alt is not; one loss found for each character, one of them
+    # matched to the example fleet, one in a blocked ship group, one that is claimed already (the paid claim).
+    f.add_token(member, victims[0], scopes=["esi-killmails.read_killmails.v1"])
+    found_time = now - timedelta(hours=5)
+
+    def found(character, killmail_id, name, ship_type_id, **extra):
+        return m.SrpLoss.objects.create(
+            character_id=character.character_id, killmail_id=killmail_id, killmail_hash="a" * 40, kind="loss",
+            killmail_time=found_time - timedelta(minutes=killmail_id % 100), ship_type_id=ship_type_id,
+            ship_type_name=name, solar_system_id=30002187, solar_system_name="Amamake", **extra,
+        )
+
+    found(victims[0], 900_000_001, "Rifter", f.RIFTER, matched_link=ctx.srp_link, match_code="in_fleet")
+    found(victims[1], 900_000_002, "Covetor", 17476, ship_group_id=463)
+    found(victims[0], 900_000_003, "Moa", 623)
+    m.SrpLoss.objects.create(
+        character_id=victims[1].character_id, killmail_id=ctx.claim_paid.killmail_id, killmail_hash="b" * 40, kind="loss",
+        killmail_time=ctx.claim_paid.killmail_time, ship_type_id=f.RIFTER, ship_type_name="Rifter",
+        solar_system_id=30002187, solar_system_name="Amamake",
+    )
+    m.SrpLossScan.objects.create(
+        character_id=victims[0].character_id, user=member, status="ok", last_checked_at=now - timedelta(minutes=20)
+    )
 
     # SRP bans: the member is banned (banner on My SRP, ban box on the claim page); one more for the list.
     from datetime import timedelta as _td

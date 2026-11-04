@@ -662,6 +662,15 @@ class SrpSettingsForm(forms.ModelForm):
             ],
         ),
         (
+            _("Loss discovery"),
+            _(
+                "Find the recent losses of the members' characters from ESI and list them on My SRP. Each member "
+                "authorizes loss reading (esi-killmails.read_killmails.v1) once per character; the EVE application of "
+                "the site must have that scope."
+            ),
+            ["loss_discovery_enabled", "loss_discovery_interval_minutes", "require_all_alts_authorized"],
+        ),
+        (
             _("SRP bans"),
             _("Reviewers can ban a member from submitting SRP claims, for a number of days or for good."),
             ["ban_default_days", "ban_max_days", "auto_ban_over_monthly_cap"],
@@ -722,6 +731,9 @@ class SrpSettingsForm(forms.ModelForm):
             "ban_default_days",
             "ban_max_days",
             "auto_ban_over_monthly_cap",
+            "loss_discovery_enabled",
+            "loss_discovery_interval_minutes",
+            "require_all_alts_authorized",
             "allow_self_review",
             "allow_self_payment",
             "require_different_payer",
@@ -734,6 +746,7 @@ class SrpSettingsForm(forms.ModelForm):
             "claim_deadline_days": forms.NumberInput(attrs={"min": "0", "max": "3650"}),
             "ban_default_days": forms.NumberInput(attrs={"min": "1", "max": "3650"}),
             "ban_max_days": forms.NumberInput(attrs={"min": "1", "max": "3650"}),
+            "loss_discovery_interval_minutes": forms.NumberInput(attrs={"min": "15", "max": "1440"}),
             "member_instructions": forms.Textarea(attrs={"rows": 4, "maxlength": "2000"}),
         }
 
@@ -746,7 +759,7 @@ class SrpSettingsForm(forms.ModelForm):
             )
         self.fields["default_category"].label_from_instance = category_label
         # A submission without the ban lengths (a script, an older form) keeps the stored ones.
-        for name in ("ban_default_days", "ban_max_days"):
+        for name in ("ban_default_days", "ban_max_days", "loss_discovery_interval_minutes"):
             self.fields[name].required = False
         self.warnings = []
         self._set_up_blocks()
@@ -811,6 +824,9 @@ class SrpSettingsForm(forms.ModelForm):
 
     def clean_ban_max_days(self):
         return self.cleaned_data.get("ban_max_days") or self.instance.ban_max_days
+
+    def clean_loss_discovery_interval_minutes(self):
+        return self.cleaned_data.get("loss_discovery_interval_minutes") or self.instance.loss_discovery_interval_minutes
 
     def clean(self):
         cleaned = super().clean()

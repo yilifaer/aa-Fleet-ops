@@ -87,6 +87,10 @@ Status: beta. The current pre-release is 0.3.0b1 (0.2.0b1 was a test build that 
   links and automatic closing (inside the beat task that is installed already).
 - Losses that are not covered (ship groups, ships, kinds of space; nothing is blocked until you save a list) and SRP
   bans from submitting.
+- Automatic loss discovery (off until you switch it on): the recent losses of each member's characters are read from
+  ESI with the member's own token and listed on My SRP, matched to the fleet the character was in; pasting a link stays
+  possible. Optionally every character of a member must authorize it. It runs inside the beat task that is installed
+  already.
 
 **Administration**
 
@@ -216,7 +220,9 @@ person who clicks. If the MOTD update fails, the rendered MOTD stays available t
 PAP links read where a pilot is, what they fly and whether they are online, with the pilot's own token:
 `esi-location.read_location.v1`, `esi-location.read_ship_type.v1` and `esi-location.read_online.v1`. These are
 the scopes of AFAT's click tracking and of the matching aa-charlink import, so tokens they already hold are
-reused. Enable all five scopes in your EVE SSO application. FleetOps SRP needs no scope.
+reused. FleetOps SRP can read the recent losses of the members' characters (`esi-killmails.read_killmails.v1`, with the
+member's own token, only while **Find losses automatically** is on). Enable all six scopes in your EVE SSO application;
+without the last one, loss discovery cannot be authorized and everything else works.
 
 ## First steps
 

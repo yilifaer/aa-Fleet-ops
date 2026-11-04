@@ -30,6 +30,7 @@ from fleetops.texts import (
     ESI_ERROR_LIMIT,
     ESI_ERROR_LIMIT_RESET,
     ESI_HTTP,
+    ESI_NO_SCOPED_TOKEN,
     ESI_NO_TOKEN,
     ESI_RATE_LIMIT,
     ESI_TIMEOUT,
@@ -71,6 +72,8 @@ logger = get_extension_logger(__name__)
 
 # Public reads for SRP: a killmail by ID and hash, and CCP's market prices (see providers/esi_killmails.py).
 KILLMAIL_OPERATIONS = ("GetKillmailsKillmailIdKillmailHash", "GetMarketsPrices")
+# Reading the recent killmails of a character needs the token of that character (providers/esi_killmails.py).
+LOSS_OPERATIONS = ("GetCharactersCharacterIdKillmailsRecent",)
 # Public universe reads for SRP: where a ship was lost and what group a ship type is in (providers/esi_universe.py).
 UNIVERSE_OPERATIONS = (
     "GetUniverseSystemsSystemId",
@@ -107,6 +110,7 @@ esi = ESIClientProvider(
         "GetCharactersCharacterId",
         *KILLMAIL_OPERATIONS,
         *UNIVERSE_OPERATIONS,
+        *LOSS_OPERATIONS,
     ],
 )
 
@@ -276,6 +280,14 @@ def _read(operation, fresh: bool = False):
         return operation.result(use_etag=False, force_refresh=True)
 
 
+def _read_with_response(operation):
+    """``(body, response)`` of a GET operation; like ``_read`` it also answers an unchanged resource."""
+    try:
+        return operation.result(use_etag=False, return_response=True)
+    except HTTPNotModified:
+        return operation.result(use_etag=False, force_refresh=True, return_response=True)
+
+
 def _write(operation):
     """Send a PUT/DELETE operation to ESI; a write is never answered from the cache."""
     return operation.result(use_etag=False, use_cache=False, store_cache=False)
@@ -346,6 +358,30 @@ def get_token(user, character_id: int, write: bool = False):
             "MISSING_WRITE_SCOPE" if write else "MISSING_READ_SCOPE",
             ESI_NO_TOKEN(),
         )
+    return token
+
+
+def get_scoped_token(user, character_id: int, scopes):
+    """A valid token of ``user`` for the character with all of ``scopes``; an expired one is refreshed first.
+
+    Raises ``FleetESIError`` with ``MISSING_SCOPE`` when the user has no such token (a token that EVE SSO refuses to
+    refresh is removed by django-esi and reads as none) and ``TOKEN_REFRESH_FAILED`` when the refresh itself failed.
+    Only the class of an error is logged, never a token.
+    """
+    try:
+        token = (
+            Token.objects.filter(user=user, character_id=character_id)
+            .require_scopes(list(scopes))
+            .require_valid()
+            .first()
+        )
+    except Exception as exc:  # django-esi lets network errors of the refresh through
+        _log_esi_failure("Could not refresh the ESI token", exc)
+        raise FleetESIError(
+            "TOKEN_REFRESH_FAILED", ESI_TOKEN_REFRESH_FAILED(error_type=type(exc).__name__)
+        ) from exc
+    if token is None:
+        raise FleetESIError("MISSING_SCOPE", ESI_NO_SCOPED_TOKEN())
     return token
 
 

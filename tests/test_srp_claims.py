@@ -313,8 +313,9 @@ class PrepareClaimTests(ClaimBase):
         _operation, link = self.fleet()
         km = self.killmail()
         data = signing.loads(self.prepare(km, link=link).token, salt=claims.PREVIEW_SALT, max_age=60)
-        # 0.3.0b1: the token also names the category a member chose for a loss outside a fleet ("cat", empty here).
-        self.assertEqual(data, {"km": km.pk, "link": link.code, "u": self.user.pk, "cat": None})
+        # 0.3.0b1: the token also names the category a member chose for a loss outside a fleet ("cat", empty here) and
+        # how the loss came to the member's notice ("src", INT-5: a pasted link here).
+        self.assertEqual(data, {"km": km.pk, "link": link.code, "u": self.user.pk, "cat": None, "src": "paste"})
         data = signing.loads(self.prepare(self.killmail()).token, salt=claims.PREVIEW_SALT, max_age=60)
         self.assertIsNone(data["link"])
 

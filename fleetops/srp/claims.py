@@ -23,7 +23,7 @@ from fleetops.providers.zkillboard import MIN_KILL_AGE
 from fleetops.services.audit import audit
 from fleetops.services.identity import character_label
 from fleetops.services.periods import format_eve
-from fleetops.srp import access, bans, categories, display, killmails, legacy, notify, presence, quota
+from fleetops.srp import access, bans, categories, discovery, display, killmails, legacy, notify, presence, quota
 from fleetops.srp import policy as rules
 from fleetops.srp import values as srp_values
 from fleetops.srp.types import (
@@ -37,6 +37,7 @@ from fleetops.srp.types import (
     ClaimIdentity,
     ClaimPreview,
     ClaimWarning,
+    KillmailRef,
     PolicySnapshot,
     PresenceResult,
     SrpDuplicateError,
@@ -611,12 +612,30 @@ def prepare_claim(
     only: no calculation, presence or policy.
     """
     _throttle(user)
+    reference = killmails.parse_killmail_reference(text)
+    return _prepare(user, reference, link=link, category=category, source=SrpClaim.Source.PASTE)
+
+
+def prepare_claim_for_ref(
+    user,
+    ref: KillmailRef,
+    *,
+    link: SrpFleetLink | None = None,
+    category: SrpCategory | None = None,
+    source: str = SrpClaim.Source.PASTE,
+) -> ClaimPreview:
+    """The check of ``prepare_claim`` for a killmail that is known already (a loss the scan found: ID and hash).
+    The same throttle applies."""
+    _throttle(user)
+    return _prepare(user, ref, link=link, category=category, source=source)
+
+
+def _prepare(user, reference, *, link, category, source) -> ClaimPreview:
     srp = SrpSettings.get_solo()
     now = timezone.now()
-    reference = killmails.parse_killmail_reference(text)
     km = killmails.fetch_killmail(reference, zkill_ok=srp.zkillboard_enabled)
     scope = Scope.IN_FLEET if link is not None and link.kind == link.Kind.FLEET else Scope.OUT_OF_FLEET
-    preview = ClaimPreview(killmail=km, scope=scope, link=link, user=user)
+    preview = ClaimPreview(killmail=km, scope=scope, link=link, user=user, source=source)
 
     existing = SrpClaim.objects.filter(killmail=km).first()
     if existing is not None:
@@ -645,6 +664,7 @@ def prepare_claim(
         now=now,
         category=resolved,
         via_standing_link=is_standing(link),
+        missing_alts=discovery.unauthorized_characters(user, srp),
     )
     if no_link:
         preview.blockers.append(no_link)
@@ -688,6 +708,7 @@ def prepare_claim(
                 "link": link.code if link is not None else None,
                 "u": user.pk,
                 "cat": category.pk if category is not None and scope == Scope.OUT_OF_FLEET and not is_standing(link) else None,
+                "src": source,
             },
             salt=PREVIEW_SALT,
         )
@@ -742,11 +763,15 @@ def submit_claim(user, token: str, *, comment: str = "") -> SrpClaim:
             raise SrpError("expired", EXPIRED_TEXT)
     scope = Scope.IN_FLEET if link is not None and link.kind == link.Kind.FLEET else Scope.OUT_OF_FLEET
     chosen = _chosen_category(data.get("cat")) if scope == Scope.OUT_OF_FLEET else None
+    # Tokens of earlier versions carry no source: those claims were pasted.
+    source = data.get("src") if data.get("src") in (SrpClaim.Source.PASTE, SrpClaim.Source.DISCOVERED) else SrpClaim.Source.PASTE
     now = timezone.now()
     presence_result = loss_presence(scope, link, km)
     external = _external_warnings(km.killmail_id)
 
     with quota.quota_lock() as srp:
+        # With the settings of the lock: no read of its own, and none at all while discovery is off.
+        missing_alts = discovery.unauthorized_characters(user, srp)
         # The killmail again, locked: a value stored since it was read above is used, and a value that arrives
         # later waits for this claim and then recalculates it.
         try:
@@ -783,6 +808,7 @@ def submit_claim(user, token: str, *, comment: str = "") -> SrpClaim:
             now=now,
             category=category,
             via_standing_link=is_standing(link),
+            missing_alts=missing_alts,
         )
         if no_link:
             blockers.append(no_link)
@@ -819,6 +845,7 @@ def submit_claim(user, token: str, *, comment: str = "") -> SrpClaim:
             ship_type_name=km.ship_type_name,
             solar_system_name=km.solar_system_name,
             member_comment=comment,
+            source=source,
             status=status,
             submitted_at=now,
             **fleet_fields(link, category),
@@ -855,6 +882,7 @@ def submit_claim(user, token: str, *, comment: str = "") -> SrpClaim:
                 "over_limit": claim.over_limit,
                 "link": link.code if link is not None else None,
                 "category": category.key if category is not None else None,
+                "source": source,
                 **({"auto_reject": rejection} if rejection else {}),
                 **({"auto_banned": True} if auto_ban is not None else {}),
             },
@@ -907,6 +935,7 @@ def resubmit_claim(claim: SrpClaim, *, actor) -> SrpClaim:
         raise SrpError("forbidden", texts.SRP_ONLY_CLAIMANT_RESUBMITS())
     now = timezone.now()
     with quota.quota_lock() as srp:
+        missing_alts = discovery.unauthorized_characters(actor, srp)
         locked = lock_claim(claim)
         if locked.status != Status.WITHDRAWN:
             raise wrong_state(locked, texts.SRP_ONLY_WITHDRAWN_RESUBMITTED(), Status.PENDING)
@@ -925,6 +954,7 @@ def resubmit_claim(claim: SrpClaim, *, actor) -> SrpClaim:
             category=locked.category,
             via_standing_link=is_standing(locked.link),
             check_link_open=False,
+            missing_alts=missing_alts,
         )
         if blockers:
             raise SrpError("not_eligible", blockers[0])

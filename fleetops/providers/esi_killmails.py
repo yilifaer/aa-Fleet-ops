@@ -1,11 +1,11 @@
 # SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
 # SPDX-License-Identifier: GPL-3.0-only
 
-"""Public ESI reads used by SRP: killmails and market prices.
+"""ESI reads used by SRP: killmails, market prices and the recent killmails of a character.
 
-Both calls go through the shared client in ``fleetops.providers.esi``, whose ``operations``
-list contains ``KILLMAIL_OPERATIONS`` (defined there because this module imports that one).
-Neither call needs a token.
+The calls go through the shared client in ``fleetops.providers.esi``, whose ``operations`` list contains
+``KILLMAIL_OPERATIONS`` and ``LOSS_OPERATIONS`` (defined there because this module imports that one). Only the
+list of recent killmails needs a token, the one of the character it belongs to.
 """
 
 from decimal import Decimal
@@ -105,6 +105,63 @@ def get_killmail(killmail_id: int, killmail_hash: str) -> dict:
     if not isinstance(payload, dict) or not payload:
         raise FleetESIError("ESI_ERROR", texts.KILLMAIL_EMPTY())
     return payload
+
+
+class RecentKillmails(list):
+    """``[(killmail_id, killmail_hash), ...]`` of one page, newest first; ``pages`` is the number of pages ESI said
+    the list has (None when the answer did not say)."""
+
+    pages: int | None = None
+
+
+def is_rate_limited(exc) -> bool:
+    """Whether a failed call hit the ESI error limit (420) or a rate-limit bucket."""
+    return any(
+        isinstance(item, (ESIErrorLimitException, ESIBucketLimitException)) or _status_code(item) == 420
+        for item in _chain(exc)
+    )
+
+
+def _pages(response) -> int | None:
+    try:
+        value = int(response.headers.get("X-Pages"))
+    except Exception:  # a cached answer may carry no headers
+        return None
+    return value if value > 0 else None
+
+
+def get_recent_killmails(token, character_id: int, page: int = 1) -> RecentKillmails:
+    """One page of the recent killmails (losses and kills) of the token's character, newest first.
+
+    Needs ``esi-killmails.read_killmails.v1``. ESI refusing the token raises ``FleetESIError("LOSS_DENIED")``; the
+    error limit and the rate-limit buckets raise ``FleetESIError("ESI_LIMITED")``; anything else
+    ``FleetESIError("ESI_ERROR")``. django-esi keeps each page in its response cache for as long as ESI allows.
+    """
+    operation = esi_provider.esi.client.Killmails.GetCharactersCharacterIdKillmailsRecent(
+        character_id=int(character_id), token=token, page=int(page)
+    )
+    try:
+        result, response = esi_provider._read_with_response(operation)
+    except Exception as exc:  # django-esi raises its own HTTP exception classes
+        status = _status_code(exc)
+        if status in (401, 403):
+            logger.warning("FleetOps ESI call failed: recent losses refused (%s, HTTP status %s).", type(exc).__name__, status)
+            raise FleetESIError("LOSS_DENIED", texts.LOSS_READ_DENIED(), status) from exc
+        error = _failure("ESI_ERROR", texts.LOSS_LIST_FAILED, exc)
+        if is_rate_limited(exc):
+            error.code = "ESI_LIMITED"
+        raise error from exc
+    rows = RecentKillmails()
+    for row in to_plain(result) or ():
+        if not isinstance(row, dict):
+            continue
+        killmail_id, killmail_hash = row.get("killmail_id"), row.get("killmail_hash")
+        if isinstance(killmail_id, bool) or not isinstance(killmail_id, int) or not isinstance(killmail_hash, str):
+            continue
+        rows.append((killmail_id, killmail_hash.lower()))
+    rows.sort(key=lambda row: row[0], reverse=True)
+    rows.pages = _pages(response)
+    return rows
 
 
 def _price(value) -> Decimal | None:

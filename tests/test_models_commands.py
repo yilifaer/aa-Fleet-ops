@@ -62,6 +62,8 @@ from fleetops.models import (
     SrpCorporationLimit,
     SrpFleetLink,
     SrpKillmail,
+    SrpLoss,
+    SrpLossScan,
     SrpSettings,
     StandalonePing,
 )
@@ -84,6 +86,9 @@ READ_ONLY_ADMIN_MODELS = (
     StandalonePing,
     # 0.3.0b1 (REV-8): bans are made and lifted on the SRP Bans pages; the admin list is read only.
     SrpBan,
+    # 0.3.0b1 (INT-2): the losses the scan found and its schedule are written by the scan only.
+    SrpLoss,
+    SrpLossScan,
 )
 
 ALL_PERMISSIONS = [
@@ -1284,6 +1289,8 @@ class AdminTests(TestCase):
         claim = f.srp_claim(cls.fc, link=link)
         f.claim_event(claim, SrpClaimEvent.Action.SUBMIT, actor=cls.fc)
         SrpBan.objects.create(user=cls.fc, main_character_name="Boss Main", reason="Admin page test")
+        SrpLoss.objects.create(character_id=9_000_001, killmail_id=987001, kind=SrpLoss.Kind.LOSS)
+        SrpLossScan.objects.create(character_id=9_000_001, user=cls.fc)
         cls.group = Group.objects.create(name="Sig A")
         cls.access = GroupAccess.objects.create(group=cls.group, mode=GroupAccess.Mode.FLEETS)
         cls.access.fleet_types.add(cls.fleet_type)

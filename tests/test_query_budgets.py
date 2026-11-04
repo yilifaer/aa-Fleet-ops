@@ -20,6 +20,7 @@ from django.db import connection
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
+from django.utils import timezone
 
 from fleetops.models import IncentivePeriod, SrpSettings
 from fleetops.services.incentives import rebuild_period
@@ -349,6 +350,73 @@ class IntakeBudgetTests(TestCase):
 
         self.assertLessEqual(with_ban - without, 1)
         self.assertGreaterEqual(with_ban, without)
+
+
+class DiscoveryBudgetTests(TestCase):
+    """INT-1, INT-4: My SRP with loss discovery costs the same whatever the number of characters and found losses, and
+    the preview costs at most one query more when every character has to be authorized."""
+
+    def count(self, user):
+        self.client.force_login(user)
+        url = route("srp_home")
+        self.client.get(url)
+        cache.clear()
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        return len(queries)
+
+    def add_losses(self, pilot, number):
+        from fleetops.models import SrpLoss
+
+        for index in range(number):
+            character = f.add_alt(pilot, f"Budget alt {number}-{index}")
+            SrpLoss.objects.create(
+                character_id=character.character_id,
+                killmail_id=7_000_000 + number * 100 + index,
+                kind="loss",
+                killmail_time=timezone.now(),
+                ship_type_id=f.RIFTER,
+                ship_type_name="Rifter",
+            )
+
+    def test_my_srp_does_not_grow_with_characters_and_found_losses(self):
+        pilot = f.create_user("budget_discovery_pilot", perms=f.SRP_MEMBER_PERMS)
+        f.srp_settings(
+            loss_discovery_enabled=True,
+            require_all_alts_authorized=True,
+            blocked_ship_group_ids="463",
+            blocked_ship_type_ids=str(f.RIFTER),
+        )
+        f.standing_link(category=f.srp_category("Budget discovery"))
+        self.add_losses(pilot, 2)
+        small = self.count(pilot)
+        self.add_losses(pilot, 8)
+
+        self.assertEqual(self.count(pilot), small)
+
+    def test_the_preview_costs_at_most_one_query_more_with_the_switch_for_all_characters(self):
+        from fleetops.srp import claims
+
+        pilot = f.create_user("budget_discovery_preview", perms=f.SRP_MEMBER_PERMS)
+        f.add_alt(pilot, "Budget preview alt")
+        km = f.srp_killmail(f.main_of(pilot), fitted="1000000")
+        text = f"<url=killReport:{km.killmail_id}:{km.killmail_hash}>Loss</url>"
+
+        def preview_queries():
+            cache.delete(f"fleetops:srp:check:{pilot.pk}")
+            with mock.patch.object(claims.killmails, "fetch_killmail", return_value=km):
+                with CaptureQueriesContext(connection) as queries:
+                    claims.prepare_claim(pilot, text)
+            return len(queries)
+
+        f.srp_settings(loss_discovery_enabled=True, require_all_alts_authorized=False)
+        preview_queries()
+        without = preview_queries()
+        f.srp_settings(loss_discovery_enabled=True, require_all_alts_authorized=True)
+        with_switch = preview_queries()
+
+        self.assertEqual(with_switch - without, 1)
 
 
 class SrpRoleBudgetTests(TestCase):

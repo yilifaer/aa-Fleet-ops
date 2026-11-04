@@ -692,6 +692,18 @@ class PermissionMatrixTests(SrpViewTestCase):
                  by_srp_role(SRP_REQUESTERS, granted=HIDDEN)),
             Case("srp_submit", "post", r("fleetops:srp_submit"), {"token": "invalid", "comment": ""},
                  by_srp_role(SRP_REQUESTERS, granted=REDIRECT)),
+            # Loss discovery (INT-1, INT-3 to INT-5): request_srp only. The feature is off in the matrix settings, so the
+            # authorization and the refresh answer with a redirect and a message; a loss of somebody else is a 404.
+            Case("srp_losses_authorize", "get", r("fleetops:srp_losses_authorize"), None,
+                 by_srp_role(SRP_REQUESTERS, granted=REDIRECT)),
+            Case("srp_losses_refresh", "post", r("fleetops:srp_losses_refresh"), None,
+                 by_srp_role(SRP_REQUESTERS, granted=REDIRECT)),
+            Case("srp_loss_check unknown", "post", r("fleetops:srp_loss_check", args=[999999]), {"target": ""},
+                 by_srp_role(SRP_REQUESTERS, granted=HIDDEN)),
+            Case("srp_loss_ignore unknown", "post", r("fleetops:srp_loss_ignore", args=[999999]), None,
+                 by_srp_role(SRP_REQUESTERS, granted=HIDDEN)),
+            Case("srp_loss_unignore unknown", "post", r("fleetops:srp_loss_unignore", args=[999999]), None,
+                 by_srp_role(SRP_REQUESTERS, granted=HIDDEN)),
             # VIS(3): the claimant, SRP managers, view_all_stats, the FC of the fleet and the corporation's managers.
             claim_page("srp_claim fleet loss", self.claim_fleet, "srp_member", "srp_fc", "srp_corp"),
             claim_page("srp_claim loss outside a fleet", self.claim_out, "srp_member", "srp_corp"),

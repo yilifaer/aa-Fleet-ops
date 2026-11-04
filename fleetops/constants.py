@@ -12,6 +12,10 @@ CLICK_SCOPES = [
     "esi-location.read_online.v1",
 ]
 
+# Reading the recent killmails of a character (SRP loss discovery).
+KILLMAIL_READ_SCOPE = "esi-killmails.read_killmails.v1"
+LOSS_SCOPES = [KILLMAIL_READ_SCOPE]
+
 # Built-in templates, also used as the fallback when a stored template cannot be rendered.
 # Pings and MOTDs are always English (their own words are never translated). Migration 0009 keeps copies of the
 # ping and of the MOTD as they were before the SRP line, migration 0017 a copy of the MOTD with the SRP line and

@@ -46,6 +46,8 @@ from fleetops.models import (
     SrpCorporationLimit,
     SrpFleetLink,
     SrpKillmail,
+    SrpLoss,
+    SrpLossScan,
     SrpPayoutRule,
     SrpSettings,
     StandalonePing,
@@ -450,6 +452,24 @@ class SrpBanAdmin(SrpReadOnlyAdmin):
     list_display = ("main_character_name", "kind", "starts_at", "expires_at", "lifted_at", "created_by")
     list_filter = ("kind",)
     search_fields = ("main_character_name",)
+
+
+@admin.register(SrpLoss)
+class SrpLossAdmin(SrpReadOnlyAdmin):
+    """The losses found for the members' characters; written only by the scan (superusers see them here)."""
+
+    list_display = ("killmail_id", "character_id", "kind", "ship_type_name", "killmail_time", "match_code", "ignored_at")
+    list_filter = ("kind", "match_code")
+    search_fields = ("killmail_id", "character_id", "ship_type_name")
+
+
+@admin.register(SrpLossScan)
+class SrpLossScanAdmin(SrpReadOnlyAdmin):
+    """When each character is read next and how the last read went."""
+
+    list_display = ("character_id", "user", "status", "last_checked_at", "next_check_at", "failures")
+    list_filter = ("status",)
+    search_fields = ("character_id",)
 
 
 @admin.register(SrpKillmail)

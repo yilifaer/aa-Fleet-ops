@@ -516,7 +516,7 @@ class ClaimPreview:
 
     ``blockers`` are texts for the member; with any blocker the claim cannot be submitted. ``token`` is the
     signed reference the submit step needs. ``suggested_link`` is the fleet link whose fleet contains an
-    out-of-fleet loss.
+    out-of-fleet loss. ``source`` is how the loss came to the member's notice (``paste`` or ``discovered``).
     """
 
     killmail: Any
@@ -534,6 +534,7 @@ class ClaimPreview:
     existing_claim: Any = None
     suggested_link: Any = None
     token: str = ""
+    source: str = "paste"
 
 
 @dataclass(slots=True)

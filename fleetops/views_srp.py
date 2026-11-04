@@ -32,7 +32,7 @@ from fleetops.providers.esi import FleetESIError
 from fleetops.services import sde
 from fleetops.services.periods import month_bounds
 from fleetops.services.stats_access import BASIC_ACCESS
-from fleetops.srp import access, bans, blocks, claims, links, summaries
+from fleetops.srp import access, bans, blocks, categories, claims, discovery, links, summaries
 from fleetops.srp import policy as rules
 from fleetops.srp.access import REQUEST_SRP
 from fleetops.srp.types import Calculation, PolicySnapshot, SrpDuplicateError, SrpError, warnings_from_json
@@ -165,6 +165,8 @@ def home_context(request, year, month, claim_form, settings_obj):
     context["ban"] = bans.active_ban(user)
     context["not_covered"] = blocks.member_notice(settings_obj)
     context["standing_links"] = links.open_standing_links()
+    if discovery.discovery_active(settings_obj):
+        context.update(discovery_context(request, settings_obj, context["standing_links"]))
     personal = summaries.personal(user, year, month)
     start, end = month_bounds(year, month)
     month_claims = (
@@ -187,6 +189,31 @@ def home_context(request, year, month, claim_form, settings_obj):
     return context
 
 
+def discovery_context(request, srp, standing_links):
+    """What My SRP shows while losses are found automatically: the loss reading card, the characters that still need
+    authorization (a banner while the switch for all characters is on) and the list of recent losses with the choices
+    for each claim."""
+    user = request.user
+    cards = discovery.character_cards(user)
+    missing = [card for card in cards if not card["authorized"]]
+    blocking = bool(srp.require_all_alts_authorized and missing)
+    show_claimed = request.GET.get("claimed") == "1"
+    show_ignored = request.GET.get("ignored") == "1"
+    return {
+        "discovery_on": True,
+        "loss_characters": cards,
+        "missing_characters": missing,
+        "alts_blocking": blocking,
+        "charlink_url": discovery.charlink_url(),
+        "recent_losses": discovery.recent_losses(user, srp, show_claimed=show_claimed, show_ignored=show_ignored),
+        "show_claimed": show_claimed,
+        "show_ignored": show_ignored,
+        "loss_categories": list(categories.selectable_categories().order_by("sort_order", "pk")),
+        "loss_standing_links": standing_links,
+        "scan_interval": srp.loss_discovery_interval_minutes,
+    }
+
+
 @require_GET
 @fleetops_permission_required(REQUEST_SRP)
 def srp_home(request):
@@ -197,14 +224,16 @@ def srp_home(request):
     return srp_render(request, "fleetops/srp/home.html", context, settings_obj=settings_obj)
 
 
-def preview_response(request, preview, *, link=None, input_text="", settings_obj=None):
-    """The preview of a checked loss with the form that submits it."""
+def preview_response(request, preview, *, link=None, input_text="", settings_obj=None, loss=None):
+    """The preview of a checked loss with the form that submits it. ``loss`` is the found loss the check started
+    from (the pages then offer the fleet suggestion through that loss, not through a pasted link)."""
     return srp_render(
         request,
         "fleetops/srp/preview.html",
         {
             "preview": preview,
             "link": link,
+            "loss": loss,
             "operation": link.operation if link is not None else None,
             "input_text": input_text,
             "submit_form": SubmitClaimForm(initial={"token": preview.token}),

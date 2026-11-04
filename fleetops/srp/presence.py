@@ -11,7 +11,7 @@ granted PAP instead.
 
 from datetime import datetime, timedelta
 
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 
 from fleetops.models import (
@@ -202,21 +202,26 @@ def check_presence(
     return result
 
 
-def find_fleet_for_loss(character_id: int, at: datetime) -> SrpFleetLink | None:
-    """An open fleet SRP link whose fleet contained the character at ``at`` (in_fleet or near).
+def find_loss_match(character_id: int, at: datetime, *, include_registered: bool = True) -> tuple[SrpFleetLink | None, str]:
+    """``(link, code)``: the open fleet SRP link of the fleet the character was in when it lost the ship, and how
+    the fleet was found.
 
-    One query on the member states of fleets that ran around ``at`` and have an open link; the fleets found
-    (at most three, the latest first) are then checked against the tracking events. A fleet where the
-    character was in the fleet beats one where it was only near.
+    ``in_fleet`` or ``near``: the member states of fleets that ran around ``at`` and have an open fleet link are
+    looked at (at most three, the latest first) and checked against the tracking events; a fleet where the character
+    was in the fleet beats one where it was only near. Without such a fleet ``registered``: a manual or PAP-link fleet
+    with an open fleet link where the character has a PAP registration or granted PAP and ``at`` lies within the
+    fleet's time plus the grace (skipped with ``include_registered=False``). ``(None, "")`` when nothing matches.
     """
     margin = timedelta(seconds=grace_seconds())
     running_then = Q(operation__ended_at__isnull=True) | Q(operation__ended_at__gte=at - margin)
+    open_fleet_link = {"operation__srp_link__is_open": True, "operation__srp_link__kind": SrpFleetLink.Kind.FLEET}
     states = (
         FleetMemberState.objects.filter(
             running_then,
             character_id=character_id,
-            operation__srp_link__is_open=True,
+            operation__isnull=False,
             operation__started_at__lte=at + margin,
+            **open_fleet_link,
         )
         .select_related("operation__srp_link", "operation__fleet_type")
         .order_by("-operation__started_at")[:MAX_CANDIDATE_FLEETS]
@@ -225,7 +230,42 @@ def find_fleet_for_loss(character_id: int, at: datetime) -> SrpFleetLink | None:
     for state in states:
         result = check_presence(state.operation, character_id, at)
         if result.code == display.IN_FLEET:
-            return state.operation.srp_link
+            return state.operation.srp_link, display.IN_FLEET
         if result.code == display.NEAR and near is None:
             near = state.operation.srp_link
-    return near
+    if near is not None:
+        return near, display.NEAR
+    if not include_registered:
+        return None, ""
+    return _find_registered(character_id, at, margin)
+
+
+def _find_registered(character_id, at, margin) -> tuple[SrpFleetLink | None, str]:
+    """The manual or PAP-link fleet with an open fleet link where the character has PAP evidence for ``at``."""
+    now = timezone.now()
+    evidence = Q(
+        Exists(PapRegistration.objects.filter(operation=OuterRef("pk"), character_id=character_id))
+        | Exists(AttendanceRecord.objects.filter(operation=OuterRef("pk"), character_id=character_id, granted=True))
+    )
+    operations = (
+        FleetOperation.objects.filter(
+            Q(is_manual=True) | Q(link_only=True),
+            srp_link__is_open=True,
+            srp_link__kind=SrpFleetLink.Kind.FLEET,
+        )
+        .filter(evidence)
+        .select_related("srp_link")
+        .order_by("-started_at", "-created_at")[:MAX_CANDIDATE_FLEETS]
+    )
+    for operation in operations:
+        found = _registered(operation, character_id, at, margin.total_seconds(), now)
+        if found is not None and found.code == display.REGISTERED:
+            return operation.srp_link, display.REGISTERED
+    return None, ""
+
+
+def find_fleet_for_loss(character_id: int, at: datetime) -> SrpFleetLink | None:
+    """An open fleet SRP link whose fleet contained the character at ``at`` (in_fleet or near), as found by
+    ``find_loss_match``; a fleet found only by a PAP registration is not returned here."""
+    link, code = find_loss_match(character_id, at, include_registered=False)
+    return link if code in (display.IN_FLEET, display.NEAR) else None

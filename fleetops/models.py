@@ -2121,6 +2121,29 @@ class SrpSettings(models.Model):
             "until the end of the EVE month."
         ),
     )
+    loss_discovery_enabled = models.BooleanField(
+        _("Find losses automatically"),
+        default=False,
+        help_text=_(
+            "Read the recent losses of the members' characters from ESI and list them on My SRP. Members must "
+            "authorize loss reading for each character."
+        ),
+    )
+    loss_discovery_interval_minutes = models.PositiveSmallIntegerField(
+        _("Minutes between two reads of a character"),
+        default=60,
+        validators=[MinValueValidator(15), MaxValueValidator(1440)],
+        help_text=_("Between 15 and 1440 minutes."),
+    )
+    require_all_alts_authorized = models.BooleanField(
+        _("Members must authorize loss reading for all their characters"),
+        default=False,
+        help_text=_(
+            "A member with a character that has not authorized loss reading cannot submit claims. Without this "
+            "switch such characters are not found automatically; their losses can still be pasted as links. Only "
+            "in force while losses are found automatically."
+        ),
+    )
     notify_members = models.BooleanField(
         _("Notify members"),
         default=True,
@@ -2636,6 +2659,105 @@ class SrpKillmail(models.Model):
         return gettext("Killmail %(id)s") % {"id": self.killmail_id}
 
 
+class SrpLossScan(models.Model):
+    """When the recent losses of one character are read next, and how the last read went."""
+
+    class Status(models.TextChoices):
+        OK = "ok", _("Read successfully")
+        NO_TOKEN = "no_token", _("Not authorized")
+        DENIED = "denied", _("Refused by ESI")
+        ERROR = "error", _("Failed")
+        THROTTLED = "throttled", _("Waiting for ESI")
+
+    character_id = models.BigIntegerField(verbose_name=_("Character ID"), unique=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("User"),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    last_checked_at = models.DateTimeField(verbose_name=_("Last checked at"), null=True, blank=True)
+    # Empty = read as soon as possible.
+    next_check_at = models.DateTimeField(verbose_name=_("Next check at"), null=True, blank=True, db_index=True)
+    status = models.CharField(verbose_name=_("Status"), max_length=12, choices=Status.choices, blank=True, default="")
+    status_at = models.DateTimeField(verbose_name=_("Status at"), null=True, blank=True)
+    failures = models.PositiveSmallIntegerField(verbose_name=_("Failures"), default=0)
+
+    class Meta:
+        verbose_name = _("SRP loss scan")
+        verbose_name_plural = _("SRP loss scans")
+        ordering = ["character_id"]
+        default_permissions = ()
+
+    def __str__(self):
+        return gettext("Loss scan of character %(id)s") % {"id": self.character_id}
+
+
+class SrpLoss(models.Model):
+    """A killmail ESI listed for one of a member's characters: the member's own loss, a kill, or one older than
+    the claim deadline.
+
+    These rows are not ``SrpKillmail`` rows: they are not queued for zKillboard and are not deleted with the unclaimed
+    killmails. The location fields are looked up when the row is written, so the pages never call ESI.
+    """
+
+    class Kind(models.TextChoices):
+        LOSS = "loss", _("Loss")
+        KILL = "kill", _("Kill")
+        OLD = "old", _("Too old")
+
+    character_id = models.BigIntegerField(verbose_name=_("Character ID"))
+    killmail_id = models.BigIntegerField(verbose_name=_("Killmail ID"))
+    killmail_hash = models.CharField(verbose_name=_("Killmail hash"), max_length=40, blank=True)
+    kind = models.CharField(verbose_name=_("Kind"), max_length=4, choices=Kind.choices)
+    killmail_time = models.DateTimeField(verbose_name=_("Killmail time"), null=True, blank=True)
+    ship_type_id = models.BigIntegerField(verbose_name=_("Ship type ID"), null=True, blank=True)
+    ship_type_name = models.CharField(verbose_name=_("Ship type name"), max_length=255, blank=True)
+    solar_system_id = models.BigIntegerField(verbose_name=_("Solar system ID"), null=True, blank=True)
+    solar_system_name = models.CharField(verbose_name=_("Solar system name"), max_length=100, blank=True)
+    # The same fields as on SrpKillmail; empty when the lookup failed.
+    ship_group_id = models.BigIntegerField(verbose_name=_("Ship group ID"), null=True, blank=True)
+    solar_system_security = models.DecimalField(
+        verbose_name=_("Security status"), max_digits=5, decimal_places=4, null=True, blank=True
+    )
+    region_id = models.BigIntegerField(verbose_name=_("Region ID"), null=True, blank=True)
+    war_id = models.BigIntegerField(verbose_name=_("War ID"), null=True, blank=True)
+    matched_link = models.ForeignKey(
+        SrpFleetLink,
+        verbose_name=_("Matched link"),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    match_code = models.CharField(verbose_name=_("Match"), max_length=20, blank=True)
+    ignored_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("Ignored by"),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    ignored_at = models.DateTimeField(verbose_name=_("Ignored at"), null=True, blank=True)
+    discovered_at = models.DateTimeField(verbose_name=_("Discovered at"), default=timezone.now)
+
+    class Meta:
+        verbose_name = _("SRP loss")
+        verbose_name_plural = _("SRP losses")
+        ordering = ["-killmail_time", "-killmail_id"]
+        default_permissions = ()
+        constraints = [
+            models.UniqueConstraint(fields=["character_id", "killmail_id"], name="fleetops_unique_srp_loss"),
+        ]
+        indexes = [models.Index(fields=["character_id", "kind", "killmail_time"], name="fleetops_srploss_char_idx")]
+
+    def __str__(self):
+        return gettext("Loss %(id)s") % {"id": self.killmail_id}
+
+
 class SrpClaim(models.Model):
     """A member's request to replace a lost ship; one per killmail."""
 
@@ -2654,6 +2776,11 @@ class SrpClaim(models.Model):
         RULE = "rule", _("Payout table")
         PERCENTAGE = "percentage", _("Percentage of the value")
         NONE = "none", _("No automatic amount")
+
+    class Source(models.TextChoices):
+        PASTE = "paste", _("Pasted link")
+        DISCOVERED = "discovered", _("Found automatically")
+        AASRP = "aasrp", _("aa-srp import")
 
     # Approved and paid claims use up the monthly limits; withdrawn claims count in no summary.
     USAGE_STATUSES = (Status.APPROVED, Status.PAID)
@@ -2689,6 +2816,9 @@ class SrpClaim(models.Model):
         blank=True,
         on_delete=models.PROTECT,
         related_name="claims",
+    )
+    source = models.CharField(
+        verbose_name=_("Source"), max_length=10, choices=Source.choices, default=Source.PASTE
     )
     # "<type> — <FC> — YYYY-MM-DD HH:MM EVE", kept when the fleet is deleted.
     fleet_label = models.CharField(verbose_name=_("Fleet label"), max_length=255, blank=True)

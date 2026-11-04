@@ -591,6 +591,9 @@ ESI_NO_TOKEN = StoredText(
 ESI_TOKEN_REFRESH_FAILED = StoredText(
     gettext_noop("The ESI token of the character could not be refreshed (%(error_type)s). Try again in a moment.")
 )
+ESI_NO_SCOPED_TOKEN = StoredText(
+    gettext_noop("No valid ESI token with the required scopes was found for this character.")
+)
 NOT_IN_FLEET = StoredText(gettext_noop("Character is currently not in a fleet."))
 DETECT_FAILED = StoredText(gettext_noop("Could not detect fleet: %(detail)s"), nested=("detail",))
 DETECT_DENIED = StoredText(gettext_noop("ESI denied access to this character's fleet: %(detail)s"), nested=("detail",))
@@ -642,6 +645,8 @@ KILLMAIL_NOT_FOUND = StoredText(gettext_noop("Killmail not found. Check the link
 KILLMAIL_READ_FAILED = StoredText(gettext_noop("Could not read the killmail: %(detail)s"), nested=("detail",))
 KILLMAIL_EMPTY = StoredText(gettext_noop("Could not read the killmail: ESI returned an empty answer."))
 MARKET_READ_FAILED = StoredText(gettext_noop("Could not read market prices: %(detail)s"), nested=("detail",))
+LOSS_LIST_FAILED = StoredText(gettext_noop("Could not read the recent losses: %(detail)s"), nested=("detail",))
+LOSS_READ_DENIED = StoredText(gettext_noop("ESI refused to show the recent losses of this character."))
 UNIVERSE_READ_FAILED = StoredText(gettext_noop("Could not read game data: %(detail)s"), nested=("detail",))
 ESI_ERROR_LIMIT_MINUTE = StoredText(gettext_noop("ESI error limit reached; try again in a minute."))
 ESI_HTTP_PLAIN = StoredText(gettext_noop("ESI returned HTTP %(status)s."))
@@ -1221,6 +1226,11 @@ SRP_LINK_AUTO_UNCOMPLETED = StoredText(gettext_noop("A claim of the link is wait
 SRP_LINK_NO_DAILY_CATEGORY = StoredText(gettext_noop("Choose a category for the link."))
 SRP_LINK_AUTO_CLOSED = StoredText(gettext_noop("Closed automatically at the time set for the link."))
 SRP_NO_LINK_FOR_DAY = StoredText(gettext_noop("This category has no open SRP link for the day of the loss."))
+
+# SRP loss discovery.
+SRP_ALTS_NOT_AUTHORIZED = StoredText(gettext_noop("Authorize loss reading for all your characters first: %(names)s."))
+SRP_LOSS_LINK_UNAVAILABLE = StoredText(gettext_noop("That link or category is not available. Check the loss again."))
+SRP_LOSS_REFRESH_WAIT = StoredText(gettext_noop("Your losses were refreshed a moment ago. Try again in a few minutes."))
 
 # SRP bans.
 SRP_BAN_NOT_ALLOWED = StoredText(gettext_noop("Only SRP reviewers can make or lift an SRP ban."))

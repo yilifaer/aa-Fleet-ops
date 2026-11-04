@@ -8,15 +8,24 @@ The calls go through the shared client in ``fleetops.providers.esi`` (``UNIVERSE
 ``Expires`` header says; ``fleetops.services.universe`` adds its own longer cache on top for these static data.
 """
 
+import threading
+
 from fleetops import texts
 from fleetops.providers import esi as esi_provider
 from fleetops.providers.esi import _read
 from fleetops.providers.esi_killmails import _failure, to_plain
 
 UNIVERSE_OPERATIONS = esi_provider.UNIVERSE_OPERATIONS
+_calls = threading.local()
+
+
+def calls_made() -> int:
+    """How many reads this thread has started; the loss scan charges them to its ESI budget."""
+    return getattr(_calls, "count", 0)
 
 
 def _read_plain(operation) -> dict:
+    _calls.count = calls_made() + 1
     try:
         payload = to_plain(_read(operation))
     except Exception as exc:  # django-esi raises its own HTTP exception classes

@@ -384,6 +384,10 @@ class DefaultsInDocsTests(SimpleTestCase):
         "Default length of an SRP ban (days)": "ban_default_days",
         "Longest SRP ban (days)": "ban_max_days",
         "Ban members who keep submitting over their monthly cap until the end of the month": "auto_ban_over_monthly_cap",
+        # 0.3.0b1 (INT-1, INT-2): loss discovery; off by default.
+        "Find losses automatically": "loss_discovery_enabled",
+        "Minutes between two reads of a character": "loss_discovery_interval_minutes",
+        "Members must authorize loss reading for all their characters": "require_all_alts_authorized",
     }
 
     @staticmethod

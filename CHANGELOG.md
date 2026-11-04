@@ -90,6 +90,21 @@ Install it like the previous pre-release (`pip install --no-deps aa-fleetops==0.
   step (reason required). The ban belongs to the account, ends by itself and can be lifted at once. Withdrawing a pending claim stays possible. New
   settings: default and longest length, and **Ban members who keep submitting over their monthly cap until the end of the
   month** (off by default). Audited as `srp.ban_create` and `srp.ban_lift`.
+- **Automatic loss discovery** (off by default). With **Find losses automatically** on, FleetOps reads the recent
+  killmails of each member's characters from ESI (`esi-killmails.read_killmails.v1`, the member's own token) and lists
+  the member's losses on **My SRP** under **My recent losses**: ship, character, system, EVE time, days left, the fleet
+  FleetOps matched (in fleet, near, or registered for PAP) and why a loss is not covered. **Claim** opens the usual check
+  with the fleet preselected, or an open standing link or a category; **Ignore** hides a loss from the member's own list.
+  A claim made this way has the source "Found automatically" (the claim event keeps it); pasting a link stays possible
+  and is called **Claim with a link**. Members authorize loss reading per character on a **Loss reading** card
+  (and, with aa-charlink, in one go: the new import **FleetOps SRP loss reading**, shown only while the feature is on).
+  A scan runs inside the existing beat task (at most every five minutes, within a time and ESI budget; **no new beat
+  entry** and no periodic task created in code), reads each authorized character about every 60 minutes (setting, 15 to
+  1440), backs off on errors and on ESI's limits, and a member can refresh once every five minutes. New settings group
+  **Loss discovery**: **Find losses automatically**, **Minutes between two reads of a character** and **Members must
+  authorize loss reading for all their characters** (off). The last one stops a member with a character that did not
+  authorize from checking or submitting any claim; it is ignored while the feature is off. Audited:
+  `srp.loss_ignore`, `srp.loss_unignore`. The new tables hold no claim data and are read only in Django admin.
 
 ### Changed
 
@@ -140,6 +155,13 @@ grants no permission. The ban pages use the permissions of reviewers (`manage_sr
 does not give to anybody. Keep the beat entry `fleetops_track_active_fleets` that the installation notes already name:
 the daily standing links and their closing run inside it. To use the block lists, open **SRP Settings**, press **Fill
 in the recommended list** (or tick your own), check it and save.
+Migration `0031` adds the tables of the found losses and of the scan schedule, the source of a claim (every existing
+claim is "pasted link") and the three settings of the loss discovery; it fills in nothing and the feature stays **off**.
+To use it, add the scope `esi-killmails.read_killmails.v1` to the EVE developer application of the site first, then
+open **SRP Settings**, group **Loss discovery**, switch **Find losses automatically** on and ask your members to
+authorize their characters (CharLink does it for all characters at once). The scan task runs inside the existing beat
+entry `fleetops_track_active_fleets`; restart the Celery worker and beat so that the new tasks are known. Characters that
+changed hands keep working for the new owner only.
 
 ### Rollback notes
 
@@ -164,6 +186,12 @@ killmails and the table of SRP bans: the bans, with the reasons and internal not
 need them), and a ban that was in force no longer stops anybody. Claims are not changed. Before rolling back, switch
 the functions off: untick **Make a standing link every day** and clear the block lists, which is enough to behave like the
 previous version.
+Rolling back `0031` drops the tables of the found losses and of the scan schedule (they are read from ESI again if the
+feature is switched on later), the source of every claim ("found automatically" claims become indistinguishable from pasted
+ones) and the three loss discovery settings. Claims, amounts and statuses are not changed. To behave like the previous
+version before rolling back, switch **Find losses automatically** off: the page, the scan and the CharLink item go
+away, and **Members must authorize loss reading ...** stops blocking at once. The tokens members authorized stay in
+Alliance Auth, harmless.
 
 ## [0.2.0b3] - Unreleased
 

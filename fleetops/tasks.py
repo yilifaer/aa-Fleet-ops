@@ -11,7 +11,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from fleetops import texts
-from fleetops.models import FleetOperation, FleetOpsSettings
+from fleetops.models import FleetOperation, FleetOpsSettings, SrpSettings
 from fleetops.providers.esi import FleetESIError
 from fleetops.services import fleet_jobs
 from fleetops.services.audit import audit
@@ -21,6 +21,7 @@ from fleetops.services.fleet_refresh import REFRESH_TASK_LOCK_SECONDS, refresh_n
 from fleetops.services.names import apply_names_to_operation, resolve_and_store
 from fleetops.services.operations import cancel_abandoned_starts, end_fleet, finish_requested_end
 from fleetops.services.tracking import observe_unreadable_fleet, sync_operation, unreadable_fleet_message
+from fleetops.srp import discovery as srp_discovery
 from fleetops.srp import links as srp_links
 from fleetops.srp.killmails import prune_unclaimed
 from fleetops.srp.tasks import queue_srp_sweep, refresh_srp_values as sweep_srp_values
@@ -95,6 +96,7 @@ def schedule_active_fleet_tracking():
     cancel_abandoned_starts(now=now)
     _queue_srp_sweep(now)
     _maintain_standing_links(now)
+    _queue_srp_loss_scan(now)
     return queued
 
 
@@ -112,6 +114,15 @@ def _maintain_standing_links(now):
             raise
     except Exception as exc:
         log_failure(logger, "SRP standing links", exc)
+
+
+def _queue_srp_loss_scan(now):
+    """Queue the scan of the members' recent losses (only while SRP and the discovery are on); a problem there must
+    never stop the fleet tracking."""
+    try:
+        srp_discovery.queue_loss_scan(now)
+    except Exception as exc:
+        log_failure(logger, "SRP loss scan", exc)
 
 
 def _queue_srp_sweep(now):
@@ -375,10 +386,41 @@ def refresh_srp_values():
 
 
 @shared_task
+def scan_srp_losses():
+    """Read the recent killmails of the members' characters that are due (queued by the minute beat). Returns a short
+    result text; ``disabled`` while SRP or the discovery is off."""
+    return _run_loss_scan(None)
+
+
+@shared_task
+def scan_srp_losses_for_user(user_id):
+    """Read the characters of one member that are due now (the member pressed "Refresh"). Same limits and lock as
+    the general scan."""
+    return _run_loss_scan(user_id)
+
+
+def _run_loss_scan(user_id):
+    srp = SrpSettings.get_solo()
+    if not srp_discovery.discovery_active(srp):
+        return "disabled"
+    if cache.get(srp_discovery.BACKOFF_KEY):
+        return "backoff"
+    if not cache.add(srp_discovery.SCAN_LOCK_KEY, "1", timeout=srp_discovery.SCAN_LOCK_SECONDS):
+        return "already-running"
+    try:
+        return str(srp_discovery.run_scan(user_id=user_id))
+    except Exception as exc:
+        log_failure(logger, "SRP loss scan", exc)
+        return "error"
+    finally:
+        cache.delete(srp_discovery.SCAN_LOCK_KEY)
+
+
+@shared_task
 def prune_attendance_history():
     """Apply configured retention and remove PAP for departed alliance members.
 
-    Also deletes the killmails that SRP read but nobody claimed.
+    Also deletes the killmails that SRP read but nobody claimed and the found losses that are no use any more.
     """
     from fleetops.services.history import prune_history
 
@@ -387,4 +429,8 @@ def prune_attendance_history():
         prune_unclaimed(SRP_UNCLAIMED_KILLMAIL_DAYS)
     except Exception as exc:
         log_failure(logger, "SRP killmail cleanup", exc)
+    try:
+        srp_discovery.prune_losses()
+    except Exception as exc:
+        log_failure(logger, "SRP found-loss cleanup", exc)
     return result

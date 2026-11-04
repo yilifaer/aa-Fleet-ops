@@ -65,13 +65,15 @@ FleetOps SRP 本身在[配置参考](configuration.md#fleetops-srp)里介绍。
 
 ## aa-charlink
 
-安装了 aa-charlink 后，它的页面会提供两个 FleetOps 导入项：
+安装了 aa-charlink 后，它的页面会提供这些 FleetOps 导入项：
 
 - **FleetOps FC fleet control**：`esi-fleets.read_fleet.v1` 和 `esi-fleets.write_fleet.v1`，面向拥有 `fleetops.start_fleet` 的用户。默认不勾选。
 - **FleetOps PAP links**：`esi-location.read_location.v1`、`esi-location.read_ship_type.v1` 和 `esi-location.read_online.v1`，面向拥有
   `fleetops.basic_access` 的用户。默认勾选。
 
-在那里关联的角色，开舰队页和 PAP 登记链接页可以直接使用。CharLink 会检查每个钩子所属的应用标签，所以 `INSTALLED_APPS` 里必须原样写出 `"fleetops"`。
+- **FleetOps SRP loss reading**：`esi-killmails.read_killmails.v1`，面向拥有 `fleetops.request_srp` 的用户，仅在 SRP 和 **自动发现损失** 开启时显示。默认勾选。见 [SRP 损失自动发现](configuration.md#srp-损失自动发现)。
+
+在那里关联的角色，开舰队页、PAP 登记链接页和 SRP 损失扫描可以直接使用。CharLink 会检查每个钩子所属的应用标签，所以 `INSTALLED_APPS` 里必须原样写出 `"fleetops"`。
 没有 CharLink 时，这个钩子不会被加载。
 
 ## AFAT

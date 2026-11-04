@@ -14,6 +14,7 @@ import re
 import sys
 import types
 import unittest
+from datetime import timedelta
 from collections.abc import Callable
 from dataclasses import dataclass
 from unittest import mock
@@ -25,9 +26,11 @@ from django.conf import settings
 from django.contrib.auth.models import Group, Permission, User
 from django.db.models import Exists
 from django.test import TestCase
+from django.utils import timezone
 
 from fleetops.auth_hooks import register_charlink_hook
-from fleetops.constants import CLICK_SCOPES, FLEET_READ_SCOPE, FLEET_SCOPES
+from fleetops.constants import CLICK_SCOPES, FLEET_READ_SCOPE, FLEET_SCOPES, KILLMAIL_READ_SCOPE, LOSS_SCOPES
+from fleetops.models import SrpLossScan
 
 from . import factories as f
 
@@ -138,8 +141,11 @@ class CharLinkImportTests(TestCase):
         self.app_import.validate_import()
 
         self.assertEqual(self.app_import.app_label, "fleetops")
-        self.assertEqual([i.unique_id for i in self.app_import.imports], ["fcfleet", "clickpap"])
-        self.assertEqual([i.get_query_id() for i in self.app_import.imports], ["fleetops_fcfleet", "fleetops_clickpap"])
+        # 0.3.0b1 (INT-1): the third item is the loss reading of SRP.
+        self.assertEqual([i.unique_id for i in self.app_import.imports], ["fcfleet", "clickpap", "srplosses"])
+        self.assertEqual(
+            [i.get_query_id() for i in self.app_import.imports], ["fleetops_fcfleet", "fleetops_clickpap", "fleetops_srplosses"]
+        )
         self.assertIn("fleetops", settings.INSTALLED_APPS)
 
     def test_scopes_are_the_fleet_and_the_afat_click_tracking_ones(self):
@@ -207,6 +213,50 @@ class CharLinkImportTests(TestCase):
         self.assertEqual(users, {self.fc, by_group, by_state, admin})
         self.assertTrue({self.fc, self.member, admin} <= set(self.click.get_users_with_perms()))
         self.assertNotIn(self.nobody, set(self.click.get_users_with_perms()))
+
+    def test_the_loss_reading_item_is_for_requesters_and_follows_the_discovery_switch(self):
+        # INT-1: the item is dropped as soon as the feature is off (CharLink asks again on each page view).
+        loss = self.app_import.get("srplosses")
+        requester = f.create_user("requester", perms=["fleetops.request_srp"])
+        self.assertEqual(loss.scopes, LOSS_SCOPES)
+        self.assertEqual(loss.scopes, [KILLMAIL_READ_SCOPE])
+        self.assertTrue(loss.default_initial_selection)
+
+        f.srp_settings(enabled=True, loss_discovery_enabled=False)
+        self.assertFalse(loss.check_permissions(requester))
+        f.srp_settings(enabled=True, loss_discovery_enabled=True)
+        self.assertEqual([loss.check_permissions(user) for user in (requester, self.member, self.nobody)], [True, False, False])
+        f.srp_settings(enabled=False, loss_discovery_enabled=True)
+        self.assertFalse(loss.check_permissions(requester))
+
+    def test_loss_reading_counts_with_a_token_that_has_the_scope(self):
+        loss = self.app_import.get("srplosses")
+        main = f.main_of(self.member)
+        alt = f.add_alt(self.member, "Other Alt")
+        f.add_token(self.member, main, scopes=[KILLMAIL_READ_SCOPE])
+        f.add_token(self.member, alt, scopes=CLICK_SCOPES)
+
+        self.assertEqual([loss.is_character_added(character) for character in (main, alt)], [True, False])
+        added = EveCharacter.objects.annotate(added=loss.is_character_added_annotation).filter(added=True)
+        self.assertEqual(list(added), [main])
+
+    def test_users_with_the_request_permission_are_offered_the_loss_reading(self):
+        requester = f.create_user("requester", perms=["fleetops.request_srp"])
+        admin = User.objects.create_superuser("admin2", "admin2@example.com", "pw")
+
+        users = set(self.app_import.get("srplosses").get_users_with_perms())
+
+        self.assertEqual(users, {requester, admin})
+
+    def test_adding_a_loss_character_makes_it_due(self):
+        main = f.main_of(self.member)
+        token = f.add_token(self.member, main, scopes=[KILLMAIL_READ_SCOPE])
+        scan = SrpLossScan.objects.create(character_id=main.character_id, next_check_at=timezone.now() + timedelta(hours=20))
+
+        self.assertIsNone(self.app_import.get("srplosses").add_character(mock.Mock(), token))
+
+        scan.refresh_from_db()
+        self.assertLessEqual(scan.next_check_at, timezone.now())
 
     def test_adding_a_character_needs_nothing_more(self):
         token = f.add_token(self.member, f.main_of(self.member), scopes=CLICK_SCOPES)

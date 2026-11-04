@@ -17,6 +17,7 @@ from django.db.models import Q
 from django.utils import timezone
 from django.utils.translation import gettext, gettext_lazy
 
+from fleetops import texts
 from fleetops.constants import CAPSULE_TYPE_IDS, MAX_ISK  # noqa: F401 - CAPSULE_TYPE_IDS is part of the interface
 from fleetops.models import (
     SrpCategory,
@@ -362,6 +363,7 @@ def eligibility(
     category=None,
     via_standing_link: bool = False,
     check_link_open: bool = True,
+    missing_alts=None,
 ) -> list[str]:
     """Reasons (texts for the member) why the loss cannot be claimed; empty when it can.
 
@@ -371,9 +373,11 @@ def eligibility(
     ``operation`` is the fleet whose payout rules apply, the one of ``link`` unless given: a claim that exists
     already is checked against the rules of its fleet. ``category`` is the claim's category, whose payout rules
     apply too. ``via_standing_link`` says the claim belongs to a standing link: such a claim is not held back by
-    the switch for losses outside a fleet.
+    the switch for losses outside a fleet. ``missing_alts`` is the list ``discovery.unauthorized_characters(user)``
+    gave the caller (``[(character_id, name)]``, computed before the quota lock is taken): while it is not empty the
+    member cannot submit. Callers that do not pass it (decisions of reviewers) are not held back by it.
 
-    The order of the checks: SRP ban, SRP switched on, link, character, main character, losses outside a fleet,
+    The order of the checks: SRP ban, unauthorized characters, SRP switched on, link, character, main character, losses outside a fleet,
     deadline, capsule, ship, ship group, kind of space. A value the killmail does not have (no ship group or
     security status because the lookup failed) blocks nothing and adds no warning.
     """
@@ -385,6 +389,8 @@ def eligibility(
     ban = bans.active_ban(user, now)
     if ban is not None:
         blockers.append(bans.ban_message(ban))
+    if missing_alts:
+        blockers.append(texts.SRP_ALTS_NOT_AUTHORIZED(names=", ".join(name for _character_id, name in missing_alts)))
     if not srp.enabled:
         blockers.append(str(BLOCK_SRP_DISABLED))
     elif check_link_open and link is not None and not link.is_open:

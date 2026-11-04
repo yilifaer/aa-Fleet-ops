@@ -91,14 +91,17 @@ templates. Details, the provider interface for other SRP apps and the aa-srp fie
 
 ## aa-charlink
 
-When aa-charlink is installed, its page offers two FleetOps imports:
+When aa-charlink is installed, its page offers these FleetOps imports:
 
 - **FleetOps FC fleet control**: `esi-fleets.read_fleet.v1` and `esi-fleets.write_fleet.v1`, for users with
   `fleetops.start_fleet`. Not ticked by default.
 - **FleetOps PAP links**: `esi-location.read_location.v1`, `esi-location.read_ship_type.v1` and
   `esi-location.read_online.v1`, for users with `fleetops.basic_access`. Ticked by default.
 
-Characters linked there are ready on Start Fleet and on PAP link pages. CharLink checks the app label of every
+- **FleetOps SRP loss reading**: `esi-killmails.read_killmails.v1`, for users with `fleetops.request_srp`, shown only while
+  SRP and **Find losses automatically** are on. Ticked by default. See [SRP loss discovery](configuration.md#srp-loss-discovery).
+
+Characters linked there are ready on Start Fleet, on PAP link pages and for the SRP loss scan. CharLink checks the app label of every
 hook, so `"fleetops"` must appear literally in `INSTALLED_APPS`. Without CharLink the hook is never loaded.
 
 ## AFAT

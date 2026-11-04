@@ -1,0 +1,105 @@
+{% load i18n fleetops_i18n fleetops_srp fleetops_messages fleetops_ui %}
+{% if alts_blocking %}
+<div class="alert alert-warning" role="alert" id="srp-alts-banner">
+  <strong>{% translate "Authorize loss reading for all your characters before you submit a claim." %}</strong>
+  <ul class="mt-2 mb-2">
+    {% for card in missing_characters %}
+    <li class="d-flex flex-wrap align-items-center gap-2">{{ card.name }} <a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:srp_losses_authorize' %}">{% translate "Authorize" %}</a></li>
+    {% endfor %}
+  </ul>
+  {% if charlink_url %}<a class="btn btn-sm btn-primary" href="{{ charlink_url }}">{% translate "Authorize all characters with CharLink" %}</a>{% endif %}
+</div>
+{% endif %}
+
+<div class="card mb-3" id="srp-recent-losses">
+  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <strong>{% translate "My recent losses" %}</strong>
+    <span class="d-flex flex-wrap gap-2 small">
+      {% if show_claimed %}<a href="{% querystring claimed=None %}">{% translate "Hide claimed losses" %}</a>{% else %}<a href="{% querystring claimed=1 %}">{% translate "Show claimed losses" %}</a>{% endif %}
+      {% if show_ignored %}<a href="{% querystring ignored=None %}">{% translate "Hide ignored losses" %}</a>{% else %}<a href="{% querystring ignored=1 %}">{% translate "Show ignored losses" %}</a>{% endif %}
+    </span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0 fo-table-pin" id="srp-recent-losses-table">
+      <thead><tr>
+        <th scope="col">{% translate "Ship" %}</th>
+        <th scope="col">{% translate "System" %}</th>
+        <th scope="col">{% translate "Time (EVE)" %}</th>
+        <th scope="col">{% translate "Fleet" %}</th>
+        <th scope="col"></th>
+      </tr></thead>
+      <tbody>
+        {% for loss in recent_losses %}
+        <tr>
+          <td><div class="fw-semibold">{{ loss.ship_type_name|default:loss.ship_type_id|default:"-" }}</div><div class="small text-muted">{{ loss.character_name }}{% if loss.is_main %} &middot; {% translate "main" %}{% endif %}</div></td>
+          <td>{{ loss.solar_system_name|default:"-" }}</td>
+          <td class="text-nowrap">{{ loss.killmail_time|eve_time }}{% if loss.days_left is not None %}<div class="small text-muted">{% blocktranslate trimmed count counter=loss.days_left %}{{ counter }} day left to claim{% plural %}{{ counter }} days left to claim{% endblocktranslate %}</div>{% endif %}</td>
+          <td>{% if loss.open_link %}{% if loss.match_code == "in_fleet" %}{% pill "ok" _("In fleet") %}{% elif loss.match_code == "near" %}{% pill "warn" _("Near the fleet") %}{% else %}{% pill "info" _("Registered for PAP") %}{% endif %}<div class="small text-muted">{{ loss.open_link.operation.fleet_type }}</div>{% else %}<span class="text-muted">-</span>{% endif %}</td>
+          <td class="text-end">
+            {% if loss.claimed %}
+              {% if loss.own_claim_uuid %}<a href="{% url 'fleetops:srp_claim' loss.own_claim_uuid %}">SRP-{{ loss.own_claim_id }}</a>{% else %}{% pill "neutral" _("Already claimed") %}{% endif %}
+            {% elif loss.block_reasons %}
+              <ul class="list-unstyled text-danger mb-0 text-start">{% for reason in loss.block_reasons %}<li>{{ reason }}</li>{% endfor %}</ul>
+            {% else %}
+            <form method="post" action="{% url 'fleetops:srp_loss_check' loss.killmail_id %}" class="d-flex flex-wrap gap-2 justify-content-end fleetops-srp-form" data-srp-once>
+              {% csrf_token %}
+              {% if loss.open_link or loss_standing_links or loss_categories %}
+              <select name="target" class="form-select form-select-sm w-auto" aria-label="{% translate 'Where to claim this loss' %}">
+                {% if loss.open_link %}<option value="fleet:{{ loss.open_link.code }}" selected>{{ loss.open_link.operation.fleet_type }}</option>{% endif %}
+                <option value=""{% if not loss.open_link %} selected{% endif %}>{% translate "Outside a fleet" %}</option>
+                {% for standing in loss_standing_links %}<option value="link:{{ standing.code }}">{{ standing.name }}</option>{% endfor %}
+                {% for category in loss_categories %}<option value="category:{{ category.pk }}">{{ category|srp_category_label }}</option>{% endfor %}
+              </select>
+              {% endif %}
+              <button type="submit" class="btn btn-sm btn-primary"{% if alts_blocking %} disabled aria-disabled="true"{% endif %}>{% translate "Claim" %}</button>
+            </form>
+            {% endif %}
+            {% if not loss.claimed %}
+            <form method="post" action="{% if loss.ignored %}{% url 'fleetops:srp_loss_unignore' loss.killmail_id %}{% else %}{% url 'fleetops:srp_loss_ignore' loss.killmail_id %}{% endif %}" class="d-inline fleetops-srp-form" data-srp-once>
+              {% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-secondary">{% if loss.ignored %}{% translate "Show again" %}{% else %}{% translate "Ignore" %}{% endif %}</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5">{% translate "No losses found yet. New losses appear after the next read of your characters." as empty_text %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-magnifying-glass" %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-footer small text-muted">{% translate "Losses of your characters are read from ESI. A loss that is not in this list can still be claimed with its link." %}</div>
+</div>
+
+<div class="card mb-3" id="srp-loss-reading">
+  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <strong>{% translate "Loss reading" %}</strong>
+    <form method="post" action="{% url 'fleetops:srp_losses_refresh' %}" class="fleetops-srp-form" data-srp-once>
+      {% csrf_token %}<button type="submit" class="btn btn-sm btn-primary">{% translate "Read my characters now" %}</button>
+    </form>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0" id="srp-loss-reading-table">
+      <thead><tr>
+        <th scope="col">{% translate "Character" %}</th>
+        <th scope="col">{% translate "Loss reading" %}</th>
+        <th scope="col">{% translate "Last read (EVE)" %}</th>
+        <th scope="col"></th>
+      </tr></thead>
+      <tbody>
+        {% for card in loss_characters %}
+        <tr>
+          <td>{{ card.name }}{% if card.is_main %} <span class="text-muted">&middot; {% translate "main" %}</span>{% endif %}</td>
+          <td>{% if card.authorized %}{% pill "ok" _("Authorized") %}{% if card.status and card.status != "ok" %} <span class="small text-muted">{{ card.status_label }}</span>{% endif %}{% else %}{% pill "warn" _("Not authorized") %}{% endif %}</td>
+          <td class="text-nowrap">{% if card.last_checked_at %}{{ card.last_checked_at|eve_time }}{% else %}-{% endif %}</td>
+          <td class="text-end">{% if not card.authorized %}<a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:srp_losses_authorize' %}">{% translate "Authorize" %}</a>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-footer small text-muted">
+    <div>{% blocktranslate trimmed with minutes=scan_interval %}Each authorized character is read about every {{ minutes }} minutes. You can refresh at most once every five minutes.{% endblocktranslate %}</div>
+    <div>{% translate "A character that has not authorized loss reading is not found automatically; its losses can only be claimed with their links." %}{% if charlink_url %} <a href="{{ charlink_url }}">{% translate "Authorize all your characters at once with CharLink." %}</a>{% endif %}</div>
+    <div>{% translate "Logging in as a character moves it to your account (Alliance Auth behaviour). If EVE reports an invalid scope, ask an administrator to add esi-killmails.read_killmails.v1 to the EVE developer application." %}</div>
+  </div>
+</div>

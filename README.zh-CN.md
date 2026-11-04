@@ -61,6 +61,7 @@
 - 常驻 SRP 链接（有名称、类别和日期，没有舰队），以及一个列出、关闭和完成所有 SRP 链接的页面。
 - 把常驻链接作为提交入口：“我的 SRP”里的卡片、按类别自动归入当天的链接、可选的每日链接和自动关闭（运行在已经安装的 Beat 任务里）。
 - 不赔付的损失（舰船组、舰船、空域；保存列表之前什么都不拦）和禁止提交的 SRP 封禁。
+- 自动发现损失（打开之前是关闭的）：用成员自己的令牌从 ESI 读取各角色最近的损失，列在“我的 SRP”里并匹配角色当时所在的舰队；仍然可以贴链接。可以要求成员的每个角色都授权。运行在已经安装的 Beat 任务里。
 
 **管理**
 
@@ -172,8 +173,8 @@ FC 需要授权 `esi-fleets.read_fleet.v1` 和 `esi-fleets.write_fleet.v1`。写
 如果 MOTD 更新失败，渲染好的 MOTD 仍可复制。
 
 PAP 登记链接用飞行员自己的令牌读取他在哪里、开什么船、是否在线：`esi-location.read_location.v1`、`esi-location.read_ship_type.v1` 和
-`esi-location.read_online.v1`。这些与 AFAT 点击追踪以及对应的 aa-charlink 导入项所用的权限相同，所以它们已有的令牌可以复用。请在你的 EVE SSO 应用里启用这五个权限范围。
-FleetOps SRP 不需要任何权限范围。
+`esi-location.read_online.v1`。这些与 AFAT 点击追踪以及对应的 aa-charlink 导入项所用的权限相同，所以它们已有的令牌可以复用。FleetOps SRP 可以读取成员各角色最近的损失（`esi-killmails.read_killmails.v1`，用成员自己的令牌，仅在 **自动发现损失** 开启时）。请在你的 EVE SSO 应用里启用这六个权限范围；
+没有最后一个时无法授权损失自动发现，其余功能照常。
 
 ## 第一步
 

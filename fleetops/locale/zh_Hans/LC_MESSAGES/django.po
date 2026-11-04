@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-04 18:35+0000\n"
+"POT-Creation-Date: 2026-11-04 20:38+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -61,6 +61,10 @@ msgstr "FleetOps FC 舰队控制"
 #: charlink_hook.py
 msgid "FleetOps PAP links"
 msgstr "FleetOps PAP 登记链接"
+
+#: charlink_hook.py
+msgid "FleetOps SRP loss reading"
+msgstr "FleetOps SRP 损失读取"
 
 #: forms.py
 msgid "A pre ping is a Discord message, so it cannot be sent in PAP tracking only mode."
@@ -510,6 +514,14 @@ msgstr "按损失发生的 EVE 月统计已通过的 SRP。以最严格的限额
 msgid "Members and review"
 msgstr "成员与审核"
 
+#: forms_config.py
+msgid "Loss discovery"
+msgstr "自动发现损失"
+
+#: forms_config.py
+msgid "Find the recent losses of the members' characters from ESI and list them on My SRP. Each member authorizes loss reading (esi-killmails.read_killmails.v1) once per character; the EVE application of the site must have that scope."
+msgstr "从 ESI 读取成员各角色最近的损失，并列在“我的 SRP”里。每位成员需要为每个角色授权一次损失读取（esi-killmails.read_killmails.v1）；站点的 EVE 应用必须带有这个权限范围。"
+
 #: forms_config.py models.py
 msgid "SRP bans"
 msgstr "SRP 封禁"
@@ -567,6 +579,7 @@ msgstr "教义规则只适用于舰队内的损失；请选择“舰队内和舰
 #: templates/fleetops/operation/_members.html
 #: templates/fleetops/operation/_srp.html templates/fleetops/roster_import.html
 #: templates/fleetops/srp/_claims_table.html
+#: templates/fleetops/srp/_losses.html
 #: templates/fleetops/srp/_summary_table.html templates/fleetops/srp/claim.html
 #: templates/fleetops/srp/payments.html views_config.py
 msgid "Ship"
@@ -1260,6 +1273,7 @@ msgstr "一次最多选择 %(max)s 条申请。"
 #: forms_srp.py models.py services/export_datasets.py
 #: templates/fleetops/operation/_srp.html
 #: templates/fleetops/srp/_claims_table.html
+#: templates/fleetops/srp/_losses.html
 #: templates/fleetops/srp/_summary_table.html
 #: templates/fleetops/srp/payments.html
 msgid "Claim"
@@ -1350,7 +1364,7 @@ msgid "Payment note"
 msgstr "付款备注"
 
 #: forms_srp.py models.py templates/fleetops/srp/_claims_table.html
-#: templates/fleetops/srp/_loss_card.html
+#: templates/fleetops/srp/_loss_card.html templates/fleetops/srp/_losses.html
 #: templates/fleetops/srp/_summary_table.html
 #: templates/fleetops/srp/payments.html
 msgid "In fleet"
@@ -3462,6 +3476,30 @@ msgid "A member whose personal monthly limit is used up and who submits another 
 msgstr "个人月度限额已用完却又提交申请的成员，在本 EVE 月结束之前不能再提交。"
 
 #: models.py
+msgid "Find losses automatically"
+msgstr "自动发现损失"
+
+#: models.py
+msgid "Read the recent losses of the members' characters from ESI and list them on My SRP. Members must authorize loss reading for each character."
+msgstr "从 ESI 读取成员各角色最近的损失，并列在“我的 SRP”里。成员需要为每个角色授权损失读取。"
+
+#: models.py
+msgid "Minutes between two reads of a character"
+msgstr "同一角色两次读取之间的分钟数"
+
+#: models.py
+msgid "Between 15 and 1440 minutes."
+msgstr "15 到 1440 分钟之间。"
+
+#: models.py
+msgid "Members must authorize loss reading for all their characters"
+msgstr "成员必须为自己所有角色授权损失读取"
+
+#: models.py
+msgid "A member with a character that has not authorized loss reading cannot submit claims. Without this switch such characters are not found automatically; their losses can still be pasted as links. Only in force while losses are found automatically."
+msgstr "只要有角色没有授权损失读取，该成员就不能提交申请。没有这个开关时，这些角色的损失不会被自动发现，仍可以贴链接申请。仅在自动发现损失开启时生效。"
+
+#: models.py
 msgid "Notify members"
 msgstr "通知成员"
 
@@ -3628,6 +3666,7 @@ msgstr "%(name)s 的 SRP 封禁"
 #: templates/fleetops/operation_detail.html
 #: templates/fleetops/pap_fleet_start.html
 #: templates/fleetops/srp/_claims_table.html
+#: templates/fleetops/srp/_losses.html
 #: templates/fleetops/srp/_summary_table.html
 #: templates/fleetops/srp/payments.html templates/fleetops/start_fleet.html
 #: texts.py
@@ -3895,6 +3934,98 @@ msgstr "SRP KM"
 msgid "Killmail %(id)s"
 msgstr "KM %(id)s"
 
+#: models.py
+msgid "Read successfully"
+msgstr "读取成功"
+
+#: models.py templates/fleetops/srp/_losses.html
+msgid "Not authorized"
+msgstr "未授权"
+
+#: models.py
+msgid "Refused by ESI"
+msgstr "被 ESI 拒绝"
+
+#: models.py templates/fleetops/operation/_fleet_member.html
+#: templates/fleetops/operation/_fleet_tree.html
+msgid "Waiting for ESI"
+msgstr "等待 ESI"
+
+#: models.py
+msgid "Last checked at"
+msgstr "上次读取时间"
+
+#: models.py
+msgid "Next check at"
+msgstr "下次读取时间"
+
+#: models.py
+msgid "Status at"
+msgstr "状态时间"
+
+#: models.py
+msgid "Failures"
+msgstr "失败次数"
+
+#: models.py
+msgid "SRP loss scan"
+msgstr "SRP 损失读取记录"
+
+#: models.py
+msgid "SRP loss scans"
+msgstr "SRP 损失读取记录"
+
+#: models.py
+#, python-format
+msgid "Loss scan of character %(id)s"
+msgstr "角色 %(id)s 的损失读取"
+
+#: models.py templates/fleetops/srp/claim.html
+#: templates/fleetops/srp/preview.html
+msgid "Loss"
+msgstr "损失"
+
+#: models.py
+msgid "Kill"
+msgstr "击杀"
+
+#: models.py
+msgid "Too old"
+msgstr "已过期"
+
+#: models.py
+msgid "Matched link"
+msgstr "匹配的链接"
+
+#: models.py
+msgid "Match"
+msgstr "匹配"
+
+#: models.py
+msgid "Ignored by"
+msgstr "忽略人"
+
+#: models.py
+msgid "Ignored at"
+msgstr "忽略时间"
+
+#: models.py
+msgid "Discovered at"
+msgstr "发现时间"
+
+#: models.py
+msgid "SRP loss"
+msgstr "SRP 发现的损失"
+
+#: models.py
+msgid "SRP losses"
+msgstr "SRP 发现的损失"
+
+#: models.py
+#, python-format
+msgid "Loss %(id)s"
+msgstr "损失 %(id)s"
+
 #: models.py templates/fleetops/srp/_calculation.html
 msgid "Payout table"
 msgstr "赔付表"
@@ -3906,6 +4037,14 @@ msgstr "价值的百分比"
 #: models.py templates/fleetops/srp/_calculation.html
 msgid "No automatic amount"
 msgstr "无自动金额"
+
+#: models.py templates/fleetops/srp/preview.html
+msgid "Pasted link"
+msgstr "贴链接"
+
+#: models.py
+msgid "Found automatically"
+msgstr "自动发现"
 
 #: models.py
 msgid "Fleet label"
@@ -4534,7 +4673,7 @@ msgstr "舰队结束（EVE）"
 #: templates/fleetops/operation/_review.html
 #: templates/fleetops/operation/_roles.html
 #: templates/fleetops/pap_link_register.html
-#: templates/fleetops/roster_import.html
+#: templates/fleetops/roster_import.html templates/fleetops/srp/_losses.html
 #: templates/fleetops/statistics/member_detail.html
 msgid "Character"
 msgstr "角色"
@@ -4632,6 +4771,7 @@ msgid "Pilot (main)"
 msgstr "飞行员（大号）"
 
 #: services/export_datasets.py templates/fleetops/operation/_members.html
+#: templates/fleetops/srp/_losses.html
 msgid "System"
 msgstr "星系"
 
@@ -5293,7 +5433,7 @@ msgid "Until: %(time)s EVE"
 msgstr "直到：%(time)s EVE"
 
 #: srp/policy.py templates/fleetops/srp/home.html
-#: templates/fleetops/srp/link.html texts.py views_srp.py
+#: templates/fleetops/srp/link.html texts.py views_srp.py views_srp_losses.py
 msgid "FleetOps SRP is not enabled."
 msgstr "FleetOps SRP 未启用。"
 
@@ -7520,11 +7660,6 @@ msgstr "不参与舰队跃迁"
 msgid "Waiting for ESI to confirm the change"
 msgstr "等待 ESI 确认变更"
 
-#: templates/fleetops/operation/_fleet_member.html
-#: templates/fleetops/operation/_fleet_tree.html
-msgid "Waiting for ESI"
-msgstr "等待 ESI"
-
 #: templates/fleetops/operation/_fleet_member_actions.html
 #, python-format
 msgid "Move %(name)s"
@@ -9239,6 +9374,121 @@ msgstr "此类别的个人月度限额。"
 msgid "No monthly limit applies."
 msgstr "没有适用的月度限额。"
 
+#: templates/fleetops/srp/_losses.html
+msgid "Authorize loss reading for all your characters before you submit a claim."
+msgstr "提交申请前，请先为你所有的角色授权损失读取。"
+
+#: templates/fleetops/srp/_losses.html
+msgid "Authorize"
+msgstr "授权"
+
+#: templates/fleetops/srp/_losses.html
+msgid "Authorize all characters with CharLink"
+msgstr "用 CharLink 授权所有角色"
+
+#: templates/fleetops/srp/_losses.html
+msgid "My recent losses"
+msgstr "我的近期损失"
+
+#: templates/fleetops/srp/_losses.html
+msgid "Hide claimed losses"
+msgstr "隐藏已申请的损失"
+
+#: templates/fleetops/srp/_losses.html
+msgid "Show claimed losses"
+msgstr "显示已申请的损失"
+
+#: templates/fleetops/srp/_losses.html
+msgid "Hide ignored losses"
+msgstr "隐藏已忽略的损失"
+
+#: templates/fleetops/srp/_losses.html
+msgid "Show ignored losses"
+msgstr "显示已忽略的损失"
+
+#: templates/fleetops/srp/_losses.html
+msgid "Time (EVE)"
+msgstr "时间（EVE）"
+
+#: templates/fleetops/srp/_losses.html
+msgid "main"
+msgstr "大号"
+
+#: templates/fleetops/srp/_losses.html
+#, python-format
+msgid "%(counter)s day left to claim"
+msgid_plural "%(counter)s days left to claim"
+msgstr[0] "还剩 %(counter)s 天可申请"
+
+#: templates/fleetops/srp/_losses.html
+msgid "Near the fleet"
+msgstr "接近舰队"
+
+#: templates/fleetops/srp/_losses.html
+msgid "Registered for PAP"
+msgstr "已登记 PAP"
+
+#: templates/fleetops/srp/_losses.html
+msgid "Already claimed"
+msgstr "已被申请"
+
+#: templates/fleetops/srp/_losses.html
+msgid "Where to claim this loss"
+msgstr "这笔损失在哪里申请"
+
+#: templates/fleetops/srp/_losses.html
+msgid "Outside a fleet"
+msgstr "不在舰队内"
+
+#: templates/fleetops/srp/_losses.html
+msgid "Show again"
+msgstr "重新显示"
+
+#: templates/fleetops/srp/_losses.html
+msgid "Ignore"
+msgstr "忽略"
+
+#: templates/fleetops/srp/_losses.html
+msgid "No losses found yet. New losses appear after the next read of your characters."
+msgstr "还没有发现损失。下次读取你的角色后，新的损失会显示在这里。"
+
+#: templates/fleetops/srp/_losses.html
+msgid "Losses of your characters are read from ESI. A loss that is not in this list can still be claimed with its link."
+msgstr "你的角色的损失是从 ESI 读取的。不在这个列表里的损失仍然可以贴链接申请。"
+
+#: templates/fleetops/srp/_losses.html
+msgid "Loss reading"
+msgstr "损失读取"
+
+#: templates/fleetops/srp/_losses.html
+msgid "Read my characters now"
+msgstr "立即读取我的角色"
+
+#: templates/fleetops/srp/_losses.html
+msgid "Last read (EVE)"
+msgstr "上次读取（EVE）"
+
+#: templates/fleetops/srp/_losses.html
+msgid "Authorized"
+msgstr "已授权"
+
+#: templates/fleetops/srp/_losses.html
+#, python-format
+msgid "Each authorized character is read about every %(minutes)s minutes. You can refresh at most once every five minutes."
+msgstr "每个已授权的角色大约每 %(minutes)s 分钟读取一次。你最多每五分钟刷新一次。"
+
+#: templates/fleetops/srp/_losses.html
+msgid "A character that has not authorized loss reading is not found automatically; its losses can only be claimed with their links."
+msgstr "没有授权损失读取的角色不会被自动发现，它的损失只能贴链接申请。"
+
+#: templates/fleetops/srp/_losses.html
+msgid "Authorize all your characters at once with CharLink."
+msgstr "用 CharLink 一次授权你的所有角色。"
+
+#: templates/fleetops/srp/_losses.html
+msgid "Logging in as a character moves it to your account (Alliance Auth behaviour). If EVE reports an invalid scope, ask an administrator to add esi-killmails.read_killmails.v1 to the EVE developer application."
+msgstr "用某个角色登录会把它移到你的账号下（Alliance Auth 的行为）。如果 EVE 提示权限范围无效，请管理员在 EVE 开发者应用里加上 esi-killmails.read_killmails.v1。"
+
 #: templates/fleetops/srp/_not_covered.html
 msgid "Ship groups"
 msgstr "舰船组"
@@ -9429,10 +9679,6 @@ msgstr "处理于 %(time)s EVE："
 #: templates/fleetops/srp/claim.html
 msgid "Decision:"
 msgstr "处理结果："
-
-#: templates/fleetops/srp/claim.html templates/fleetops/srp/preview.html
-msgid "Loss"
-msgstr "损失"
 
 #: templates/fleetops/srp/claim.html
 msgid "Time"
@@ -9628,8 +9874,12 @@ msgid "No fleet of yours has an open SRP link. Use the SRP link the FC posted, o
 msgstr "你参加过的舰队里没有开放中的 SRP 链接。请使用 FC 发布的 SRP 链接，或用舰队外损失的表单。"
 
 #: templates/fleetops/srp/home.html
-msgid "Out-of-fleet loss"
-msgstr "舰队外损失"
+msgid "Claim with a link"
+msgstr "贴链接申请"
+
+#: templates/fleetops/srp/home.html
+msgid "Use “My recent losses” first. Paste a link only for a loss that is not listed there."
+msgstr "请优先使用“我的近期损失”。只有列表里没有的损失才需要贴链接。"
 
 #: templates/fleetops/srp/home.html templates/fleetops/srp/link.html
 msgid "Checking…"
@@ -9927,6 +10177,10 @@ msgstr "这笔损失发生在 <strong>%(fleet_type)s</strong>（FC %(fc)s）中�
 #: templates/fleetops/srp/preview.html
 msgid "Check it as a fleet loss"
 msgstr "按舰队内损失核对"
+
+#: templates/fleetops/srp/preview.html
+msgid "Found in your recent losses"
+msgstr "来自你的近期损失"
 
 #: templates/fleetops/srp/preview.html
 #, python-format
@@ -10759,6 +11013,10 @@ msgid "The ESI token of the character could not be refreshed (%(error_type)s). T
 msgstr "无法刷新该角色的 ESI 令牌（%(error_type)s）。请稍后重试。"
 
 #: texts.py
+msgid "No valid ESI token with the required scopes was found for this character."
+msgstr "没有找到该角色带有所需权限范围的有效 ESI 令牌。"
+
+#: texts.py
 msgid "Character is currently not in a fleet."
 msgstr "该角色当前不在舰队中。"
 
@@ -10937,6 +11195,15 @@ msgstr "无法读取 KM：ESI 返回了空的回答。"
 #, python-format
 msgid "Could not read market prices: %(detail)s"
 msgstr "无法读取市场价格：%(detail)s"
+
+#: texts.py
+#, python-format
+msgid "Could not read the recent losses: %(detail)s"
+msgstr "无法读取最近的损失：%(detail)s"
+
+#: texts.py
+msgid "ESI refused to show the recent losses of this character."
+msgstr "ESI 拒绝提供这个角色最近的损失。"
 
 #: texts.py
 #, python-format
@@ -12415,6 +12682,19 @@ msgid "This category has no open SRP link for the day of the loss."
 msgstr "该类别在损失当天没有开放的 SRP 链接。"
 
 #: texts.py
+#, python-format
+msgid "Authorize loss reading for all your characters first: %(names)s."
+msgstr "请先为你所有的角色授权损失读取：%(names)s。"
+
+#: texts.py
+msgid "That link or category is not available. Check the loss again."
+msgstr "这个链接或类别已不可用。请重新核对这笔损失。"
+
+#: texts.py
+msgid "Your losses were refreshed a moment ago. Try again in a few minutes."
+msgstr "你的损失刚刚刷新过，请几分钟后再试。"
+
+#: texts.py
 msgid "Only SRP reviewers can make or lift an SRP ban."
 msgstr "只有 SRP 审核人可以做出或解除 SRP 封禁。"
 
@@ -13888,6 +14168,38 @@ msgstr "已跳过：%(details)s"
 #: views_srp_links.py
 msgid "No link was chosen."
 msgstr "没有选择任何链接。"
+
+#: views_srp_losses.py
+msgid "Finding losses automatically is not enabled."
+msgstr "没有开启自动发现损失。"
+
+#: views_srp_losses.py
+msgid "Loss reading could not be authorized. If EVE reports an invalid scope, ask an administrator to add the scope esi-killmails.read_killmails.v1 to the EVE developer application."
+msgstr "无法授权损失读取。如果 EVE 提示权限范围无效，请管理员在 EVE 开发者应用里加上 esi-killmails.read_killmails.v1。"
+
+#: views_srp_losses.py
+msgid "That character is not on your account. It will not be read."
+msgstr "该角色不在你的账号下，不会被读取。"
+
+#: views_srp_losses.py
+msgid "Loss reading is authorized. Your recent losses will appear shortly."
+msgstr "已授权损失读取。你的近期损失很快会显示出来。"
+
+#: views_srp_losses.py
+msgid "Your losses could not be refreshed right now. They are read in the next regular run."
+msgstr "现在无法刷新你的损失，将在下一次定时读取时处理。"
+
+#: views_srp_losses.py
+msgid "Your characters are being read. New losses appear on this page shortly."
+msgstr "正在读取你的角色，新的损失很快会显示在这个页面上。"
+
+#: views_srp_losses.py
+msgid "The loss is hidden from your list."
+msgstr "这笔损失已从你的列表中隐藏。"
+
+#: views_srp_losses.py
+msgid "The loss is back on your list."
+msgstr "这笔损失已回到你的列表中。"
 
 #: views_srp_review.py
 msgid "you approved it; a different payer has to pay."

@@ -34,6 +34,8 @@
   <div class="card-footer small text-muted">{% translate "A loss counts in the EVE month (UTC) it happened in, whenever it is submitted or approved." %}</div>
 </div>
 
+{% if discovery_on %}{% include "fleetops/srp/_losses.html" %}{% endif %}
+
 <div class="row g-3 mb-3">
   <div class="col-lg-6">
     <div class="card h-100">
@@ -53,8 +55,9 @@
   <div class="col-lg-6">
     {% if srp_settings.out_of_fleet_enabled %}
     <div class="card h-100">
-      <div class="card-header"><strong>{% translate "Out-of-fleet loss" %}</strong></div>
+      <div class="card-header"><strong>{% translate "Claim with a link" %}</strong></div>
       <div class="card-body">
+        {% if discovery_on %}<div class="small text-muted mb-2">{% translate "Use “My recent losses” first. Paste a link only for a loss that is not listed there." %}</div>{% endif %}
         <form method="post" action="{% url 'fleetops:srp_check' %}" class="fleetops-srp-form" id="srp-claim-form" data-srp-once data-srp-check>
           {% csrf_token %}
           {{ claim_form.as_div }}

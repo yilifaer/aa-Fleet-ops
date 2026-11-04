@@ -479,6 +479,9 @@ history; it never moves ISK.
 | Default length of an SRP ban (days) | 7 | Preselected when a reviewer makes an [SRP ban](#srp-bans). Between 1 and 3650, and not longer than the longest ban. |
 | Longest SRP ban (days) | 365 | The longest ban a reviewer can make for a number of days. A permanent ban is not limited by it. |
 | Ban members who keep submitting over their monthly cap until the end of the month | off | See [SRP bans](#srp-bans). |
+| Find losses automatically | off | Read the recent losses of the members' characters from ESI and list them on My SRP. See [SRP loss discovery](#srp-loss-discovery). Needs the scope `esi-killmails.read_killmails.v1` in the EVE application of the site. |
+| Minutes between two reads of a character | 60 | Between 15 and 1440. Each authorized character is read about this often (a read is spread over up to ten percent more). |
+| Members must authorize loss reading for all their characters | off | A member with a character that did not authorize loss reading cannot check or submit claims until it does. Only in force while **Find losses automatically** is on. |
 | Notify members | on | Send an Alliance Auth notification when a claim is approved, changed, paid, rejected, revoked or reopened. |
 | SRP reviewers may decide on their own claims | off | Normally another reviewer decides on a reviewer's own claims. Allow this for small alliances. |
 | SRP payers may mark their own claims paid | off | Normally another payer pays a payer's own claims. Allow this for small alliances. Before 0.3.0b1 the setting above also covered payments; the upgrade copies it here, so a site that allowed one keeps allowing the other. |
@@ -720,6 +723,75 @@ number of the claim, and a reviewer can lift it like any other. A site without m
 
 All steps are audited: `srp.ban_create` (member, end, days, permanent, kind, number of claims rejected) and `srp.ban_lift`.
 
+## SRP loss discovery
+
+With **Find losses automatically** on, FleetOps reads the recent killmails of the members' characters from ESI and lists
+the losses on **My SRP** under **My recent losses**; a member claims a loss from there without pasting a link. Pasting a
+link stays possible for every loss (**Claim with a link**) and is the only way for a character that did not authorize
+loss reading. The feature is **off** on a new installation and after an upgrade, and the settings group **Loss
+discovery** holds its three settings.
+
+**Set-up.** Add the scope `esi-killmails.read_killmails.v1` to the EVE developer application of the site before you
+switch the feature on (the same application that already has the fleet scopes). Without it EVE refuses the login of the
+member, and the page shows "Loss reading could not be authorized. If EVE reports an invalid scope, ask an administrator
+to add the scope ...". Then every member authorizes each character once: **My SRP** > **Loss reading** lists the
+characters (the main is marked) with their state, the time of the last read and an **Authorize** button for each
+character without a token. With aa-charlink installed the item **FleetOps SRP loss reading** (for users with
+`fleetops.request_srp`, while the feature is on) authorizes all characters in one go; it disappears when the feature
+is off. Logging in as a character moves it to the account that logs in (Alliance Auth behaviour); a token for a character
+that is not on the member's account is refused and the character is never read.
+A token the member still holds for a character that has since moved to another account is left alone (it is not
+deleted; token housekeeping stays with Alliance Auth), and the scan only ever uses the token of the character's current
+owner.
+
+**What is read.** The scan reads, per character, `GET /characters/{id}/killmails/recent/` (ID and hash only, at most five
+pages) with the token of the account that owns the character, and `GET /killmails/{id}/{hash}/` for the killmails it has
+not seen. It stores one row per character and killmail: the character's own **losses** (with ship, system, time and, as
+for any claim, the ship group, security status and region), **kills** (the character only took part) and rows **older
+than the window**. The window is the claim deadline, or 90 days when there is none. Nothing is stored in the SRP
+killmail table: a killmail is stored there only when a member checks it for a claim, so the unclaimed-killmail cleanup
+and the zKillboard queue are not involved. A killmail that is stored already (with its location) is not read again, and
+an imported aa-srp killmail is never read: the loss shows as already claimed. django-esi caches each answer for as long
+as ESI's `Expires` says (five minutes for the list), so reading a character again within five minutes costs nothing.
+
+**When.** The existing beat entry `fleetops_track_active_fleets` (task `schedule_active_fleet_tracking`, every
+minute) queues the scan task `scan_srp_losses` at most every five minutes while SRP and the feature are on; **no new beat
+entry is needed** and FleetOps creates no periodic task. One run stops after 240 seconds, 300 characters, 400 reads of a
+list or 600 reads of a killmail or of game data (the module constants of `fleetops/srp/discovery.py`; they are not
+settings), at most 30 killmails per character and run. That is enough for about 3600 characters per hour at the default
+interval. A character that cannot be read is looked at again later: without a usable token or refused by ESI after
+24 hours, after another error after 30 minutes, then 60, 120 and so on up to 24 hours. When ESI says its error limit or a
+rate limit was reached the run ends and nothing is queued for 15 minutes.
+
+**Members.** A member can press **Read my characters now** (not more than once in five minutes; the task does the
+reading, the page calls no ESI). Each loss of the list shows the ship, the character, the system, the EVE time, the days
+left when there is a deadline, the fleet FleetOps matched it to, and why it is not covered when it is not (from the
+values stored with the loss, so the page makes no ESI call). **Claim** opens the usual check with the matched fleet
+preselected; the choice can also be an open standing link or a category, or "Outside a fleet". **Ignore** hides a loss from
+the member's own list (audited as `srp.loss_ignore` and `srp.loss_unignore`); it does not stop a pasted link. A loss
+claimed by somebody else (an imported aa-srp claim included) is shown as "Already claimed" without the name. The list
+follows the owner of the character: after a character moves to another account the old owner no longer sees it.
+
+**The fleet match.** For each loss the scan looks for an open fleet SRP link of a fleet the character was in at that time
+(the tracking events, with the usual margin: *in fleet*, *near*) or, without tracking, of a manual or PAP-link fleet where
+the character has a PAP registration or granted PAP within the fleet's time (*registered*). A standing link is never a
+fleet match. The member can choose another fleet; a claim through a standing link is never a claim in a fleet.
+
+**All characters.** With **Members must authorize loss reading for all their characters** on, a member with a character
+without a token of its own cannot check, submit or submit again any claim (pasted link, standing link or found loss), and
+**My SRP** shows a banner naming the characters with an **Authorize** button for each. Withdrawing is not blocked and a
+reviewer's decisions are not checked. The switch does nothing while **Find losses automatically** is off, so switching
+the feature off is the way back to pasted links for everybody. With the switch off, characters without a token are not
+found automatically; tell your members to authorize all of them, preferably with CharLink.
+
+**Retention.** The daily task deletes kills and rows older than the window one day after they left it, losses 30
+days after, and the scan rows of characters that are on no account any more. A row recorded as older than the window is
+not read again when the claim deadline is raised afterwards; the losses in the gap can be claimed by pasting the link.
+
+**Security.** Tokens are read only with `esi.models.Token` for the owner of the character, used for the one list call and
+never stored elsewhere; no log line, audit entry, page or export holds a token or an ESI response header. A failed call
+logs the name of the operation, the class of the exception and the HTTP status.
+
 ## SRP Payout Table
 
 Fixed amounts. A rule names a ship type (ID or exact English name), a doctrine (a Fittings doctrine or a custom
@@ -766,6 +838,9 @@ on the pages named; nothing in FleetOps sets them for you.
 | | A category claim needs no standing link | on |
 | | Ban default and longest length | 7 and 365 days (permanent bans are chosen per ban) |
 | | Ban members who keep submitting over their monthly cap | off (without monthly caps it would never trigger) |
+| | Find losses automatically | on (the scope is in the EVE application) |
+| | Minutes between two reads of a character | 60 |
+| | Members must authorize loss reading for all their characters | on |
 | SRP Categories | `fleet` (built in) | Per-loss cap: **No per-loss cap**; percentage inherited |
 | | `alliance-fleets`, `home-defense`, `home-defense-ess`, `corp-roaming`, `corp-roaming-ess`, `solo-pvp` | Members can choose it; per-loss cap: **Own per-loss cap**, 250m; percentage inherited; monthly caps empty |
 | | Make a standing link every day, Close links after (hours) | on for the six categories above; 48 (the link closes at the end of the next day), or empty to let links stay open |
@@ -780,6 +855,7 @@ through a fleet link at 571m.
 left the alliances in **Member alliance IDs**, old member events and the old texts of pings sent without a fleet
 (their audit entries stay); add `--dry-run` to see the counts first.
 The daily beat task `fleetops.tasks.prune_attendance_history` does the same and also deletes SRP killmails
-nobody claimed (their location fields go with them). SRP bans are never deleted by retention: the reason, the end and
+nobody claimed (their location fields go with them) and the losses the scan found that are no use any more (see
+[SRP loss discovery](#srp-loss-discovery)). SRP bans are never deleted by retention: the reason, the end and
 who lifted the ban stay as a history; lifted and expired bans cost nothing. `python manage.py fleetops_refresh_names` rewrites ship and solar system names of fleet member
 records in English from the SDE (`--dry-run` available). Ship and solar system names are English everywhere.

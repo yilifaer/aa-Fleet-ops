@@ -18,10 +18,17 @@
 {% if preview.suggested_link %}
 <div class="alert alert-info">
   {% blocktranslate trimmed with fleet_type=preview.suggested_link.operation.fleet_type fc=preview.suggested_link.fc_main_character_name|default:preview.suggested_link.operation.fc_character_name %}This loss happened in <strong>{{ fleet_type }}</strong> (FC {{ fc }}). Submit it as a fleet loss?{% endblocktranslate %}
+  {% if loss %}
+  <form method="post" action="{% url 'fleetops:srp_loss_check' loss.killmail_id %}" class="d-inline ms-2">
+    {% csrf_token %}<input type="hidden" name="target" value="fleet:{{ preview.suggested_link.code }}">
+    <button type="submit" class="btn btn-sm btn-primary">{% translate "Check it as a fleet loss" %}</button>
+  </form>
+  {% else %}
   <form method="post" action="{% url 'fleetops:srp_link' preview.suggested_link.code %}" class="d-inline ms-2">
     {% csrf_token %}<input type="hidden" name="killmail" value="{{ input_text }}">
     <button type="submit" class="btn btn-sm btn-primary">{% translate "Check it as a fleet loss" %}</button>
   </form>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -36,6 +43,7 @@
           {% if identity %}<div>{{ identity.character_name }}{% if identity.main_character_name and identity.main_character_name != identity.character_name %} <span class="text-muted">{% blocktranslate trimmed with main=identity.main_character_name %}(main {{ main }}){% endblocktranslate %}</span>{% endif %}</div>
           {% if identity.corporation_name %}<div class="small text-muted">{{ identity.corporation_name }}{% if identity.alliance_name %} &middot; {{ identity.alliance_name }}{% endif %}</div>{% endif %}{% endif %}
           <div class="small text-muted">{{ km.killmail_time|eve_time }} EVE &middot; {{ km.solar_system_name|default:_("Unknown system") }} &middot; {{ km|srp_security }}</div>
+          <div class="small text-muted" id="srp-preview-source">{% if preview.source == "discovered" %}{% translate "Found in your recent losses" %}{% else %}{% translate "Pasted link" %}{% endif %}{% if preview.category %} &middot; {{ preview.category|srp_category_label }}{% endif %}{% if preview.link and preview.link.kind == "standing" %} &middot; {{ preview.link.name }}{% endif %}</div>
           <div class="small"><a href="{{ km.killmail_id|zkill_url }}" target="_blank" rel="noopener noreferrer">{% blocktranslate trimmed with id=km.killmail_id %}Killmail {{ id }} on zKillboard{% endblocktranslate %}</a></div>
         </div>
       </div>
@@ -83,12 +91,12 @@
         <div class="form-text">{% translate "Anything the reviewer should know." %}</div>
       </div>
       <button type="submit" class="btn btn-primary">{% translate "Submit claim" %}</button>
-      <a class="btn btn-outline-secondary" href="{% if link %}{% url 'fleetops:srp_link' link.code %}{% else %}{% url 'fleetops:srp_home' %}{% endif %}">{% translate "Cancel" %}</a>
+      <a class="btn btn-outline-secondary" href="{% if link and not loss %}{% url 'fleetops:srp_link' link.code %}{% else %}{% url 'fleetops:srp_home' %}{% endif %}">{% translate "Cancel" %}</a>
     </form>
   </div>
 </div>
 {% else %}
-<a class="btn btn-outline-secondary" href="{% if link %}{% url 'fleetops:srp_link' link.code %}{% else %}{% url 'fleetops:srp_home' %}{% endif %}">{% translate "Back" %}</a>
+<a class="btn btn-outline-secondary" href="{% if link and not loss %}{% url 'fleetops:srp_link' link.code %}{% else %}{% url 'fleetops:srp_home' %}{% endif %}">{% translate "Back" %}</a>
 {% endif %}
 {% endwith %}
 <script src="{% static 'fleetops/srp.js' %}?v={{ fleetops_version }}" defer></script>

@@ -34,7 +34,7 @@ from esi.exceptions import (
 )
 from esi.openapi_clients import ESIClientProvider
 
-from fleetops.constants import CLICK_SCOPES, FLEET_READ_SCOPE, FLEET_WRITE_SCOPE
+from fleetops.constants import CLICK_SCOPES, FLEET_READ_SCOPE, FLEET_WRITE_SCOPE, KILLMAIL_READ_SCOPE as KILLMAIL_SCOPE
 from fleetops.models import AttendanceRecord, FleetMemberEvent, FleetMemberState, FleetOperation, OperationAction
 from fleetops.providers import esi as esi_provider, esi_killmails, esi_universe
 from fleetops.providers.esi import (
@@ -667,6 +667,12 @@ def _fleet_spec():
             "x-compatibility-date": "2020-01-01",
         }
 
+    def recent_killmails(operation_id, scope):
+        spec = operation(operation_id, scope, ["character_id"], "200", "RecentKillmails", tag="Killmails")
+        spec["parameters"].append({"name": "page", "in": "query", "required": False, "schema": {"type": "integer", "minimum": 1, "default": 1}})
+        spec["x-rate-limit"] = {"group": "char-killmail", "max-tokens": 30, "window-size": "15m"}
+        return spec
+
     def location(operation_id, scope, schema):
         spec = operation(operation_id, scope, ["character_id"], "200", schema, tag="Location")
         spec["x-rate-limit"] = {"group": "char-location", "max-tokens": 1200, "window-size": "15m"}
@@ -761,6 +767,10 @@ def _fleet_spec():
                 ),
             },
             "/markets/prices": {"get": public_read("GetMarketsPrices", "Market", [], "MarketPrices")},
+            # 0.3.0b1 (INT-1): the recent killmails of a character, paged, with the scope of the character.
+            "/characters/{character_id}/killmails/recent": {
+                "get": recent_killmails("GetCharactersCharacterIdKillmailsRecent", KILLMAIL_SCOPE),
+            },
             # 0.3.0b1 (RUL-1): where a ship was lost and what group a ship type is in.
             "/universe/systems/{system_id}": {
                 "get": public_read("GetUniverseSystemsSystemId", "Universe", [("system_id", integer)], "UniverseSystem"),
@@ -853,6 +863,14 @@ def _fleet_spec():
                             "faction_id": integer,
                         },
                         "required": ["character_id", "corporation_id"],
+                    },
+                },
+                "RecentKillmails": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {"killmail_id": integer, "killmail_hash": {"type": "string"}},
+                        "required": ["killmail_id", "killmail_hash"],
                     },
                 },
                 "Killmail": {
@@ -984,7 +1002,7 @@ def _fleet_spec():
                         "authorizationCode": {
                             "authorizationUrl": "https://login.eveonline.com/v2/oauth/authorize",
                             "tokenUrl": "https://login.eveonline.com/v2/oauth/token",
-                            "scopes": {scope: scope for scope in (FLEET_READ_SCOPE, FLEET_WRITE_SCOPE, *CLICK_SCOPES)},
+                            "scopes": {scope: scope for scope in (FLEET_READ_SCOPE, FLEET_WRITE_SCOPE, KILLMAIL_SCOPE, *CLICK_SCOPES)},
                         }
                     },
                 }
@@ -1002,10 +1020,17 @@ class RecordedESI:
         self.cache_seconds = 0
         # Added to every error response, like ESI's own response headers.
         self.error_headers = {}
+        # Added to every successful response (such as the page count of a list).
+        self.ok_headers = {}
+        # The query string and the Authorization header of every request, in the order they came.
+        self.queries = []
+        self.authorizations = []
 
     def send(self, request, *args, **kwargs):
         body = json.loads(request.content) if request.content else None
         self.requests.append((request.method, request.url.path, request.headers.get("If-None-Match"), body))
+        self.queries.append(dict(request.url.params))
+        self.authorizations.append(request.headers.get("Authorization"))
         route = self.routes.get((request.method, request.url.path), (404, {"error": "Not found"}))
         # A route may answer according to the request body.
         status, payload = route(body) if callable(route) else route
@@ -1022,6 +1047,8 @@ class RecordedESI:
             return HTTPResponse(204, headers=headers, request=request)
         if status >= 400:
             headers.update(self.error_headers)
+        elif status == 200:
+            headers.update(self.ok_headers)
         if isinstance(payload, bytes):
             # A gateway error page instead of an ESI JSON body.
             headers["Content-Type"] = "text/html"
@@ -1051,6 +1078,7 @@ class DjangoEsiOperationTests(TestCase):
                 *LOCATION_OPERATIONS,
                 *esi_killmails.KILLMAIL_OPERATIONS,
                 *esi_provider.UNIVERSE_OPERATIONS,
+                *esi_provider.LOSS_OPERATIONS,
             ],
         )
 
@@ -1552,6 +1580,108 @@ class DjangoEsiOperationTests(TestCase):
 
         self.assertLessEqual(set(esi_killmails.KILLMAIL_OPERATIONS), set(operations))
         self.assertEqual(esi_killmails.KILLMAIL_OPERATIONS, esi_provider.KILLMAIL_OPERATIONS)
+
+    # -- The recent killmails of a character (INT-1) -----------------------------------------------
+
+    def loss_token(self):
+        pilot = f.main_of(f.create_user(perms=f.SRP_MEMBER_PERMS))
+        return f.add_token(self.fc, pilot, scopes=[KILLMAIL_SCOPE]), pilot.character_id
+
+    def test_the_loss_operation_is_part_of_the_client(self):
+        operations = getattr(esi_provider.esi, "_operations", None)
+        if operations is None:
+            self.skipTest("django-esi no longer keeps the operation list of the provider")
+
+        self.assertEqual(esi_provider.LOSS_OPERATIONS, ("GetCharactersCharacterIdKillmailsRecent",))
+        self.assertLessEqual(set(esi_provider.LOSS_OPERATIONS), set(operations))
+        self.assertTrue(hasattr(esi_provider.esi.client.Killmails, "GetCharactersCharacterIdKillmailsRecent"))
+
+    def test_the_recent_killmails_are_read_with_the_token_of_the_character_and_a_page(self):
+        token, character_id = self.loss_token()
+        self.server.ok_headers = {"X-Pages": "3"}
+        self.server.routes[("GET", f"/characters/{character_id}/killmails/recent")] = (
+            200,
+            [
+                {"killmail_id": 100, "killmail_hash": "A" * 40},
+                {"killmail_id": 300, "killmail_hash": "b" * 40},
+                {"killmail_id": 200, "killmail_hash": "c" * 40},
+            ],
+        )
+
+        rows = esi_killmails.get_recent_killmails(token, character_id, 2)
+
+        # Newest first, whatever ESI's order; hashes are lower case; the page count comes from X-Pages.
+        self.assertEqual(rows, [(300, "b" * 40), (200, "c" * 40), (100, "a" * 40)])
+        self.assertEqual(rows.pages, 3)
+        self.assertEqual(self.server.queries, [{"page": "2"}])
+        self.assertTrue(self.server.authorizations[0].startswith("Bearer "))
+
+    def test_a_list_without_a_page_count_has_none(self):
+        token, character_id = self.loss_token()
+        self.server.routes[("GET", f"/characters/{character_id}/killmails/recent")] = (200, [])
+
+        rows = esi_killmails.get_recent_killmails(token, character_id)
+
+        self.assertEqual((list(rows), rows.pages), ([], None))
+        self.assertEqual(self.server.queries, [{"page": "1"}])
+
+    def test_each_page_is_cached_by_django_esi_for_as_long_as_esi_allows(self):
+        token, character_id = self.loss_token()
+        self.server.cache_seconds = 300
+        self.server.routes[("GET", f"/characters/{character_id}/killmails/recent")] = (
+            200,
+            [{"killmail_id": 100, "killmail_hash": "a" * 40}],
+        )
+
+        for page in (1, 1, 2, 2):
+            esi_killmails.get_recent_killmails(token, character_id, page)
+
+        self.assertEqual(self.server.queries, [{"page": "1"}, {"page": "2"}])
+
+    def test_a_refusal_is_a_denied_loss_read_and_the_token_is_not_logged(self):
+        token, character_id = self.loss_token()
+        self.server.routes[("GET", f"/characters/{character_id}/killmails/recent")] = (403, {"error": "Forbidden"})
+
+        with self.assertLogs(level="DEBUG") as logs, self.assertRaises(FleetESIError) as ctx:
+            esi_killmails.get_recent_killmails(token, character_id)
+
+        self.assertEqual((ctx.exception.code, ctx.exception.status_code), ("LOSS_DENIED", 403))
+        for value in (str(ctx.exception), "\n".join(logs.output)):
+            self.assertNotIn(token.access_token, value)
+            self.assertNotIn(token.refresh_token, value)
+            self.assertNotIn("Bearer", value)
+
+    def test_the_error_limit_and_the_buckets_are_a_limit_error(self):
+        from esi.exceptions import ESIBucketLimitException
+
+        token, character_id = self.loss_token()
+        self.server.error_headers = {"X-ESI-Request-ID": "esi-request-420", "X-RateLimit-Reset": "33"}
+        self.server.routes[("GET", f"/characters/{character_id}/killmails/recent")] = (420, {"error": "error limit"})
+
+        with self.assertLogs(esi_killmails.logger, "WARNING"), self.assertRaises(FleetESIError) as ctx:
+            esi_killmails.get_recent_killmails(token, character_id)
+
+        self.assertEqual(ctx.exception.code, "ESI_LIMITED")
+        self.assertTrue(esi_killmails.is_rate_limited(ctx.exception))
+        self.assertNotIn("esi-request-420", str(ctx.exception))
+        bucket = ESIBucketLimitException("char-killmail", 120)
+        with mock.patch.object(esi_provider, "_read_with_response", side_effect=bucket):
+            with self.assertLogs(esi_killmails.logger, "WARNING"), self.assertRaises(FleetESIError) as ctx:
+                esi_killmails.get_recent_killmails(token, character_id)
+        self.assertEqual(ctx.exception.code, "ESI_LIMITED")
+
+    def test_another_failure_is_a_short_error_without_headers(self):
+        token, character_id = self.loss_token()
+        self.server.error_headers = {"X-Private-Header": "header-secret-value"}
+        self.server.routes[("GET", f"/characters/{character_id}/killmails/recent")] = (500, {"error": "boom"})
+
+        with mock.patch("esi.app_settings.ESI_SERVER_ERROR_MAX_RETRIES", 1), self.assertLogs(
+            esi_killmails.logger, "WARNING"
+        ) as logs, self.assertRaises(FleetESIError) as ctx:
+            esi_killmails.get_recent_killmails(token, character_id)
+
+        self.assertEqual((ctx.exception.code, str(ctx.exception)), ("ESI_ERROR", "Could not read the recent losses: ESI returned HTTP 500."))
+        self.assertNotIn("header-secret-value", "\n".join(logs.output))
 
     def test_the_universe_operations_are_part_of_the_client(self):
         operations = getattr(esi_provider.esi, "_operations", None)
