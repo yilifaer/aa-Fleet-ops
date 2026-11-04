@@ -480,6 +480,7 @@ history; it never moves ISK.
 | SRP reviewers may decide on their own claims | off | Normally another reviewer decides on a reviewer's own claims. Allow this for small alliances. |
 | SRP payers may mark their own claims paid | off | Normally another payer pays a payer's own claims. Allow this for small alliances. Before 0.3.0b1 the setting above also covered payments; the upgrade copies it here, so a site that allowed one keeps allowing the other. |
 | The approver of a claim may not pay it | off | Four-eyes rule: the person who approved a claim cannot mark it paid, another payer has to. Undoing a payment is not bound by it. |
+| Complete SRP links automatically | off | A closed [SRP link](#srp-links) is marked completed as soon as none of its claims waits for review or payment. A completed link whose claim becomes unsettled again (payment undone, claim reopened or submitted again) goes back to closed whatever this says. |
 | Member instructions | empty | Free text, up to 2000 characters, shown on My SRP and on the SRP page of a fleet. |
 
 To enable FleetOps SRP:
@@ -546,9 +547,37 @@ To enable FleetOps SRP:
 - Reviewers cannot decide on their own claims unless "SRP reviewers may decide on their own claims" allows it, and payers cannot mark their own claims paid unless "SRP payers may mark their own claims paid" allows it. With "The approver of a claim may not pay it" on, the approver cannot mark the claim paid either.
 - Summaries (**Summary**, **Corporation**, **My fleets**) are by EVE month of the loss and exclude withdrawn
   claims. The files are `srp-claims`, `srp-members`, `srp-corporations` and `srp-fcs`.
-- The fleet page has an SRP card with the link and a Copy button, **Open** and **Close** for SRP staff (a
-  closed link takes no new claims), **Request SRP for this fleet** for pilots, and **Create SRP link** for a
-  fleet without a link. Creating a link twice changes nothing.
+- The fleet page has an SRP card with the link and a Copy button, **Close SRP link** and **Mark SRP link complete**
+  for SRP staff and **Open SRP link** for reviewers (a closed link takes no new claims), **Request SRP for this
+  fleet** for pilots, and **Create SRP link** for a fleet without a link. Creating a link twice changes nothing.
+
+## SRP Links
+
+**SRP** > **SRP Links** (reviewers and payers) lists every SRP link: the link of each fleet and the standing links.
+A row shows the kind, category, date, state, the claims waiting for review and for payment, and the total paid. The
+filters are state, kind, category and a date range in EVE time (a fleet link counts with the day its fleet started);
+the list has 50 links per page, and `?codes=<code>,<code>` shows exactly the links it names, ticked.
+
+A **standing link** has no fleet. It has a name, a [category](#srp-categories), an EVE date, an optional doctrine
+text, an optional link to the after-action report (http or https only) and an optional time at which it closes.
+Members open it at `/fleetops/srp/link/<code>/` like the link of a fleet and submit the losses of that day; a claim
+through it is a loss outside a fleet, in the link's category, and no FC statistics count it. Only reviewers make
+(**New standing link**) and edit standing links; the name is made from the category's name template when left empty,
+and the doctrine text and closing time are filled in from the category. Ticking **Make this the link of the day** takes
+the one place per category and day, so a second link of the day is refused. Changing the category of a link does not
+move the claims already made: they keep their category. Changing the category or the date of the link of the day
+ends its role as the link of the day (the one place per category and day is free again, so the day's link of the
+original category can be made again). The link of a fleet can only get a doctrine text and a report, and only a
+reviewer edits them: the FC of the fleet gets 403 on the edit page.
+
+A link is **open** (members can submit), **closed** (no new claims; claims already made go on as usual) or
+**completed**. Tick links in the list and choose **Close selected**, **Complete selected** or **Open selected** (reviewers
+only); each link is done on its own and the ones that cannot be done are listed with the reason. **Completing** needs a
+closed or open link without any claim waiting for review or for payment (approved, not yet paid): pay, reject or
+withdraw them first. This rule has no exception and no force option; closing a link is never limited by open claims.
+An open link without such claims is closed and completed in one step. Opening a completed link makes it open again.
+All steps are audited: `srp.link_create`, `srp.link_update`, `srp.link_open`, `srp.link_close`, `srp.link_complete` and
+`srp.link_uncomplete`; the entries hold field values only.
 
 ## SRP Categories
 
@@ -571,6 +600,9 @@ Chinese word for fleet in the Chinese interface until you rename it. FleetOps cr
 | Per-loss cap also limits payout table amounts | on | Switch off to pay the fixed amounts of the payout table in full while the cap still limits percentage payouts. |
 | Personal monthly cap, Corporation monthly cap | empty | Most one player (or one corporation) can get approved in this category per EVE month. Empty means no limit. Checked together with the general limits; the most restrictive one wins. |
 | Fleet types | none | Claims through fleets of these types get this category instead of **Fleet**. A fleet type belongs to at most one active category. Leave empty for no mapping. |
+| Name template of links | `{category} {date}` | The name of a new [standing link](#srp-links) of this category when none is typed. Only `{category}` and `{date}` can be used. |
+| Default doctrine text | empty | Filled in as the doctrine of a new standing link of this category. |
+| Close links after (hours) | empty | A standing link of this category closes this many hours after 00:00 EVE of its date (1 to 720). Empty means the link stays open until someone closes it. The new-link form fills in the closing time. |
 | Active, Sort | on, 0 | A switched-off category is not offered to members; claims that have it keep it and are calculated with its current settings. |
 
 Claims get their category like this: a claim through a fleet link gets the category of the fleet's type (if mapped)

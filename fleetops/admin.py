@@ -436,9 +436,9 @@ class StandalonePingAdmin(RecordAdmin):
 
 @admin.register(SrpFleetLink)
 class SrpFleetLinkAdmin(SrpReadOnlyAdmin):
-    list_display = ("operation", "fc_main_character_name", "is_open", "created_at")
-    list_filter = ("is_open",)
-    search_fields = ("fc_main_character_name",)
+    list_display = ("__str__", "kind", "name", "link_date", "category", "is_open", "completed_at", "created_at")
+    list_filter = ("kind", "is_open", "category", "origin")
+    search_fields = ("name", "fc_main_character_name")
 
 
 @admin.register(SrpKillmail)

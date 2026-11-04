@@ -1201,6 +1201,23 @@ SRP_NO_SUGGESTION = StoredText(gettext_noop("This claim has no suggested amount.
 SRP_CHOOSE_SCOPE = StoredText(gettext_noop("Choose in fleet or out of fleet."))
 SRP_CHOOSE_FLEET = StoredText(gettext_noop("Choose the fleet of the loss."))
 SRP_LINK_CLOSED = StoredText(gettext_noop("This SRP link is closed."))
+SRP_LINK_HAS_OPEN_CLAIMS = StoredText(
+    gettext_noop(
+        "This link still has claims that are not settled (waiting for review: %(pending)s, waiting for payment: "
+        "%(approved)s). Pay, reject or withdraw them before completing the link."
+    ),
+    numbers=("pending", "approved"),
+)
+SRP_LINK_ALREADY_COMPLETED = StoredText(gettext_noop("This link is already completed."))
+SRP_LINK_ALREADY_CLOSED = StoredText(gettext_noop("This link is already closed."))
+SRP_LINK_ALREADY_OPEN = StoredText(gettext_noop("This link is already open."))
+SRP_LINK_NOT_FOUND = StoredText(gettext_noop("There is no SRP link with this code."))
+SRP_LINK_NOT_EDITABLE = StoredText(gettext_noop("This part of the link cannot be changed."))
+SRP_LINK_UNKNOWN_ACTION = StoredText(gettext_noop("Choose close, complete or open."))
+SRP_LINK_TOO_MANY = StoredText(gettext_noop("Choose at most %(count)s links at a time."), numbers=("count",))
+SRP_LINK_AUTO_COMPLETED = StoredText(gettext_noop("Completed automatically: every claim of the link is settled."))
+SRP_LINK_AUTO_UNCOMPLETED = StoredText(gettext_noop("A claim of the link is waiting for review or payment again."))
+SRP_LINK_NO_DAILY_CATEGORY = StoredText(gettext_noop("Choose a category for the link."))
 SRP_SAME_FLEET = StoredText(gettext_noop("The claim is already a loss of this fleet."))
 SRP_SAME_OUT_OF_FLEET = StoredText(gettext_noop("The claim is already an out-of-fleet loss."))
 SRP_FLEET_GONE = StoredText(gettext_noop("The fleet of this claim no longer exists."))

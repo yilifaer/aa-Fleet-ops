@@ -4,7 +4,7 @@
 {% with km=preview.killmail identity=preview.identity calculation=preview.calculation policy=preview.policy %}
 <div class="mb-3">
   <h2 class="mb-1">{% translate "Check your claim" %}</h2>
-  <div class="text-muted">{% if link %}{% blocktranslate trimmed with fleet_type=operation.fleet_type fc=link.fc_main_character_name|default:operation.fc_character_name %}Loss in {{ fleet_type }} &middot; FC {{ fc }}{% endblocktranslate %}{% else %}{% translate "Loss outside a FleetOps fleet" %}{% endif %}</div>
+  <div class="text-muted">{% if operation %}{% blocktranslate trimmed with fleet_type=operation.fleet_type fc=link.fc_main_character_name|default:operation.fc_character_name %}Loss in {{ fleet_type }} &middot; FC {{ fc }}{% endblocktranslate %}{% elif link %}{% blocktranslate trimmed with name=link.name %}Loss through the SRP link {{ name }}{% endblocktranslate %}{% else %}{% translate "Loss outside a FleetOps fleet" %}{% endif %}</div>
 </div>
 
 {% if preview.blockers %}
@@ -63,8 +63,8 @@
     <div class="card h-100">
       <div class="card-header"><strong>{% translate "Checks" %}</strong></div>
       <div class="card-body fleetops-srp-checks">
-        {% if link %}<div class="mb-2"><span class="text-muted">{% translate "Fleet presence:" %}</span> {% include "fleetops/srp/_fleet_check.html" with presence=preview.presence %}</div>{% endif %}
-        {% for warning in preview.warnings|srp_flags %}<div class="mb-2">{{ warning|srp_warning_badge }}</div>{% empty %}{% if not link %}<span class="text-muted">{% translate "Nothing to warn about." %}</span>{% endif %}{% endfor %}
+        {% if operation %}<div class="mb-2"><span class="text-muted">{% translate "Fleet presence:" %}</span> {% include "fleetops/srp/_fleet_check.html" with presence=preview.presence %}</div>{% endif %}
+        {% for warning in preview.warnings|srp_flags %}<div class="mb-2">{{ warning|srp_warning_badge }}</div>{% empty %}{% if not operation %}<span class="text-muted">{% translate "Nothing to warn about." %}</span>{% endif %}{% endfor %}
       </div>
     </div>
   </div>

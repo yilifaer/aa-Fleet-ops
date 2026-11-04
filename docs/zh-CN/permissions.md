@@ -26,8 +26,8 @@ staff 或 superuser 账号。
 | `fleetops.view_audit_log` | Can view FleetOps audit log | 打开"操作日志"页。 |
 | `fleetops.request_srp` | Can request SRP | 在 FleetOps SRP 中提交舰船损失申请（"我的 SRP"和舰队的 SRP 链接），查看自己的申请和本月额度。需要先启用 FleetOps SRP。加入 SRP 功能的那次迁移已经把它授予所有已拥有 `basic_access` 的用户组、状态和用户；之后新建的用户组需要自己加上。 |
 | `fleetops.manage_srp` | Can review and pay SRP claims | `review_srp` 和 `pay_srp` 加在一起能做的所有事：审核并支付申请。这是旧版本的权限，含义不变，所以已有持有人既不会多也不会少。因为它决定付款，所以不会默认授予任何人。 |
-| `fleetops.review_srp` | Can review SRP claims | 审核申请：通过、修改金额、拒绝、撤销、重新打开、重新归类、更改类别、重新计算、重新检查在队情况。添加内部备注，打开和关闭舰队的 SRP 链接，查看所有 SRP 汇总、申请和内部备注。不能标记已付款，也不能撤销付款。不会默认授予任何人；升级不会把它授予任何用户组、状态或用户。 |
-| `fleetops.pay_srp` | Can pay SRP claims | 支付申请：打开付款页，单条或批量标记已付款，撤销付款。添加内部备注，打开和关闭舰队的 SRP 链接，查看所有 SRP 汇总、申请和内部备注（只读，付款人可以打开申请核对付的是什么；从申请打开舰队需要 `view_all_fleets`）。不能通过或拒绝申请。不会默认授予任何人；升级不会把它授予任何用户组、状态或用户。 |
+| `fleetops.review_srp` | Can review SRP claims | 审核申请：通过、修改金额、拒绝、撤销、重新打开、重新归类、更改类别、重新计算、重新检查在队情况。添加内部备注，打开、关闭和完成 SRP 链接，创建和编辑常驻链接，查看所有 SRP 汇总、申请和内部备注。不能标记已付款，也不能撤销付款。不会默认授予任何人；升级不会把它授予任何用户组、状态或用户。 |
+| `fleetops.pay_srp` | Can pay SRP claims | 支付申请：打开付款页，单条或批量标记已付款，撤销付款。添加内部备注，关闭和完成 SRP 链接（不能重新打开），查看链接列表、所有 SRP 汇总、申请和内部备注（只读，付款人可以打开申请核对付的是什么；从申请打开舰队需要 `view_all_fleets`）。不能通过或拒绝申请。不会默认授予任何人；升级不会把它授予任何用户组、状态或用户。 |
 
 ## 推荐的用户组
 
@@ -93,7 +93,7 @@ FC 主管管理所有舰队，审批补录记录，覆盖 PAP 倍率和每位玩
 - `fleetops.manage_srp`
 - `fleetops.view_all_fleets`（只用于从申请跳转到舰队）
 
-SRP 管理员按规则要求填写理由，审核、通过、修改金额、拒绝、撤销和支付申请，打开和关闭舰队的 SRP 链接，查看每个舰队的申请和所有
+SRP 管理员按规则要求填写理由，审核、通过、修改金额、拒绝、撤销和支付申请，打开、关闭和完成 SRP 链接，创建常驻链接，查看每个舰队的申请和所有
 SRP 汇总并下载 SRP 文件，还可以添加只有 SRP 人员能看到的内部备注。审核人自己的申请由另一位审核人处理，除非勾选了
 "SRP 审核人可以处理自己的申请"；付款人自己的申请由另一位付款人支付，除非勾选了"SRP 付款人可以把自己的申请标记为已付款"。
 
@@ -168,14 +168,16 @@ FC 统计不受影响。
 
 下文的"SRP 人员"指拥有 `manage_srp`、`review_srp` 或 `pay_srp` 的用户。`manage_srp` 同时是两种角色：审核人（`review_srp`）和付款人（`pay_srp`）。只拥有其中一个的用户，只会看到那一项工作的菜单入口和按钮。超级用户拥有所有权限，因此等同于 `manage_srp`（既是审核人也是付款人），并且和其他人一样受三个自处理设置（`allow_self_review`、`allow_self_payment`、`require_different_payer`）约束。
 
-只读的部分对三者相同：所有 SRP 人员都能看到全部 SRP 汇总、SRP 导出、每个申请及其内部备注和经手人的名字、舰队页上的 SRP 卡片，也能开启和关闭舰队的 SRP 链接。这是有意的：付款人需要知道申请为什么被通过，所以内部备注对付款人也可见。只有做决定的按钮（通过、拒绝、标记已付款等）才跟着角色走。
+只读的部分对三者相同：所有 SRP 人员都能看到全部 SRP 汇总、SRP 导出、每个申请及其内部备注和经手人的名字、舰队页上的 SRP 卡片和 SRP 链接列表，也能关闭和完成 SRP 链接。这是有意的：付款人需要知道申请为什么被通过，所以内部备注对付款人也可见。只有做决定的按钮（通过、拒绝、标记已付款等）才跟着角色走。
 
 | 操作 | 谁可以 |
 |---|---|
 | 我的 SRP、舰队的 SRP 链接页、检查并提交损失、撤回并重新提交申请、查看自己的申请页 | `fleetops.request_srp`。申请的角色必须属于用户自己的 Alliance Auth 账号。 |
 | 舰队页上的 SRP 卡片 | 链接及复制按钮：舰队的管理者、FC 和 SRP 人员（`manage_srp`、`review_srp` 或 `pay_srp`）。"为本舰队申请 SRP"按钮：`request_srp`，且链接处于开启状态。 |
 | 创建舰队的 SRP 链接（"创建 SRP 链接"、"重试 SRP"） | 该舰队上的 `fleetops.manage_own_fleet`，或 `fleetops.manage_fleets` |
-| 开启或关闭舰队的 SRP 链接 | `fleetops.manage_srp`、`fleetops.review_srp` 或 `fleetops.pay_srp` |
+| 关闭舰队的 SRP 链接；完成链接；SRP 链接列表及其 **关闭所选**、**完成所选** | `fleetops.manage_srp`、`fleetops.review_srp` 或 `fleetops.pay_srp`。链接上还有待审核或待付款的申请时，任何人都不能完成它。 |
+| 重新打开 SRP 链接（舰队页卡片、**打开所选**） | `fleetops.manage_srp` 或 `fleetops.review_srp`；只有 `pay_srp` 不行，因为重新打开会让成员能再次提交 |
+| 创建常驻链接（**新建常驻链接**）；编辑常驻链接的名称、类别、日期、教义文字、报告和关闭时间，或舰队链接的教义文字和报告 | `fleetops.manage_srp` 或 `fleetops.review_srp`。FC 和只有付款权限的人得到 403。 |
 | 审核队列、对申请的各种决定（通过、修改金额、拒绝、撤销、重新打开、重新归类、更改类别）、批量通过、"重新计算"、重新检查在队情况 | `fleetops.manage_srp` 或 `fleetops.review_srp`；不能处理审核人自己的申请，除非勾选了"SRP 审核人可以处理自己的申请"（返回 403；批量操作会跳过并给出提示）。重新检查在队情况不受这条限制。 |
 | 付款页、"标记已付款"（单条或勾选的几条）、"撤销付款" | `fleetops.manage_srp` 或 `fleetops.pay_srp`；不能支付付款人自己的申请，除非勾选了"SRP 付款人可以把自己的申请标记为已付款"；勾选"批准申请的人不能付款"后，也不能支付自己批准的申请（返回 403；批量付款会跳过并给出提示）。撤销付款不受"批准的人不能付款"限制。 |
 | 内部备注 | 任一 SRP 人员权限（`manage_srp`、`review_srp` 或 `pay_srp`）；不受"处理自己的申请"设置限制 |
@@ -193,7 +195,7 @@ SRP 文件地址为 `/fleetops/statistics/export/<dataset>/`：
 | `srp-corporations`、`srp-fcs` | SRP 人员或 `view_all_stats` |
 
 `srp-claims` 里的"处理人"（Decided by）和"付款人"（Paid by）两列只对 SRP 人员填写。FC 和普通成员没有 SRP 文件。每次下载都记为 `srp.export`。
-其他 SRP 操作都会记入操作日志，并显示在申请自己的时间线上：`srp.link_create`、`srp.link_open`、`srp.link_close`、`srp.claim_submit`、
+其他 SRP 操作都会记入操作日志，并显示在申请自己的时间线上：`srp.link_create`、`srp.link_update`、`srp.link_open`、`srp.link_close`、`srp.link_complete`、`srp.link_uncomplete`、`srp.claim_submit`、
 `srp.claim_auto_reject`、`srp.claim_withdraw`、`srp.claim_resubmit`、`srp.claim_approve`、`srp.claim_amount_change`、`srp.claim_reject`、
 `srp.claim_revoke`、`srp.claim_paid`、`srp.claim_unpaid`、`srp.claim_reopen`、`srp.claim_reclassify`、`srp.claim_recategorize`、`srp.claim_recalculate`、
 `srp.claim_recheck`、`srp.claim_note`。记录里只有 ID、状态和金额，不会出现令牌或 Webhook 地址；`srp.claim_note` 只记录备注的长度。

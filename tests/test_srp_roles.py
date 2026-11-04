@@ -827,7 +827,15 @@ class SettingsPageTests(TestCase):
 
         self.assertEqual(
             groups["Members and review"],
-            ["notify_members", "allow_self_review", "allow_self_payment", "require_different_payer", "member_instructions"],
+            # LINK (INT-9): "Complete SRP links automatically" joined the group.
+            [
+                "notify_members",
+                "allow_self_review",
+                "allow_self_payment",
+                "require_different_payer",
+                "auto_complete_links",
+                "member_instructions",
+            ],
         )
 
     def test_new_installs_have_all_three_off(self):
@@ -886,12 +894,18 @@ class RecalculateNoticeTests(TestCase):
 
 
 class LinkToggleTests(RolePagesBase):
-    def test_every_srp_role_toggles_a_link(self):
+    def test_every_srp_role_closes_a_link_and_reviewers_open_it(self):
+        # LINK (INT-9, decision 22): closing is open to every SRP role; opening a link again lets members submit
+        # through it, so a payer may not. Before this phase every role could open it as well.
         for user in (self.reviewer, self.payer, self.manager):
             with self.subTest(user=user.username):
                 response = self.client_for(user).post(route("srp_link_close", self.link.code))
                 self.assertEqual(response.status_code, 302)
-                self.client_for(user).post(route("srp_link_open", self.link.code))
+                opened = self.client_for(user).post(route("srp_link_open", self.link.code))
+                self.assertEqual(opened.status_code, 403 if user == self.payer else 302)
+                self.link.refresh_from_db()
+                self.assertEqual(self.link.is_open, user != self.payer)
+                links.set_link_open(self.link, actor=self.manager, is_open=True)
         self.assertEqual(self.client_for(self.member).post(route("srp_link_close", self.link.code)).status_code, 403)
 
     def test_the_fleet_card_offers_the_toggle_to_every_srp_role(self):

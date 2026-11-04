@@ -3,10 +3,11 @@
 {% translate "Close the SRP link? Members can no longer submit losses of this fleet through it. Claims already made stay." as close_confirm %}
 {% translate "Link open" as link_open_label %}
 {% translate "Link closed" as link_closed_label %}
+{% translate "Link completed" as link_completed_label %}
 <div class="card mb-3" id="srp-card">
   <div class="card-header d-flex justify-content-between align-items-center">
     <strong>{% translate "FleetOps SRP" %}</strong>
-    {% if srp_card.link %}{% if srp_card.is_open %}{% pill "ok" link_open_label %}{% else %}{% pill "neutral" link_closed_label %}{% endif %}{% endif %}
+    {% if srp_card.link %}{% if srp_card.is_open %}{% pill "ok" link_open_label %}{% elif srp_card.state == "completed" %}{% pill "info" link_completed_label %}{% else %}{% pill "neutral" link_closed_label %}{% endif %}{% endif %}
   </div>
   <div class="card-body">
   {% if srp_card.link %}
@@ -23,12 +24,17 @@
       {% if srp_card.can_toggle %}
         {% if srp_card.is_open %}
         <form method="post" action="{% url 'fleetops:srp_link_close' srp_card.link.code %}" data-fo-confirm="{{ close_confirm }}" data-fo-confirm-label="{% translate 'Close SRP link' %}" data-fo-confirm-danger="false">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary">{% translate "Close SRP link" %}</button></form>
-        {% else %}
+        {% elif srp_card.can_reopen %}
         <form method="post" action="{% url 'fleetops:srp_link_open' srp_card.link.code %}">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary">{% translate "Open SRP link" %}</button></form>
         {% endif %}
       {% endif %}
+      {% if srp_card.can_complete %}
+      <form method="post" action="{% url 'fleetops:srp_link_complete' srp_card.link.code %}">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary" title="{% translate 'Possible when every claim of the link is paid, rejected or withdrawn.' %}">{% translate "Mark SRP link complete" %}</button></form>
+      {% endif %}
     </div>
     {% if not srp_card.is_open and srp_card.link.closed_at %}<div class="small text-muted mt-2">{% blocktranslate trimmed with closed=srp_card.link.closed_at|eve_time %}Closed {{ closed }} EVE.{% endblocktranslate %}</div>{% endif %}
+    {% if srp_card.state == "completed" and srp_card.link.completed_at %}<div class="small text-muted mt-1">{% blocktranslate trimmed with completed=srp_card.link.completed_at|eve_time %}Completed {{ completed }} EVE.{% endblocktranslate %}</div>{% endif %}
+    {% if srp_card.link.has_aar_link %}<div class="small mt-1"><a href="{{ srp_card.link.aar_url }}" target="_blank" rel="noopener noreferrer">{% translate "After-action report" %}</a></div>{% endif %}
     {% if srp_card.show_claims %}
     <hr>
     <div class="d-flex flex-wrap gap-4 mb-2" id="srp-card-totals">

@@ -634,7 +634,14 @@ class SrpSettingsForm(forms.ModelForm):
         (
             _("Members and review"),
             "",
-            ["notify_members", "allow_self_review", "allow_self_payment", "require_different_payer", "member_instructions"],
+            [
+                "notify_members",
+                "allow_self_review",
+                "allow_self_payment",
+                "require_different_payer",
+                "auto_complete_links",
+                "member_instructions",
+            ],
         ),
     ]
     ISK_FIELDS = ("in_fleet_loss_cap", "out_of_fleet_loss_cap", "personal_monthly_cap", "corporation_monthly_cap")
@@ -661,6 +668,7 @@ class SrpSettingsForm(forms.ModelForm):
             "allow_self_review",
             "allow_self_payment",
             "require_different_payer",
+            "auto_complete_links",
             "notify_members",
             "member_instructions",
         ]
@@ -893,12 +901,16 @@ class SrpCategoryForm(forms.ModelForm):
             "personal_monthly_cap",
             "corporation_monthly_cap",
             "fleet_types",
+            "daily_link_name",
+            "default_doctrine_text",
+            "auto_close_after_hours",
             "is_active",
             "sort_order",
         ]
         widgets = {
             "percentage": forms.NumberInput(attrs={"step": "0.01", "min": "0", "max": "100"}),
             "fleet_types": forms.CheckboxSelectMultiple(),
+            "auto_close_after_hours": forms.NumberInput(attrs={"min": "1", "max": "720"}),
         }
         error_messages = {
             "name": {"unique": _("A category with this name already exists.")},
@@ -917,9 +929,14 @@ class SrpCategoryForm(forms.ModelForm):
             "Short identifier for links and exports. Left empty, it is made from the name."
         )
         self.fields["fleet_types"].queryset = FleetType.objects.order_by("sort_order", "name")
+        self.fields["daily_link_name"].required = False
         if self.instance.pk is not None and self.instance.is_system:
             for name in self.SYSTEM_FIXED:
                 self.fields[name].disabled = True
+
+    def clean_daily_link_name(self):
+        # Left empty, a link is named "<category> <date>".
+        return (self.cleaned_data.get("daily_link_name") or "").strip() or SrpCategory.DEFAULT_LINK_NAME
 
     def clean_key(self):
         key = (self.cleaned_data.get("key") or "").strip()

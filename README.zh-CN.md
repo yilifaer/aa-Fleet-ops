@@ -58,6 +58,7 @@
 
 - 舰队开队时创建 SRP 链接，由 FleetOps SRP、aa-srp 或 Alliance Auth SRP 提供。
 - FleetOps SRP：成员用游戏内 KM 链接或 zKillboard 链接提交损失申请；赔付表和赔付比例、单笔上限、每名玩家和每个军团的月度限额；审核、付款清单、汇总和导出。FleetOps 从不转移 ISK。
+- 常驻 SRP 链接（有名称、类别和日期，没有舰队），以及一个列出、关闭和完成所有 SRP 链接的页面。
 
 **管理**
 

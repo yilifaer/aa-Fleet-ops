@@ -1,0 +1,39 @@
+{% extends "fleetops/base.html" %}
+{% load i18n static fleetops_srp fleetops_messages fleetops_ui %}
+{% block fleetops_content %}
+<div class="mb-3">
+  {% if link %}
+  <h2 class="mb-1">{% translate "Edit SRP link" %}</h2>
+  <div class="text-muted">{{ link_label }}</div>
+  {% else %}
+  <h2 class="mb-1">{% translate "New standing link" %}</h2>
+  <div class="text-muted">{% translate "A standing link has no fleet. Members open it to submit the losses of the day for its category." %}</div>
+  {% endif %}
+</div>
+<div class="card mb-3">
+  <div class="card-body">
+    {% if link and standing and claim_count %}<div class="alert alert-info py-2">{% blocktranslate trimmed count counter=claim_count %}{{ counter }} claim has been made through this link. It keeps its category when you change the category here.{% plural %}{{ counter }} claims have been made through this link. They keep their category when you change the category here.{% endblocktranslate %}</div>{% endif %}
+    {% if link and not standing %}<div class="alert alert-secondary py-2">{% translate "This is the link of a fleet. Only the doctrine text and the report can be changed here." %}</div>{% endif %}
+    <form method="post" class="fleetops-srp-form" data-srp-once>
+      {% csrf_token %}
+      {% for field in form %}
+      <div class="mb-3">
+        {% if field.name == "daily" %}
+        <div class="form-check">{{ field }} <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label></div>
+        {% else %}
+        <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}
+        {% endif %}
+        {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+        {{ field.errors }}
+      </div>
+      {% endfor %}
+      <div class="mt-3 d-flex flex-wrap gap-2">
+        <button type="submit" class="btn btn-primary">{% if link %}{% translate "Save" %}{% else %}{% translate "Create link" %}{% endif %}</button>
+        <a class="btn btn-outline-secondary" href="{% url 'fleetops:srp_links' %}">{% translate "Cancel" %}</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% if category_data %}{{ category_data|json_script:"srp-link-category-data" }}{% endif %}
+<script src="{% static 'fleetops/srp.js' %}?v={{ fleetops_version }}" defer></script>
+{% endblock %}

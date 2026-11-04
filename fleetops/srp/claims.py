@@ -167,6 +167,11 @@ def record_event(
     )
     audit_action = "recalculate" if action == Action.VALUE_UPDATE else action
     audit(actor, f"srp.claim_{audit_action}", claim, old, new, "" if internal else reason)
+    if claim.link_id and from_status and from_status != claim.status:
+        # A claim that is settled (or unsettled again) can complete its link, or take it back to closed.
+        from fleetops.srp import links
+
+        links.settle_after_commit(claim.link_id)
     return event
 
 
@@ -383,6 +388,16 @@ def fleet_fields(link, category=None) -> dict:
             "category": category,
         }
     operation = link.operation
+    if operation is None:
+        # A link without a fleet (a standing link): the claim carries the link's name; there is no FC.
+        return {
+            "category": category,
+            "link": link,
+            "operation": None,
+            "fleet_label": link.name,
+            "fc_user": link.fc_user,
+            "fc_main_character_name": link.fc_main_character_name,
+        }
     return {
         "category": category,
         "link": link,
@@ -395,7 +410,8 @@ def fleet_fields(link, category=None) -> dict:
 
 def loss_presence(scope, link, km) -> PresenceResult:
     """The fleet presence of the victim for a loss claimed through ``link`` (not applicable out of fleet)."""
-    if scope != Scope.IN_FLEET or link is None or km.victim_character_id is None:
+    if scope != Scope.IN_FLEET or link is None or link.operation_id is None or km.victim_character_id is None:
+        # Only a link with a fleet has a roster to check; a standing link is never "in fleet".
         return PresenceResult(display.NOT_APPLICABLE, display.presence_level(display.NOT_APPLICABLE))
     return presence.check_presence(
         link.operation,
@@ -533,7 +549,7 @@ def prepare_claim(
     now = timezone.now()
     reference = killmails.parse_killmail_reference(text)
     km = killmails.fetch_killmail(reference, zkill_ok=srp.zkillboard_enabled)
-    scope = Scope.IN_FLEET if link is not None else Scope.OUT_OF_FLEET
+    scope = Scope.IN_FLEET if link is not None and link.kind == link.Kind.FLEET else Scope.OUT_OF_FLEET
     preview = ClaimPreview(killmail=km, scope=scope, link=link, user=user)
 
     existing = SrpClaim.objects.filter(killmail=km).first()
@@ -643,7 +659,7 @@ def submit_claim(user, token: str, *, comment: str = "") -> SrpClaim:
         link = SrpFleetLink.objects.select_related("operation__fleet_type", "fc_user").filter(code=data["link"]).first()
         if link is None:
             raise SrpError("expired", EXPIRED_TEXT)
-    scope = Scope.IN_FLEET if link is not None else Scope.OUT_OF_FLEET
+    scope = Scope.IN_FLEET if link is not None and link.kind == link.Kind.FLEET else Scope.OUT_OF_FLEET
     chosen = _chosen_category(data.get("cat")) if scope == Scope.OUT_OF_FLEET else None
     now = timezone.now()
     presence_result = loss_presence(scope, link, km)
@@ -659,6 +675,12 @@ def submit_claim(user, token: str, *, comment: str = "") -> SrpClaim:
         duplicate = _duplicate(user, km)
         if duplicate is not None:
             raise duplicate
+        if link is not None:
+            # The link as it is now: completing or closing a link takes this lock too.
+            try:
+                link.refresh_from_db(fields=["is_open"])
+            except SrpFleetLink.DoesNotExist:
+                raise SrpError("expired", EXPIRED_TEXT) from None
         operation = link.operation if link is not None else None
         category = categories.resolve_category(
             scope=scope, link=link, operation=operation, chosen=chosen, settings_obj=srp

@@ -441,6 +441,12 @@ class SrpViewTestCase(FleetOpsViewTestCase):
             fc, status=CLOSED, type_obj=cls.home_defense, started_at=now - timedelta(days=2)
         )
         cls.srp_closed_link = f.fleet_link(cls.srp_closed_fleet, is_open=False)
+        # LINK (INT-9): a closed link without claims that the "complete" rows may complete, and a standing link.
+        cls.srp_complete_fleet = f.create_operation(
+            fc, status=CLOSED, type_obj=cls.home_defense, started_at=now - timedelta(days=3)
+        )
+        cls.srp_complete_link = f.fleet_link(cls.srp_complete_fleet, is_open=False)
+        cls.srp_standing_link = f.standing_link(code="matrix-standing")
 
         loss_time = now - timedelta(hours=20)
         cls.claim_fleet = f.srp_claim(member, link=cls.srp_link, time=loss_time)
@@ -732,8 +738,27 @@ class PermissionMatrixTests(SrpViewTestCase):
                  {"paid_from": "2026-01-01", "paid_to": "nonsense"}, payers),
             Case("srp_link_close", "post", r("fleetops:srp_link_close", args=[self.srp_link.code]), None,
                  staff_redirects),
+            # LINK (INT-9, decision 22): opening a link lets members submit again, so it is for reviewers; closing
+            # (above) stays open to every SRP role. Before this phase the row expected staff_redirects.
             Case("srp_link_open", "post", r("fleetops:srp_link_open", args=[self.srp_closed_link.code]), None,
-                 staff_redirects),
+                 by_srp_role(SRP_STAFF, granted=REDIRECT, srp_payer=DENIED)),
+            Case("srp_links", "get", r("fleetops:srp_links"), None, by_srp_role(SRP_STAFF)),
+            Case("srp_links codes", "get", r("fleetops:srp_links"), {"codes": f"{self.srp_closed_link.code},x"},
+                 by_srp_role(SRP_STAFF)),
+            Case("srp_link_new", "get", r("fleetops:srp_link_new"), None, reviewers),
+            Case("srp_link_edit", "get", r("fleetops:srp_link_edit", args=[self.srp_standing_link.code]), None,
+                 reviewers),
+            Case("srp_link_edit unknown", "get", r("fleetops:srp_link_edit", args=["nosuchcode"]), None,
+                 by_srp_role(SRP_REVIEWERS, granted=HIDDEN, otherwise=DENIED)),
+            Case("srp_link_complete", "post", r("fleetops:srp_link_complete", args=[self.srp_complete_link.code]),
+                 None, staff_redirects),
+            Case("srp_link_complete unknown", "post", r("fleetops:srp_link_complete", args=["nosuchcode"]), None,
+                 by_srp_role(SRP_STAFF, granted=HIDDEN)),
+            Case("srp_links_bulk close", "post", r("fleetops:srp_links_bulk"),
+                 {"action": "close", "codes": [self.srp_closed_link.code]}, staff_redirects),
+            Case("srp_links_bulk open", "post", r("fleetops:srp_links_bulk"),
+                 {"action": "open", "codes": [self.srp_closed_link.code]},
+                 by_srp_role(SRP_STAFF, granted=REDIRECT, srp_payer=DENIED)),
             Case("srp_link_open unknown", "post", r("fleetops:srp_link_open", args=["nosuchcode"]), None,
                  by_srp_role(SRP_STAFF, granted=HIDDEN)),
             # Summaries: SRP staff and view_all_stats read all of them, corporation managers their own

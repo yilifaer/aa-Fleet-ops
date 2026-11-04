@@ -50,7 +50,7 @@ FleetOperation
 ├── AttendanceRecord                            the PAP rows (the model keeps its first name)
 ├── OperationRoleAssignment                     special roles
 ├── PapLink ── PapRegistration                  PAP links and the characters registered through them
-├── SrpFleetLink ── SrpClaim ── SrpClaimEvent   the fleet's SRP link and its claims
+├── SrpFleetLink ── SrpClaim ── SrpClaimEvent   the fleet's SRP link and its claims (a standing link has no fleet)
 └── snapshots: fleet type weight, PAP minimum time and character limit, doctrine and fits,
     ping channel name and mentioned roles, ping text, MOTD text
 

@@ -344,6 +344,8 @@ class NavTests(AccessBase):
                 # review_srp / pay_srp split (REV-1): the payments page, its count and the alliance summary
                 # entry are separate keys now.
                 "pay": False,
+                # LINK (INT-9): the SRP Links entry of the menu is a key of its own (staff only).
+                "links": False,
                 "pending_count": 0,
                 "to_pay_count": 0,
                 "summary": False,
@@ -373,8 +375,9 @@ class NavTests(AccessBase):
                 "enabled": True,
                 "request": True,
                 "review": False,
-                # review_srp / pay_srp split (REV-1): new keys.
+                # review_srp / pay_srp split (REV-1): new keys; "links" is the SRP Links entry (LINK, staff only).
                 "pay": False,
+                "links": False,
                 "pending_count": 0,
                 "to_pay_count": 0,
                 "summary": False,

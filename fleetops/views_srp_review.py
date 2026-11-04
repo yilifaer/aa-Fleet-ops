@@ -347,7 +347,12 @@ def do_reclassify(request, claim, form):
     link = None
     scope = form.cleaned_data["scope"]
     if scope == SrpClaim.Scope.IN_FLEET:
-        link = SrpFleetLink.objects.select_related("operation").filter(code=form.cleaned_data["link"]).first()
+        # Only the link of a fleet makes a claim "in fleet"; a standing link is not found here.
+        link = (
+            SrpFleetLink.objects.select_related("operation")
+            .filter(code=form.cleaned_data["link"], kind=SrpFleetLink.Kind.FLEET, operation__isnull=False)
+            .first()
+        )
         if link is None:
             problem = _("There is no fleet with this SRP link.")
             form.add_error("link", problem)

@@ -43,6 +43,24 @@ Install it like the previous pre-release (`pip install --no-deps aa-fleetops==0.
 - **Self-processing settings.** **SRP payers may mark their own claims paid** and **The approver of a claim may not
   pay it** (a four-eyes rule; undoing a payment is not bound by it) are new, both off by default. When claims are
   paid in bulk, the claims left out are listed with the reason (your own claim, or approved by you).
+- **Standing SRP links.** A link without a fleet, with a name, a category and an EVE date (for example "Home defense
+  2026-11-05"), a doctrine text, a link to the after-action report and an optional time at which it closes. Members
+  open it like the link of a fleet; a claim through it is a claim outside a fleet, in the link's category, and counts
+  in no FC statistics. Only reviewers make and change standing links. A category now also has the name template of its
+  links (`{category}` and `{date}`), a default doctrine text and the hours after which its links close (empty = never).
+- **SRP Links page** (menu **SRP** > **SRP Links**, for reviewers and payers). Lists the links of fleets and the standing
+  links with their state (open, closed, completed), the number of claims waiting for review and for payment and the
+  total paid; filters by state, kind, category and date, 50 per page. Several links can be closed or completed at once
+  (reviewers can also open them again), each link on its own: the ones that cannot be done are listed with the reason.
+  `?codes=` on the address ticks the links it names. Reviewers make standing links (**New standing link**) and change
+  the doctrine text and the report of any link.
+- **Completing a link.** A closed link whose claims are all settled (paid, rejected or withdrawn) can be marked
+  completed, from the list or from the card on the fleet page. A link with a claim waiting for review or for payment can
+  never be completed, and there is no way to force it; closing a link is not limited. Opening a completed link again
+  removes the completion. If a payment is undone, or a claim is reopened or submitted again on a completed link, the link
+  goes back to closed by itself. The setting **Complete SRP links automatically** (off by default) completes a closed link
+  as soon as nothing on it waits any more. All of this is audited (`srp.link_create`, `srp.link_update`,
+  `srp.link_open`, `srp.link_close`, `srp.link_complete`, `srp.link_uncomplete`).
 
 ### Changed
 
@@ -50,6 +68,14 @@ Install it like the previous pre-release (`pip install --no-deps aa-fleetops==0.
   covers decisions. Marking a claim paid and undoing a payment follow **SRP payers may mark their own claims paid**.
   Because the old setting covered both, the upgrade copies it into the new one: a site that allowed its managers to
   decide and pay their own claims keeps doing so, and every new site starts with both off.
+- **Opening an SRP link again is for reviewers.** A payer can still close a link and complete it, but no longer open
+  it again (opening lets members submit through it). The link card on the fleet page offers **Open SRP link** to
+  reviewers only.
+- Only reviewers edit links. The FC of a fleet cannot change the doctrine text or the report of the fleet's link.
+  Changing the category or the date of the link of the day ends its role as the link of the day, so the day's link of
+  the original category can be made again; claims already made keep their category.
+- A link no longer needs a fleet in the database; the SRP link pages, the claim page and the fleet card show the name,
+  the category and the date of a standing link where they show the fleet of a fleet link.
 - Pages and messages say reviewer or payer where they said SRP manager. Internal notes and the names of the people who
   acted on a claim are visible to every SRP role.
 - **The default value source is now the zKillboard total value** (it includes cargo; aa-srp pays the total value).
@@ -69,7 +95,9 @@ and the number of claims "calculated with earlier settings" is 0 after the upgra
 new permissions (`review_srp`, `pay_srp`; Alliance Auth creates them when `migrate` finishes) and adds the two
 settings; migration `0027` copies **SRP reviewers may decide on their own claims** into **SRP payers may mark their
 own claims paid**. Nothing is granted to anybody: add `fleetops.review_srp` and `fleetops.pay_srp` to the groups of
-the people who should only review or only pay.
+the people who should only review or only pay. Migration `0028` makes the fleet of an SRP link optional and adds the
+fields of a standing link, the name template, doctrine text and closing hours of a category and the two settings;
+migration `0029` only checks on the way back. Every existing link stays a fleet link and behaves as before.
 
 ### Rollback notes
 
@@ -80,7 +108,13 @@ Delete those rules or make them general (**All categories**) first. The categori
 claim and the category settings are lost by the rollback; export what you need before. Claims, amounts and statuses
 stay. The value source is not changed back. Rolling back `0026` and `0027` removes the two new settings; the older
 version again lets `manage_srp` holders pay their own claims exactly when **may decide on their own claims** is on.
-The permission rows `review_srp` and `pay_srp` stay in the database, harmless, and nobody holds them unless you gave
+Migration `0029` also refuses to go back while a link without a fleet has claims (a standing link that members used) or
+came from another SRP app; the message lists the codes of those links only. Nothing in the product deletes a link, so either restore the backup, or delete those links in the
+Django shell (their claims stay, without a link, as claims outside a fleet; imported links lose their import data):
+`python manage.py shell -c "from django.apps import apps; apps.get_model('fleetops', 'SrpFleetLink').objects.filter(code__in=['code-1', 'code-2']).delete()"`
+with the codes from the message. The rollback also removes the doctrine text, the report link, the completion, the
+category and the other new fields of every link, links of a fleet included; export them first if you need them. Standing links without claims are deleted by the
+rollback; the fleet of a link is required again. The permission rows `review_srp` and `pay_srp` stay in the database, harmless, and nobody holds them unless you gave
 them out; remove them from your groups before rolling back, because the older version does not know them and its
 pages need `manage_srp`.
 

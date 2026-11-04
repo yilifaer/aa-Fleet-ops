@@ -2,6 +2,7 @@
 {% load i18n static fleetops_srp fleetops_messages %}
 {% block fleetops_content %}
 <div class="mb-3">
+  {% if operation %}
   <h2 class="mb-1">{% blocktranslate trimmed with fleet_type=operation.fleet_type %}SRP for {{ fleet_type }}{% endblocktranslate %}</h2>
   <div class="text-muted">
     {% blocktranslate trimmed with fc=link.fc_main_character_name|default:operation.fc_character_name %}FC {{ fc }}{% endblocktranslate %}
@@ -9,15 +10,24 @@
     {% if operation.ended_at %}&middot; {% blocktranslate trimmed with time=operation.ended_at|eve_time %}ended {{ time }} EVE{% endblocktranslate %}{% endif %}
     {% if operation.doctrine_name %}&middot; {% blocktranslate trimmed with doctrine=operation.doctrine_name %}doctrine {{ doctrine }}{% endblocktranslate %}{% endif %}
   </div>
+  {% else %}
+  <h2 class="mb-1">{{ link.name }}</h2>
+  <div class="text-muted">
+    {% if link.category_id %}{{ link.category|srp_category_label }}{% endif %}
+    {% if link.link_date %}&middot; {{ link.link_date|date:"Y-m-d" }} EVE{% endif %}
+    {% if link.doctrine_text %}&middot; {% blocktranslate trimmed with doctrine=link.doctrine_text %}doctrine {{ doctrine }}{% endblocktranslate %}{% endif %}
+  </div>
+  {% endif %}
+  {% if link.has_aar_link %}<div class="small mt-1"><a href="{{ link.aar_url }}" target="_blank" rel="noopener noreferrer">{% translate "After-action report" %}</a></div>{% endif %}
 </div>
 {% if not srp_enabled %}
 <div class="alert alert-info">{% translate "FleetOps SRP is not enabled." %}</div>
 {% elif not link_open %}
-<div class="alert alert-warning">{% translate "This fleet's SRP link is closed. No new claims can be made through it." %}</div>
+<div class="alert alert-warning">{% if operation %}{% translate "This fleet's SRP link is closed. No new claims can be made through it." %}{% else %}{% translate "This SRP link is closed. No new claims can be made through it." %}{% endif %}</div>
 {% else %}
 {% if srp_settings.member_instructions %}<div class="alert alert-secondary">{{ srp_settings.member_instructions|linebreaksbr }}</div>{% endif %}
 <div class="card mb-3">
-  <div class="card-header"><strong>{% translate "Claim a loss of this fleet" %}</strong></div>
+  <div class="card-header"><strong>{% if operation %}{% translate "Claim a loss of this fleet" %}{% else %}{% translate "Claim a loss through this link" %}{% endif %}</strong></div>
   <div class="card-body">
     <form method="post" action="{% url 'fleetops:srp_link' link.code %}" class="fleetops-srp-form" id="srp-claim-form" data-srp-once data-srp-check>
       {% csrf_token %}
@@ -30,7 +40,7 @@
 {% endif %}
 {% if srp_enabled %}
 <div class="card mb-3">
-  <div class="card-header"><strong>{% translate "Your claims for this fleet" %}</strong></div>
+  <div class="card-header"><strong>{% if operation %}{% translate "Your claims for this fleet" %}{% else %}{% translate "Your claims through this link" %}{% endif %}</strong></div>
   <div class="card-body p-0">{% if srp_enabled and link_open %}{% include "fleetops/srp/_claims_table.html" with mine=True claims=my_claims page=None form_anchor="#srp-claim-form" %}{% else %}{% include "fleetops/srp/_claims_table.html" with mine=True claims=my_claims page=None %}{% endif %}</div>
 </div>
 {% endif %}

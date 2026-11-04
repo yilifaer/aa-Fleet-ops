@@ -8,13 +8,15 @@ import uuid
 from decimal import Decimal
 
 from django import forms
+from django.core.validators import URLValidator
 from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
 from django.utils.translation import pgettext_lazy
 
 from fleetops.constants import MAX_ISK
 from fleetops.forms import _style
-from fleetops.models import SrpCategory, SrpSettings
+from fleetops.forms_operation import EveDateTimeField
+from fleetops.models import SrpCategory, SrpFleetLink, SrpSettings
 from fleetops.srp.categories import default_category, selectable_categories
 from fleetops.srp.display import category_label
 from fleetops.srp.killmails import parse_killmail_reference
@@ -515,3 +517,116 @@ class PaymentFilterForm(forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         _style(self.fields)
+
+
+class LinkFilterForm(forms.Form):
+    """The filters of the link list; a value that does not check out is ignored by the view."""
+
+    STATE_CHOICES = [
+        ("", _("Any state")),
+        (SrpFleetLink.State.OPEN.value, SrpFleetLink.State.OPEN.label),
+        (SrpFleetLink.State.CLOSED.value, SrpFleetLink.State.CLOSED.label),
+        (SrpFleetLink.State.COMPLETED.value, SrpFleetLink.State.COMPLETED.label),
+    ]
+    KIND_CHOICES = [
+        ("", _("Any kind")),
+        (SrpFleetLink.Kind.FLEET.value, SrpFleetLink.Kind.FLEET.label),
+        (SrpFleetLink.Kind.STANDING.value, SrpFleetLink.Kind.STANDING.label),
+    ]
+
+    state = forms.ChoiceField(label=_("State"), required=False, choices=STATE_CHOICES)
+    kind = forms.ChoiceField(label=_("Kind"), required=False, choices=KIND_CHOICES)
+    category = CategoryChoiceField(
+        label=_("Category"), required=False, empty_label=_("Any category"), queryset=SrpCategory.objects.all()
+    )
+    date_from = forms.DateField(required=False, label=_("From"), widget=forms.DateInput(attrs={"type": "date"}))
+    date_to = forms.DateField(required=False, label=_("To"), widget=forms.DateInput(attrs={"type": "date"}))
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _style(self.fields)
+
+
+def _report_field(**kwargs):
+    """The after-action report address: http and https only (a ``javascript:`` or ``data:`` address is refused)."""
+    return forms.URLField(
+        label=_("After-action report"),
+        required=False,
+        max_length=500,
+        assume_scheme="https",
+        validators=[URLValidator(schemes=["http", "https"])],
+        help_text=_("A link to the after-action report. Only http and https addresses are accepted."),
+        **kwargs,
+    )
+
+
+class FleetLinkForm(forms.Form):
+    """What can be changed on the SRP link of a fleet: the doctrine text and the report."""
+
+    doctrine_text = forms.CharField(
+        label=pgettext_lazy("FleetOps", "Doctrine"), required=False, max_length=255, strip=True
+    )
+    aar_url = _report_field()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _style(self.fields)
+
+
+class StandingLinkForm(forms.Form):
+    """A standing SRP link: a name (made from the category's template when empty), a category, a date and the rest."""
+
+    name = forms.CharField(
+        label=pgettext_lazy("FleetOps", "Name"),
+        required=False,
+        max_length=255,
+        strip=True,
+        help_text=_("Left empty, the name is made from the name template of the category."),
+    )
+    category = CategoryChoiceField(label=_("Category"), empty_label=_("Choose a category"))
+    link_date = forms.DateField(
+        label=_("Date (EVE)"),
+        widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+        help_text=_("Losses of this day belong to the link."),
+    )
+    doctrine_text = forms.CharField(
+        label=pgettext_lazy("FleetOps", "Doctrine"), required=False, max_length=255, strip=True
+    )
+    aar_url = _report_field()
+    auto_close_at = EveDateTimeField(
+        label=_("Close automatically at (EVE time)"),
+        required=False,
+        help_text=_("Empty = the link stays open until someone closes it."),
+    )
+    daily = forms.BooleanField(
+        label=_("Make this the link of the day for the category"),
+        required=False,
+        help_text=_("There is one such link per category and day; the automatic daily link takes the same place."),
+    )
+
+    def __init__(self, *args, link=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.link = link
+        category = self.fields["category"]
+        if link is not None and link.category_id:
+            # The category of an existing link stays selectable when it was switched off since.
+            category.queryset = SrpCategory.objects.filter(pk=link.category_id) | SrpCategory.objects.filter(
+                is_active=True
+            )
+            del self.fields["daily"]
+        _style(self.fields)
+        # Hooks of the page script that fills in the defaults of the chosen category.
+        category.widget.attrs["data-srp-link-category"] = ""
+        self.fields["doctrine_text"].widget.attrs["data-srp-link-doctrine"] = ""
+        self.fields["auto_close_at"].widget.attrs["data-srp-link-close"] = ""
+        self.fields["link_date"].widget.attrs["data-srp-link-date"] = ""
+
+    def category_data(self):
+        """``{category id: {"doctrine": text, "hours": hours or ""}}`` for the page script that fills in the defaults."""
+        return {
+            str(category.pk): {
+                "doctrine": category.default_doctrine_text,
+                "hours": category.auto_close_after_hours or "",
+            }
+            for category in self.fields["category"].queryset
+        }

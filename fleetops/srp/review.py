@@ -20,7 +20,7 @@ from django.utils import timezone
 from fleetops.constants import MAX_ISK
 from fleetops import texts
 from fleetops.models import SrpClaim, SrpClaimEvent, SrpFleetLink, SrpSettings
-from fleetops.srp import access, categories, claims, display, quota
+from fleetops.srp import access, categories, claims, display, links, quota
 from fleetops.srp import policy as rules
 from fleetops.srp.types import BINDING_ORDER, BulkResult, PolicySnapshot, SrpError, SrpLimitError, SrpStateError
 
@@ -540,7 +540,8 @@ def reclassify_claim(claim: SrpClaim, *, actor, scope: str, link=None, reason: s
             target = (
                 SrpFleetLink.objects.select_related("operation__fleet_type", "fc_user").filter(pk=link.pk).first()
             )
-            if target is None:
+            if target is None or target.kind != SrpFleetLink.Kind.FLEET or target.operation_id is None:
+                # A standing link is not a fleet: only the link of a fleet makes a claim "in fleet".
                 raise SrpError("link_required", texts.SRP_CHOOSE_FLEET())
             if not target.is_open:
                 raise SrpError("link_closed", texts.SRP_LINK_CLOSED())
@@ -565,6 +566,7 @@ def reclassify_claim(claim: SrpClaim, *, actor, scope: str, link=None, reason: s
 
         previous = claims.calculation_snapshot(locked)
         previous_link = locked.link.code if locked.link_id and locked.link else None
+        previous_link_id = locked.link_id
         previous_category = locked.category.key if locked.category_id else None
         km = locked.killmail
         locked.scope = scope
@@ -604,6 +606,8 @@ def reclassify_claim(claim: SrpClaim, *, actor, scope: str, link=None, reason: s
             old={"scope": previous["scope"], "suggested_amount": previous["suggested_amount"]},
             new={"scope": scope, "suggested_amount": locked.suggested_amount},
         )
+        # The claim left its old link: that link may be settled now.
+        links.settle_after_commit(previous_link_id)
     return claims.sync_claim(claim, locked)
 
 

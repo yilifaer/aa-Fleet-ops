@@ -304,3 +304,45 @@ class SrpRoleBudgetTests(TestCase):
             f.srp_claim(pilot, status="approved", decided_by=approver)
 
         self.assertEqual(self.count(payer, url), small)
+
+
+class SrpLinkBudgetTests(TestCase):
+    """LINK (INT-9): the link list counts the claims of each link in the query that lists them, so it does not
+    grow with the links, their claims or their categories."""
+
+    def count(self, user, url):
+        self.client.force_login(user)
+        self.client.get(url)
+        cache.clear()
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        return len(queries)
+
+    def add_links(self, number, pilot):
+        for index in range(number):
+            link = f.standing_link(category=f.srp_category(f"Budget category {index}-{number}"))
+            f.srp_claim(pilot, link=link)
+            f.srp_claim(pilot, link=link, status="approved", decided_by=pilot)
+
+    def test_the_list_does_not_grow_with_the_links(self):
+        payer = f.create_user("budget_links_payer", perms=f.SRP_PAYER_PERMS)
+        pilot = f.create_user("budget_links_pilot", perms=f.SRP_MEMBER_PERMS)
+        url = route("srp_links")
+        self.add_links(2, pilot)
+        small = self.count(payer, url)
+        self.add_links(8, pilot)
+
+        self.assertEqual(self.count(payer, url), small)
+        # The page itself: the framework's queries, the menu, the settings, the count and the page of links.
+        self.assertLessEqual(small, 32)
+
+    def test_the_forms_cost_the_same_with_many_categories(self):
+        reviewer = f.create_user("budget_links_reviewer", perms=f.SRP_REVIEWER_PERMS)
+        url = route("srp_link_new")
+        f.srp_category("Budget form 0")
+        small = self.count(reviewer, url)
+        for index in range(1, 7):
+            f.srp_category(f"Budget form {index}")
+
+        self.assertEqual(self.count(reviewer, url), small)

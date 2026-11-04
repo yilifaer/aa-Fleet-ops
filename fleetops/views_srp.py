@@ -398,6 +398,8 @@ def link_candidates(claim):
     """Open links of fleets that had started when the ship was lost, for moving a claim into a fleet."""
     return list(
         SrpFleetLink.objects.filter(
+            kind=SrpFleetLink.Kind.FLEET,
+            operation__isnull=False,
             is_open=True,
             operation__started_at__lte=claim.killmail_time + timedelta(hours=1),
             operation__started_at__gte=claim.killmail_time - LINK_CANDIDATE_WINDOW,

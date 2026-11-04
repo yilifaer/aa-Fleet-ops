@@ -5,6 +5,7 @@
 
 from django.contrib import messages
 from django.contrib.auth import get_user_model
+from django.core.exceptions import PermissionDenied
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
 from django.utils.translation import gettext as _
@@ -20,6 +21,7 @@ from fleetops.srp.links import set_link_open
 from fleetops.views import _period_render_context, _year_month
 from fleetops.views_errors import OWN_CORPORATION_STATISTICS_REASON, OWN_FLEETS_SUMMARY_REASON, denied, not_found
 from fleetops.views_srp import srp_render
+from fleetops.views_srp_review import back
 
 TEMPLATE = "fleetops/srp/summary.html"
 
@@ -163,7 +165,12 @@ def fc_summary(request, user_id=None):
 @require_POST
 @fleetops_permission_required((MANAGE_SRP, REVIEW_SRP, PAY_SRP), any_perm=True, page=False)
 def link_toggle(request, code, is_open):
-    """Open or close a fleet's SRP link; the fleet page shows the result."""
+    """Open or close an SRP link; the fleet page (or the link list) shows the result.
+
+    Closing is for all SRP staff; opening a link again, which lets members submit through it, is for reviewers.
+    """
+    if is_open and not access.is_reviewer(request.user):
+        raise PermissionDenied
     link = get_object_or_404(SrpFleetLink.objects.select_related("operation"), code=code)
     was_open = link.is_open
     set_link_open(link, actor=request.user, is_open=is_open)
@@ -179,4 +186,7 @@ def link_toggle(request, code, is_open):
             request,
             _("SRP link closed. Members can no longer submit losses through it; claims already made stay."),
         )
-    return redirect("fleetops:operation_detail", operation_uuid=link.operation.uuid)
+    if link.operation_id is None:
+        # A standing link has no fleet page.
+        return back(request, redirect("fleetops:srp_links"))
+    return back(request, redirect("fleetops:operation_detail", operation_uuid=link.operation.uuid))

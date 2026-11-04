@@ -81,6 +81,8 @@ Status: beta. The current pre-release is 0.3.0b1 (0.2.0b1 was a test build that 
 - FleetOps SRP: members claim losses with an in-game or zKillboard link; payout table and percentage, per-loss
   caps, monthly limits per player and corporation; review, payment list, summaries and exports. FleetOps never
   moves ISK.
+- Standing SRP links (a name, a category and a date, no fleet) and one page that lists, closes and completes all
+  SRP links.
 
 **Administration**
 

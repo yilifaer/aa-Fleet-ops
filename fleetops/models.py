@@ -7,7 +7,13 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MaxLengthValidator, MaxValueValidator, MinValueValidator, RegexValidator
+from django.core.validators import (
+    MaxLengthValidator,
+    MaxValueValidator,
+    MinValueValidator,
+    RegexValidator,
+    URLValidator,
+)
 from django.db import models, transaction
 from django.template import Template, TemplateSyntaxError
 from django.utils import timezone
@@ -29,6 +35,7 @@ from fleetops.texts import END_BOSS_HANDOVER, END_FLEET_GONE, END_MANUAL, transl
 from fleetops.validators import (  # noqa: F401 - VOICE_URL_SCHEMES re-exported
     INGAME_CHANNEL_ID_RE,
     VOICE_URL_SCHEMES,
+    validate_link_name_template,
     validate_voice_url,
 )
 
@@ -1767,6 +1774,7 @@ class SrpCategory(models.Model):
         CUSTOM = "custom", _("Own per-loss cap")
 
     SYSTEM_KEY = "fleet"
+    DEFAULT_LINK_NAME = "{category} {date}"
 
     name = models.CharField(verbose_name=pgettext_lazy("FleetOps", "Name"), max_length=100, unique=True)
     key = models.SlugField(
@@ -1833,6 +1841,36 @@ class SrpCategory(models.Model):
         related_name="srp_categories",
         help_text=_("Claims through the fleets of these types get this category. Empty = no mapping."),
     )
+    auto_create_daily = models.BooleanField(
+        verbose_name=_("Make a standing link every day"),
+        default=False,
+        help_text=_("Create this category's standing SRP link automatically once per EVE day."),
+    )
+    daily_link_name = models.CharField(
+        verbose_name=_("Name template of links"),
+        max_length=255,
+        default=DEFAULT_LINK_NAME,
+        help_text=_(
+            "The name of a new standing link of this category when none is typed. Use {category} and {date} as "
+            "placeholders."
+        ),
+    )
+    default_doctrine_text = models.CharField(
+        verbose_name=_("Default doctrine text"),
+        max_length=255,
+        blank=True,
+        help_text=_("Filled in as the doctrine of new standing links of this category."),
+    )
+    auto_close_after_hours = models.PositiveSmallIntegerField(
+        verbose_name=_("Close links after (hours)"),
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(720)],
+        help_text=_(
+            "A standing link of this category stops taking claims this many hours after 00:00 EVE of its date. "
+            "Empty = it is never closed automatically."
+        ),
+    )
     is_active = models.BooleanField(verbose_name=pgettext_lazy("enabled", "Active"), default=True)
     sort_order = models.PositiveIntegerField(verbose_name=_("Sort order"), default=0)
     updated_at = models.DateTimeField(verbose_name=_("Updated at"), auto_now=True)
@@ -1862,6 +1900,10 @@ class SrpCategory(models.Model):
         else:
             # Only the own cap mode reads the amount; do not keep one that has no effect.
             self.loss_cap = None
+        try:
+            validate_link_name_template(self.daily_link_name)
+        except ValidationError as exc:
+            errors["daily_link_name"] = exc.messages
         if errors:
             raise ValidationError(errors)
 
@@ -1986,6 +2028,21 @@ class SrpSettings(models.Model):
         _("Members must choose a category for losses outside a fleet"),
         default=False,
         help_text=_("Without a default category, a claim outside a fleet needs a category."),
+    )
+    category_claims_without_link = models.BooleanField(
+        _("A category claim needs no standing link"),
+        default=True,
+        help_text=_(
+            "A member who chooses a category on a day without an open standing link of that category can still "
+            "submit; the claim only records the category. Switch off to require the link."
+        ),
+    )
+    auto_complete_links = models.BooleanField(
+        _("Complete SRP links automatically"),
+        default=False,
+        help_text=_(
+            "A closed link is marked completed as soon as none of its claims is waiting for review or payment."
+        ),
     )
     allow_self_review = models.BooleanField(
         _("SRP reviewers may decide on their own claims"),
@@ -2168,16 +2225,58 @@ class SrpCorporationLimit(models.Model):
 
 
 class SrpFleetLink(models.Model):
-    """The SRP link of a fleet; members of that fleet submit their losses through its code."""
+    """An SRP link: the page members open to submit losses.
+
+    A fleet link belongs to one fleet (``kind`` fleet, ``operation`` set). A standing link has no fleet: it
+    has a name, a category and a date and collects the losses of that day for the category (``kind``
+    standing). Links imported from another SRP app (``origin`` aasrp) may have no fleet either.
+    """
+
+    class Kind(models.TextChoices):
+        FLEET = "fleet", _("Fleet")
+        STANDING = "standing", _("Standing")
+
+    class Origin(models.TextChoices):
+        FLEETOPS = "fleetops", _("FleetOps")
+        AASRP = "aasrp", _("Imported from aa-srp")
+
+    class State(models.TextChoices):
+        OPEN = "open", pgettext_lazy("link state", "Open")
+        CLOSED = "closed", pgettext_lazy("link state", "Closed")
+        COMPLETED = "completed", pgettext_lazy("link state", "Completed")
 
     operation = models.OneToOneField(
         FleetOperation,
         verbose_name=_("Operation"),
+        null=True,
+        blank=True,
         on_delete=models.CASCADE,
         related_name="srp_link",
     )
     code = models.CharField(verbose_name=_("Code"), max_length=32, unique=True)
-    # The fleet's FC and the FC's main character when the link was created.
+    kind = models.CharField(
+        verbose_name=_("Kind"), max_length=10, choices=Kind.choices, default=Kind.FLEET, db_index=True
+    )
+    name = models.CharField(verbose_name=pgettext_lazy("FleetOps", "Name"), max_length=255, blank=True)
+    category = models.ForeignKey(
+        SrpCategory,
+        verbose_name=_("Category"),
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="links",
+    )
+    link_date = models.DateField(verbose_name=_("Date (EVE)"), null=True, blank=True, db_index=True)
+    doctrine_text = models.CharField(verbose_name=pgettext_lazy("FleetOps", "Doctrine"), max_length=255, blank=True)
+    aar_url = models.CharField(
+        verbose_name=_("After-action report"),
+        max_length=500,
+        blank=True,
+        validators=[URLValidator(schemes=["http", "https"])],
+        help_text=_("A link to the after-action report. Only http and https addresses are accepted."),
+    )
+    # The fleet's FC and the FC's main character when the link was created. Empty for a standing link, so that
+    # whoever made it does not appear as an FC.
     fc_user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         verbose_name=_("FC user"),
@@ -2198,6 +2297,25 @@ class SrpFleetLink(models.Model):
         on_delete=models.SET_NULL,
         related_name="+",
     )
+    completed_at = models.DateTimeField(verbose_name=_("Completed at"), null=True, blank=True)
+    completed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("Completed by"),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    auto_close_at = models.DateTimeField(verbose_name=_("Closes automatically at"), null=True, blank=True, db_index=True)
+    auto_created = models.BooleanField(verbose_name=_("Made automatically"), default=False)
+    # "<category id>:<date>" of the link that stands for the category's day; unique, so two workers cannot make two.
+    daily_key = models.CharField(verbose_name=_("Daily key"), max_length=64, null=True, blank=True, unique=True)
+    origin = models.CharField(
+        verbose_name=_("Origin"), max_length=10, choices=Origin.choices, default=Origin.FLEETOPS
+    )
+    external_id = models.CharField(
+        verbose_name=_("External ID"), max_length=64, null=True, blank=True, unique=True
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         verbose_name=_("Created by"),
@@ -2209,12 +2327,57 @@ class SrpFleetLink(models.Model):
     created_at = models.DateTimeField(verbose_name=_("Created at"), default=timezone.now)
 
     class Meta:
-        verbose_name = _("SRP fleet link")
-        verbose_name_plural = _("SRP fleet links")
+        verbose_name = _("SRP link")
+        verbose_name_plural = _("SRP links")
         ordering = ["-created_at"]
 
     def __str__(self):
-        return gettext("SRP link of fleet %(operation)s") % {"operation": self.operation_id}
+        if self.name:
+            return self.name
+        if self.operation_id is not None:
+            return gettext("SRP link of fleet %(operation)s") % {"operation": self.operation_id}
+        return gettext("SRP link %(code)s") % {"code": self.code}
+
+    @property
+    def has_aar_link(self) -> bool:
+        """Whether the report address can be shown as a link: only http and https addresses are."""
+        return self.aar_url.lower().startswith(("http://", "https://"))
+
+    @property
+    def is_standing(self) -> bool:
+        return self.kind == self.Kind.STANDING
+
+    @property
+    def state(self) -> str:
+        """``open`` while members can submit, ``completed`` for a closed link that was marked completed, else ``closed``."""
+        if self.is_open:
+            return self.State.OPEN
+        if self.completed_at is not None:
+            return self.State.COMPLETED
+        return self.State.CLOSED
+
+    def save(self, *args, **kwargs):
+        # The unique columns hold NULL, never an empty string, when they have no value.
+        if not self.daily_key:
+            self.daily_key = None
+        if not self.external_id:
+            self.external_id = None
+        super().save(*args, **kwargs)
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.kind == self.Kind.STANDING:
+            if self.operation_id is not None:
+                errors["operation"] = _("A standing link has no fleet.")
+            if not (self.name or "").strip():
+                errors["name"] = _("Enter a name.")
+            if self.link_date is None:
+                errors["link_date"] = _("Enter a date.")
+        elif self.operation_id is None and self.origin != self.Origin.AASRP:
+            errors["operation"] = _("A fleet link needs a fleet.")
+        if errors:
+            raise ValidationError(errors)
 
 
 class SrpKillmail(models.Model):

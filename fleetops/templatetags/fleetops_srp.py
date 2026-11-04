@@ -4,7 +4,7 @@
 from django import template
 from django.utils.translation import pgettext
 
-from fleetops.models import SrpCategory, SrpClaim, SrpClaimEvent
+from fleetops.models import SrpCategory, SrpClaim, SrpClaimEvent, SrpFleetLink
 from fleetops.providers.zkillboard import kill_url
 from fleetops.srp import display
 from fleetops.srp.types import (
@@ -293,3 +293,17 @@ def ship_render_url(type_id, size=64):
         return f"https://images.evetech.net/types/{int(type_id)}/render?size={int(size)}"
     except (TypeError, ValueError):
         return ""
+
+
+LINK_STATE_TONES = {
+    SrpFleetLink.State.OPEN: "ok",
+    SrpFleetLink.State.CLOSED: TONE_NEUTRAL,
+    SrpFleetLink.State.COMPLETED: "info",
+}
+
+
+@register.filter
+def srp_link_state(link):
+    """The pill of the state of an SRP link: open, closed or completed."""
+    state = link.state
+    return pill_html(LINK_STATE_TONES[state], SrpFleetLink.State(state).label)

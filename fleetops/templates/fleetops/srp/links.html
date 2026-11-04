@@ -1,0 +1,92 @@
+{% extends "fleetops/base.html" %}
+{% load i18n static fleetops_srp fleetops_messages fleetops_ui %}
+{% block fleetops_content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h2 class="mb-1">{% translate "SRP Links" %}</h2>
+    <div class="text-muted">{% translate "The links of fleets and the standing links, with the claims that are still open on them" %}</div>
+  </div>
+  {% if can_reopen %}<a class="btn btn-primary" href="{% url 'fleetops:srp_link_new' %}"><i class="fa-solid fa-plus" aria-hidden="true"></i> {% translate "New standing link" %}</a>{% endif %}
+</div>
+
+<form method="get" class="card card-body mb-3 fleetops-srp-filters">
+  <div class="row g-2 align-items-end">
+    <div class="col-sm-6 col-lg-3"><label class="form-label mb-1" for="{{ filter_form.state.id_for_label }}">{{ filter_form.state.label }}</label>{{ filter_form.state }}</div>
+    <div class="col-sm-6 col-lg-3"><label class="form-label mb-1" for="{{ filter_form.kind.id_for_label }}">{{ filter_form.kind.label }}</label>{{ filter_form.kind }}</div>
+    <div class="col-sm-6 col-lg-3"><label class="form-label mb-1" for="{{ filter_form.category.id_for_label }}">{{ filter_form.category.label }}</label>{{ filter_form.category }}</div>
+    <div class="col-sm-6 col-lg-3"></div>
+    <div class="col-sm-6 col-lg-3"><label class="form-label mb-1" for="{{ filter_form.date_from.id_for_label }}">{{ filter_form.date_from.label }}</label>{{ filter_form.date_from }}</div>
+    <div class="col-sm-6 col-lg-3"><label class="form-label mb-1" for="{{ filter_form.date_to.id_for_label }}">{{ filter_form.date_to.label }}</label>{{ filter_form.date_to }}</div>
+  </div>
+  <div class="mt-2 d-flex flex-wrap gap-2 align-items-center">
+    <button type="submit" class="btn btn-primary">{% translate "Filter" context "FleetOps" %}</button>
+    <a class="btn btn-outline-secondary" href="{% url 'fleetops:srp_links' %}">{% translate "Reset" %}</a>
+    <span class="small text-muted">{% translate "Dates in EVE time. A fleet link counts with the day its fleet started." %}</span>
+  </div>
+</form>
+{% if preselected %}<div class="alert alert-info py-2">{% blocktranslate trimmed count counter=preselected|length %}Showing the {{ counter }} link you came here for.{% plural %}Showing the {{ counter }} links you came here for.{% endblocktranslate %} <a href="{% url 'fleetops:srp_links' %}">{% translate "Show all links" %}</a></div>{% endif %}
+
+<form method="post" action="{% url 'fleetops:srp_links_bulk' %}" class="fleetops-srp-form" data-srp-once>
+  {% csrf_token %}<input type="hidden" name="next" value="{{ next_url }}">
+  <div class="card mb-3">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0 fo-table-pin" id="srp-links-table">
+        <thead><tr>
+          <th scope="col" class="fleetops-srp-check"><label class="fo-check-cell"><input type="checkbox" class="form-check-input" data-srp-select-all aria-label="{% translate 'Select all links on this page' %}"></label></th>
+          <th scope="col">{% translate "Link" %}</th>
+          <th scope="col">{% translate "Category" %}</th>
+          <th scope="col">{% translate "Date (EVE)" %}</th>
+          <th scope="col">{% translate "State" %}</th>
+          <th scope="col" class="text-end">{% translate "To review" %}</th>
+          <th scope="col" class="text-end">{% translate "To pay" %}</th>
+          <th scope="col" class="text-end">{% translate "Paid" %}</th>
+          <th scope="col"></th>
+        </tr></thead>
+        <tbody>
+          {% for link in links %}
+          <tr>
+            <td class="fleetops-srp-check"><label class="fo-check-cell"><input type="checkbox" class="form-check-input" name="codes" value="{{ link.code }}" data-srp-select{% if link.code in preselected %} checked{% endif %} aria-label="{% blocktranslate trimmed with name=link.label %}Select {{ name }}{% endblocktranslate %}"></label></td>
+            <td>
+              <div class="fw-semibold">{{ link.label }}</div>
+              <div class="small text-muted">{% if link.kind == "standing" %}{% translate "Standing link" %}{% else %}{% translate "Fleet link" %}{% endif %}{% if link.auto_created %} &middot; {% translate "made automatically" %}{% endif %}</div>
+              {% if link.has_aar_link %}<div class="small"><a href="{{ link.aar_url }}" target="_blank" rel="noopener noreferrer">{% translate "After-action report" %}</a></div>{% endif %}
+            </td>
+            <td>{% if link.category_id %}{{ link.category|srp_category_label }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+            <td class="text-nowrap">{% if link.link_date %}{{ link.link_date|date:"Y-m-d" }}{% elif link.operation.started_at %}{{ link.operation.started_at|eve_time }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+            <td>{{ link|srp_link_state }}{% if link.auto_close_at and link.is_open %}<div class="small text-muted">{% blocktranslate trimmed with time=link.auto_close_at|eve_time %}closes {{ time }} EVE{% endblocktranslate %}</div>{% endif %}</td>
+            <td class="text-end">{{ link.pending_total }}</td>
+            <td class="text-end">{{ link.approved_total }}</td>
+            <td class="text-end text-nowrap">{{ link.paid_amount|default_if_none:0|isk }}</td>
+            <td class="text-end text-nowrap">
+              {% if link.is_open and link.url %}<button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ link.url }}" hidden>{% translate "Copy link" %}</button>{% endif %}
+              {% if can_reopen %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'fleetops:srp_link_edit' link.code %}">{% translate "Edit" %}</a>{% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="9">{% if filters_active %}{% translate "No link matches these filters." as empty_text %}{% else %}{% translate "There are no SRP links yet." as empty_text %}{% endif %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-link" %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if page.paginator.num_pages > 1 %}
+    <div class="card-footer d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <span class="small text-muted">{% blocktranslate trimmed with start=page.start_index end=page.end_index total=page.paginator.count %}Links {{ start }}&ndash;{{ end }} of {{ total }}{% endblocktranslate %}</span>
+      <span class="d-flex align-items-center gap-2">
+        {% if page.has_previous %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=1 %}">{% translate "First" %}</a><a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.previous_page_number %}">{% translate "Previous" %}</a>{% endif %}
+        <span class="small text-muted">{% blocktranslate trimmed with number=page.number pages=page.paginator.num_pages %}Page {{ number }} of {{ pages }}{% endblocktranslate %}</span>
+        {% if page.has_next %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.next_page_number %}">{% translate "Next" %}</a><a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.paginator.num_pages %}">{% translate "Last" %}</a>{% endif %}
+      </span>
+    </div>
+    {% endif %}
+  </div>
+  {% if links %}
+  <div class="fo-actionbar" id="srp-links-bar">
+    <button type="submit" name="action" value="close" class="btn btn-outline-secondary" data-srp-bulk-button disabled>{% translate "Close selected" %}</button>
+    <button type="submit" name="action" value="complete" class="btn btn-primary" data-srp-bulk-button disabled>{% translate "Complete selected" %}</button>
+    {% if can_reopen %}<button type="submit" name="action" value="open" class="btn btn-outline-secondary" data-srp-bulk-button disabled>{% translate "Open selected" %}</button>{% endif %}
+    <span class="small text-muted">{% blocktranslate trimmed %}<span data-srp-selected-count>0</span> selected. Closing stops new claims. A link can only be completed when every claim on it is paid, rejected or withdrawn; the others are listed afterwards.{% endblocktranslate %}</span>
+  </div>
+  {% endif %}
+</form>
+<script src="{% static 'fleetops/srp.js' %}?v={{ fleetops_version }}" defer></script>
+{% endblock %}

@@ -16,6 +16,7 @@ from fleetops import __version__
 from fleetops.models import FleetOperation, FleetStructureTemplate, ShipFunction
 from fleetops.services.fleet_access import FleetManageError
 from fleetops.services.fleet_manage import FleetActionResult
+from fleetops.srp import links as srp_links
 from fleetops.views_fleet_common import wants_json
 
 from . import factories as f
@@ -433,6 +434,48 @@ class FleetConfigurationTests(FleetTabTestCase):
         self.assertContains(response, 'id="settings-fleet-tab"')
         self.assertContains(response, 'name="fleet_live_refresh_seconds"')
         self.assertContains(response, 'name="bridge_groups"')
+
+
+class FleetPageSrpCardTests(FleetOpsViewTestCase):
+    """The SRP card on the fleet page: the completed state, the complete button, the reopen button."""
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        f.srp_settings(enabled=True)
+        view = ["fleetops.view_all_fleets"]
+        cls.reviewer = f.create_user("cardrev", perms=[*f.SRP_REVIEWER_PERMS, *view])
+        cls.payer = f.create_user("cardpay", perms=[*f.SRP_PAYER_PERMS, *view])
+        cls.card_manager = f.create_user("cardmgr", perms=[*f.SRP_MANAGER_PERMS, *view])
+        cls.card_fleet = f.create_operation(cls.fc, status="closed")
+        cls.card_link = f.fleet_link(cls.card_fleet)
+
+    def card(self, user):
+        return self.page(user, self.card_fleet)
+
+    def page(self, user, operation):
+        response = self.client_for(user).get(self.detail_url(operation))
+        self.assertEqual(response.status_code, 200)
+        return response
+
+    def test_complete_button_and_completed_badge(self):
+        complete_url = reverse("fleetops:srp_link_complete", args=[self.card_link.code])
+        page = self.card(self.card_manager)
+        self.assertContains(page, "Mark SRP link complete")
+        self.assertContains(page, complete_url)
+
+        srp_links.complete_link(self.card_link, actor=self.card_manager)
+        page = self.card(self.card_manager)
+
+        self.assertContains(page, "Link completed")
+        self.assertNotContains(page, "Mark SRP link complete")
+
+    def test_the_reopen_button_is_for_reviewers_only(self):
+        type(self.card_link).objects.filter(pk=self.card_link.pk).update(is_open=False)
+        open_url = reverse("fleetops:srp_link_open", args=[self.card_link.code])
+
+        self.assertContains(self.card(self.reviewer), open_url)
+        self.assertNotContains(self.card(self.payer), open_url)
 
 
 class WantsJsonTests(SimpleTestCase):

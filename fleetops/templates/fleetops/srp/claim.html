@@ -39,7 +39,7 @@
           <dt class="col-sm-4">{% translate "Killmail" %}</dt>
           <dd class="col-sm-8"><a href="{{ claim.killmail_id|zkill_url }}" target="_blank" rel="noopener noreferrer">{% blocktranslate trimmed with id=claim.killmail_id %}{{ id }} on zKillboard{% endblocktranslate %}</a></dd>
           <dt class="col-sm-4">{% translate "Where" %}</dt>
-          <dd class="col-sm-8">{% if claim.scope == "in_fleet" %}{% blocktranslate trimmed with fleet=claim.fleet_label|default:_("fleet") %}In fleet: {{ fleet }}{% endblocktranslate %}{% if claim.operation_id and perms.fleetops.view_all_fleets or claim.operation_id and perms.fleetops.manage_fleets %} <a href="{% url 'fleetops:operation_detail' claim.operation.uuid %}">{% translate "Open the fleet" %}</a>{% endif %}{% else %}{% translate "Outside a FleetOps fleet" %}{% endif %}</dd>
+          <dd class="col-sm-8">{% if claim.scope == "in_fleet" %}{% blocktranslate trimmed with fleet=claim.fleet_label|default:_("fleet") %}In fleet: {{ fleet }}{% endblocktranslate %}{% if claim.operation_id and perms.fleetops.view_all_fleets or claim.operation_id and perms.fleetops.manage_fleets %} <a href="{% url 'fleetops:operation_detail' claim.operation.uuid %}">{% translate "Open the fleet" %}</a>{% endif %}{% else %}{% translate "Outside a FleetOps fleet" %}{% if claim.link_id and claim.fleet_label %} &middot; {{ claim.fleet_label }}{% endif %}{% endif %}</dd>
           {% if claim.category_id %}<dt class="col-sm-4">{% translate "Category" %}</dt>
           <dd class="col-sm-8">{{ claim.category|srp_category_label }}</dd>{% endif %}
           <dt class="col-sm-4">{% translate "Submitted" %}</dt>

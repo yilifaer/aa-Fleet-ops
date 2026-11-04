@@ -783,6 +783,23 @@ def fleet_link(operation: FleetOperation, *, code: str | None = None, **extra) -
     return SrpFleetLink.objects.create(operation=operation, **values)
 
 
+def standing_link(
+    *, category: SrpCategory | None = None, name: str = "", link_date=None, code: str | None = None, **extra
+) -> SrpFleetLink:
+    """A standing SRP link: no fleet, a name, a category and an EVE date (today by default); it is open."""
+    category = category or srp_category()
+    link_date = link_date or timezone.now().date()
+    values = dict(
+        kind=SrpFleetLink.Kind.STANDING,
+        code=code or secrets.token_urlsafe(12),
+        name=name or f"{category.name} {link_date.isoformat()}",
+        category=category,
+        link_date=link_date,
+    )
+    values.update(extra)
+    return SrpFleetLink.objects.create(**values)
+
+
 def srp_claim(
     user,
     *,
@@ -834,7 +851,10 @@ def srp_claim(
         limited_amount=amount,
         status=status,
     )
-    if link is not None:
+    if link is not None and link.operation is None:
+        # A standing link: the claim is out of fleet, in the link's category, and has no FC.
+        values.update(category=link.category, link=link, fleet_label=link.name)
+    elif link is not None:
         operation = link.operation
         values.update(
             category=fleet_category(),

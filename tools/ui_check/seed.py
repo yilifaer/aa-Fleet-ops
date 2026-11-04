@@ -102,6 +102,7 @@ def build_pages():
         Page("fleet-closed", "member", u("operation_detail", op("closed"))),
         Page("srp-home", "member", u("srp_home")),
         Page("srp-link", "member", lambda ctx: reverse("fleetops:srp_link", args=[ctx.srp_link.code])),
+        Page("srp-link-standing", "member", lambda ctx: reverse("fleetops:srp_link", args=[ctx.standing_link.code])),
         Page("srp-claim-paid", "member", lambda ctx: reverse("fleetops:srp_claim", args=[ctx.claim_paid.uuid])),
         Page("pap-link-register", "member", lambda ctx: reverse("fleetops:pap_link_register", args=[ctx.pap_link.code])),
         Page("leaderboard", "member", u("leaderboard")),
@@ -148,6 +149,9 @@ def build_pages():
         Page("srp-payments", "srp", u("srp_payments")),
         Page("srp-summary", "srp", u("srp_summary")),
         Page("srp-claim-pending", "srp", lambda ctx: reverse("fleetops:srp_claim", args=[ctx.claim_pending.uuid])),
+        Page("srp-links", "srp", u("srp_links")),
+        Page("srp-link-new", "srp", u("srp_link_new")),
+        Page("srp-link-edit", "srp", lambda ctx: reverse("fleetops:srp_link_edit", args=[ctx.standing_link.code])),
         Page("srp-summary-fc", "fc", u("srp_summary_own_fc")),
         # admin
         Page("config", "admin", u("configuration_index")),
@@ -548,6 +552,11 @@ def build_data(login_count):
     f.payout_rule(f.RIFTER, 20_000_000, ship_name="Rifter")
     f.payout_rule(623, 45_000_000, ship_name="Moa", doctrine="Example Doctrine")
     f.payout_rule(f.CAPSULE, 1_000_000, ship_name="Capsule")
+    home_defense = f.srp_category("Home defense", default_doctrine_text="Example Doctrine", auto_close_after_hours=48)
+    ctx.standing_link = f.standing_link(
+        category=home_defense, code="example-standing-link", name="Home defense 2026-11-05",
+        doctrine_text="Example Doctrine", aar_url="https://example.org/aar",
+    )
     member = users["member"]
     victims = [f.main_of(member), f.add_alt(member, "Example Pilot Alt")]
     over_limit = ClaimWarning("over_limit", "danger", {"kind": "personal", "requested": 45_000_000, "remaining": 30_000_000})

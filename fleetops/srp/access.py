@@ -248,7 +248,8 @@ def srp_nav(user) -> dict:
     """What the SRP menu shows; runs for every page, so it needs as few queries as it takes.
 
     ``enabled`` is the SRP switch, ``request`` whether "My SRP" is offered (permission and enabled),
-    ``review`` the review queue for reviewers, ``pay`` the payments page for payers, ``pending_count`` the
+    ``review`` the review queue for reviewers, ``pay`` the payments page for payers, ``links`` the link list for
+    SRP staff, ``pending_count`` the
     pending claims a reviewer can still decide (one query, reviewers only), ``to_pay_count`` the approved
     claims a payer can still pay (one query, payers only), ``summary`` whether any summary opens and
     ``summary_all`` whether the alliance summary opens (staff and ``view_all_stats``). ``own_fleets`` is whether the
@@ -261,6 +262,7 @@ def srp_nav(user) -> dict:
         "request": False,
         "review": False,
         "pay": False,
+        "links": False,
         "pending_count": 0,
         "to_pay_count": 0,
         "summary": False,
@@ -302,6 +304,7 @@ def srp_nav(user) -> dict:
         "request": request,
         "review": reviewer,
         "pay": payer,
+        "links": reviewer or payer,
         "pending_count": pending_count,
         "to_pay_count": to_pay_count,
         "summary": bool(summary),

@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-04 06:01+0000\n"
+"POT-Creation-Date: 2026-11-04 11:41+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -92,8 +92,8 @@ msgstr "小号"
 msgid "Fleet type"
 msgstr "舰队类型"
 
-#: forms.py forms_config.py forms_groups.py forms_links.py
-#: services/export_datasets.py srp/display.py
+#: forms.py forms_config.py forms_groups.py forms_links.py forms_srp.py
+#: models.py services/export_datasets.py srp/display.py
 #: templates/fleetops/fc_statistics_detail.html
 #: templates/fleetops/fleet_operations.html
 #: templates/fleetops/scheduled_fleet.html
@@ -708,7 +708,7 @@ msgstr "SDE ID，或准确的英文名称（按名称查找船型需要 django-e
 msgid "Ship function"
 msgstr "舰船功能"
 
-#: forms_fleet.py forms_presets.py models.py views_config.py
+#: forms_fleet.py forms_presets.py forms_srp.py models.py views_config.py
 msgctxt "FleetOps"
 msgid "Name"
 msgstr "名称"
@@ -1244,7 +1244,8 @@ msgstr "游戏内 KM 链接、zKillboard 链接，或 KM ID 与哈希"
 msgid "Paste the in-game killmail link (works immediately) or a zKillboard link."
 msgstr "粘贴游戏内 KM 链接（立即可用）或 zKillboard 链接。"
 
-#: forms_srp.py models.py templates/fleetops/srp/claim.html views_config.py
+#: forms_srp.py models.py templates/fleetops/srp/claim.html
+#: templates/fleetops/srp/links.html views_config.py
 msgid "Category"
 msgstr "类别"
 
@@ -1372,7 +1373,7 @@ msgstr "已通过"
 
 #: forms_srp.py models.py templates/fleetops/operation/_srp.html
 #: templates/fleetops/srp/_summary_table.html templates/fleetops/srp/claim.html
-#: templates/fleetops/srp/home.html
+#: templates/fleetops/srp/home.html templates/fleetops/srp/links.html
 msgid "Paid"
 msgstr "已付款"
 
@@ -1484,6 +1485,71 @@ msgstr "付款起始日"
 #: forms_srp.py
 msgid "Paid to"
 msgstr "付款截止日"
+
+#: forms_srp.py
+msgid "Any state"
+msgstr "任意状态"
+
+#: forms_srp.py
+msgid "Any kind"
+msgstr "任意种类"
+
+#: forms_srp.py templates/fleetops/srp/links.html
+msgid "State"
+msgstr "状态"
+
+#: forms_srp.py models.py views_config.py
+msgid "Kind"
+msgstr "种类"
+
+#: forms_srp.py
+msgid "Any category"
+msgstr "任意类别"
+
+#: forms_srp.py
+msgid "From"
+msgstr "从"
+
+#: forms_srp.py
+msgid "To"
+msgstr "到"
+
+#: forms_srp.py models.py templates/fleetops/operation/_srp.html
+#: templates/fleetops/srp/link.html templates/fleetops/srp/links.html
+msgid "After-action report"
+msgstr "战后报告"
+
+#: forms_srp.py models.py
+msgid "A link to the after-action report. Only http and https addresses are accepted."
+msgstr "战后报告的链接。只接受 http 和 https 地址。"
+
+#: forms_srp.py
+msgid "Left empty, the name is made from the name template of the category."
+msgstr "留空时，名称由类别的名称模板生成。"
+
+#: forms_srp.py models.py templates/fleetops/srp/links.html
+msgid "Date (EVE)"
+msgstr "日期（EVE）"
+
+#: forms_srp.py
+msgid "Losses of this day belong to the link."
+msgstr "这一天的损失归入这条链接。"
+
+#: forms_srp.py
+msgid "Close automatically at (EVE time)"
+msgstr "自动关闭时间（EVE 时间）"
+
+#: forms_srp.py
+msgid "Empty = the link stays open until someone closes it."
+msgstr "留空 = 链接一直开放，直到有人关闭它。"
+
+#: forms_srp.py
+msgid "Make this the link of the day for the category"
+msgstr "设为该类别的当日链接"
+
+#: forms_srp.py
+msgid "There is one such link per category and day; the automatic daily link takes the same place."
+msgstr "每个类别每天只能有一条当日链接；自动创建的每日链接占用同一个名额。"
 
 #: models.py
 #, python-format
@@ -2590,6 +2656,7 @@ msgid "PAP link %(pk)s @ %(operation)s"
 msgstr "PAP 登记链接 %(pk)s @ %(operation)s"
 
 #: models.py templates/fleetops/operation/_links.html
+#: templates/fleetops/srp/links.html
 msgid "Link"
 msgstr "链接"
 
@@ -2716,10 +2783,6 @@ msgstr "舰船组"
 #: models.py views_config.py
 msgid "Function"
 msgstr "功能"
-
-#: models.py views_config.py
-msgid "Kind"
-msgstr "种类"
 
 #: models.py
 msgid "Type or group ID"
@@ -3001,6 +3064,39 @@ msgstr "舰队类型"
 msgid "Claims through the fleets of these types get this category. Empty = no mapping."
 msgstr "通过这些类型的舰队提交的申请使用这个类别。留空表示不映射。"
 
+#: models.py
+msgid "Make a standing link every day"
+msgstr "每天创建常驻链接"
+
+#: models.py
+msgid "Create this category's standing SRP link automatically once per EVE day."
+msgstr "每个 EVE 日自动创建一条该类别的常驻 SRP 链接。"
+
+#: models.py
+msgid "Name template of links"
+msgstr "链接名称模板"
+
+#: models.py
+#, python-brace-format
+msgid "The name of a new standing link of this category when none is typed. Use {category} and {date} as placeholders."
+msgstr "新建该类别的常驻链接时，没有输入名称所用的名称。可用 {category} 和 {date} 作为占位符。"
+
+#: models.py
+msgid "Default doctrine text"
+msgstr "默认教义文字"
+
+#: models.py
+msgid "Filled in as the doctrine of new standing links of this category."
+msgstr "作为该类别新建常驻链接的教义文字预填。"
+
+#: models.py
+msgid "Close links after (hours)"
+msgstr "链接关闭时限（小时）"
+
+#: models.py
+msgid "A standing link of this category stops taking claims this many hours after 00:00 EVE of its date. Empty = it is never closed automatically."
+msgstr "该类别的常驻链接在其日期 00:00 EVE 之后这么多小时停止接收申请。留空 = 不会自动关闭。"
+
 #: models.py views_config.py
 msgctxt "enabled"
 msgid "Active"
@@ -3156,6 +3252,22 @@ msgid "Without a default category, a claim outside a fleet needs a category."
 msgstr "没有默认类别时，舰队外的申请必须选择类别。"
 
 #: models.py
+msgid "A category claim needs no standing link"
+msgstr "按类别提交不需要常驻链接"
+
+#: models.py
+msgid "A member who chooses a category on a day without an open standing link of that category can still submit; the claim only records the category. Switch off to require the link."
+msgstr "成员在没有该类别开放常驻链接的日子选择类别时仍可提交，申请只记录类别。关闭后则必须有链接。"
+
+#: models.py
+msgid "Complete SRP links automatically"
+msgstr "自动完成 SRP 链接"
+
+#: models.py
+msgid "A closed link is marked completed as soon as none of its claims is waiting for review or payment."
+msgstr "已关闭的链接一旦没有申请在等待审核或付款，就被标记为已完成。"
+
+#: models.py
 msgid "SRP reviewers may decide on their own claims"
 msgstr "SRP 审核人可以处理自己的申请"
 
@@ -3285,6 +3397,48 @@ msgstr "SRP 军团限额"
 msgid "SRP corporation limits"
 msgstr "SRP 军团限额"
 
+#: models.py services/export_datasets.py templates/fleetops/approvals.html
+#: templates/fleetops/attendance_history.html templates/fleetops/dashboard.html
+#: templates/fleetops/manual_attendance.html
+#: templates/fleetops/operation/_fleet_tree.html
+#: templates/fleetops/operation_detail.html
+#: templates/fleetops/pap_fleet_start.html
+#: templates/fleetops/srp/_claims_table.html
+#: templates/fleetops/srp/_summary_table.html
+#: templates/fleetops/srp/payments.html templates/fleetops/start_fleet.html
+#: texts.py
+msgid "Fleet"
+msgstr "舰队"
+
+#: models.py
+msgid "Standing"
+msgstr "常驻"
+
+#: models.py
+msgid "FleetOps"
+msgstr "FleetOps"
+
+#: models.py
+msgid "Imported from aa-srp"
+msgstr "从 aa-srp 导入"
+
+#: models.py templates/fleetops/operation/_links.html
+#: templates/fleetops/srp/_summary_table.html
+msgctxt "link state"
+msgid "Open"
+msgstr "开放中"
+
+#: models.py templates/fleetops/operation/_links.html
+#: templates/fleetops/srp/_summary_table.html
+msgctxt "link state"
+msgid "Closed"
+msgstr "已关闭"
+
+#: models.py
+msgctxt "link state"
+msgid "Completed"
+msgstr "已完成"
+
 #: models.py
 msgid "Is open"
 msgstr "是否开放"
@@ -3298,17 +3452,67 @@ msgid "Closed by"
 msgstr "关闭人"
 
 #: models.py
-msgid "SRP fleet link"
-msgstr "舰队 SRP 链接"
+msgid "Completed at"
+msgstr "完成时间"
 
 #: models.py
-msgid "SRP fleet links"
-msgstr "舰队 SRP 链接"
+msgid "Completed by"
+msgstr "完成者"
+
+#: models.py
+msgid "Closes automatically at"
+msgstr "自动关闭时间"
+
+#: models.py
+msgid "Made automatically"
+msgstr "自动创建"
+
+#: models.py
+msgid "Daily key"
+msgstr "每日标识"
+
+#: models.py
+msgid "Origin"
+msgstr "来源"
+
+#: models.py
+msgid "External ID"
+msgstr "外部 ID"
+
+#: models.py templates/fleetops/operation/_srp.html
+#: templates/fleetops/srp/_summary_table.html texts.py
+msgid "SRP link"
+msgstr "SRP 链接"
+
+#: models.py
+msgid "SRP links"
+msgstr "SRP 链接"
 
 #: models.py
 #, python-format
 msgid "SRP link of fleet %(operation)s"
 msgstr "舰队 %(operation)s 的 SRP 链接"
+
+#: models.py
+#, python-format
+msgid "SRP link %(code)s"
+msgstr "SRP 链接 %(code)s"
+
+#: models.py
+msgid "A standing link has no fleet."
+msgstr "常驻链接没有舰队。"
+
+#: models.py
+msgid "Enter a name."
+msgstr "请输入名称。"
+
+#: models.py
+msgid "Enter a date."
+msgstr "请输入日期。"
+
+#: models.py
+msgid "A fleet link needs a fleet."
+msgstr "舰队链接需要一支舰队。"
 
 #: models.py
 msgid "Waiting"
@@ -4188,19 +4392,6 @@ msgstr "飞行员（大号）"
 #: services/export_datasets.py templates/fleetops/operation/_members.html
 msgid "System"
 msgstr "星系"
-
-#: services/export_datasets.py templates/fleetops/approvals.html
-#: templates/fleetops/attendance_history.html templates/fleetops/dashboard.html
-#: templates/fleetops/manual_attendance.html
-#: templates/fleetops/operation/_fleet_tree.html
-#: templates/fleetops/operation_detail.html
-#: templates/fleetops/pap_fleet_start.html
-#: templates/fleetops/srp/_claims_table.html
-#: templates/fleetops/srp/_summary_table.html
-#: templates/fleetops/srp/payments.html templates/fleetops/start_fleet.html
-#: texts.py
-msgid "Fleet"
-msgstr "舰队"
 
 #: services/export_datasets.py
 msgid "Value (ISK)"
@@ -5109,7 +5300,7 @@ msgstr "%(started)s EVE · %(fleet_type)s · FC %(fc)s"
 #: templates/fleetops/approvals.html
 #: templates/fleetops/operation/_fleet_member.html
 #: templates/fleetops/operation/_review.html
-#: templates/fleetops/pap_link_register.html
+#: templates/fleetops/pap_link_register.html templates/fleetops/srp/links.html
 #, python-format
 msgid "Select %(name)s"
 msgstr "选择 %(name)s"
@@ -5201,27 +5392,27 @@ msgstr[0] "第 %(number)s / %(pages)s 页 · %(counter)s 条记录"
 
 #: templates/fleetops/attendance_history.html templates/fleetops/audit_log.html
 #: templates/fleetops/operation/_attendance_table.html
-#: templates/fleetops/srp/_claims_table.html
+#: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/links.html
 msgid "First"
 msgstr "首页"
 
 #: templates/fleetops/attendance_history.html templates/fleetops/audit_log.html
 #: templates/fleetops/fleet_operations.html
-#: templates/fleetops/srp/_claims_table.html
+#: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/links.html
 #: templates/fleetops/statistics/members.html
 msgid "Previous"
 msgstr "上一页"
 
 #: templates/fleetops/attendance_history.html templates/fleetops/audit_log.html
 #: templates/fleetops/fleet_operations.html
-#: templates/fleetops/srp/_claims_table.html
+#: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/links.html
 #: templates/fleetops/statistics/members.html
 msgid "Next"
 msgstr "下一页"
 
 #: templates/fleetops/attendance_history.html templates/fleetops/audit_log.html
 #: templates/fleetops/operation/_attendance_table.html
-#: templates/fleetops/srp/_claims_table.html
+#: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/links.html
 msgid "Last"
 msgstr "末页"
 
@@ -5334,6 +5525,10 @@ msgstr "我的 SRP"
 #: templates/fleetops/operation/_review.html templates/fleetops/srp/claim.html
 msgid "Review"
 msgstr "审核"
+
+#: templates/fleetops/base.html templates/fleetops/srp/links.html
+msgid "SRP Links"
+msgstr "SRP 链接"
 
 #: templates/fleetops/base.html
 msgid "Payments"
@@ -5507,7 +5702,7 @@ msgstr "按当前规则重新计算所有待审核申请"
 
 #: templates/fleetops/configuration/form.html
 #: templates/fleetops/configuration/list.html
-#: templates/fleetops/fleet_operations.html
+#: templates/fleetops/fleet_operations.html templates/fleetops/srp/links.html
 msgid "Edit"
 msgstr "编辑"
 
@@ -5518,6 +5713,7 @@ msgstr "暂时没有可选项。"
 #: templates/fleetops/configuration/form.html
 #: templates/fleetops/incentive_review.html
 #: templates/fleetops/operation/_fleet_classify.html
+#: templates/fleetops/srp/link_form.html
 msgid "Save"
 msgstr "保存"
 
@@ -5533,7 +5729,7 @@ msgstr "保存"
 #: templates/fleetops/operation/_members.html
 #: templates/fleetops/operation_edit.html
 #: templates/fleetops/partials/confirm_modal.html
-#: templates/fleetops/srp/preview.html
+#: templates/fleetops/srp/link_form.html templates/fleetops/srp/preview.html
 msgid "Cancel"
 msgstr "取消"
 
@@ -6018,7 +6214,7 @@ msgstr "FC 名称"
 msgid "Form up, FC, doctrine or notes"
 msgstr "集结地、FC、教义或备注"
 
-#: templates/fleetops/fleet_operations.html
+#: templates/fleetops/fleet_operations.html templates/fleetops/srp/links.html
 #: templates/fleetops/srp/payments.html templates/fleetops/srp/review.html
 #: templates/fleetops/statistics/members.html
 msgctxt "FleetOps"
@@ -6026,7 +6222,8 @@ msgid "Filter"
 msgstr "筛选"
 
 #: templates/fleetops/fleet_operations.html
-#: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/review.html
+#: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/links.html
+#: templates/fleetops/srp/review.html
 #: templates/fleetops/statistics/members.html
 msgid "Reset"
 msgstr "重置"
@@ -7317,24 +7514,12 @@ msgid "Revoke this PAP link? Pilots can no longer register with it."
 msgstr "撤销此 PAP 登记链接？飞行员将无法再用它登记。"
 
 #: templates/fleetops/operation/_links.html
-#: templates/fleetops/srp/_summary_table.html
-msgctxt "link state"
-msgid "Open"
-msgstr "开放中"
-
-#: templates/fleetops/operation/_links.html
 msgid "Revoked"
 msgstr "已撤销"
 
 #: templates/fleetops/operation/_links.html
 msgid "Expired"
 msgstr "已过期"
-
-#: templates/fleetops/operation/_links.html
-#: templates/fleetops/srp/_summary_table.html
-msgctxt "link state"
-msgid "Closed"
-msgstr "已关闭"
 
 #: templates/fleetops/operation/_links.html
 msgid "PAP Links"
@@ -7625,13 +7810,12 @@ msgid "Link closed"
 msgstr "链接已关闭"
 
 #: templates/fleetops/operation/_srp.html
-msgid "FleetOps SRP is not enabled, so members cannot submit claims through this link."
-msgstr "FleetOps SRP 未启用，因此成员无法通过此链接提交申请。"
+msgid "Link completed"
+msgstr "链接已完成"
 
 #: templates/fleetops/operation/_srp.html
-#: templates/fleetops/srp/_summary_table.html texts.py
-msgid "SRP link"
-msgstr "SRP 链接"
+msgid "FleetOps SRP is not enabled, so members cannot submit claims through this link."
+msgstr "FleetOps SRP 未启用，因此成员无法通过此链接提交申请。"
 
 #: templates/fleetops/operation/_srp.html
 msgid "Request SRP for this fleet"
@@ -7646,9 +7830,22 @@ msgid "Open SRP link"
 msgstr "开启 SRP 链接"
 
 #: templates/fleetops/operation/_srp.html
+msgid "Possible when every claim of the link is paid, rejected or withdrawn."
+msgstr "链接上的所有申请都已付款、驳回或撤回后才能完成。"
+
+#: templates/fleetops/operation/_srp.html
+msgid "Mark SRP link complete"
+msgstr "标记 SRP 链接为已完成"
+
+#: templates/fleetops/operation/_srp.html
 #, python-format
 msgid "Closed %(closed)s EVE."
 msgstr "已于 %(closed)s EVE 关闭。"
+
+#: templates/fleetops/operation/_srp.html
+#, python-format
+msgid "Completed %(completed)s EVE."
+msgstr "已于 %(completed)s EVE 完成。"
 
 #: templates/fleetops/operation/_srp.html
 #: templates/fleetops/srp/_summary_table.html templates/fleetops/srp/claim.html
@@ -8492,7 +8689,7 @@ msgstr "第 %(start)s&ndash;%(end)s 条申请，共 %(total)s 条"
 msgid "Pages"
 msgstr "页码"
 
-#: templates/fleetops/srp/_claims_table.html
+#: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/links.html
 #, python-format
 msgid "Page %(number)s of %(pages)s"
 msgstr "第 %(number)s / %(pages)s 页"
@@ -8988,12 +9185,130 @@ msgid "This fleet's SRP link is closed. No new claims can be made through it."
 msgstr "这支舰队的 SRP 链接已关闭，无法再通过它提交新的申请。"
 
 #: templates/fleetops/srp/link.html
+msgid "This SRP link is closed. No new claims can be made through it."
+msgstr "这条 SRP 链接已关闭，无法再通过它提交新的申请。"
+
+#: templates/fleetops/srp/link.html
 msgid "Claim a loss of this fleet"
 msgstr "申请这支舰队的损失"
 
 #: templates/fleetops/srp/link.html
+msgid "Claim a loss through this link"
+msgstr "通过这条链接申请损失"
+
+#: templates/fleetops/srp/link.html
 msgid "Your claims for this fleet"
 msgstr "你对这支舰队的申请"
+
+#: templates/fleetops/srp/link.html
+msgid "Your claims through this link"
+msgstr "你通过这条链接提交的申请"
+
+#: templates/fleetops/srp/link_form.html
+msgid "Edit SRP link"
+msgstr "编辑 SRP 链接"
+
+#: templates/fleetops/srp/link_form.html templates/fleetops/srp/links.html
+msgid "New standing link"
+msgstr "新建常驻链接"
+
+#: templates/fleetops/srp/link_form.html
+msgid "A standing link has no fleet. Members open it to submit the losses of the day for its category."
+msgstr "常驻链接没有舰队。成员打开它，提交当天该类别的损失。"
+
+#: templates/fleetops/srp/link_form.html
+#, python-format
+msgid "%(counter)s claim has been made through this link. It keeps its category when you change the category here."
+msgid_plural "%(counter)s claims have been made through this link. They keep their category when you change the category here."
+msgstr[0] "已有 %(counter)s 条申请通过这条链接提交。在这里修改类别时，它们保留原来的类别。"
+
+#: templates/fleetops/srp/link_form.html
+msgid "This is the link of a fleet. Only the doctrine text and the report can be changed here."
+msgstr "这是一支舰队的链接。这里只能修改教义文字和报告。"
+
+#: templates/fleetops/srp/link_form.html
+msgid "Create link"
+msgstr "创建链接"
+
+#: templates/fleetops/srp/links.html
+msgid "The links of fleets and the standing links, with the claims that are still open on them"
+msgstr "舰队的链接和常驻链接，以及链接上尚未处理完的申请"
+
+#: templates/fleetops/srp/links.html
+msgid "Dates in EVE time. A fleet link counts with the day its fleet started."
+msgstr "日期为 EVE 时间。舰队链接按其舰队开始的那天计算。"
+
+#: templates/fleetops/srp/links.html
+#, python-format
+msgid "Showing the %(counter)s link you came here for."
+msgid_plural "Showing the %(counter)s links you came here for."
+msgstr[0] "显示你要找的 %(counter)s 条链接。"
+
+#: templates/fleetops/srp/links.html
+msgid "Show all links"
+msgstr "显示所有链接"
+
+#: templates/fleetops/srp/links.html
+msgid "Select all links on this page"
+msgstr "选择本页所有链接"
+
+#: templates/fleetops/srp/links.html
+msgid "To review"
+msgstr "待审核"
+
+#: templates/fleetops/srp/links.html templates/fleetops/srp/payments.html
+msgid "To pay"
+msgstr "待付"
+
+#: templates/fleetops/srp/links.html
+msgid "Standing link"
+msgstr "常驻链接"
+
+#: templates/fleetops/srp/links.html
+msgid "Fleet link"
+msgstr "舰队链接"
+
+#: templates/fleetops/srp/links.html
+msgid "made automatically"
+msgstr "自动创建"
+
+#: templates/fleetops/srp/links.html
+#, python-format
+msgid "closes %(time)s EVE"
+msgstr "%(time)s EVE 关闭"
+
+#: templates/fleetops/srp/links.html
+msgid "Copy link"
+msgstr "复制链接"
+
+#: templates/fleetops/srp/links.html
+msgid "No link matches these filters."
+msgstr "没有符合这些筛选条件的链接。"
+
+#: templates/fleetops/srp/links.html
+msgid "There are no SRP links yet."
+msgstr "还没有 SRP 链接。"
+
+#: templates/fleetops/srp/links.html
+#, python-format
+msgid "Links %(start)s&ndash;%(end)s of %(total)s"
+msgstr "第 %(start)s&ndash;%(end)s 条链接，共 %(total)s 条"
+
+#: templates/fleetops/srp/links.html
+msgid "Close selected"
+msgstr "关闭所选"
+
+#: templates/fleetops/srp/links.html
+msgid "Complete selected"
+msgstr "完成所选"
+
+#: templates/fleetops/srp/links.html
+msgid "Open selected"
+msgstr "打开所选"
+
+#: templates/fleetops/srp/links.html
+msgid "<span data-srp-selected-count>0</span> selected. Closing stops new claims. A link can only be completed when every claim on it is paid, rejected or withdrawn; the others are listed afterwards."
+msgstr "已选择 <span data-srp-selected-count>0</span> 条。关闭后不再接收新申请。只有链接上的所有申请都已付款、驳回或撤回，链接才能完成；其余的会在之后列出。"
 
 #: templates/fleetops/srp/payments.html
 msgid "SRP Payments"
@@ -9017,10 +9332,6 @@ msgstr "显示所有月份的损失。在上方选择月份可缩小列表范围
 msgid "%(counter)s player"
 msgid_plural "%(counter)s players"
 msgstr[0] "%(counter)s 名玩家"
-
-#: templates/fleetops/srp/payments.html
-msgid "To pay"
-msgstr "待付"
 
 #: templates/fleetops/srp/payments.html
 #, python-format
@@ -9098,6 +9409,11 @@ msgstr "核对你的申请"
 #, python-format
 msgid "Loss in %(fleet_type)s &middot; FC %(fc)s"
 msgstr "%(fleet_type)s 中的损失 &middot; FC %(fc)s"
+
+#: templates/fleetops/srp/preview.html
+#, python-format
+msgid "Loss through the SRP link %(name)s"
+msgstr "通过 SRP 链接 %(name)s 提交的损失"
 
 #: templates/fleetops/srp/preview.html
 msgid "Loss outside a FleetOps fleet"
@@ -11544,6 +11860,52 @@ msgid "Choose the fleet of the loss."
 msgstr "请选择这笔损失所属的舰队。"
 
 #: texts.py
+#, python-format
+msgid "This link still has claims that are not settled (waiting for review: %(pending)s, waiting for payment: %(approved)s). Pay, reject or withdraw them before completing the link."
+msgstr "这条链接还有未结的申请（等待审核：%(pending)s，等待付款：%(approved)s）。请先付款、驳回或让成员撤回，再完成链接。"
+
+#: texts.py
+msgid "This link is already completed."
+msgstr "这条链接已经完成。"
+
+#: texts.py
+msgid "This link is already closed."
+msgstr "这条链接已经关闭。"
+
+#: texts.py
+msgid "This link is already open."
+msgstr "这条链接已经开放。"
+
+#: texts.py
+msgid "There is no SRP link with this code."
+msgstr "没有这个代码的 SRP 链接。"
+
+#: texts.py
+msgid "This part of the link cannot be changed."
+msgstr "链接的这一部分不能修改。"
+
+#: texts.py
+msgid "Choose close, complete or open."
+msgstr "请选择关闭、完成或打开。"
+
+#: texts.py
+#, python-format
+msgid "Choose at most %(count)s links at a time."
+msgstr "一次最多选择 %(count)s 条链接。"
+
+#: texts.py
+msgid "Completed automatically: every claim of the link is settled."
+msgstr "已自动完成：链接上的所有申请都已处理完。"
+
+#: texts.py
+msgid "A claim of the link is waiting for review or payment again."
+msgstr "链接上有申请重新进入等待审核或付款。"
+
+#: texts.py
+msgid "Choose a category for the link."
+msgstr "请为链接选择类别。"
+
+#: texts.py
 msgid "The claim is already a loss of this fleet."
 msgstr "这条申请已经是这支舰队的损失。"
 
@@ -11751,6 +12113,15 @@ msgstr "语音链接不能包含空格；空格请写成 %20。"
 #: validators.py
 msgid "Remove the personal user name and password from the voice link."
 msgstr "请移除语音链接中的个人用户名和密码。"
+
+#: validators.py
+msgid "The name template has a brace that is not closed. Write a literal brace twice."
+msgstr "名称模板里有一个未闭合的花括号。要写字面花括号，请连写两次。"
+
+#: validators.py
+#, python-format
+msgid "The name template may only use %(fields)s."
+msgstr "名称模板只能使用 %(fields)s。"
 
 #: views.py
 msgid "This fleet has not started; the MOTD and the SRP link are set when it starts."
@@ -12895,15 +13266,54 @@ msgstr "%(reference)s 已撤回。在期限内你可以重新提交。"
 msgid "%(reference)s submitted again with the current rules."
 msgstr "%(reference)s 已按当前规则重新提交。"
 
-#: views_srp_review.py
+#: views_srp_links.py
+msgid "This category has a link of the day for this date already."
+msgstr "这个类别在这一天已经有当日链接了。"
+
+#: views_srp_links.py
+#, python-format
+msgid "Standing link “%(name)s” created. Members open it at %(url)s."
+msgstr "已创建常驻链接“%(name)s”。成员在 %(url)s 打开它。"
+
+#: views_srp_links.py
+msgid "SRP link saved."
+msgstr "已保存 SRP 链接。"
+
+#: views_srp_links.py
+msgid "SRP link completed."
+msgstr "已完成 SRP 链接。"
+
+#: views_srp_links.py
+#, python-format
+msgid "%(count)s link closed."
+msgid_plural "%(count)s links closed."
+msgstr[0] "已关闭 %(count)s 条链接。"
+
+#: views_srp_links.py
+#, python-format
+msgid "%(count)s link completed."
+msgid_plural "%(count)s links completed."
+msgstr[0] "已完成 %(count)s 条链接。"
+
+#: views_srp_links.py
+#, python-format
+msgid "%(count)s link opened."
+msgid_plural "%(count)s links opened."
+msgstr[0] "已打开 %(count)s 条链接。"
+
+#: views_srp_links.py views_srp_review.py
 #, python-format
 msgid "and %(count)s more."
 msgstr "还有 %(count)s 个。"
 
-#: views_srp_review.py
+#: views_srp_links.py views_srp_review.py
 #, python-format
 msgid "Skipped: %(details)s"
 msgstr "已跳过：%(details)s"
+
+#: views_srp_links.py
+msgid "No link was chosen."
+msgstr "没有选择任何链接。"
 
 #: views_srp_review.py
 msgid "you approved it; a different payer has to pay."

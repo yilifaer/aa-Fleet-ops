@@ -238,5 +238,45 @@
     document.querySelectorAll('form[data-srp-once]').forEach((form) => setBusy(form, false));
   });
 
+  // --- The form of a standing link: the defaults of the chosen category -----------------------------------------
+
+  // The category brings a doctrine text and the hours after which its links close. They fill in fields the person
+  // has not touched; the server only reads what the form sends.
+  (() => {
+    const select = document.querySelector('[data-srp-link-category]');
+    const source = document.getElementById('srp-link-category-data');
+    const doctrine = document.querySelector('[data-srp-link-doctrine]');
+    const closeAt = document.querySelector('[data-srp-link-close]');
+    const date = document.querySelector('[data-srp-link-date]');
+    if (!select || !source) return;
+    let defaults = {};
+    try { defaults = JSON.parse(source.textContent); } catch (error) { return; }
+    [doctrine, closeAt].forEach((field) => {
+      if (!field) return;
+      if (field.value !== '') field.dataset.srpTouched = '1';
+      field.addEventListener('input', () => { field.dataset.srpTouched = '1'; });
+    });
+
+    function pad(number) { return String(number).padStart(2, '0'); }
+
+    // 00:00 EVE time of the date plus the hours, as a datetime-local value.
+    function closingTime(hours) {
+      const match = date && /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.value);
+      if (!match || !hours) return '';
+      const at = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) + Number(hours) * 3600000);
+      return `${at.getUTCFullYear()}-${pad(at.getUTCMonth() + 1)}-${pad(at.getUTCDate())}T${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())}`;
+    }
+
+    function apply() {
+      const chosen = defaults[select.value];
+      if (!chosen) return;
+      if (doctrine && doctrine.dataset.srpTouched !== '1') doctrine.value = chosen.doctrine || '';
+      if (closeAt && closeAt.dataset.srpTouched !== '1') closeAt.value = closingTime(chosen.hours);
+    }
+
+    select.addEventListener('change', apply);
+    if (date) date.addEventListener('change', apply);
+  })();
+
   window.FleetOpsSrp = { parseIsk, formatIsk };
 })();
