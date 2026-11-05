@@ -226,6 +226,7 @@ The read-only side is the same for all three: every SRP staff user sees all SRP 
 | Internal note | Any SRP staff permission (`manage_srp`, `review_srp` or `pay_srp`); not bound by the self-processing settings |
 | Any claim page | The claimant, SRP staff (`manage_srp`, `review_srp`, `pay_srp`), the FC of the claim's fleet, `view_all_stats` (read-only), and `view_corp_stats` for claims of the own corporation. Anybody else gets 404. Internal notes and the names of the people who acted on a claim are visible to SRP staff only; everybody else sees "Claimant", "Reviewer" or "System". The monthly usage is shown to the claimant, SRP staff, `view_all_stats` and `view_corp_stats` of the claim's corporation, not to the FC of the fleet. The buttons on the page follow the role: a reviewer sees no **Mark paid**, a payer no **Approve**. |
 | SRP Summary (alliance, corporations, FCs) | SRP staff or `view_all_stats` (read-only) |
+| SRP Reports (`srp/summary/reports/`: trend, categories, ships, members, corporations, regions, FCs, rejections, payments, personal limits) | SRP staff or `view_all_stats` (read-only). The **Reviewers** and **Payers** reports are for SRP staff only: `view_all_stats` gets 403 and does not see them in the list. The names of the reviewer of a rejection and of the payer of a payment are shown to SRP staff only. |
 | SRP Corporation (totals, members, claims of the own corporation) | `view_corp_stats` for the own corporation (a user without a main gets 404); SRP staff or `view_all_stats` for any corporation |
 | SRP My fleets (claims and totals of the fleets the user led) | Users with an FC permission (`start_fleet`, `manage_own_fleet`, `manage_fleets` or `create_manual_fleet`) and anybody who led a fleet with an SRP link see their own page; SRP staff and `view_all_stats` also see any FC's page |
 | SRP settings, SRP Categories, SRP Payout Table, SRP Corporation Limits | `fleetops.manage_configuration`; every change is audited with the old and new values |
@@ -236,9 +237,13 @@ SRP files are at `/fleetops/statistics/export/<dataset>/`:
 |---|---|
 | `srp-claims`, `srp-members` | SRP staff or `view_all_stats` for the alliance or any corporation (`corporation=<id>`); `view_corp_stats` only with the own corporation's ID (any other corporation is 404, no corporation is 403) |
 | `srp-corporations`, `srp-fcs` | SRP staff or `view_all_stats` |
+| `srp-trend`, `srp-categories`, `srp-ships`, `srp-regions`, `srp-rejections`, `srp-payments`, `srp-limits` | SRP staff or `view_all_stats` |
+| `srp-reviewers`, `srp-payers` | SRP staff only (`manage_srp`, `review_srp` or `pay_srp`); `view_all_stats` gets 403 |
 | `srp-payable` (the claims to pay, with the filters of the payments page) | `fleetops.manage_srp` or `fleetops.pay_srp` only (`group=player` for one row per player) |
 
-The *Decided by*, *Paid by* and *Payment batch* columns of `srp-claims` are filled for SRP staff only. FCs and members have no
+The *Decided by*, *Paid by*, *Payment batch* and *Security status* columns of `srp-claims` are filled for SRP staff only.
+The SRP files take a period: `from=` and `to=` (EVE dates, both days included), `preset=` or the older `year=` and `month=`; a
+period longer than 1100 days is refused (400), and without a period the files cover the current month as before. FCs and members have no
 SRP file. Every download is audited as `srp.export`. Every other SRP action is audited and shown in the
 claim's timeline: `srp.link_create`, `srp.link_update`, `srp.link_open`, `srp.link_close`, `srp.link_complete`, `srp.link_uncomplete`, `srp.claim_submit`,
 `srp.claim_auto_reject`, `srp.claim_withdraw`, `srp.claim_resubmit`, `srp.claim_approve`,

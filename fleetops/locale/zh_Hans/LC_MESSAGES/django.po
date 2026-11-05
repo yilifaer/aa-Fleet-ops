@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-04 23:57+0000\n"
+"POT-Creation-Date: 2026-11-05 08:21+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -583,7 +583,7 @@ msgstr "请输入有效的船型 ID。"
 msgid "A doctrine rule only applies to losses in a fleet; choose “In fleet and out of fleet” or “In-fleet losses only”."
 msgstr "教义规则只适用于舰队内的损失；请选择“舰队内和舰队外”或“仅舰队内损失”。"
 
-#: forms_config.py services/export_datasets.py srp/display.py
+#: forms_config.py services/export_datasets.py srp/display.py srp/reports.py
 #: templates/fleetops/operation/_members.html
 #: templates/fleetops/operation/_srp.html templates/fleetops/roster_import.html
 #: templates/fleetops/srp/_claims_table.html
@@ -697,7 +697,7 @@ msgstr "留空时会自动查询。"
 msgid "This corporation already has a limit."
 msgstr "该军团已经有限额。"
 
-#: forms_config.py services/export_datasets.py
+#: forms_config.py services/export_datasets.py srp/reports.py
 msgid "Monthly cap (ISK)"
 msgstr "月度上限（ISK）"
 
@@ -1173,7 +1173,7 @@ msgid "Characters of one player that get PAP in this fleet, up to %(max)s (the s
 msgstr "同一位玩家在这支舰队里最多有几个角色获得 PAP，上限为 %(max)s（取自设置）。只有 FC 主管可以允许更多。"
 
 #: forms_pap_limit.py forms_srp.py models.py services/export_datasets.py
-#: templates/fleetops/audit_log.html
+#: srp/reports.py templates/fleetops/audit_log.html
 #: templates/fleetops/srp/_decision_forms.html templates/fleetops/srp/bans.html
 #: templates/fleetops/srp/claim.html
 msgid "Reason"
@@ -1279,7 +1279,7 @@ msgstr "例如 250m"
 msgid "Select at most %(max)s claims at a time."
 msgstr "一次最多选择 %(max)s 条申请。"
 
-#: forms_srp.py models.py services/export_datasets.py
+#: forms_srp.py models.py services/export_datasets.py srp/reports.py
 #: templates/fleetops/operation/_srp.html
 #: templates/fleetops/srp/_claims_table.html
 #: templates/fleetops/srp/_losses.html
@@ -1305,8 +1305,8 @@ msgstr "游戏内 KM 链接、zKillboard 链接，或 KM ID 与哈希"
 msgid "Paste the in-game killmail link (works immediately) or a zKillboard link."
 msgstr "粘贴游戏内 KM 链接（立即可用）或 zKillboard 链接。"
 
-#: forms_srp.py models.py services/export_datasets.py
-#: templates/fleetops/srp/claim.html
+#: forms_srp.py models.py services/export_datasets.py srp/reports.py
+#: templates/fleetops/srp/_summary_table.html templates/fleetops/srp/claim.html
 #: templates/fleetops/srp/claim_edit_preview.html
 #: templates/fleetops/srp/links.html templates/fleetops/srp/payment_batch.html
 #: templates/fleetops/srp/payments.html views_config.py
@@ -1432,7 +1432,7 @@ msgstr "待审核"
 #: forms_srp.py models.py templates/fleetops/manual_attendance.html
 #: templates/fleetops/operation/_srp.html
 #: templates/fleetops/srp/_summary_table.html templates/fleetops/srp/claim.html
-#: templates/fleetops/srp/home.html
+#: templates/fleetops/srp/home.html templates/fleetops/srp/reports.html
 msgctxt "FleetOps"
 msgid "Approved"
 msgstr "已通过"
@@ -1440,10 +1440,11 @@ msgstr "已通过"
 #: forms_srp.py models.py templates/fleetops/operation/_srp.html
 #: templates/fleetops/srp/_summary_table.html templates/fleetops/srp/claim.html
 #: templates/fleetops/srp/home.html templates/fleetops/srp/links.html
+#: templates/fleetops/srp/reports.html
 msgid "Paid"
 msgstr "已付款"
 
-#: forms_srp.py models.py services/export_datasets.py
+#: forms_srp.py models.py services/export_datasets.py srp/reports.py
 #: templates/fleetops/manual_attendance.html
 #: templates/fleetops/operation/_attendance_table.html
 #: templates/fleetops/operation/_header.html
@@ -1508,7 +1509,7 @@ msgstr "标记"
 msgid "Any flag"
 msgstr "任意标记"
 
-#: forms_srp.py services/export_datasets.py services/members.py
+#: forms_srp.py services/export_datasets.py services/members.py srp/reports.py
 #: templates/fleetops/all_corporation_statistics.html
 #: templates/fleetops/attendance_history.html templates/fleetops/base.html
 #: templates/fleetops/operation/_members.html
@@ -1536,7 +1537,7 @@ msgid "Any FC"
 msgstr "任意 FC"
 
 #: forms_srp.py templates/fleetops/fleet_operations.html
-#: templates/fleetops/srp/review.html
+#: templates/fleetops/srp/reports.html templates/fleetops/srp/review.html
 msgid "Search"
 msgstr "搜索"
 
@@ -1662,7 +1663,7 @@ msgstr "全部"
 msgid "Member"
 msgstr "成员"
 
-#: forms_srp.py models.py services/export_datasets.py
+#: forms_srp.py models.py services/export_datasets.py srp/reports.py
 #: templates/fleetops/srp/_summary_table.html
 #: templates/fleetops/statistics/members.html
 msgctxt "FleetOps"
@@ -2252,7 +2253,7 @@ msgstr "旧版"
 msgid "Time in fleet"
 msgstr "在队时长"
 
-#: models.py templates/fleetops/srp/claim.html
+#: models.py srp/reports.py srp/summaries.py templates/fleetops/srp/claim.html
 msgid "Automatic"
 msgstr "自动"
 
@@ -3088,7 +3089,7 @@ msgstr "月度达标线"
 msgid "From %(month)s"
 msgstr "自 %(month)s 起"
 
-#: models.py
+#: models.py templates/fleetops/srp/reports.html
 msgid "Period"
 msgstr "周期"
 
@@ -3110,7 +3111,7 @@ msgstr "按舰队类型细分"
 msgid "Eligible"
 msgstr "符合条件"
 
-#: models.py services/export_datasets.py
+#: models.py services/export_datasets.py srp/reports.py
 #: templates/fleetops/incentive_review.html
 msgid "Waived"
 msgstr "已放弃领取"
@@ -3299,7 +3300,7 @@ msgstr "启用"
 msgid "SRP category"
 msgstr "SRP 类别"
 
-#: models.py
+#: models.py services/export_datasets.py
 msgid "SRP categories"
 msgstr "SRP 类别"
 
@@ -3969,7 +3970,7 @@ msgstr "战争 ID"
 msgid "Ship group ID"
 msgstr "舰船组 ID"
 
-#: models.py
+#: models.py services/export_datasets.py
 msgid "Security status"
 msgstr "安全等级"
 
@@ -4167,10 +4168,11 @@ msgstr "损失 %(id)s"
 msgid "Created by (name)"
 msgstr "创建者（名字）"
 
-#: models.py services/export_datasets.py templates/fleetops/operation/_srp.html
+#: models.py services/export_datasets.py srp/reports.py
+#: templates/fleetops/operation/_srp.html
 #: templates/fleetops/srp/_summary_table.html templates/fleetops/srp/home.html
 #: templates/fleetops/srp/payment_batch.html
-#: templates/fleetops/srp/payments.html
+#: templates/fleetops/srp/payments.html templates/fleetops/srp/reports.html
 msgid "Claims"
 msgstr "申请"
 
@@ -4178,7 +4180,7 @@ msgstr "申请"
 msgid "Payees"
 msgstr "收款人数"
 
-#: models.py services/export_datasets.py
+#: models.py services/export_datasets.py srp/reports.py
 #: templates/fleetops/srp/payment_batch.html
 #: templates/fleetops/srp/payments.html
 msgid "Total"
@@ -4324,7 +4326,8 @@ msgstr "处理时间"
 msgid "Decision reason"
 msgstr "处理原因"
 
-#: models.py services/export_datasets.py templates/fleetops/srp/payments.html
+#: models.py services/export_datasets.py srp/reports.py
+#: templates/fleetops/srp/payments.html
 msgid "Paid by"
 msgstr "付款人"
 
@@ -4332,7 +4335,7 @@ msgstr "付款人"
 msgid "Paid at"
 msgstr "付款时间"
 
-#: models.py services/export_datasets.py
+#: models.py services/export_datasets.py srp/reports.py
 msgid "Payment batch"
 msgstr "付款批次"
 
@@ -4679,19 +4682,23 @@ msgstr "军团行：PAP 是该军团在本月飞出的全部 PAP，包括之后�
 msgid "Fleets that count in the statistics, for the FC and for special roles that give FC credit. FC points are the fleet type weight times the PAP multiplier."
 msgstr "计入统计的舰队，对象是 FC 以及带 FC 积分的特殊角色。FC 积分等于舰队类型权重乘以 PAP 倍率。"
 
+#: services/export_datasets.py templates/fleetops/attendance_history.html
+msgid "All retained"
+msgstr "全部保留数据"
+
 #: services/export_datasets.py services/exports.py
 msgid "Dataset"
 msgstr "数据集"
+
+#: services/export_datasets.py
+msgid "Period (EVE time)"
+msgstr "周期（EVE 时间）"
 
 #: services/export_datasets.py templates/fleetops/attendance_history.html
 #: templates/fleetops/fc_statistics_detail.html
 #: templates/fleetops/month_selector.html
 msgid "Month (EVE time)"
 msgstr "月份（EVE 时间）"
-
-#: services/export_datasets.py templates/fleetops/attendance_history.html
-msgid "All retained"
-msgstr "全部保留数据"
 
 #: services/export_datasets.py
 msgid "Exported at (EVE)"
@@ -4729,7 +4736,7 @@ msgstr "已拒绝 %(count)s 场"
 msgid "%(count)s still running"
 msgstr "仍在进行 %(count)s 场"
 
-#: services/export_datasets.py
+#: services/export_datasets.py srp/reports.py
 msgctxt "FleetOps"
 msgid "Ticker"
 msgstr "简称"
@@ -4792,7 +4799,8 @@ msgstr "未计入的舰队"
 msgid "Counting rule"
 msgstr "计算规则"
 
-#: services/export_datasets.py templates/fleetops/srp/_summary_table.html
+#: services/export_datasets.py srp/reports.py
+#: templates/fleetops/srp/_summary_table.html
 msgctxt "FleetOps"
 msgid "Corporations"
 msgstr "军团"
@@ -4823,9 +4831,10 @@ msgstr "排序：%(value)s"
 msgid "Rank"
 msgstr "排名"
 
-#: services/export_datasets.py templates/fleetops/all_fc_statistics.html
-#: templates/fleetops/approvals.html templates/fleetops/base.html
-#: templates/fleetops/dashboard.html templates/fleetops/incentive_review.html
+#: services/export_datasets.py srp/reports.py
+#: templates/fleetops/all_fc_statistics.html templates/fleetops/approvals.html
+#: templates/fleetops/base.html templates/fleetops/dashboard.html
+#: templates/fleetops/incentive_review.html
 #: templates/fleetops/my_statistics.html
 #: templates/fleetops/srp/_summary_table.html
 #: templates/fleetops/statistics/_member_table.html
@@ -4853,7 +4862,7 @@ msgctxt "FleetOps"
 msgid "Filters"
 msgstr "筛选条件"
 
-#: services/export_datasets.py
+#: services/export_datasets.py srp/reports.py
 #: templates/fleetops/all_corporation_statistics.html
 #: templates/fleetops/base.html templates/fleetops/dashboard.html
 #: templates/fleetops/operation/_fleet_tree.html
@@ -4896,7 +4905,7 @@ msgstr "成员舰队"
 msgid "Member %(name)s"
 msgstr "成员 %(name)s"
 
-#: services/export_datasets.py
+#: services/export_datasets.py srp/reports.py
 msgid "FC (main)"
 msgstr "FC（大号）"
 
@@ -4915,8 +4924,8 @@ msgstr "%(name)s 舰队数"
 msgid "%(name)s points"
 msgstr "%(name)s 积分"
 
-#: services/export_datasets.py templates/fleetops/srp/_summary_table.html
-#: views_config.py
+#: services/export_datasets.py srp/reports.py
+#: templates/fleetops/srp/_summary_table.html views_config.py
 msgid "FCs"
 msgstr "FC"
 
@@ -4975,11 +4984,11 @@ msgstr "尚未付款的已通过申请，带付款页的筛选。只有付款人
 msgid "Pay to"
 msgstr "收款人"
 
-#: services/export_datasets.py
+#: services/export_datasets.py srp/reports.py
 msgid "Approved (ISK)"
 msgstr "已通过（ISK）"
 
-#: services/export_datasets.py
+#: services/export_datasets.py srp/reports.py
 msgid "Loss time (EVE)"
 msgstr "损失时间（EVE）"
 
@@ -4987,7 +4996,7 @@ msgstr "损失时间（EVE）"
 msgid "SRP to pay"
 msgstr "SRP 待付款"
 
-#: services/export_datasets.py
+#: services/export_datasets.py srp/reports.py
 msgid "Pilot (main)"
 msgstr "飞行员（大号）"
 
@@ -5012,7 +5021,7 @@ msgstr "限额内（ISK）"
 msgid "Decided at (EVE)"
 msgstr "处理时间（EVE）"
 
-#: services/export_datasets.py
+#: services/export_datasets.py srp/reports.py
 msgid "Paid at (EVE)"
 msgstr "付款时间（EVE）"
 
@@ -5023,29 +5032,39 @@ msgstr "范围：%(value)s"
 
 #: services/export_datasets.py
 #, python-format
+msgid "Category: %(value)s"
+msgstr "类别：%(value)s"
+
+#: services/export_datasets.py srp/reports.py
+#, python-format
 msgid "%(count)s claim"
 msgid_plural "%(count)s claims"
 msgstr[0] "%(count)s 笔申请"
 
-#: services/export_datasets.py
+#: services/export_datasets.py srp/reports.py
 msgid "Approved claims"
 msgstr "已通过的申请"
 
-#: services/export_datasets.py templates/fleetops/srp/payments.html
+#: services/export_datasets.py srp/reports.py
+#: templates/fleetops/srp/payments.html
 msgid "Paid claims"
 msgstr "已付款的申请"
 
-#: services/export_datasets.py
+#: services/export_datasets.py srp/reports.py
 msgid "Requested (ISK)"
 msgstr "申请金额（ISK）"
 
-#: services/export_datasets.py
+#: services/export_datasets.py srp/reports.py
 msgid "Paid (ISK)"
 msgstr "已付（ISK）"
 
 #: services/export_datasets.py
 msgid "Outstanding (ISK)"
 msgstr "未付（ISK）"
+
+#: services/export_datasets.py srp/reports.py
+msgid "Average payout (ISK)"
+msgstr "平均赔付（ISK）"
 
 #: services/export_datasets.py
 msgid "SRP members"
@@ -5055,21 +5074,70 @@ msgstr "SRP 成员"
 msgid "Used of the cap (ISK)"
 msgstr "已用上限（ISK）"
 
-#: services/export_datasets.py
+#: services/export_datasets.py srp/reports.py
 msgid "Remaining (ISK)"
 msgstr "剩余（ISK）"
+
+#: services/export_datasets.py srp/reports.py
+msgid "People"
+msgstr "人数"
 
 #: services/export_datasets.py
 msgid "SRP corporations"
 msgstr "SRP 军团"
 
 #: services/export_datasets.py
+msgid "Used and Remaining are shown only when the period is exactly one calendar month, because the cap is monthly."
+msgstr "因为上限按月计算，只有周期恰好是一个日历月时才显示已用和剩余。"
+
+#: services/export_datasets.py srp/reports.py
+msgid "Fleet types (fleets)"
+msgstr "舰队类型（舰队数）"
+
+#: services/export_datasets.py
 msgid "SRP FCs"
 msgstr "SRP FC"
 
-#: services/export_datasets.py
+#: services/export_datasets.py srp/reports.py
 msgid "Only claims for losses in FleetOps fleets are grouped by FC."
 msgstr "只有 FleetOps 舰队内损失的申请才会按 FC 分组。"
+
+#: services/export_datasets.py
+#, python-format
+msgid "All time is cut to the last %(days)s days."
+msgstr "“全部时间”只取最近 %(days)s 天。"
+
+#: services/export_datasets.py
+msgid "SRP trend"
+msgstr "SRP 趋势"
+
+#: services/export_datasets.py
+msgid "SRP ships"
+msgstr "SRP 舰船"
+
+#: services/export_datasets.py
+msgid "SRP regions"
+msgstr "SRP 星域"
+
+#: services/export_datasets.py
+msgid "SRP reviewers"
+msgstr "SRP 审核人"
+
+#: services/export_datasets.py
+msgid "SRP payers"
+msgstr "SRP 付款人"
+
+#: services/export_datasets.py
+msgid "SRP rejections"
+msgstr "SRP 驳回"
+
+#: services/export_datasets.py
+msgid "SRP payments"
+msgstr "SRP 付款"
+
+#: services/export_datasets.py
+msgid "SRP limits"
+msgstr "SRP 限额"
 
 #: services/exports.py
 #, python-format
@@ -5216,6 +5284,23 @@ msgstr "%(date)s 不是有效的日期。"
 #: services/periods.py
 msgid "Enter the time as HH:MM (24-hour EVE time)."
 msgstr "请按 HH:MM 的格式输入时间（24 小时制 EVE 时间）。"
+
+#: services/periods.py
+msgid "Unknown period. Choose one of the listed periods."
+msgstr "无法识别的周期，请从列表中选择。"
+
+#: services/periods.py
+msgid "The last day is before the first day."
+msgstr "结束日早于起始日。"
+
+#: services/periods.py
+#, python-format
+msgid "The period is longer than %(days)s days. Choose a shorter one."
+msgstr "周期超过 %(days)s 天，请选择更短的周期。"
+
+#: services/periods.py
+msgid "Enter both the first and the last day."
+msgstr "请同时填写起始日和结束日。"
 
 #: services/population.py
 #, python-format
@@ -5678,6 +5763,167 @@ msgstr "不赔付胶囊损失。"
 msgid "Losses older than %(days)s days cannot be submitted."
 msgstr "超过 %(days)s 天的损失不能提交。"
 
+#: srp/reports.py
+msgctxt "FleetOps"
+msgid "Month"
+msgstr "月份"
+
+#: srp/reports.py
+msgid "Loss value (ISK)"
+msgstr "损失价值（ISK）"
+
+#: srp/reports.py templates/fleetops/srp/_summary_table.html
+msgid "Uncategorised"
+msgstr "未分类"
+
+#: srp/reports.py
+msgid "Used (ISK)"
+msgstr "已用（ISK）"
+
+#: srp/reports.py
+msgid "Cut by a cap or limit"
+msgstr "被上限或限额压低"
+
+#: srp/reports.py
+msgid "Personal monthly cap (ISK)"
+msgstr "个人月度上限（ISK）"
+
+#: srp/reports.py
+msgid "Corporation monthly cap (ISK)"
+msgstr "军团月度上限（ISK）"
+
+#: srp/reports.py
+msgid "Remaining is shown only when the period is exactly one calendar month, because the caps are monthly."
+msgstr "因为上限按月计算，只有周期恰好是一个日历月时才显示剩余。"
+
+#: srp/reports.py
+msgid "The corporation cap applies to each corporation. Remaining is what is left for the corporation that used most of it; Used is the sum of all corporations."
+msgstr "军团上限对每个军团分别生效。剩余是用得最多的军团还剩下的额度；已用是所有军团的总和。"
+
+#: srp/reports.py templates/fleetops/srp/_summary_table.html
+msgid "Losses"
+msgstr "损失"
+
+#: srp/reports.py
+#, python-format
+msgid "Only the %(count)s most lost ships are listed. Choose a shorter period to see the others."
+msgstr "只列出损失最多的 %(count)s 种舰船，请缩短周期查看其余舰船。"
+
+#: srp/reports.py srp/summaries.py templates/fleetops/operation/_review.html
+#: templates/fleetops/srp/_summary_table.html templates/fleetops/srp/claim.html
+msgid "Unknown"
+msgstr "未知"
+
+#: srp/reports.py
+msgid "All characters of a player are added up under the main character."
+msgstr "同一玩家的所有角色合并到大号名下。"
+
+#: srp/reports.py templates/fleetops/srp/_summary_table.html
+msgid "Unknown corporation"
+msgstr "未知军团"
+
+#: srp/reports.py
+msgid "Region"
+msgstr "星域"
+
+#: srp/reports.py
+#, python-format
+msgid "Region %(id)s"
+msgstr "星域 %(id)s"
+
+#: srp/reports.py
+msgid "Unknown: losses whose region is not stored yet. Older killmails get their region when the fleetops_srp_backfill_killmails command runs."
+msgstr "未知：尚未保存星域的损失。较早的击毁记录会在运行 fleetops_srp_backfill_killmails 命令后补上星域。"
+
+#: srp/reports.py templates/fleetops/srp/_summary_table.html
+msgid "Unknown FC"
+msgstr "未知 FC"
+
+#: srp/reports.py
+msgid "Reviewer"
+msgstr "审核人"
+
+#: srp/reports.py
+msgid "Payment batches"
+msgstr "付款批次数"
+
+#: srp/reports.py
+msgid "Payment batches are counted for each payer; a batch of two payers counts for both."
+msgstr "付款批次按付款人分别计数；由两位付款人共同付款的批次会为两人各计一次。"
+
+#: srp/reports.py
+msgid "Rejected by"
+msgstr "驳回人"
+
+#: srp/reports.py srp/summaries.py
+msgid "aa-srp (unknown)"
+msgstr "aa-srp（未知）"
+
+#: srp/reports.py
+msgid "The reviewer is shown to SRP staff only."
+msgstr "审核人只对 SRP 工作人员显示。"
+
+#: srp/reports.py
+msgid "The payer is shown to SRP staff only."
+msgstr "付款人只对 SRP 工作人员显示。"
+
+#: srp/reports.py templates/fleetops/srp/_limits.html
+msgid "Limit"
+msgstr "限额"
+
+#: srp/reports.py templates/fleetops/roster_import.html
+msgid "Over the limit"
+msgstr "超出限制"
+
+#: srp/reports.py
+msgid "Personal monthly limit"
+msgstr "个人月度限额"
+
+#: srp/reports.py
+msgid "One row for the personal monthly cap and one for each category with a personal monthly cap the member claimed in. Over the limit: claims whose amount a limit cut when it was calculated. Waived: approved claims whose last approval went over a limit with the reviewer's confirmation."
+msgstr "个人月度上限一行，成员申请过的每个设有个人月度上限的类别各一行。超出限额：计算时金额被限额压低的申请。豁免：最后一次批准在审核人确认后超出了限额的已通过申请。"
+
+#: srp/reports.py
+msgid "A limit is monthly: a month the period only touches in part is counted whole."
+msgstr "上限按月计算：周期只覆盖一部分的月份按整月统计。"
+
+#: srp/reports.py
+msgid "Trend by month"
+msgstr "按月趋势"
+
+#: srp/reports.py
+msgid "Categories"
+msgstr "类别"
+
+#: srp/reports.py templates/fleetops/my_statistics.html
+#: templates/fleetops/srp/_not_covered.html
+msgid "Ships"
+msgstr "舰船"
+
+#: srp/reports.py
+msgid "Regions"
+msgstr "星域"
+
+#: srp/reports.py
+msgid "Reviewers"
+msgstr "审核人"
+
+#: srp/reports.py
+msgid "Payers"
+msgstr "付款人"
+
+#: srp/reports.py
+msgid "Rejections"
+msgstr "驳回"
+
+#: srp/reports.py templates/fleetops/base.html
+msgid "Payments"
+msgstr "付款"
+
+#: srp/reports.py
+msgid "Personal limits"
+msgstr "个人限额"
+
 #: templates/fleetops/all_corporation_statistics.html
 msgid "All Corporations"
 msgstr "所有军团"
@@ -6095,14 +6341,16 @@ msgstr "首页"
 #: templates/fleetops/attendance_history.html templates/fleetops/audit_log.html
 #: templates/fleetops/fleet_operations.html
 #: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/bans.html
-#: templates/fleetops/srp/links.html templates/fleetops/statistics/members.html
+#: templates/fleetops/srp/links.html templates/fleetops/srp/reports.html
+#: templates/fleetops/statistics/members.html
 msgid "Previous"
 msgstr "上一页"
 
 #: templates/fleetops/attendance_history.html templates/fleetops/audit_log.html
 #: templates/fleetops/fleet_operations.html
 #: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/bans.html
-#: templates/fleetops/srp/links.html templates/fleetops/statistics/members.html
+#: templates/fleetops/srp/links.html templates/fleetops/srp/reports.html
+#: templates/fleetops/statistics/members.html
 msgid "Next"
 msgstr "下一页"
 
@@ -6231,13 +6479,13 @@ msgid "SRP Bans"
 msgstr "SRP 封禁"
 
 #: templates/fleetops/base.html
-msgid "Payments"
-msgstr "付款"
-
-#: templates/fleetops/base.html
 msgctxt "FleetOps"
 msgid "Summary"
 msgstr "汇总"
+
+#: templates/fleetops/base.html templates/fleetops/srp/_summary_table.html
+msgid "Reports"
+msgstr "报表"
 
 #: templates/fleetops/base.html templates/fleetops/srp/summary.html
 msgid "My fleets"
@@ -7313,11 +7561,6 @@ msgstr "使用的角色"
 #: templates/fleetops/my_statistics.html
 msgid "No character data."
 msgstr "没有角色数据。"
-
-#: templates/fleetops/my_statistics.html
-#: templates/fleetops/srp/_not_covered.html
-msgid "Ships"
-msgstr "舰船"
 
 #: templates/fleetops/my_statistics.html
 msgid "No tracked ship data for this month."
@@ -8418,11 +8661,6 @@ msgid "<strong>Rejected by an FC lead</strong> — this fleet is not counted in 
 msgstr "<strong>被 FC 主管拒绝</strong> —— 这支舰队不计入统计和 FC 奖金。"
 
 #: templates/fleetops/operation/_review.html
-#: templates/fleetops/srp/_summary_table.html templates/fleetops/srp/claim.html
-msgid "Unknown"
-msgstr "未知"
-
-#: templates/fleetops/operation/_review.html
 #, python-format
 msgid "With its PAP rows waiting for approval (%(count)s)"
 msgstr "含等待审批的 PAP 行（%(count)s）"
@@ -8566,7 +8804,7 @@ msgstr "已于 %(completed)s EVE 完成。"
 #: templates/fleetops/operation/_srp.html
 #: templates/fleetops/srp/_summary_table.html templates/fleetops/srp/claim.html
 #: templates/fleetops/srp/claim_edit_preview.html
-#: templates/fleetops/srp/home.html
+#: templates/fleetops/srp/home.html templates/fleetops/srp/reports.html
 msgid "Requested"
 msgstr "已申请"
 
@@ -8992,10 +9230,6 @@ msgstr[0] "以及另外 %(counter)s 支进行中的舰队"
 #: templates/fleetops/partials/running_fleets.html
 msgid "Show all running fleets"
 msgstr "查看全部进行中的舰队"
-
-#: templates/fleetops/roster_import.html
-msgid "Over the limit"
-msgstr "超出限制"
 
 #: templates/fleetops/roster_import.html views_errors.py
 msgid "Not found"
@@ -9586,10 +9820,6 @@ msgid "Not checked."
 msgstr "未核对。"
 
 #: templates/fleetops/srp/_limits.html
-msgid "Limit"
-msgstr "限额"
-
-#: templates/fleetops/srp/_limits.html
 msgid "Cap"
 msgstr "上限"
 
@@ -9845,6 +10075,7 @@ msgid "This claim has no account."
 msgstr "这条申请没有关联的账号。"
 
 #: templates/fleetops/srp/_summary_table.html
+#: templates/fleetops/srp/reports.html
 #, python-format
 msgid "%(pending)s pending &middot; %(approved)s approved &middot; %(rejected)s rejected"
 msgstr "待审核 %(pending)s &middot; 已通过 %(approved)s &middot; 已拒绝 %(rejected)s"
@@ -9872,12 +10103,17 @@ msgid "Ships lost most"
 msgstr "损失最多的舰船"
 
 #: templates/fleetops/srp/_summary_table.html
-msgid "Losses"
-msgstr "损失"
-
-#: templates/fleetops/srp/_summary_table.html
 msgid "No claims this month."
 msgstr "本月没有申请。"
+
+#: templates/fleetops/srp/_summary_table.html
+msgid "This month by category"
+msgstr "本月按类别"
+
+#: templates/fleetops/srp/_summary_table.html
+#: templates/fleetops/srp/reports.html
+msgid "Average payout"
+msgstr "平均赔付"
 
 #: templates/fleetops/srp/_summary_table.html
 msgid "Export corporations"
@@ -9889,16 +10125,8 @@ msgid "Remaining"
 msgstr "剩余"
 
 #: templates/fleetops/srp/_summary_table.html
-msgid "Unknown corporation"
-msgstr "未知军团"
-
-#: templates/fleetops/srp/_summary_table.html
 msgid "Export FCs"
 msgstr "导出 FC"
-
-#: templates/fleetops/srp/_summary_table.html
-msgid "Unknown FC"
-msgstr "未知 FC"
 
 #: templates/fleetops/srp/_summary_table.html
 msgid "No claims from fleets this month."
@@ -10686,6 +10914,86 @@ msgstr "说明 <span class=\"text-muted\">（可选）</span>"
 msgid "Submit claim"
 msgstr "提交申请"
 
+#: templates/fleetops/srp/reports.html
+msgid "SRP Reports"
+msgstr "SRP 报表"
+
+#: templates/fleetops/srp/reports.html templates/fleetops/srp/summary.html
+#, python-format
+msgid "Claims count in the EVE month of the loss &middot; %(label)s (EVE time)"
+msgstr "申请计入损失所在的 EVE 月 &middot; %(label)s（EVE 时间）"
+
+#: templates/fleetops/srp/reports.html
+msgid "Back to the summary"
+msgstr "返回总览"
+
+#: templates/fleetops/srp/reports.html
+msgid "The last 6 months are shown instead."
+msgstr "改为显示最近 6 个月。"
+
+#: templates/fleetops/srp/reports.html
+#, python-format
+msgid "\"All time\" is cut to the last %(days)s days. Choose a period to see older claims."
+msgstr "“全部时间”只取最近 %(days)s 天。选择周期可查看更早的申请。"
+
+#: templates/fleetops/srp/reports.html
+msgid "Report"
+msgstr "报表"
+
+#: templates/fleetops/srp/reports.html
+msgid "Custom range"
+msgstr "自定义范围"
+
+#: templates/fleetops/srp/reports.html
+msgid "From (EVE date)"
+msgstr "起始（EVE 日期）"
+
+#: templates/fleetops/srp/reports.html
+msgid "To (EVE date, included)"
+msgstr "截止（EVE 日期，含当天）"
+
+#: templates/fleetops/srp/reports.html
+msgid "Split by category"
+msgstr "按类别拆分"
+
+#: templates/fleetops/srp/reports.html
+msgid "Show report"
+msgstr "显示报表"
+
+#: templates/fleetops/srp/reports.html
+msgid "Dates you enter override the period."
+msgstr "填写的日期优先于周期选择。"
+
+#: templates/fleetops/srp/reports.html
+msgid "Approved ISK per approved claim"
+msgstr "已通过 ISK ÷ 已通过申请数"
+
+#: templates/fleetops/srp/reports.html
+msgid "Export this report"
+msgstr "导出此报表"
+
+#: templates/fleetops/srp/reports.html
+msgid "No claims in this period."
+msgstr "此周期内没有申请。"
+
+#: templates/fleetops/srp/reports.html
+#, python-format
+msgid "%(shown)s rows match the search. The total line covers the whole report."
+msgstr "有 %(shown)s 行符合搜索。合计行覆盖整份报表。"
+
+#: templates/fleetops/srp/reports.html
+msgid "The list is cut. Choose a shorter period to see the rest."
+msgstr "列表已截断，请缩短周期查看其余部分。"
+
+#: templates/fleetops/srp/reports.html
+msgid "Report pages"
+msgstr "报表页码"
+
+#: templates/fleetops/srp/reports.html
+#, python-format
+msgid "Rows %(start)s&ndash;%(end)s of %(total)s"
+msgstr "第 %(start)s&ndash;%(end)s 行，共 %(total)s 行"
+
 #: templates/fleetops/srp/review.html
 msgid "SRP Review"
 msgstr "SRP 审核"
@@ -10729,11 +11037,6 @@ msgstr "SRP 汇总 &middot; %(fc)s 的舰队"
 
 #: templates/fleetops/srp/summary.html
 #, python-format
-msgid "Claims count in the EVE month of the loss &middot; %(label)s (EVE time)"
-msgstr "申请计入损失所在的 EVE 月 &middot; %(label)s（EVE 时间）"
-
-#: templates/fleetops/srp/summary.html
-#, python-format
 msgid "Decisions are made on the <a href=\"%(review_url)s\">Review</a> page."
 msgstr "审批在<a href=\"%(review_url)s\">审核</a>页面进行。"
 
@@ -10760,6 +11063,10 @@ msgstr "所有成员（Excel）"
 #: templates/fleetops/srp/summary.html
 msgid "All members (CSV)"
 msgstr "所有成员（CSV）"
+
+#: templates/fleetops/srp/summary.html
+msgid "Reports and trends"
+msgstr "报表与趋势"
 
 #: templates/fleetops/srp/summary.html
 msgid "Used (approved and paid)"
@@ -14169,6 +14476,10 @@ msgid "Your account cannot download this export."
 msgstr "你的账号不能下载此导出。"
 
 #: views_errors.py
+msgid "This report is only open to SRP reviewers and payers."
+msgstr "此报表只对 SRP 审核人和付款人开放。"
+
+#: views_errors.py
 msgid "Not allowed"
 msgstr "无权访问"
 
@@ -14729,6 +15040,34 @@ msgstr "这笔损失已从你的列表中隐藏。"
 #: views_srp_losses.py
 msgid "The loss is back on your list."
 msgstr "这笔损失已回到你的列表中。"
+
+#: views_srp_reports.py
+msgid "This month"
+msgstr "本月"
+
+#: views_srp_reports.py
+msgid "Last month"
+msgstr "上个月"
+
+#: views_srp_reports.py
+msgid "Last 3 months"
+msgstr "最近 3 个月"
+
+#: views_srp_reports.py
+msgid "Last 6 months"
+msgstr "最近 6 个月"
+
+#: views_srp_reports.py
+msgid "Last 12 months"
+msgstr "最近 12 个月"
+
+#: views_srp_reports.py
+msgid "This year"
+msgstr "今年"
+
+#: views_srp_reports.py
+msgid "All time"
+msgstr "全部时间"
 
 #: views_srp_review.py
 msgid "you approved it; a different payer has to pay."

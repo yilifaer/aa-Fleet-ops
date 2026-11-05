@@ -188,6 +188,7 @@ FC 统计不受影响。
 | 内部备注 | 任一 SRP 人员权限（`manage_srp`、`review_srp` 或 `pay_srp`）；不受"处理自己的申请"设置限制 |
 | 任何申请页 | 申请人、SRP 人员（`manage_srp`、`review_srp`、`pay_srp`）、该申请所在舰队的 FC、`view_all_stats`（只读）、以及 `view_corp_stats`（本军团的申请）。其他人得到 404。内部备注和经手人的名字只有 SRP 人员能看到，其他人看到的是"申请人"、"审核人"或"系统"。本月已用额度显示给申请人、SRP 人员、`view_all_stats` 以及申请所属军团的 `view_corp_stats`，不显示给舰队的 FC。页面上的按钮跟着角色走：审核人看不到"标记已付款"，付款人看不到"通过"。 |
 | SRP 汇总（联盟、军团、FC） | SRP 人员或 `view_all_stats`（只读） |
+| SRP 报表（`srp/summary/reports/`：趋势、类别、舰船、成员、军团、星域、FC、驳回、付款、个人限额） | SRP 人员或 `view_all_stats`（只读）。**审核人**和**付款人**两份报表只给 SRP 人员：`view_all_stats` 得到 403，列表里也看不到。驳回的审核人和付款的付款人的名字只对 SRP 人员显示。 |
 | SRP 军团（本军团的合计、成员、申请） | 本军团的 `view_corp_stats`（没有大号的用户得到 404）；SRP 人员或 `view_all_stats` 可看任意军团 |
 | SRP 我的舰队（自己带过的舰队的申请和合计） | 拥有任一 FC 权限（`start_fleet`、`manage_own_fleet`、`manage_fleets`、`create_manual_fleet`）的用户，以及带过有 SRP 链接舰队的人，可看自己的页面；SRP 人员和 `view_all_stats` 还能看任意 FC 的页面 |
 | SRP 设置、SRP 类别、SRP 赔付表、SRP 军团限额 | `fleetops.manage_configuration`；每次修改都会记录新旧值 |
@@ -198,9 +199,12 @@ SRP 文件地址为 `/fleetops/statistics/export/<dataset>/`：
 |---|---|
 | `srp-claims`、`srp-members` | SRP 人员或 `view_all_stats` 可导出全联盟或任意军团（`corporation=<id>`）；`view_corp_stats` 只能带上本军团的 ID（其他军团返回 404，没带军团返回 403） |
 | `srp-corporations`、`srp-fcs` | SRP 人员或 `view_all_stats` |
+| `srp-trend`、`srp-categories`、`srp-ships`、`srp-regions`、`srp-rejections`、`srp-payments`、`srp-limits` | SRP 人员或 `view_all_stats` |
+| `srp-reviewers`、`srp-payers` | 只有 SRP 人员（`manage_srp`、`review_srp` 或 `pay_srp`）；`view_all_stats` 得到 403 |
 | `srp-payable`（待付款的申请，带付款页的筛选） | 只有 `fleetops.manage_srp` 或 `fleetops.pay_srp`（`group=player` 为每人一行） |
 
-`srp-claims` 里的"处理人"（Decided by）、"付款人"（Paid by）和"付款批次"（Payment batch）三列只对 SRP 人员填写。FC 和普通成员没有 SRP 文件。每次下载都记为 `srp.export`。
+`srp-claims` 里的"处理人"（Decided by）、"付款人"（Paid by）、"付款批次"（Payment batch）和"安全等级"（Security status）四列只对 SRP 人员填写。
+SRP 文件可以带周期：`from=` 和 `to=`（EVE 日期，含首尾两天）、`preset=`，或沿用的 `year=` 和 `month=`；超过 1100 天的周期会被拒绝（400），不带周期时和以前一样导出当月。FC 和普通成员没有 SRP 文件。每次下载都记为 `srp.export`。
 其他 SRP 操作都会记入操作日志，并显示在申请自己的时间线上：`srp.link_create`、`srp.link_update`、`srp.link_open`、`srp.link_close`、`srp.link_complete`、`srp.link_uncomplete`、`srp.claim_submit`、
 `srp.claim_auto_reject`、`srp.claim_withdraw`、`srp.claim_resubmit`、`srp.claim_approve`、`srp.claim_amount_change`、`srp.claim_reject`、
 `srp.claim_revoke`、`srp.claim_paid`、`srp.claim_unpaid`、`srp.claim_reopen`、`srp.claim_reclassify`、`srp.claim_recategorize`、`srp.claim_member_edit`、`srp.claim_recalculate`、

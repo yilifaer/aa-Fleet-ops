@@ -274,15 +274,18 @@ def _year_month(request):
     return parse_year_month(request.GET)
 
 
-def _period_choices(year, month):
+def _period_choices(year, month, earliest=None):
+    """Year and month lists of a month selector. The years reach back to the oldest fleet and, when given, to
+    ``earliest`` (the SRP pages pass the loss time of their oldest claim, so imported years can be chosen)."""
     now_year = current_year_month()[0]
-    earliest = (
+    first_fleet = (
         FleetOperation.objects.exclude(started_at=None)
         .order_by("started_at")
         .values_list("started_at", flat=True)
         .first()
     )
-    first_year = year_month_of(earliest)[0] if earliest else now_year
+    dates = [value for value in (first_fleet, earliest) if value is not None]
+    first_year = min(year_month_of(value)[0] for value in dates) if dates else now_year
     first_year = max(MIN_YEAR, min(first_year, now_year))
     years = list(range(now_year, first_year - 1, -1))
     if year not in years:
@@ -318,14 +321,14 @@ def _preserved_params(request, names):
     ]
 
 
-def _period_render_context(year, month, *, request=None, preserve=(), **kwargs):
+def _period_render_context(year, month, *, request=None, preserve=(), earliest=None, **kwargs):
     """Context of a page with a month selector.
 
     ``preserve`` names the query parameters (filters, sort) the selector submits again together with the
-    new month; they are read from ``request``. ``month_ref`` tells whether the month is running, finished
+    new month; they are read from ``request``. ``earliest`` is a date the year list must reach back to. ``month_ref`` tells whether the month is running, finished
     or still to come, and ``previous_period`` / ``next_period`` feed the previous and next month links.
     """
-    context = _period_choices(year, month)
+    context = _period_choices(year, month, earliest)
     context.update(
         {
             "year": year,

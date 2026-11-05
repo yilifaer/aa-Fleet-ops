@@ -12,6 +12,9 @@ from django.urls import reverse
 from django.utils import timezone
 
 from fleetops.models import SrpClaim, SrpCorporationLimit, SrpFleetLink, SrpSettings
+# STAT-1/3/4 (0.3.0b1): by_member, by_corporation and by_fc take a period (start, end) instead of a month; the tests
+# pass the bounds of the month they used to name.
+from fleetops.services.periods import month_bounds
 from fleetops.srp import summaries
 from fleetops.srp.types import LIMIT_CORPORATION, LIMIT_PERSONAL
 
@@ -256,7 +259,7 @@ class PersonalTests(SummaryData):
 
 class MemberTests(SummaryData):
     def test_one_row_per_player_the_most_approved_first(self):
-        rows = summaries.by_member(2026, 3)
+        rows = summaries.by_member(*month_bounds(2026, 3))
 
         self.assertEqual([row.main_character_name for row in rows], ["Alice Main", "Bob Main", "Cara Main"])
         alice, bob, cara = rows
@@ -266,18 +269,18 @@ class MemberTests(SummaryData):
         self.assertEqual((cara.corporation_id, cara.totals.claims, cara.totals.pending), (f.OTHER_CORP[0], 2, 1))
 
     def test_one_corporation(self):
-        rows = summaries.by_member(2026, 3, corporation_id=f.OTHER_CORP[0])
+        rows = summaries.by_member(*month_bounds(2026, 3), corporation_id=f.OTHER_CORP[0])
 
         self.assertEqual([row.main_character_name for row in rows], ["Cara Main"])
 
     def test_a_corporation_without_claims_has_no_rows(self):
-        self.assertEqual(summaries.by_member(2026, 3, corporation_id=1_234_567), [])
-        self.assertEqual(summaries.by_member(2026, 1), [])
+        self.assertEqual(summaries.by_member(*month_bounds(2026, 3), corporation_id=1_234_567), [])
+        self.assertEqual(summaries.by_member(*month_bounds(2026, 1)), [])
 
     def test_claims_of_a_deleted_account_stay_in_the_list(self):
         self.cara.delete()
 
-        rows = summaries.by_member(2026, 3)
+        rows = summaries.by_member(*month_bounds(2026, 3))
 
         row = next(row for row in rows if row.main_character_name == "Cara Main")
         self.assertIsNone(row.user_id)
@@ -289,14 +292,14 @@ class MemberTests(SummaryData):
         main.corporation_id, main.corporation_name = f.OTHER_CORP
         main.save()
 
-        rows = {row.main_character_name: row for row in summaries.by_member(2026, 3)}
+        rows = {row.main_character_name: row for row in summaries.by_member(*month_bounds(2026, 3))}
 
         self.assertEqual(rows["Alice Main"].corporation_id, f.DEFAULT_CORP[0])
 
 
 class CorporationTests(SummaryData):
     def test_rows_with_caps_and_what_is_left(self):
-        rows = {row.corporation_id: row for row in summaries.by_corporation(2026, 3)}
+        rows = {row.corporation_id: row for row in summaries.by_corporation(*month_bounds(2026, 3))}
 
         corp1, corp2 = rows[f.DEFAULT_CORP[0]], rows[f.OTHER_CORP[0]]
         self.assertEqual(list(rows), [f.DEFAULT_CORP[0], f.OTHER_CORP[0]])
@@ -317,7 +320,7 @@ class CorporationTests(SummaryData):
     def test_no_cap_at_all(self):
         SrpSettings.objects.filter(pk=1).update(corporation_monthly_cap=None)
 
-        rows = {row.corporation_id: row for row in summaries.by_corporation(2026, 3)}
+        rows = {row.corporation_id: row for row in summaries.by_corporation(*month_bounds(2026, 3))}
 
         self.assertEqual((rows[f.DEFAULT_CORP[0]].cap, rows[f.DEFAULT_CORP[0]].remaining), (None, None))
         self.assertEqual(rows[f.OTHER_CORP[0]].cap, 100 * M)
@@ -355,7 +358,7 @@ class CorporationTests(SummaryData):
 
 class FcTests(SummaryData):
     def test_in_fleet_claims_by_the_fc_of_the_link(self):
-        rows = summaries.by_fc(2026, 3)
+        rows = summaries.by_fc(*month_bounds(2026, 3))
 
         self.assertEqual([row.fc_name for row in rows], ["First FC", "Second FC"])
         first, second = rows
@@ -364,7 +367,7 @@ class FcTests(SummaryData):
         self.assertEqual((second.fleets, second.totals.claims, second.totals.requested, second.totals.approved), (1, 2, 30 * M, 25 * M))
 
     def test_out_of_fleet_claims_have_no_fc(self):
-        rows = summaries.by_fc(2026, 3)
+        rows = summaries.by_fc(*month_bounds(2026, 3))
 
         self.assertEqual(sum(row.totals.claims for row in rows), 4)
 
@@ -372,14 +375,14 @@ class FcTests(SummaryData):
         # The link's FC changes hands later (or the account goes away): the claims keep their snapshot.
         SrpFleetLink.objects.filter(pk=self.link1.pk).update(fc_user=self.fc2)
 
-        rows = {row.fc_name: row for row in summaries.by_fc(2026, 3)}
+        rows = {row.fc_name: row for row in summaries.by_fc(*month_bounds(2026, 3))}
 
         self.assertEqual(rows["First FC"].totals.claims, 2)
 
     def test_the_name_falls_back_to_the_main_of_the_account(self):
         SrpClaim.objects.filter(fc_user=self.fc2).update(fc_main_character_name="")
 
-        names = {row.fc_user_id: row.fc_name for row in summaries.by_fc(2026, 3)}
+        names = {row.fc_user_id: row.fc_name for row in summaries.by_fc(*month_bounds(2026, 3))}
 
         self.assertEqual(names[self.fc2.pk], "Second FC")
 
@@ -387,7 +390,7 @@ class FcTests(SummaryData):
         extra = f.fleet_link(f.create_operation(self.fc1, status="closed", started_at=at(20)))
         self.claim(self.alice, Status.APPROVED, 10 * M, 10 * M, link=extra, when=at(20, 13))
 
-        first = summaries.by_fc(2026, 3)[0]
+        first = summaries.by_fc(*month_bounds(2026, 3))[0]
 
         self.assertEqual((first.fleets, first.totals.claims), (2, 3))
 
@@ -498,9 +501,9 @@ class QueryCountTests(SummaryData):
         return {
             "month_totals": lambda: summaries.month_totals(2026, 3),
             "personal": lambda: summaries.personal(self.alice, 2026, 3),
-            "by_member": lambda: summaries.by_member(2026, 3),
-            "by_corporation": lambda: summaries.by_corporation(2026, 3),
-            "by_fc": lambda: summaries.by_fc(2026, 3),
+            "by_member": lambda: summaries.by_member(*month_bounds(2026, 3)),
+            "by_corporation": lambda: summaries.by_corporation(*month_bounds(2026, 3)),
+            "by_fc": lambda: summaries.by_fc(*month_bounds(2026, 3)),
             "fc_fleets": lambda: summaries.fc_fleets(self.fc1, 2026, 3),
             "alliance": lambda: summaries.alliance(2026, 3),
             "claims_in_month": lambda: summaries.claims_in_month(2026, 3),

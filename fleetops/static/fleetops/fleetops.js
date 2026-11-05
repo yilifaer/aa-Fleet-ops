@@ -488,6 +488,30 @@
     }
   });
 
+  // --- Report period ----------------------------------------------------------------------------------
+  // Typed dates win over the period list on the server. So choosing a period empties the dates, and typing a date
+  // switches the list to "Custom range".
+  document.addEventListener('change', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    const form = target.closest('form');
+    if (!form) {
+      return;
+    }
+    if (target.matches('[data-fo-period-preset]')) {
+      form.querySelectorAll('[data-fo-period-date]').forEach((input) => {
+        input.value = '';
+      });
+    } else if (target.matches('[data-fo-period-date]')) {
+      const preset = form.querySelector('[data-fo-period-preset]');
+      if (preset) {
+        preset.value = '';
+      }
+    }
+  });
+
   // --- Page set-up ------------------------------------------------------------------------------------
 
   // Sticky bars sit under AA's fixed navbar, whose height depends on the theme.

@@ -812,6 +812,16 @@ class PermissionMatrixTests(SrpViewTestCase):
                  by_srp_role(SRP_STAFF | {"srp_stats"})),
             Case("srp_summary invalid month", "get", r("fleetops:srp_summary"), {"year": "x", "month": "13"},
                  by_srp_role(SRP_STAFF | {"srp_stats"})),
+            # STAT-2: the report page is open to SRP staff and view_all_stats; the reviewer and payer reports
+            # (STAT-5) are for SRP staff only.
+            Case("srp_reports", "get", r("fleetops:srp_reports"), None, by_srp_role(SRP_STAFF | {"srp_stats"})),
+            Case("srp_reports period", "get", r("fleetops:srp_reports"), {"from": "2026-03-01", "to": "2026-03-31"},
+                 by_srp_role(SRP_STAFF | {"srp_stats"})),
+            Case("srp_reports too long", "get", r("fleetops:srp_reports"), {"from": "2020-01-01", "to": "2026-03-31"},
+                 by_srp_role(SRP_STAFF | {"srp_stats"})),
+            Case("srp_reports reviewers", "get", r("fleetops:srp_reports"), {"report": "reviewers"},
+                 by_srp_role(SRP_STAFF)),
+            Case("srp_reports payers", "get", r("fleetops:srp_reports"), {"report": "payers"}, by_srp_role(SRP_STAFF)),
             Case("srp_summary_own_corporation", "get", r("fleetops:srp_summary_own_corporation"), None,
                  by_srp_role(SRP_STAFF | {"srp_stats", "srp_corp", "srp_corp_other"})),
             # A corporation manager's own corporation by ID is their page; any other ID is a 404 with the reason.

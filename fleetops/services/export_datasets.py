@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import BadRequest, PermissionDenied
 from django.db.models import Sum
 from django.http import Http404, HttpRequest
 from django.utils.translation import gettext, gettext_lazy, ngettext, pgettext, pgettext_lazy
@@ -29,6 +29,7 @@ from fleetops.models import (
     FleetOpsSettings,
     FleetType,
     IncentivePeriod,
+    SrpCategory,
     SrpClaim,
     SrpSettings,
 )
@@ -40,11 +41,20 @@ from fleetops.services.attendance_history import SCOPES as ATTENDANCE_SCOPES
 from fleetops.services.attendance_history import history_month, history_queryset, retention_days
 from fleetops.services.audit import audit_event
 from fleetops.services.exports import Column, Table, export_filename, export_response
-from fleetops.services.periods import eve_now, month_bounds, parse_year_month
+from fleetops.services.periods import (
+    MAX_REPORT_DAYS,
+    Period,
+    PeriodError,
+    eve_now,
+    parse_period,
+    parse_year_month,
+    period_query,
+)
 from fleetops.srp import access as srp_access
 from fleetops.srp import display as srp_display
 from fleetops.srp import payments as srp_payments
 from fleetops.srp import policy as srp_rules
+from fleetops.srp import reports as srp_reports
 from fleetops.srp import summaries as srp_summaries
 from fleetops.srp.types import warnings_from_json
 from fleetops.texts import translate_stored
@@ -83,7 +93,8 @@ class ExportScope:
     """What a download covers, as the check of a dataset decided it.
 
     ``label`` names the scope in the file name and the audit entry (``alliance``, ``corporation-98000001``,
-    ``me``); ``year`` and ``month`` are None for "all retained" PAP. ``params`` holds the validated
+    ``me``); ``year`` and ``month`` are None for "all retained" PAP and for an SRP period that is not one calendar
+    month. ``window`` is the period of an SRP download (any range of EVE days). ``params`` holds the validated
     query parameters and is stored in the audit entry, so it carries no secrets.
     """
 
@@ -95,10 +106,22 @@ class ExportScope:
     user: object | None = None
     period: IncentivePeriod | None = None
     params: dict = field(default_factory=dict)
+    window: Period | None = None
 
     @property
     def period_label(self) -> str:
+        """The period in the file name: ``YYYY-MM-DD_YYYY-MM-DD`` for every SRP period (a whole calendar month
+        too), ``YYYY-MM`` for one month of retained PAP, ``all`` for all retained PAP."""
+        if self.window is not None:
+            return self.window.file_label
         return f"{self.year:04d}-{self.month:02d}" if self.year and self.month else "all"
+
+    @property
+    def period_text(self) -> str:
+        """The period for the About sheet."""
+        if self.window is not None:
+            return self.window.label
+        return self.period_label if self.year else gettext("All retained")
 
     @property
     def object_id(self) -> str:
@@ -257,7 +280,8 @@ def _table(request, scope, title, columns, rows, *, scope_text, details=()) -> t
     about = [
         (gettext("Dataset"), title),
         (gettext("Scope"), scope_text),
-        (gettext("Month (EVE time)"), scope.period_label if scope.year else gettext("All retained")),
+        # SRP files cover any period; the other statistics files are by month and keep their label.
+        (gettext("Period (EVE time)") if scope.window is not None else gettext("Month (EVE time)"), scope.period_text),
         (gettext("Exported at (EVE)"), eve_now()),
         (gettext("Exported by"), _display_name(request.user)),
     ]
@@ -712,38 +736,90 @@ def _srp_everything(request):
         raise PermissionDenied
 
 
+def _srp_window(request, *, optional: bool = False) -> Period | None:
+    """The period of an SRP download from ``from`` and ``to``, ``preset`` or ``year`` and ``month``; the current month
+    without them (as in 0.2.x). With ``optional`` and none of them None. An unusable period is a bad request."""
+    if optional and not any(name in request.GET for name in ("from", "to", "preset", "year", "month")):
+        return None
+    try:
+        return parse_period(request.GET, default="this_month", earliest=srp_summaries.earliest_claim_time())
+    except PeriodError as exc:
+        raise BadRequest(str(exc)) from None
+
+
+def _window_params(window: Period | None) -> dict:
+    """The period for the audit entry: the month as ``year`` and ``month`` like before, else the days or the preset."""
+    if window is None:
+        return {}
+    if window.is_calendar_month:
+        return {"year": window.start.year, "month": window.start.month}
+    return period_query(window)
+
+
+def _window_scope(dataset, label, window, *, params, corporation_id=None) -> ExportScope:
+    year, month = window.year_month or (None, None)
+    return ExportScope(
+        dataset,
+        label,
+        year,
+        month,
+        corporation_id=corporation_id,
+        params={**_window_params(window), **params},
+        window=window,
+    )
+
+
 def check_srp_claims(request) -> ExportScope:
-    year, month = parse_year_month(request.GET)
+    window = _srp_window(request)
     corporation_id, label = _srp_corporation(request)
     status = request.GET.get("status", "")
     claim_scope = request.GET.get("scope", "")
+    category = request.GET.get("category", "")
+    if category and not SrpCategory.objects.filter(key=category).exists():
+        raise Http404
     params = _params(
-        year=year,
-        month=month,
         corporation=corporation_id,
         status=status if status in SRP_STATUS_FILTERS else "",
         scope=claim_scope if claim_scope in SrpClaim.Scope.values else "",
+        category=category,
     )
-    return ExportScope("srp-claims", label, year, month, corporation_id=corporation_id, params=params)
+    return _window_scope("srp-claims", label, window, params=params, corporation_id=corporation_id)
 
 
 def check_srp_members(request) -> ExportScope:
-    year, month = parse_year_month(request.GET)
+    window = _srp_window(request)
     corporation_id, label = _srp_corporation(request)
-    params = _params(year=year, month=month, corporation=corporation_id)
-    return ExportScope("srp-members", label, year, month, corporation_id=corporation_id, params=params)
+    return _window_scope(
+        "srp-members", label, window, params=_params(corporation=corporation_id), corporation_id=corporation_id
+    )
 
 
 def check_srp_corporations(request) -> ExportScope:
     _srp_everything(request)
-    year, month = parse_year_month(request.GET)
-    return ExportScope("srp-corporations", "alliance", year, month, params=_params(year=year, month=month))
+    return _window_scope("srp-corporations", "alliance", _srp_window(request), params={})
 
 
 def check_srp_fcs(request) -> ExportScope:
     _srp_everything(request)
-    year, month = parse_year_month(request.GET)
-    return ExportScope("srp-fcs", "alliance", year, month, params=_params(year=year, month=month))
+    return _window_scope("srp-fcs", "alliance", _srp_window(request), params={})
+
+
+def _check_srp_report(slug, *, staff_only: bool = False):
+    """The check of a report dataset (``srp-trend`` ...): everyone who sees all SRP summaries, SRP staff only for the
+    reviewer and payer reports."""
+
+    def check(request) -> ExportScope:
+        if staff_only:
+            if not srp_access.is_srp_staff(request.user):
+                raise PermissionDenied
+        else:
+            _srp_everything(request)
+        split = request.GET.get("split", "") if slug == "srp-trend" else ""
+        return _window_scope(
+            slug, "alliance", _srp_window(request), params=_params(split="category" if split == "category" else "")
+        )
+
+    return check
 
 
 def check_srp_payable(request) -> ExportScope:
@@ -753,12 +829,12 @@ def check_srp_payable(request) -> ExportScope:
         raise PermissionDenied
     filters = srp_payments.parse_filters(request.GET)
     group = "player" if request.GET.get("group") == "player" else ""
-    # The month of the loss narrows the page's list only once picked; the file follows the page.
-    year = month = None
-    if "year" in request.GET or "month" in request.GET:
-        year, month = parse_year_month(request.GET)
-    params = _params(group=group, year=year, month=month, **filters)
-    return ExportScope("srp-payable", "alliance", year, month, params=params)
+    # The period of the loss narrows the page's list only once picked; the file follows the page.
+    window = _srp_window(request, optional=True)
+    year, month = (window.year_month or (None, None)) if window is not None else (None, None)
+    params = _params(group=group, **filters)
+    params.update(_window_params(window))
+    return ExportScope("srp-payable", "alliance", year, month, params=params, window=window)
 
 
 def _label(choices, value) -> str:
@@ -771,6 +847,7 @@ def _srp_claim_lines(claims, *, show_reviewers: bool = False) -> Iterator[list]:
     The names of the people who decided on and paid a claim are written for ``show_reviewers`` only: the claim
     page shows them to SRP managers alone, and the file must not tell more than the page.
     """
+    claims = claims.select_related("category", "link", "killmail")
     if show_reviewers:
         claims = claims.select_related(
             "decided_by__profile__main_character", "paid_by__profile__main_character", "payment_batch"
@@ -805,6 +882,12 @@ def _srp_claim_lines(claims, *, show_reviewers: bool = False) -> Iterator[list]:
             "; ".join(warning.text for warning in warnings_from_json(claim.warnings)),
             # Appended at the end (decision 26). Like the names of the deciders, only staff see the batch.
             claim.payment_batch.reference if show_reviewers and claim.payment_batch_id else "",
+            # Appended at the end as well, so that downstream sheets that read by column number keep working. The
+            # security status is part of the staff block of the claim page, so only staff get it here.
+            srp_display.category_label(claim.category) if claim.category_id else "",
+            srp_display.link_name(claim),
+            claim.get_source_display(),
+            claim.killmail.solar_system_security if show_reviewers else None,
         ]
 
 
@@ -814,9 +897,8 @@ def build_srp_payable(request, scope):
     params = scope.params
     filters = {key: params[key] for key in srp_payments.FILTER_NAMES if key in params}
     claims = srp_payments.apply_filters(SrpClaim.objects.filter(status=SrpClaim.Status.APPROVED), filters)
-    if scope.year and scope.month:
-        lower, upper = month_bounds(scope.year, scope.month)
-        claims = claims.filter(killmail_time__gte=lower, killmail_time__lt=upper)
+    if scope.window is not None:
+        claims = claims.filter(killmail_time__gte=scope.window.start, killmail_time__lt=scope.window.end)
     claims = claims.select_related("user__profile__main_character", "category", "link").order_by("killmail_time", "pk")
     # One row past the limit shows a cut; the file then says so (a payer must not take a short list for the whole one).
     rows = list(claims[: exports.MAX_EXPORT_ROWS + 1])
@@ -890,13 +972,15 @@ def _srp_scope_text(scope, name="") -> str:
 
 def build_srp_claims(request, scope):
     params = scope.params
-    claims = srp_summaries.month_claims(scope.year, scope.month)
+    claims = srp_summaries.period_claims(scope.window.start, scope.window.end)
     if scope.corporation_id is not None:
         claims = claims.filter(corporation_id=scope.corporation_id)
     if params.get("status"):
         claims = claims.filter(status=params["status"])
     if params.get("scope"):
         claims = claims.filter(scope=params["scope"])
+    if params.get("category"):
+        claims = claims.filter(category__key=params["category"])
     columns = [
         Column("claim", gettext("Claim")),
         Column("loss", gettext("Loss time (EVE)"), "datetime"),
@@ -923,6 +1007,10 @@ def build_srp_claims(request, scope):
         Column("fleet_check", gettext("Fleet check")),
         Column("warnings", gettext("Warnings")),
         Column("payment_batch", gettext("Payment batch")),
+        Column("category", gettext("Category")),
+        Column("link", gettext("Link")),
+        Column("source", gettext("Source")),
+        Column("security", gettext("Security status"), "decimal"),
     ]
     filters = "; ".join(
         text
@@ -933,6 +1021,7 @@ def build_srp_claims(request, scope):
             gettext("Scope: %(value)s") % {"value": _label(SrpClaim.Scope.choices, params["scope"])}
             if params.get("scope")
             else "",
+            gettext("Category: %(value)s") % {"value": params["category"]} if params.get("category") else "",
         )
         if text
     )
@@ -997,13 +1086,17 @@ def _totals_columns() -> list[Column]:
 
 
 def build_srp_members(request, scope):
-    rows = srp_summaries.by_member(scope.year, scope.month, corporation_id=scope.corporation_id)
+    rows = srp_summaries.by_member(scope.window.start, scope.window.end, corporation_id=scope.corporation_id)
     columns = [
         Column("main", pgettext("FleetOps", "Main character")),
         Column("corporation", pgettext("FleetOps", "Corporation")),
         *_totals_columns(),
+        Column("average", gettext("Average payout (ISK)"), "int"),
     ]
-    lines = [[row.main_character_name, row.corporation_name, *_totals_cells(row.totals)] for row in rows]
+    lines = [
+        [row.main_character_name, row.corporation_name, *_totals_cells(row.totals), row.totals.average_payout]
+        for row in rows
+    ]
     name = rows[0].corporation_name if rows else ""
     table, filename = _table(
         request,
@@ -1015,12 +1108,12 @@ def build_srp_members(request, scope):
         details=[(gettext("Counting rule"), str(SRP_RULE))],
     )
     total = srp_summaries.add_totals(*(row.totals for row in rows))
-    table.footer.append([str(SRP_TOTAL_ROW), "", *_totals_cells(total)])
+    table.footer.append([str(SRP_TOTAL_ROW), "", *_totals_cells(total), total.average_payout])
     return table, filename
 
 
 def build_srp_corporations(request, scope):
-    rows = srp_summaries.by_corporation(scope.year, scope.month)
+    rows = srp_summaries.by_corporation(scope.window.start, scope.window.end)
     columns = [
         Column("corporation", pgettext("FleetOps", "Corporation")),
         Column("ticker", pgettext("FleetOps", "Ticker")),
@@ -1028,13 +1121,28 @@ def build_srp_corporations(request, scope):
         Column("cap", gettext("Monthly cap (ISK)"), "int"),
         Column("used", gettext("Used of the cap (ISK)"), "int"),
         Column("remaining", gettext("Remaining (ISK)"), "int"),
+        # Appended at the end (decision 26).
+        Column("members", gettext("People"), "int"),
+        Column("average", gettext("Average payout (ISK)"), "int"),
     ]
+    # The cap is monthly: what a corporation used of it is only known for exactly one calendar month.
+    month = scope.window.is_calendar_month
     lines = [
-        [row.corporation_name, row.corporation_ticker, *_totals_cells(row.totals), row.cap, row.used, row.remaining]
+        [
+            row.corporation_name,
+            row.corporation_ticker,
+            *_totals_cells(row.totals),
+            row.cap,
+            row.used if month else None,
+            row.remaining if month else None,
+            row.members,
+            row.totals.average_payout,
+        ]
         for row in rows
     ]
     total = srp_summaries.add_totals(*(row.totals for row in rows))
-    lines.append([str(SRP_TOTAL_ROW), "", *_totals_cells(total), None, None, None])
+    # The total stays the last row of this older file (consumers read it there); the new datasets use the footer.
+    lines.append([str(SRP_TOTAL_ROW), "", *_totals_cells(total), None, None, None, None, total.average_payout])
     return _table(
         request,
         scope,
@@ -1042,16 +1150,43 @@ def build_srp_corporations(request, scope):
         columns,
         lines,
         scope_text=pgettext("FleetOps", "Alliance"),
-        details=[(gettext("Counting rule"), str(SRP_RULE))],
+        details=[(gettext("Counting rule"), str(SRP_RULE))]
+        + (
+            []
+            if month
+            else [
+                (
+                    gettext("Note"),
+                    gettext(
+                        "Used and Remaining are shown only when the period is exactly one calendar month, because the cap is monthly."
+                    ),
+                )
+            ]
+        ),
     )
 
 
 def build_srp_fcs(request, scope):
-    rows = srp_summaries.by_fc(scope.year, scope.month)
-    columns = [Column("fc", gettext("FC (main)")), Column("fleets", gettext("Fleets"), "int"), *_totals_columns()]
-    lines = [[row.fc_name, row.fleets, *_totals_cells(row.totals)] for row in rows]
+    rows = srp_summaries.by_fc(scope.window.start, scope.window.end)
+    columns = [
+        Column("fc", gettext("FC (main)")),
+        Column("fleets", gettext("Fleets"), "int"),
+        *_totals_columns(),
+        Column("average", gettext("Average payout (ISK)"), "int"),
+        Column("fleet_types", gettext("Fleet types (fleets)")),
+    ]
+    lines = [
+        [
+            row.fc_name,
+            row.fleets,
+            *_totals_cells(row.totals),
+            row.totals.average_payout,
+            srp_reports.fleet_type_text(row.fleet_types),
+        ]
+        for row in rows
+    ]
     total = srp_summaries.add_totals(*(row.totals for row in rows))
-    lines.append([str(SRP_TOTAL_ROW), sum(row.fleets for row in rows), *_totals_cells(total)])
+    lines.append([str(SRP_TOTAL_ROW), sum(row.fleets for row in rows), *_totals_cells(total), total.average_payout, ""])
     return _table(
         request,
         scope,
@@ -1065,6 +1200,50 @@ def build_srp_fcs(request, scope):
                 f"{SRP_RULE} " + gettext("Only claims for losses in FleetOps fleets are grouped by FC."),
             )
         ],
+    )
+
+
+_REPORT_KINDS = {srp_reports.TEXT: "text", srp_reports.COUNT: "int", srp_reports.ISK: "int", srp_reports.DATETIME: "datetime"}
+
+
+def _build_srp_report(slug, title):
+    """The builder of a report dataset: the table of the report page, written as a file (the total in the footer)."""
+    report = srp_reports.REPORTS[slug]
+
+    def build(request, scope):
+        window = scope.window
+        table = report.build(
+            window,
+            staff=srp_access.is_srp_staff(request.user),
+            limit=exports.MAX_EXPORT_ROWS,
+            split=scope.params.get("split", ""),
+        )
+        columns = [Column(col.key, str(col.label), _REPORT_KINDS[col.kind]) for col in table.columns]
+        details = [(gettext("Counting rule"), str(SRP_RULE))]
+        details.extend((gettext("Note"), note) for note in table.notes)
+        if window.cut:
+            details.append(
+                (
+                    gettext("Note"),
+                    gettext("All time is cut to the last %(days)s days.") % {"days": MAX_REPORT_DAYS},
+                )
+            )
+        built, filename = _table(
+            request, scope, str(title), columns, table.rows, scope_text=pgettext("FleetOps", "Alliance"), details=details
+        )
+        if table.truncated and report.slug in ("rejections", "payments"):
+            # A short list must not pass for the whole one: the note stands in the file, above the total.
+            built.rows.append([exports.truncation_note()] + [None] * (len(columns) - 1))
+        if table.footer:
+            built.footer.append(table.footer)
+        return built, filename
+
+    return build
+
+
+def _report_dataset(slug, title, *, staff_only=False):
+    return Dataset(
+        slug, title, _check_srp_report(slug, staff_only=staff_only), _build_srp_report(slug.removeprefix("srp-"), title), **SRP_AUDIT
     )
 
 
@@ -1088,6 +1267,15 @@ DATASETS = {
         ),
         Dataset("srp-fcs", gettext_lazy("SRP FCs"), check_srp_fcs, build_srp_fcs, **SRP_AUDIT),
         Dataset("srp-payable", gettext_lazy("SRP to pay"), check_srp_payable, build_srp_payable, **SRP_AUDIT),
+        _report_dataset("srp-trend", gettext_lazy("SRP trend")),
+        _report_dataset("srp-categories", gettext_lazy("SRP categories")),
+        _report_dataset("srp-ships", gettext_lazy("SRP ships")),
+        _report_dataset("srp-regions", gettext_lazy("SRP regions")),
+        _report_dataset("srp-reviewers", gettext_lazy("SRP reviewers"), staff_only=True),
+        _report_dataset("srp-payers", gettext_lazy("SRP payers"), staff_only=True),
+        _report_dataset("srp-rejections", gettext_lazy("SRP rejections")),
+        _report_dataset("srp-payments", gettext_lazy("SRP payments")),
+        _report_dataset("srp-limits", gettext_lazy("SRP limits")),
     )
 }
 

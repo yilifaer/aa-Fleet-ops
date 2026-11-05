@@ -42,6 +42,9 @@ class DatasetRegistryTests(TestCase):
                 "srp-claims", "srp-members", "srp-corporations", "srp-fcs",
                 # REV-6 (0.3.0b1): the claims waiting for payment.
                 "srp-payable",
+                # STAT-6/STAT-7 (0.3.0b1): the report datasets.
+                "srp-trend", "srp-categories", "srp-ships", "srp-regions", "srp-reviewers", "srp-payers",
+                "srp-rejections", "srp-payments", "srp-limits",
             },
         )
         for slug, dataset in DATASETS.items():

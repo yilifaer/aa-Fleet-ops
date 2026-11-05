@@ -31,7 +31,7 @@ from fleetops.forms_srp import (
 )
 from fleetops.models import SrpCategory, SrpClaim, SrpFleetLink, SrpPaymentBatch, SrpSettings
 from fleetops.services.periods import eve_now, month_bounds
-from fleetops.srp import access, bans, display, payments as srp_payments, review
+from fleetops.srp import access, bans, display, payments as srp_payments, review, summaries
 from fleetops.srp.access import MANAGE_SRP, PAY_SRP, REVIEW_SRP
 from fleetops.srp.display import category_label
 from fleetops.srp.types import SrpError, SrpStateError
@@ -284,6 +284,7 @@ def review_queue(request):
             year,
             month,
             request=request,
+            earliest=summaries.earliest_claim_time(),
             preserve=REVIEW_FILTERS,
             filter_form=form,
             link_hints=link_hints(),
@@ -702,6 +703,7 @@ def payments(request):
             year,
             month,
             request=request,
+            earliest=summaries.earliest_claim_time(),
             preserve=PAYMENT_FILTERS,
             pay_rows=rows,
             to_pay_total=sum(row.total for row in rows),

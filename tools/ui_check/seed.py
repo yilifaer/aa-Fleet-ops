@@ -148,6 +148,8 @@ def build_pages():
         Page("srp-review", "srp", u("srp_review")),
         Page("srp-payments", "srp", u("srp_payments")),
         Page("srp-summary", "srp", u("srp_summary")),
+        Page("srp-reports", "srp", u("srp_reports")),
+        Page("srp-reports-categories", "srp", u("srp_reports", query="?report=categories&preset=last_12")),
         Page("srp-claim-pending", "srp", lambda ctx: reverse("fleetops:srp_claim", args=[ctx.claim_pending.uuid])),
         Page("srp-links", "srp", u("srp_links")),
         Page("srp-link-new", "srp", u("srp_link_new")),

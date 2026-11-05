@@ -20,6 +20,7 @@ from django.utils import translation
 
 from fleetops.providers import esi_universe
 from fleetops.services import sde
+from fleetops.services.names import cached_entity_names
 
 logger = get_extension_logger(__name__)
 
@@ -248,3 +249,16 @@ def type_groups(ids) -> dict[int, int]:
         if group_id:
             result[type_id] = group_id
     return result
+
+
+def region_names(ids) -> dict[int, str]:
+    """``{region_id: name}`` for the regions that could be named, from the name cache and django-eveonline-sde. ESI is
+    never called, so a page can show regions; the others are left out."""
+    wanted = _ids(ids)
+    if not wanted:
+        return {}
+    names = {key: value for key, value in sde._names("Region", wanted).items() if value}
+    missing = wanted - set(names)
+    if missing:
+        names.update(cached_entity_names(missing))
+    return names

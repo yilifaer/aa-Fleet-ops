@@ -22,7 +22,7 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
-from fleetops.models import IncentivePeriod, SrpSettings
+from fleetops.models import IncentivePeriod, SrpClaim, SrpSettings
 from fleetops.services.incentives import rebuild_period
 
 from . import factories as f
@@ -592,3 +592,47 @@ class SrpReviewPaymentBudgetTests(TestCase):
             f.srp_claim(pilot, status="paid", decided_by=approver, payment_batch=batch)
 
         self.assertEqual(self.count(payer, url), small)
+
+
+class SrpReportBudgetTests(TestCase):
+    """0.3.0b1 (STAT-2 to STAT-7): the report page and the alliance summary cost a fixed number of queries whatever the
+    number of claims, members, ships, regions, FCs, payers and months."""
+
+    def count(self, user, url, params):
+        self.client.force_login(user)
+        self.client.get(url, params)
+        cache.clear()
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(url, params)
+        self.assertEqual(response.status_code, 200)
+        return len(queries)
+
+    def add_claims(self, label, count):
+        for index in range(count):
+            pilot = f.create_user(f"budget_report_{label}_{index}", perms=f.SRP_MEMBER_PERMS)
+            fc = f.create_user(f"budget_report_fc_{label}_{index}", perms=[*f.FC_PERMS, "fleetops.request_srp"])
+            link = f.fleet_link(f.create_operation(fc, status="closed", started_at=datetime(2026, 3, 5, 18, tzinfo=dt_timezone.utc)))
+            category = f.srp_category(f"Budget report category {label} {index}", personal_monthly_cap=50_000_000)
+            for status in (SrpClaim.Status.APPROVED, SrpClaim.Status.PAID, SrpClaim.Status.REJECTED):
+                when = datetime(2026, 1 + index % 3, 6 + index, 12, tzinfo=dt_timezone.utc)
+                f.srp_claim(
+                    pilot, status=status, link=link, decided_by=fc, amount=10_000_000, category=category,
+                    killmail=f.srp_killmail(f.main_of(pilot), ship_type_id=587 + index, time=when, region_id=10_000_000 + index),
+                )
+
+    def test_every_report_and_the_summary_cost_a_fixed_number_of_queries(self):
+        from fleetops.srp import reports
+
+        manager = f.create_user("budget_report_manager", perms=f.SRP_MANAGER_PERMS)
+        f.srp_settings(personal_monthly_cap=100_000_000)
+        window = {"from": "2026-01-01", "to": "2026-03-31"}
+        urls = {slug: (route("srp_reports"), {**window, "report": slug}) for slug in reports.REPORTS}
+        urls["summary"] = (route("srp_summary"), {"year": 2026, "month": 3})
+        # Three pilots, so that January, February and March (the month of the summary) each have claims.
+        self.add_claims("a", 3)
+        small = {name: self.count(manager, *args) for name, args in urls.items()}
+        self.add_claims("b", 6)
+
+        for name, args in urls.items():
+            with self.subTest(page=name):
+                self.assertEqual(self.count(manager, *args), small[name])

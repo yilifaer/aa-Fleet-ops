@@ -16,6 +16,7 @@ from django.utils import translation
 from fleetops.models import SrpClaim
 from fleetops.services import exports
 from fleetops.services.exports import Column, Table, csv_response, xlsx_response
+from fleetops.services.periods import month_bounds
 from fleetops.srp import summaries
 
 from . import factories as f
@@ -166,7 +167,7 @@ class SrpTotalsTests(data.SummaryData):
         )
 
     def test_the_members_total_is_the_last_row_of_both_files(self):
-        members = summaries.by_member(2026, 3)
+        members = summaries.by_member(*month_bounds(2026, 3))  # STAT-1: by_member takes a period
         for rows in (csv_rows(self.download("srp-members")), workbook_rows(self.download("srp-members", "xlsx"))):
             self.assertEqual(len(rows), 1 + len(members) + 1)
             self.assertEqual(rows[-1][0], "Total")

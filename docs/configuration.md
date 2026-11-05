@@ -643,7 +643,39 @@ To enable FleetOps SRP:
   open, the approval is refused with the old and new amount.
 - Reviewers cannot decide on their own claims unless "SRP reviewers may decide on their own claims" allows it, and payers cannot mark their own claims paid unless "SRP payers may mark their own claims paid" allows it. With "The approver of a claim may not pay it" on, the approver cannot mark the claim paid either.
 - Summaries (**Summary**, **Corporation**, **My fleets**) are by EVE month of the loss and exclude withdrawn
-  claims. The files are `srp-claims`, `srp-members`, `srp-corporations` and `srp-fcs`.
+  claims. The files are `srp-claims`, `srp-members`, `srp-corporations` and `srp-fcs`. The alliance summary also shows
+  "This month by category" and links to the reports.
+- **Reports** (menu **SRP** > **Reports**, `srp/summary/reports/`) show any period, not only a month. Choose a report,
+  a period (**From** and **To**, EVE dates with both days included, or a preset: this month, last month, last 3, 6 or 12
+  months, this year, all time; dates you enter win over a preset) and press **Show report**. The default is the last six
+  months including the running one. A period cannot be longer than 1100 days; "All time" starts at the oldest claim and
+  is cut to the last 1100 days with a note. Claims count in the EVE month of the loss, withdrawn claims are left out. A
+  report has summary cards (claims, requested, approved, paid, average payout), a table you can search (50 rows per page)
+  with the total in the last line, and **Excel** and **CSV** buttons for the same period. Every table shows the average
+  payout (approved ISK divided by approved and paid claims). The reports:
+  **Trend by month** (one row per month with empty months as zeros, bars for the approved ISK, optionally split by
+  category), **Categories** (people, claims, ISK, claims cut by a cap or limit, the used ISK (approved plus paid in the period), the monthly caps of the category and
+  what remains of a category-wide monthly cap, only when the period is exactly one calendar month; claims
+  without a category are "Uncategorised"), **Ships** (the 500 most lost, with a note when more exist), **Members** (all
+  characters of a player under the main), **Corporations** (people, claims, ISK, monthly cap), **Regions** (losses of
+  killmails without a stored region are "Unknown" until `fleetops_srp_backfill_killmails` fills them in; names come from
+  the name cache and django-eveonline-sde, never from ESI), **FCs** (fleets, claims, ISK and the fleet types led),
+  **Reviewers** and **Payers** (SRP staff only; the rules' rejections are one "Automatic" row and imported claims
+  without a reviewer or payer one "aa-srp (unknown)" row), **Rejections**, **Payments** (with the payment batch) and
+  **Personal limits** (below).
+- **Personal limits report.** One row per month, member and limit: one for the general personal monthly cap and one for
+  each category with a personal monthly cap in which the member claimed. Columns: used (approved and paid), cap,
+  remaining, claims, *over the limit* (claims, not rejected, whose amount a limit cut when it was calculated) and
+  *waived* (approved or paid claims whose last approval or amount change went over a limit with the reviewer's
+  confirmation, read from the `over_limit_by` figure of that event).
+- **Files.** The report files are `srp-trend` (`split=category`), `srp-categories`, `srp-ships`, `srp-regions`,
+  `srp-reviewers`, `srp-payers`, `srp-rejections`, `srp-payments` and `srp-limits`; `srp-members`, `srp-corporations`
+  and `srp-fcs` got more columns at the end. All SRP files take a period (`from=` and `to=`, `preset=` or `year=` and
+  `month=`; the current month without one). Every file is named `...-YYYY-MM-DD_YYYY-MM-DD` after its first and last day, a whole calendar
+  month included; the **About** sheet says "Period (EVE time)". Totals of the new files are in the last
+  line, not in a data row. `srp-claims` has four more columns after *Payment batch*: *Category*, *Link* (the name of a
+  standing link, the fleet's label, or the link name from aa-srp), *Source* and *Security status* (SRP staff only), and
+  `category=<key>` filters it (an unknown key is 404).
 - The fleet page has an SRP card with the link and a Copy button, **Close SRP link** and **Mark SRP link complete**
   for SRP staff and **Open SRP link** for reviewers (a closed link takes no new claims), **Request SRP for this
   fleet** for pilots, and **Create SRP link** for a fleet without a link. Creating a link twice changes nothing.

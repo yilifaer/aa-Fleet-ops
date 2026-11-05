@@ -334,3 +334,9 @@ def srp_link_state(link):
     """The pill of the state of an SRP link: open, closed or completed."""
     state = link.state
     return pill_html(LINK_STATE_TONES[state], SrpFleetLink.State(state).label)
+
+
+@register.filter
+def srp_stored_category_name(name):
+    """A stored category name in the language of the viewer."""
+    return display.category_name_label(name)

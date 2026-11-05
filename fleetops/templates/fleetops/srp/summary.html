@@ -24,12 +24,14 @@
     <div class="col-lg-7">{% include "fleetops/srp/_summary_table.html" with kind="split" %}</div>
     <div class="col-lg-5">{% include "fleetops/srp/_summary_table.html" with kind="status" %}</div>
   </div>
+  {% include "fleetops/srp/_summary_table.html" with kind="categories" %}
   {% include "fleetops/srp/_summary_table.html" with kind="corporations" %}
   {% include "fleetops/srp/_summary_table.html" with kind="fcs" %}
   {% include "fleetops/srp/_summary_table.html" with kind="ships" %}
   <div class="d-flex flex-wrap gap-2 mb-3">
     <div class="btn-group btn-group-sm fleetops-export" role="group" aria-label="{% translate 'Export claims' %}"><a class="btn btn-outline-secondary" href="{% export_url 'srp-claims' 'xlsx' %}">{% translate "All claims (Excel)" %}</a><a class="btn btn-outline-secondary" href="{% export_url 'srp-claims' 'csv' %}">{% translate "All claims (CSV)" %}</a></div>
     <div class="btn-group btn-group-sm fleetops-export" role="group" aria-label="{% translate 'Export members' %}"><a class="btn btn-outline-secondary" href="{% export_url 'srp-members' 'xlsx' %}">{% translate "All members (Excel)" %}</a><a class="btn btn-outline-secondary" href="{% export_url 'srp-members' 'csv' %}">{% translate "All members (CSV)" %}</a></div>
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'fleetops:srp_reports' %}" id="srp-reports-link">{% translate "Reports and trends" %}</a>
   </div>
 
 {% elif tab == "corporation" %}

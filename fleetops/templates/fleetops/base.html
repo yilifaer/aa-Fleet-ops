@@ -21,6 +21,7 @@
     {% if srp_nav.pay %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_payments' %}">{% translate "Payments" %}{% if srp_nav.to_pay_count %} <span class="fo-pill fo-pill-warn">{{ srp_nav.to_pay_count }}</span>{% endif %}</a></li>{% endif %}
     {% if srp_nav.summary %}
     {% if srp_nav.summary_all %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_summary' %}">{% translate "Summary" context "FleetOps" %}</a></li>{% endif %}
+    {% if srp_nav.summary_all %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_reports' %}">{% translate "Reports" %}</a></li>{% endif %}
     {% if perms.fleetops.view_corp_stats %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_summary_own_corporation' %}">{% translate "Corporation" context "FleetOps" %}</a></li>{% endif %}
     {% if srp_nav.own_fleets %}<li><a class="dropdown-item" href="{% url 'fleetops:srp_summary_own_fc' %}">{% translate "My fleets" %}</a></li>{% endif %}
     {% endif %}

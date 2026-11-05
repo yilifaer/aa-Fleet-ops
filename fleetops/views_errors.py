@@ -44,6 +44,7 @@ OWN_CORPORATION_MEMBERS_REASON = _("You can only open members of your own corpor
 OWN_FLEETS_SUMMARY_REASON = _("You can only open the summary of your own fleets.")
 LEADERBOARD_REASON = _("The leaderboard is only open to statistics managers.")
 EXPORT_REASON = _("Your account cannot download this export.")
+SRP_STAFF_REPORT_REASON = _("This report is only open to SRP reviewers and payers.")
 
 
 def reason_for(permission) -> str:

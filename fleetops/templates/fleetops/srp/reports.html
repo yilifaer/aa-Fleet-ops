@@ -1,0 +1,94 @@
+{% extends "fleetops/base.html" %}
+{% load i18n fleetops_srp fleetops_stats fleetops_fleet fleetops_ui %}
+{% block fleetops_content %}
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+  <div>
+    <h2 class="mb-1">{% translate "SRP Reports" %} &middot; {{ report.title }}</h2>
+    <div class="text-muted">{% blocktranslate trimmed with label=period.label %}Claims count in the EVE month of the loss &middot; {{ label }} (EVE time){% endblocktranslate %}{% if summary_access.alliance %} &middot; <a href="{% url 'fleetops:srp_summary' %}">{% translate "Back to the summary" %}</a>{% endif %}</div>
+  </div>
+</div>
+
+{% if period_error %}<div class="alert alert-warning" role="alert" id="srp-report-error">{{ period_error }} {% translate "The last 6 months are shown instead." %}</div>{% endif %}
+{% if period.cut %}<div class="alert alert-info" role="status" id="srp-report-cut">{% blocktranslate trimmed with days=period.days %}"All time" is cut to the last {{ days }} days. Choose a period to see older claims.{% endblocktranslate %}</div>{% endif %}
+
+<form method="get" class="row g-2 align-items-end fleetops-period-selector mb-3" id="srp-report-form">
+  <div class="col-sm-auto">
+    <label class="form-label mb-1" for="srp-report-type">{% translate "Report" %}</label>
+    <select class="form-select" id="srp-report-type" name="report">
+      {% for choice in report_choices %}<option value="{{ choice.slug }}"{% if choice.slug == report.slug %} selected{% endif %}>{{ choice.title }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="col-sm-auto">
+    <label class="form-label mb-1" for="srp-report-preset">{% translate "Period" %}</label>
+    <select class="form-select" id="srp-report-preset" name="preset" data-fo-period-preset>
+      <option value=""{% if period.kind == "range" or period.kind == "month" %} selected{% endif %}>{% translate "Custom range" %}</option>
+      {% for value, label in presets %}<option value="{{ value }}"{% if period.preset == value or period.kind == "default" and value == "last_6" %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="col-sm-auto">
+    <label class="form-label mb-1" for="srp-report-from">{% translate "From (EVE date)" %}</label>
+    <input class="form-control" type="date" id="srp-report-from" name="from" value="{% if period.kind == 'range' or period.kind == 'month' %}{{ period.first_day|date:'Y-m-d' }}{% endif %}" data-fo-period-date>
+  </div>
+  <div class="col-sm-auto">
+    <label class="form-label mb-1" for="srp-report-to">{% translate "To (EVE date, included)" %}</label>
+    <input class="form-control" type="date" id="srp-report-to" name="to" value="{% if period.kind == 'range' or period.kind == 'month' %}{{ period.last_day|date:'Y-m-d' }}{% endif %}" data-fo-period-date>
+  </div>
+  <div class="col-sm-auto">
+    <label class="form-label mb-1" for="srp-report-q">{% translate "Search" %}</label>
+    <input class="form-control" type="search" id="srp-report-q" name="q" value="{{ query }}" maxlength="100">
+  </div>
+  {% if report.slug == "trend" %}<div class="col-sm-auto"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="srp-report-split" name="split" value="category"{% if split %} checked{% endif %}><label class="form-check-label" for="srp-report-split">{% translate "Split by category" %}</label></div></div>{% endif %}
+  <div class="col-sm-auto"><button class="btn btn-primary" type="submit">{% translate "Show report" %}</button></div>
+</form>
+<div class="small text-muted mb-2">{% translate "Dates you enter override the period." %}</div>
+
+<div class="row g-3 mb-3 fo-srp-stats" id="srp-report-cards">
+  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>{% translate "Claims" %}</span><strong>{{ totals.claims }}</strong><small class="text-muted">{% blocktranslate trimmed with pending=totals.pending approved=totals.approved_count rejected=totals.rejected %}{{ pending }} pending &middot; {{ approved }} approved &middot; {{ rejected }} rejected{% endblocktranslate %}</small></div></div>
+  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>{% translate "Requested" %}</span><strong>{{ totals.requested|isk_short }}</strong><small class="text-muted">{{ totals.requested|isk }}</small></div></div>
+  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>{% translate "Approved" context "FleetOps" %}</span><strong>{{ totals.approved|isk_short }}</strong><small class="text-muted">{{ totals.approved|isk }}</small></div></div>
+  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>{% translate "Paid" %}</span><strong>{{ totals.paid|isk_short }}</strong><small class="text-muted">{{ totals.paid|isk }}</small></div></div>
+  <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>{% translate "Average payout" %}</span><strong>{{ totals.average_payout|isk_short }}</strong><small class="text-muted">{% translate "Approved ISK per approved claim" %}</small></div></div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <strong>{{ report.title }}</strong>
+    <div class="btn-group btn-group-sm fleetops-export" role="group" aria-label="{% translate 'Export this report' %}"><a class="btn btn-outline-secondary" href="{% export_url report.dataset 'xlsx' export_params %}">Excel</a><a class="btn btn-outline-secondary" href="{% export_url report.dataset 'csv' export_params %}">CSV</a></div>
+  </div>
+  <div class="table-responsive"><table class="table table-hover align-middle mb-0 fo-table-pin" id="srp-report-table">
+    <thead><tr>{% for column in columns %}<th{% if column.kind == "int" or column.kind == "isk" %} class="text-end"{% endif %}>{{ column.label }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for row in rows %}
+      <tr>
+      {% for cell in row.cells %}
+        {% if forloop.counter0 == bar_index and row.bar is not None %}
+        <td class="text-end">{{ cell.text }}<div class="fo-bar-track mt-1"><div class="fo-bar-fill" style="width:{{ row.bar|bar_width }}"></div></div></td>
+        {% elif cell.kind == "int" or cell.kind == "isk" %}<td class="text-end">{{ cell.text|default:"-" }}</td>
+        {% elif cell.kind == "datetime" %}<td class="fo-time">{{ cell.text }}</td>
+        {% else %}<td{% if forloop.first %} class="fw-semibold"{% endif %}>{{ cell.text|default:"-" }}</td>{% endif %}
+      {% endfor %}
+      </tr>
+    {% empty %}<tr><td colspan="{{ columns|length }}">{% translate "No claims in this period." as empty_text %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-ship" %}</td></tr>{% endfor %}
+    </tbody>
+    {% if footer %}<tfoot><tr class="fw-semibold">{% for cell in footer %}<td{% if cell.kind == "int" or cell.kind == "isk" %} class="text-end"{% endif %}>{{ cell.text }}</td>{% endfor %}</tr></tfoot>{% endif %}
+  </table></div>
+</div>
+{% if query %}<div class="small text-muted mb-2">{% blocktranslate trimmed with shown=row_count %}{{ shown }} rows match the search. The total line covers the whole report.{% endblocktranslate %}</div>{% endif %}
+{% for note in notes %}<div class="small text-muted mb-2">{{ note }}</div>{% endfor %}
+{% if truncated and not notes %}<div class="small text-muted mb-2">{% translate "The list is cut. Choose a shorter period to see the rest." %}</div>{% endif %}
+
+{% if page.paginator.num_pages > 1 %}
+<nav class="mt-3 d-flex flex-wrap align-items-center gap-3" aria-label="{% translate 'Report pages' %}">
+  <ul class="pagination pagination-sm mb-0 flex-wrap">
+    {% if page.has_previous %}<li class="page-item"><a class="page-link" href="{% querystring page=page.previous_page_number %}">&lsaquo; {% translate "Previous" %}</a></li>{% endif %}
+    {% for number in page_range %}
+      {% if number == ellipsis %}<li class="page-item disabled"><span class="page-link">&hellip;</span></li>
+      {% elif number == page.number %}<li class="page-item active" aria-current="page"><span class="page-link">{{ number }}</span></li>
+      {% else %}<li class="page-item"><a class="page-link" href="{% querystring page=number %}">{{ number }}</a></li>{% endif %}
+    {% endfor %}
+    {% if page.has_next %}<li class="page-item"><a class="page-link" href="{% querystring page=page.next_page_number %}">{% translate "Next" %} &rsaquo;</a></li>{% endif %}
+  </ul>
+  <span class="small text-muted">{% blocktranslate trimmed with start=page.start_index end=page.end_index total=page.paginator.count %}Rows {{ start }}&ndash;{{ end }} of {{ total }}{% endblocktranslate %}</span>
+</nav>
+{% endif %}
+{% endblock %}

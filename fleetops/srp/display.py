@@ -63,6 +63,25 @@ def category_label(category) -> str:
     return translate_stored(category.name)
 
 
+def link_name(claim) -> str:
+    """The name of the link a claim came through, for lists and files: a standing link's own name, the fleet's label
+    for a fleet link (the claim keeps it), the name the link had in aa-srp for an imported one. Empty without a link.
+    Read ``claim.link`` with ``select_related`` in lists."""
+    link = claim.link if claim.link_id else None
+    if link is None:
+        return claim.fleet_label or ""
+    if link.origin == link.Origin.AASRP:
+        return link.name or claim.fleet_label or link.code
+    if link.kind == link.Kind.STANDING:
+        return link.name or link.code
+    return claim.fleet_label or link.name or link.code
+
+
+def category_name_label(name) -> str:
+    """The stored name of a category in the language of the viewer (the built-in category is stored in English)."""
+    return translate_stored(name) if name else ""
+
+
 def to_decimal(value) -> Decimal | None:
     """``value`` as a finite Decimal; None for None, booleans and anything unreadable."""
     if value is None or isinstance(value, bool):

@@ -27,6 +27,7 @@ from fleetops import (
     views_srp_edit,
     views_srp_links,
     views_srp_losses,
+    views_srp_reports,
     views_srp_review,
     views_srp_summary,
     views_statistics,
@@ -176,6 +177,7 @@ urlpatterns += [
     path("srp/bans/new/", views_srp_bans.srp_ban_new, name="srp_ban_new"),
     path("srp/bans/<int:ban_id>/lift/", views_srp_bans.srp_ban_lift, name="srp_ban_lift"),
     path("srp/summary/", views_srp_summary.alliance_summary, name="srp_summary"),
+    path("srp/summary/reports/", views_srp_reports.srp_reports, name="srp_reports"),
     path("srp/summary/corporation/", views_srp_summary.corporation_summary, name="srp_summary_own_corporation"),
     path(
         "srp/summary/corporation/<int:corporation_id>/",

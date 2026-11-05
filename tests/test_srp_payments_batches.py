@@ -478,6 +478,9 @@ class PayableExportTests(PaymentsBase):
             reverse("fleetops:export", args=["srp-claims"]), {"format": "csv", "year": year, "month": month}
         ))
 
-        self.assertEqual(staff[0][-1], "Payment batch")
-        self.assertEqual(staff[1][-1], batch.reference)
-        self.assertEqual(viewer[1][-1], "")
+        # STAT-6: four columns (Category, Link, Source, Security status) now follow the batch column, so it is found by
+        # its header; its position from the left is unchanged.
+        column = staff[0].index("Payment batch")
+        self.assertEqual(column, 24)
+        self.assertEqual(staff[1][column], batch.reference)
+        self.assertEqual(viewer[1][column], "")

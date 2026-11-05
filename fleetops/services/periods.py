@@ -213,3 +213,180 @@ def discord_timestamp(value: datetime | None, style: str = "R") -> str:
     if value is None:
         return ""
     return f"<t:{unix_timestamp(value)}:{style}>"
+
+
+# --- Report periods -----------------------------------------------------------------------------------------
+
+# The longest period a report or an export covers.
+MAX_REPORT_DAYS = 1100
+# Months of the default period (the current month included).
+DEFAULT_REPORT_MONTHS = 6
+PRESETS = ("this_month", "last_month", "last_3", "last_6", "last_12", "this_year", "all")
+# Months back (the current one included) of the "last N months" presets.
+_PRESET_MONTHS = {"last_3": 3, "last_6": 6, "last_12": 12}
+# How the periods were asked for.
+KIND_DEFAULT = "default"
+KIND_PRESET = "preset"
+KIND_RANGE = "range"
+KIND_MONTH = "month"
+
+
+class PeriodError(ValueError):
+    """The period in the query string cannot be used; the message is written for the person who typed it."""
+
+
+@dataclass(frozen=True, slots=True)
+class Period:
+    """A period of EVE time: ``start`` is included, ``end`` is not (both 00:00 UTC).
+
+    ``kind`` tells how it was asked for (``default``, ``preset``, ``range`` or ``month``); ``preset`` is the
+    name of the preset. ``cut`` is True when the preset "all" was shortened to the longest period.
+    """
+
+    start: datetime
+    end: datetime
+    label: str
+    kind: str
+    preset: str = ""
+    cut: bool = False
+
+    @property
+    def first_day(self) -> date:
+        return self.start.date()
+
+    @property
+    def last_day(self) -> date:
+        """The last day that belongs to the period (the one before ``end``)."""
+        return (self.end - timedelta(days=1)).date()
+
+    @property
+    def days(self) -> int:
+        return (self.end - self.start).days
+
+    @property
+    def is_calendar_month(self) -> bool:
+        """True for exactly one calendar month (the first to the last day)."""
+        if self.start.day != 1:
+            return False
+        return self.end == month_bounds(self.start.year, self.start.month)[1]
+
+    @property
+    def year_month(self) -> tuple[int, int] | None:
+        return (self.start.year, self.start.month) if self.is_calendar_month else None
+
+    @property
+    def file_label(self) -> str:
+        """``YYYY-MM-DD_YYYY-MM-DD`` for every period, a whole calendar month included (decision 35)."""
+        return f"{self.first_day.isoformat()}_{self.last_day.isoformat()}"
+
+    @property
+    def months(self) -> list[tuple[int, int]]:
+        """The calendar months the period touches, the oldest first."""
+        result = []
+        year, month = self.start.year, self.start.month
+        last = (self.end - timedelta(microseconds=1)).year, (self.end - timedelta(microseconds=1)).month
+        while (year, month) <= last:
+            result.append((year, month))
+            year, month = shift_month(year, month, 1)
+        return result
+
+
+def _label_of(start: datetime, end: datetime) -> str:
+    first, last = start.date(), (end - timedelta(days=1)).date()
+    if start.day == 1 and end == month_bounds(start.year, start.month)[1]:
+        return f"{start.year:04d}-{start.month:02d}"
+    return f"{first.isoformat()} - {last.isoformat()}"
+
+
+def make_period(start: datetime, end: datetime, kind: str, *, preset: str = "", cut: bool = False) -> Period:
+    return Period(start, end, _label_of(start, end), kind, preset, cut)
+
+
+def _months_back(now: datetime, count: int) -> tuple[datetime, datetime]:
+    """The last ``count`` calendar months, the running one included."""
+    first = shift_month(now.year, now.month, -(count - 1))
+    start = datetime(first[0], first[1], 1, tzinfo=UTC)
+    return start, month_bounds(now.year, now.month)[1]
+
+
+def _preset_period(name: str, now: datetime, earliest: datetime | None) -> Period:
+    if name == "this_month":
+        start, end = month_bounds(now.year, now.month)
+    elif name == "last_month":
+        year, month = shift_month(now.year, now.month, -1)
+        start, end = month_bounds(year, month)
+    elif name in _PRESET_MONTHS:
+        start, end = _months_back(now, _PRESET_MONTHS[name])
+    elif name == "this_year":
+        start, end = datetime(now.year, 1, 1, tzinfo=UTC), month_bounds(now.year, now.month)[1]
+    else:
+        end = month_bounds(now.year, now.month)[1]
+        start = to_utc(earliest) if earliest is not None else month_bounds(now.year, now.month)[0]
+        start = datetime(start.year, start.month, start.day, tzinfo=UTC)
+        limit = end - timedelta(days=MAX_REPORT_DAYS)
+        if start < limit:
+            return make_period(limit, end, KIND_PRESET, preset=name, cut=True)
+    return make_period(start, end, KIND_PRESET, preset=name)
+
+
+def default_period(now: datetime | None = None) -> Period:
+    """The last six months, the running one included."""
+    now = to_utc(timezone.now() if now is None else now)
+    start, end = _months_back(now, DEFAULT_REPORT_MONTHS)
+    return make_period(start, end, KIND_DEFAULT)
+
+
+def _day(params, name) -> date | None:
+    text = str(params.get(name, "") or "").strip()
+    if not text:
+        return None
+    try:
+        return parse_eve_date(text)
+    except ValueError as exc:
+        raise PeriodError(str(exc)) from None
+
+
+def parse_period(params, *, default: str = "last_6", earliest: datetime | None = None, now: datetime | None = None) -> Period:
+    """The period a report or export covers, from the query parameters.
+
+    Order: ``from`` and ``to`` (EVE dates, both days included; typed dates win over a preset, decision 36), then
+    ``preset`` (``this_month``, ``last_month``, ``last_3``, ``last_6``, ``last_12``, ``this_year`` or
+    ``all``; it is also used when only one of the two dates came), then the old ``year`` and ``month``
+    (a month; an unreadable pair is ignored like on the month pages), else ``default`` (a preset name).
+    ``earliest`` is the oldest loss, where "all" begins; "all" is cut to the last ``MAX_REPORT_DAYS`` days.
+    A range that is unreadable, backwards or longer than ``MAX_REPORT_DAYS`` raises :class:`PeriodError`.
+    """
+    now = to_utc(timezone.now() if now is None else now)
+    preset = str(params.get("preset", "") or "").strip()
+    if preset and preset not in PRESETS:
+        raise PeriodError(gettext("Unknown period. Choose one of the listed periods."))
+    first, last = _day(params, "from"), _day(params, "to")
+    if first is not None and last is not None:
+        if last < first:
+            raise PeriodError(gettext("The last day is before the first day."))
+        start = datetime(first.year, first.month, first.day, tzinfo=UTC)
+        end = datetime(last.year, last.month, last.day, tzinfo=UTC) + timedelta(days=1)
+        if (end - start).days > MAX_REPORT_DAYS:
+            raise PeriodError(
+                gettext("The period is longer than %(days)s days. Choose a shorter one.") % {"days": MAX_REPORT_DAYS}
+            )
+        return make_period(start, end, KIND_RANGE)
+    if preset:
+        return _preset_period(preset, now, earliest)
+    if first is not None or last is not None:
+        raise PeriodError(gettext("Enter both the first and the last day."))
+    if "year" in params or "month" in params:
+        year, month = parse_year_month(params, default=(0, 0))
+        if year:
+            start, end = month_bounds(year, month)
+            return make_period(start, end, KIND_MONTH)
+    if default == "last_6":
+        return default_period(now)
+    return _preset_period(default, now, earliest)
+
+
+def period_query(period: Period) -> dict:
+    """The query parameters that give ``period`` again: the preset "all" (so its cut is noted again), else the days."""
+    if period.preset == "all":
+        return {"preset": "all"}
+    return {"from": period.first_day.isoformat(), "to": period.last_day.isoformat()}

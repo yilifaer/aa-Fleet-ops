@@ -1,4 +1,4 @@
-{% load i18n fleetops_srp fleetops_stats fleetops_messages fleetops_ui %}{# The tables of an SRP summary. "kind" picks one: totals, split, status, ships, corporations, fcs, members, fleets, claims. #}
+{% load i18n fleetops_srp fleetops_stats fleetops_messages fleetops_ui %}{# The tables of an SRP summary. "kind" picks one: totals, split, status, ships, categories, corporations, fcs, members, fleets, claims. #}
 {% if kind == "totals" %}
 <div class="row g-3 mb-3 fo-srp-stats">
   <div class="col-xl col-md-4 col-6"><div class="stat-card"><span>{% translate "Claims" %}</span><strong>{{ totals.claims }}</strong><small class="text-muted">{% blocktranslate trimmed with pending=totals.pending approved=totals.approved_count rejected=totals.rejected %}{{ pending }} pending &middot; {{ approved }} approved &middot; {{ rejected }} rejected{% endblocktranslate %}</small></div></div>
@@ -35,6 +35,17 @@
   {% for ship in summary.top_ships %}
     <tr><td><img src="{% ship_render_url ship.ship_type_id 32 %}" width="32" height="32" alt="" class="fo-render me-2" loading="lazy">{{ ship.ship_type_name|default:ship.ship_type_id }}</td><td class="text-end">{{ ship.losses }}</td><td class="text-end">{{ ship.approved|isk }}</td></tr>
   {% empty %}<tr><td colspan="3">{% translate "No claims this month." as empty_text %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-ship" %}</td></tr>{% endfor %}
+  </tbody>
+</table></div></div>
+
+{% elif kind == "categories" %}
+<div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2"><strong>{% translate "This month by category" %}</strong><a class="btn btn-sm btn-outline-secondary" href="{% url 'fleetops:srp_reports' %}?{{ category_report_query }}">{% translate "Reports" %}</a></div>
+<div class="table-responsive"><table class="table table-sm align-middle mb-0">
+  <thead><tr><th>{% translate "Category" %}</th><th class="text-end">{% translate "Claims" %}</th><th class="text-end">{% translate "Requested" %}</th><th class="text-end">{% translate "Approved" context "FleetOps" %}</th><th class="text-end">{% translate "Average payout" %}</th></tr></thead>
+  <tbody>
+  {% for row in category_rows %}
+    <tr><td class="fw-semibold">{% if row.category_name %}{{ row.category_name|srp_stored_category_name }}{% else %}{% translate "Uncategorised" %}{% endif %}</td><td class="text-end">{{ row.totals.claims }}</td><td class="text-end">{{ row.totals.requested|isk }}</td><td class="text-end">{{ row.totals.approved|isk }}</td><td class="text-end">{{ row.totals.average_payout|isk }}</td></tr>
+  {% empty %}<tr><td colspan="5">{% translate "No claims this month." as empty_text %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-ship" %}</td></tr>{% endfor %}
   </tbody>
 </table></div></div>
 

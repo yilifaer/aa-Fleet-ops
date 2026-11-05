@@ -159,7 +159,9 @@ def error_text(exc) -> str:
 
 def home_context(request, year, month, claim_form, settings_obj):
     """The allowance, recent fleets and the claims of the month, or just the form while SRP is off."""
-    context = _period_render_context(year, month, request=request, claim_form=claim_form)
+    context = _period_render_context(
+        year, month, request=request, earliest=summaries.earliest_claim_time(), claim_form=claim_form
+    )
     if not settings_obj.enabled:
         return context
     user = request.user

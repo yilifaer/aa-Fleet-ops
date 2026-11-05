@@ -17,6 +17,7 @@ from fleetops.models import AuditLog, SrpClaim
 from fleetops.services import export_datasets as datasets
 from fleetops.services import exports
 from fleetops import texts
+from fleetops.services.periods import month_bounds
 from fleetops.srp import summaries
 from fleetops.views_srp_review import day_bounds
 
@@ -148,7 +149,7 @@ class ClaimsFileTests(ExportTestCase):
         self.assertEqual(len(rows), 8)
         self.assertEqual({row["Claim"] for row in rows}, {c.reference for c in (self.a1, self.a2, self.a3, self.a4, self.b1, self.b2, self.c1, self.c2)})
         self.assertNotIn(self.a5.reference, {row["Claim"] for row in rows})
-        self.assertEqual(filename, "fleetops-srp-claims-alliance-2026-03")
+        self.assertEqual(filename, "fleetops-srp-claims-alliance-2026-03-01_2026-03-31")
         self.assertEqual(scope.params, {"year": 2026, "month": 3})
 
     def test_the_numbers_are_the_ones_of_the_summaries(self):
@@ -269,7 +270,7 @@ class ClaimsFileTests(ExportTestCase):
         rows = rows_by_title(table)
 
         self.assertEqual({row["Claim"] for row in rows}, {self.c1.reference, self.c2.reference})
-        self.assertEqual(filename, f"fleetops-srp-claims-corporation-{f.OTHER_CORP[0]}-2026-03")
+        self.assertEqual(filename, f"fleetops-srp-claims-corporation-{f.OTHER_CORP[0]}-2026-03-01_2026-03-31")
         self.assertEqual(scope.params["corporation"], f.OTHER_CORP[0])
 
     def test_the_month_comes_from_the_request(self):
@@ -282,7 +283,8 @@ class ClaimsFileTests(ExportTestCase):
 
         self.assertEqual(about["Dataset"], "SRP claims")
         self.assertEqual(about["Scope"], "Alliance")
-        self.assertEqual(about["Month (EVE time)"], "2026-03")
+        # STAT-6: the About sheet names the period of the file, not only a month.
+        self.assertEqual(about["Period (EVE time)"], "2026-03")
         self.assertEqual(about["Filters"], "Status: Paid")
         self.assertIn("EVE month of the loss", about["Counting rule"])
 
@@ -302,7 +304,7 @@ class ClaimsFileTests(ExportTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response["Content-Type"].startswith("text/csv"))
-        self.assertIn("fleetops-srp-claims-alliance-2026-03.csv", response["Content-Disposition"])
+        self.assertIn("fleetops-srp-claims-alliance-2026-03-01_2026-03-31.csv", response["Content-Disposition"])
         self.assertEqual(response["Cache-Control"], "private, no-store")
         rows = csv_rows(response)
         self.assertEqual(rows[0][:3], ["Claim", "Loss time (EVE)", "Pilot (main)"])
@@ -349,9 +351,9 @@ class OtherFilesTests(ExportTestCase):
     def test_members(self):
         table, filename, _scope = build("srp-members", self.manager, **PARAMS)
         rows = rows_by_title(table)
-        expected = summaries.by_member(2026, 3)
+        expected = summaries.by_member(*month_bounds(2026, 3))  # STAT-1: by_member takes a period
 
-        self.assertEqual(filename, "fleetops-srp-members-alliance-2026-03")
+        self.assertEqual(filename, "fleetops-srp-members-alliance-2026-03-01_2026-03-31")
         self.assertEqual([row["Main character"] for row in rows], [row.main_character_name for row in expected])
         for row, source in zip(rows, expected):
             self.assertEqual(row["Corporation"], source.corporation_name)
@@ -368,7 +370,7 @@ class OtherFilesTests(ExportTestCase):
         table, filename, _scope = build("srp-members", self.corp_manager, corporation=str(f.DEFAULT_CORP[0]), **PARAMS)
 
         self.assertEqual([row["Main character"] for row in rows_by_title(table)], ["Alice Main", "Bob Main"])
-        self.assertEqual(filename, f"fleetops-srp-members-corporation-{f.DEFAULT_CORP[0]}-2026-03")
+        self.assertEqual(filename, f"fleetops-srp-members-corporation-{f.DEFAULT_CORP[0]}-2026-03-01_2026-03-31")
         self.assertEqual(dict(table.about)["Scope"], f"Corporation {f.DEFAULT_CORP[1]}")
 
     def test_corporations_with_a_total_row_that_matches_the_page(self):
@@ -376,7 +378,7 @@ class OtherFilesTests(ExportTestCase):
         rows = rows_by_title(table)
         summary = summaries.alliance(2026, 3)
 
-        self.assertEqual(filename, "fleetops-srp-corporations-alliance-2026-03")
+        self.assertEqual(filename, "fleetops-srp-corporations-alliance-2026-03-01_2026-03-31")
         self.assertEqual([row["Corporation"] for row in rows], [f.DEFAULT_CORP[1], f.OTHER_CORP[1], "Total"])
         corp1, corp2, total = rows
         self.assertEqual((corp1["Claims"], corp1["Requested (ISK)"], corp1["Approved (ISK)"], corp1["Paid (ISK)"]), (6, 255 * M, 205 * M, 115 * M))
@@ -392,7 +394,7 @@ class OtherFilesTests(ExportTestCase):
         table, filename, _scope = build("srp-fcs", self.manager, **PARAMS)
         rows = rows_by_title(table)
 
-        self.assertEqual(filename, "fleetops-srp-fcs-alliance-2026-03")
+        self.assertEqual(filename, "fleetops-srp-fcs-alliance-2026-03-01_2026-03-31")
         self.assertEqual([row["FC (main)"] for row in rows], ["First FC", "Second FC", "Total"])
         first, second, total = rows
         self.assertEqual((first["Fleets"], first["Claims"], first["Approved (ISK)"]), (1, 2, 130 * M))
@@ -416,7 +418,7 @@ class AuditTests(ExportTestCase):
         entry = AuditLog.objects.get(action="srp.export")
         self.assertEqual(entry.actor, self.manager)
         self.assertEqual(entry.object_type, "SrpSummary")
-        self.assertEqual(entry.object_id, f"srp-claims:corporation-{f.DEFAULT_CORP[0]}:2026-03")
+        self.assertEqual(entry.object_id, f"srp-claims:corporation-{f.DEFAULT_CORP[0]}:2026-03-01_2026-03-31")
         self.assertEqual(
             entry.new_value,
             {"format": "csv", "params": {"year": 2026, "month": 3, "corporation": f.DEFAULT_CORP[0], "status": "paid"}},

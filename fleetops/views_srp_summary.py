@@ -3,6 +3,9 @@
 
 """FleetOps SRP: summaries per alliance, corporation and FC, and opening or closing a fleet's SRP link."""
 
+from datetime import timedelta
+from urllib.parse import urlencode
+
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
@@ -14,6 +17,7 @@ from django.views.decorators.http import require_GET, require_POST
 from fleetops.decorators import fleetops_permission_required
 from fleetops.models import SrpClaim, SrpCorporationLimit, SrpFleetLink
 from fleetops.services import population
+from fleetops.services.periods import month_bounds
 from fleetops.services.stats_access import BASIC_ACCESS, VIEW_ALL_STATS, VIEW_CORP_STATS, own_corporation
 from fleetops.srp import access, summaries
 from fleetops.srp.access import MANAGE_SRP, PAY_SRP, REVIEW_SRP
@@ -54,7 +58,13 @@ def _page(request, tab, year, month, **context):
         request,
         TEMPLATE,
         _period_render_context(
-            year, month, request=request, tab=tab, summary_access=access.summary_access(request.user), **context
+            year,
+            month,
+            request=request,
+            earliest=summaries.earliest_claim_time(),
+            tab=tab,
+            summary_access=access.summary_access(request.user),
+            **context,
         ),
     )
 
@@ -64,14 +74,19 @@ def _page(request, tab, year, month, **context):
 def alliance_summary(request):
     """The whole alliance: totals, in and out of fleet, the ships lost most and the other summaries."""
     year, month = _year_month(request)
+    start, end = month_bounds(year, month)
     return _page(
         request,
         "alliance",
         year,
         month,
         summary=summaries.alliance(year, month),
-        corporation_rows=summaries.by_corporation(year, month),
-        fc_rows=summaries.by_fc(year, month),
+        corporation_rows=summaries.by_corporation(start, end),
+        fc_rows=summaries.by_fc(start, end),
+        category_rows=summaries.by_category(start, end),
+        category_report_query=urlencode(
+            {"report": "categories", "from": start.date().isoformat(), "to": (end - timedelta(days=1)).date().isoformat()}
+        ),
         can_export=True,
     )
 
@@ -114,7 +129,7 @@ def corporation_summary(request, corporation_id=None):
         corporation_name=row.corporation_name or name,
         own_corporation=own,
         corporation=row,
-        member_rows=summaries.by_member(year, month, corporation_id=corporation_id),
+        member_rows=summaries.by_member(*month_bounds(year, month), corporation_id=corporation_id),
         claims=summaries.claims_in_month(year, month, corporation_id=corporation_id),
         claims_limit=summaries.LIST_LIMIT,
         # The files hold what the page shows: this corporation's members and claims.

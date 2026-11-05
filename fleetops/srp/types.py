@@ -5,7 +5,7 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from fleetops.srp import display
@@ -565,6 +565,15 @@ class SrpTotals:
     approved: int = 0
     paid: int = 0
     outstanding: int = 0
+    # The loss values of the claims (whole ISK), whatever their status.
+    loss_value: int = 0
+
+    @property
+    def average_payout(self) -> int:
+        """The approved ISK divided by the approved and paid claims, in whole ISK (0 without such claims)."""
+        if not self.approved_count:
+            return 0
+        return int((Decimal(self.approved) / self.approved_count).quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
 @dataclass(frozen=True, slots=True)
@@ -588,6 +597,89 @@ class PersonalSrp:
 
 
 @dataclass(slots=True)
+class SrpRowSet:
+    """Rows of a report that may be cut: ``truncated`` is True when more rows exist than were returned."""
+
+    rows: list = field(default_factory=list)
+    truncated: bool = False
+
+
+@dataclass(slots=True)
+class SrpTrendRow:
+    """One EVE month (and, when split, one category; ``category_id`` None is the unclassified claims)."""
+
+    year: int
+    month: int
+    category_id: int | None = None
+    category_name: str = ""
+    totals: SrpTotals = field(default_factory=SrpTotals)
+
+
+@dataclass(slots=True)
+class SrpCategoryRow:
+    category_id: int | None
+    category_key: str
+    category_name: str
+    totals: SrpTotals = field(default_factory=SrpTotals)
+    members: int = 0
+    # Claims whose amount was cut below the base amount (by a cap or a limit).
+    capped: int = 0
+    personal_cap: int | None = None
+    corporation_cap: int | None = None
+    # What the corporation that used most of the category's corporation cap used in the period (the cap applies
+    # per corporation); None when the category has no corporation cap.
+    corporation_peak: int | None = None
+
+
+@dataclass(slots=True)
+class SrpRegionRow:
+    region_id: int | None
+    region_name: str
+    totals: SrpTotals = field(default_factory=SrpTotals)
+
+
+@dataclass(slots=True)
+class SrpReviewerRow:
+    """Who decided on claims. ``kind`` is ``user``, ``automatic`` (rejected by the rules), ``imported`` (decided in
+    aa-srp, reviewer unknown) or ``unknown``."""
+
+    kind: str
+    user_id: int | None
+    name: str
+    approved_count: int = 0
+    approved: int = 0
+    rejected: int = 0
+
+
+@dataclass(slots=True)
+class SrpPayerRow:
+    kind: str
+    user_id: int | None
+    name: str
+    claims: int = 0
+    batches: int = 0
+    amount: int = 0
+
+
+@dataclass(slots=True)
+class SrpLimitRow:
+    """One member, one month and one personal monthly limit (``category_id`` None is the general limit)."""
+
+    year: int
+    month: int
+    user_id: int | None
+    member_name: str
+    category_id: int | None
+    limit_name: str
+    used: int = 0
+    cap: int | None = None
+    remaining: int | None = None
+    claims: int = 0
+    over_limit: int = 0
+    waived: int = 0
+
+
+@dataclass(slots=True)
 class SrpMemberRow:
     user_id: int | None
     main_character_id: int | None
@@ -603,6 +695,7 @@ class SrpCorporationRow:
     corporation_name: str
     corporation_ticker: str = ""
     totals: SrpTotals = field(default_factory=SrpTotals)
+    members: int = 0
     cap: int | None = None
     used: int = 0
     remaining: int | None = None
@@ -614,6 +707,8 @@ class SrpFcRow:
     fc_name: str
     fleets: int = 0
     totals: SrpTotals = field(default_factory=SrpTotals)
+    # {fleet type name: fleets} of the fleets with claims.
+    fleet_types: dict = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -631,6 +726,12 @@ class SrpShipRow:
     ship_type_name: str
     losses: int = 0
     approved: int = 0
+    approved_count: int = 0
+    rejected: int = 0
+
+    @property
+    def average_payout(self) -> int:
+        return SrpTotals(approved=self.approved, approved_count=self.approved_count).average_payout
 
 
 @dataclass(slots=True)

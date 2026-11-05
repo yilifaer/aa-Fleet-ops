@@ -165,7 +165,7 @@ class EveTimePagesTests(FleetOpsViewTestCase):
 class FleetPageEveTimeTests(FleetOpsViewTestCase):
     def setUp(self):
         super().setUp()
-        self.late = late_evening(days_ago=1)
+        self.late = late_evening(days_ago=2)
         self.client = self.client_for(self.lead)
 
     def test_header_cards_and_stale_notice(self):

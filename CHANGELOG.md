@@ -133,6 +133,24 @@ Install it like the previous pre-release (`pip install --no-deps aa-fleetops==0.
   on the check page, from the public ESI insurance prices (read once a day, kept in `SrpInsurancePrice`). Settings **Show
   the insurance estimate** (on) and **Insurance level shown**. It is a hint only and changes no amount.
 
+- **SRP reports and periods.** A new page, **SRP** > **Reports**, shows any period instead of one month: choose a report
+  and a preset (this month, last month, last 3, 6 or 12 months, this year, all time) or two EVE dates (both days
+  included, and dates you enter win over a preset; at most 1100 days; the default is the last six months). It has summary cards, a searchable table (50 rows
+  per page) with the total line and Excel and CSV buttons. Reports: trend by month (empty months as zeros, optionally
+  split by category), categories, ships, members (all characters of a player under the main), corporations, regions,
+  FCs (with the fleet types they led), reviewers and payers (SRP staff only; automatic rejections and imported claims
+  without a reviewer are their own rows), rejections, payments and personal limits (month by member: used, cap,
+  remaining, over the limit, waived). Every table shows the average payout. The alliance summary has a **This month by
+  category** card and a link to the reports. The year lists of the SRP pages reach back to the oldest claim, so imported
+  years can be chosen.
+- **SRP exports.** All SRP files take a period (`from=` and `to=`, `preset=` or `year=` and `month=`). Every file is
+  named `...-YYYY-MM-DD_YYYY-MM-DD` after its first and last day, a whole calendar month included; the About sheet
+  says "Period (EVE time)". New files: `srp-trend`, `srp-categories`, `srp-ships`, `srp-regions`, `srp-reviewers`,
+  `srp-payers` (these two for SRP staff only), `srp-rejections`, `srp-payments` and `srp-limits`, with the total in the
+  last line. `srp-claims` has four more columns at the end, **Category**, **Link**, **Source** and **Security status**
+  (SRP staff only), and the filter `category=<key>`; `srp-members`, `srp-corporations` and `srp-fcs` have more columns at
+  the end. No existing column moved.
+
 ### Changed
 
 - **The security status of a system is shown to SRP staff only** on a claim (members keep seeing the system name and, on
@@ -199,6 +217,12 @@ prices arrive with the first daily read. Members can change their pending claims
 after the upgrade; untick **Members can change their pending claims** or **Show the insurance estimate** to keep the old
 behaviour. Restart the Celery worker so the two new tasks are known. The public ESI insurance prices need no new scope.
 
+The reports and the new files of the SRP rework (period selection, `srp-trend` and the others) need no migration, no
+setting and no permission: everyone who could open the SRP summaries can open the reports, except the reviewer and
+payer reports, which are for SRP staff only. Killmails stored before 0.3.0b1 show the region "Unknown" in the region
+report until `python manage.py fleetops_srp_backfill_killmails` has read them. The code that read the month of the
+summaries now reads a period; nothing is stored differently.
+
 ### Rollback notes
 
 Roll back the migrations first (`python manage.py migrate fleetops 0023`), then install the previous package.
@@ -232,6 +256,9 @@ Rolling back `0032` drops the payment batches (the claims keep their status, amo
 the batch they were paid in), the insurance prices, the stored attackers, the revision numbers and the five settings.
 Claims, amounts and statuses are not changed. Export the batches first if you need them. To behave like the previous
 version before rolling back, untick **Members can change their pending claims**.
+The reports and the period selection of the SRP files store nothing and have no migration: installing the previous
+package removes the report page and the new files, and bookmarks to them stop working. The older files lose the columns
+added at their end.
 
 ## [0.2.0b3] - Unreleased
 
