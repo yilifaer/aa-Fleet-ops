@@ -185,6 +185,7 @@ FC 统计不受影响。
 | 在“我的 SRP”授权损失读取、**立即读取我的角色**、**申请**、**忽略**和**重新显示**（损失自动发现） | `fleetops.request_srp`，只针对用户自己账号下的角色，且功能开启时。别人的损失对所有操作都返回 404。授权是一次 EVE 登录，权限范围为 `esi-killmails.read_killmails.v1`；令牌属于用户自己，只用于那个角色。 |
 | SRP 封禁列表、做出 SRP 封禁（也可以从申请页进入）和解除封禁 | `fleetops.manage_srp` 或 `fleetops.review_srp`。付款人、成员和 FC 得到 403。任何人都不能封禁自己。封禁的内部备注只在审核人的封禁页和申请页上显示；成员只看到理由，操作日志里也不会有内部备注。 |
 | 被封禁拦住 | 账号被封禁期间，拥有 `request_srp` 的所有人；仍然可以撤回待审核的申请。超级用户和其他人一样受它约束。 |
+| 从 aa-srp 导入的申请 | 无论有什么权限，都没有人能对它们做决定：通过、拒绝、撤销、标记已付款、撤销付款、重新打开、移动、更改类别、重新计算、重新检查在队情况、撤回、再次提交和修改都会被拒绝，提示“This claim was imported from aa-srp ...”（该申请是从 aa-srp 导入的），导入的 SRP 链接也不能重新开放。SRP 人员仍可添加内部备注。导入本身（`fleetops_import_aasrp`）、导入赔付表（`fleetops_srp_import_payouts`）和回退检查（`fleetops_srp_rollback_check`）是给服务器管理员用的管理命令，不需要任何 FleetOps 权限，也不授予任何权限。 |
 | 内部备注 | 任一 SRP 人员权限（`manage_srp`、`review_srp` 或 `pay_srp`）；不受"处理自己的申请"设置限制 |
 | 任何申请页 | 申请人、SRP 人员（`manage_srp`、`review_srp`、`pay_srp`）、该申请所在舰队的 FC、`view_all_stats`（只读）、以及 `view_corp_stats`（本军团的申请）。其他人得到 404。内部备注和经手人的名字只有 SRP 人员能看到，其他人看到的是"申请人"、"审核人"或"系统"。本月已用额度显示给申请人、SRP 人员、`view_all_stats` 以及申请所属军团的 `view_corp_stats`，不显示给舰队的 FC。页面上的按钮跟着角色走：审核人看不到"标记已付款"，付款人看不到"通过"。 |
 | SRP 汇总（联盟、军团、FC） | SRP 人员或 `view_all_stats`（只读） |

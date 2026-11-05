@@ -273,7 +273,7 @@ def approve_claim(
     amount = _amount(amount)
     reason = claims.clean_reason(reason)
     with quota.quota_lock() as srp:
-        locked = claims.lock_claim(claim)
+        locked = claims.lock_native(claim)
         _require_reviewer(actor, locked, srp)
         _approve_locked(
             locked,
@@ -292,7 +292,7 @@ def approve_claim(
 
 def _approve_clean(claim, actor, expected_suggested=None, expected_revision=None) -> SrpClaim:
     with quota.quota_lock() as srp:
-        locked = claims.lock_claim(claim)
+        locked = claims.lock_native(claim)
         _require_reviewer(actor, locked, srp)
         if locked.status != Status.PENDING:
             raise claims.wrong_state(locked, texts.SRP_ONLY_PENDING_APPROVED(), Status.APPROVED)
@@ -353,7 +353,7 @@ def reject_claim(claim: SrpClaim, *, actor, reason: str, expected_revision: int 
     page showed (a claim the claimant changed since is refused)."""
     reason = claims.clean_reason(reason, required=True, what="reason for the rejection")
     with quota.quota_lock() as srp:
-        locked = claims.lock_claim(claim)
+        locked = claims.lock_native(claim)
         _require_reviewer(actor, locked, srp)
         if locked.status != Status.PENDING:
             raise claims.wrong_state(locked, texts.SRP_ONLY_PENDING_REJECTED(), Status.REJECTED)
@@ -383,7 +383,7 @@ def revoke_approval(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
     """Approved back to pending; the amount counts toward the limits no more."""
     reason = claims.clean_reason(reason, required=True, what="reason for revoking the approval")
     with quota.quota_lock() as srp:
-        locked = claims.lock_claim(claim)
+        locked = claims.lock_native(claim)
         _require_reviewer(actor, locked, srp)
         if locked.status == Status.PAID:
             raise SrpStateError("paid", texts.SRP_PAID_REVOKE())
@@ -412,7 +412,7 @@ def revoke_approval(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
 
 def _mark_paid(claim, actor, note, expected_amount=None, batch=None) -> SrpClaim:
     with quota.quota_lock() as srp:
-        locked = claims.lock_claim(claim)
+        locked = claims.lock_native(claim)
         _require_payer(actor, locked, srp)
         if locked.status != Status.APPROVED:
             raise claims.wrong_state(locked, texts.SRP_ONLY_APPROVED_PAID(), Status.PAID)
@@ -482,7 +482,7 @@ def undo_payment(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
     """
     reason = claims.clean_reason(reason, required=True, what="reason for undoing the payment")
     with quota.quota_lock() as srp:
-        locked = claims.lock_claim(claim)
+        locked = claims.lock_native(claim)
         _require_payer(actor, locked, srp, approver_rule=False)
         if locked.status != Status.PAID:
             raise claims.wrong_state(locked, texts.SRP_ONLY_PAID_UNPAID(), Status.APPROVED)
@@ -513,7 +513,7 @@ def reopen_claim(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
     reason = claims.clean_reason(reason, required=True, what="reason for reopening the claim")
     now = timezone.now()
     with quota.quota_lock() as srp:
-        locked = claims.lock_claim(claim)
+        locked = claims.lock_native(claim)
         _require_reviewer(actor, locked, srp)
         if locked.status != Status.REJECTED:
             raise claims.wrong_state(locked, texts.SRP_ONLY_REJECTED_REOPENED(), Status.PENDING)
@@ -570,7 +570,7 @@ def reclassify_claim(
         raise SrpError("invalid_scope", texts.SRP_CHOOSE_SCOPE())
     now = timezone.now()
     with quota.quota_lock() as srp:
-        locked = claims.lock_claim(claim)
+        locked = claims.lock_native(claim)
         _require_reviewer(actor, locked, srp)
         if locked.status != Status.PENDING:
             raise claims.wrong_state(locked, texts.SRP_ONLY_PENDING_MOVED())
@@ -666,7 +666,7 @@ def recategorize_claim(
         raise SrpError("category_unavailable", texts.SRP_CATEGORY_UNAVAILABLE())
     now = timezone.now()
     with quota.quota_lock() as srp:
-        locked = claims.lock_claim(claim)
+        locked = claims.lock_native(claim)
         _require_reviewer(actor, locked, srp)
         if locked.status != Status.PENDING:
             raise claims.wrong_state(locked, texts.SRP_ONLY_PENDING_RECATEGORIZED())
@@ -749,7 +749,7 @@ def recheck_presence(claim: SrpClaim, *, actor) -> SrpClaim:
     _require_reviewer_role(actor)
     now = timezone.now()
     with transaction.atomic():
-        locked = claims.lock_claim(claim)
+        locked = claims.lock_native(claim)
         km = locked.killmail
         if locked.scope == Scope.IN_FLEET and locked.operation is None:
             raise SrpError("no_fleet", texts.SRP_FLEET_GONE())

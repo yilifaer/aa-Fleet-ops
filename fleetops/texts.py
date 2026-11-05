@@ -1232,6 +1232,14 @@ SRP_NO_LINK_FOR_DAY = StoredText(gettext_noop("This category has no open SRP lin
 SRP_MEMBER_EDIT_OFF = StoredText(gettext_noop("Members cannot change their claims."))
 SRP_ONLY_CLAIMANT_EDITS = StoredText(gettext_noop("Only the claimant can change this claim."))
 SRP_ONLY_PENDING_EDITED = StoredText(gettext_noop("Only pending claims can be changed."))
+SRP_IMPORTED_PAYMENT_NOTE = StoredText(gettext_noop("Imported from aa-srp"))
+SRP_ENRICH_ZKILL_OFF = StoredText(
+    gettext_noop("zKillboard is switched off in the SRP settings; the hashes cannot be looked up.")
+)
+SRP_IMPORTED_LINK_CLOSED = StoredText(gettext_noop("A link imported from aa-srp stays closed."))
+SRP_IMPORTED_READ_ONLY = StoredText(
+    gettext_noop("This claim was imported from aa-srp. It is a record and cannot be changed here.")
+)
 SRP_EDIT_SWAP_OFF = StoredText(gettext_noop("Replacing the loss of a claim is switched off."))
 SRP_EDIT_AFTER_REVIEW = StoredText(
     gettext_noop("A reviewer has already moved this claim. You can still change the comment or replace the loss.")

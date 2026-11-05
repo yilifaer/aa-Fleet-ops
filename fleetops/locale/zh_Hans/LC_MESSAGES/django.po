@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-05 08:21+0000\n"
+"POT-Creation-Date: 2026-11-05 10:54+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -3810,7 +3810,7 @@ msgstr "常驻"
 msgid "FleetOps"
 msgstr "FleetOps"
 
-#: models.py
+#: models.py texts.py
 msgid "Imported from aa-srp"
 msgstr "从 aa-srp 导入"
 
@@ -3930,7 +3930,7 @@ msgstr "zKillboard 已停用"
 msgid "ESI"
 msgstr "ESI"
 
-#: models.py
+#: models.py templates/fleetops/srp/claim.html
 msgid "aa-srp import"
 msgstr "aa-srp 导入"
 
@@ -4231,6 +4231,10 @@ msgstr "价值的百分比"
 msgid "No automatic amount"
 msgstr "无自动金额"
 
+#: models.py templates/fleetops/srp/claim.html
+msgid "Amount as recorded in aa-srp"
+msgstr "按 aa-srp 记录的金额"
+
 #: models.py templates/fleetops/srp/preview.html
 msgid "Pasted link"
 msgstr "贴链接"
@@ -4248,6 +4252,7 @@ msgid "Corporation ticker"
 msgstr "军团简称"
 
 #: models.py templates/fleetops/srp/_calculation.html
+#: templates/fleetops/srp/claim.html
 msgid "Loss value"
 msgstr "损失价值"
 
@@ -9526,7 +9531,7 @@ msgstr "再用一次"
 msgid "No pings yet."
 msgstr "还没有 Ping。"
 
-#: templates/fleetops/srp/_calculation.html
+#: templates/fleetops/srp/_calculation.html templates/fleetops/srp/claim.html
 msgid "Not available yet"
 msgstr "暂不可用"
 
@@ -10244,6 +10249,19 @@ msgid "Decision:"
 msgstr "处理结果："
 
 #: templates/fleetops/srp/claim.html
+msgid "This claim was imported from aa-srp. It is a record of what was decided there and cannot be changed here; an internal note can still be added."
+msgstr "该申请是从 aa-srp 导入的。它只是当时决定的记录，不能在这里修改；仍可添加内部备注。"
+
+#: templates/fleetops/srp/claim.html
+#, python-format
+msgid "aa-srp request %(number)s (code %(code)s)."
+msgstr "aa-srp 申请 %(number)s（代码 %(code)s）。"
+
+#: templates/fleetops/srp/claim.html
+msgid "The time of the loss is an estimate: it is the time of the fleet link in aa-srp."
+msgstr "损失时间是估算值：取自 aa-srp 里舰队链接的时间。"
+
+#: templates/fleetops/srp/claim.html
 msgid "Time"
 msgstr "时间"
 
@@ -10275,6 +10293,14 @@ msgstr "打开舰队"
 #: templates/fleetops/srp/claim_edit_preview.html
 msgid "Outside a FleetOps fleet"
 msgstr "不在 FleetOps 舰队内"
+
+#: templates/fleetops/srp/claim.html
+msgid "Payout recorded"
+msgstr "记录的赔付额"
+
+#: templates/fleetops/srp/claim.html
+msgid "Paid out"
+msgstr "已赔付"
 
 #: templates/fleetops/srp/claim.html
 msgid "as calculated for this claim"
@@ -13475,6 +13501,18 @@ msgstr "只有申请人才能修改这条申请。"
 #: texts.py
 msgid "Only pending claims can be changed."
 msgstr "只能修改待审核的申请。"
+
+#: texts.py
+msgid "zKillboard is switched off in the SRP settings; the hashes cannot be looked up."
+msgstr "SRP 设置里已关闭 zKillboard，无法查询哈希。"
+
+#: texts.py
+msgid "A link imported from aa-srp stays closed."
+msgstr "从 aa-srp 导入的链接保持关闭。"
+
+#: texts.py
+msgid "This claim was imported from aa-srp. It is a record and cannot be changed here."
+msgstr "该申请是从 aa-srp 导入的，只是一条记录，不能在这里修改。"
 
 #: texts.py
 msgid "Replacing the loss of a claim is switched off."

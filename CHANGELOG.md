@@ -150,6 +150,23 @@ Install it like the previous pre-release (`pip install --no-deps aa-fleetops==0.
   last line. `srp-claims` has four more columns at the end, **Category**, **Link**, **Source** and **Security status**
   (SRP staff only), and the filter `category=<key>`; `srp-members`, `srp-corporations` and `srp-fcs` have more columns at
   the end. No existing column moved.
+- **Import of the aa-srp history.** `python manage.py fleetops_import_aasrp` copies the links and requests of aa-srp
+  (read only) into FleetOps: approved requests become paid claims, rejected ones rejected claims, pending ones are
+  not imported (the report counts them and a real run warns). Imported claims are matched by their aa-srp request number,
+  so the command can run again; claims made in FleetOps are never touched. Links become closed links without a fleet (or
+  standing links of a category with `--category-map`), the killmail of each loss becomes a stand-in that keeps the loss
+  from being claimed again, and the time of the loss is the time of the link until `--enrich` fetches the real one.
+  `--dry-run` prints the report (by month and status, with the skip reasons), `--since`/`--until`, `--actor` and
+  `--batch-size` are options, and `--undo` removes everything the import made. The statistics and reports include the
+  imported claims. Imported claims are records: they cannot be approved, rejected, paid, reopened, moved, recalculated,
+  withdrawn or changed (only an internal note can be added), the page shows the amount as recorded in aa-srp, and an
+  imported link cannot be opened again. A run holds the SRP lock batch by batch: run it in a maintenance window. See
+  [Importing the history of aa-srp](docs/configuration.md#importing-the-history-of-aa-srp).
+- **Import of a payout table.** `python manage.py fleetops_srp_import_payouts PATH --category KEY --column NAME`
+  (dry run unless `--apply`) makes the payout rules of one category from a CSV file, audited like any configuration
+  change.
+- **Rollback check.** `python manage.py fleetops_srp_rollback_check` shows whether `migrate fleetops 0023` would be
+  stopped (see the rollback notes); it changes nothing.
 
 ### Changed
 
@@ -217,6 +234,11 @@ prices arrive with the first daily read. Members can change their pending claims
 after the upgrade; untick **Members can change their pending claims** or **Show the insurance estimate** to keep the old
 behaviour. Restart the Celery worker so the two new tasks are known. The public ESI insurance prices need no new scope.
 
+Migration `0033` adds the external ID of a claim (empty for every existing claim), the payout basis *Amount as recorded
+in aa-srp* and the claim event *Imported from aa-srp*; `0034` and `0035` change nothing going forward. Nothing is
+imported by the upgrade: run `fleetops_import_aasrp --dry-run` yourself, in the time you choose, when you move from
+aa-srp (the command needs aa-srp installed and decide on every pending request there first).
+
 The reports and the new files of the SRP rework (period selection, `srp-trend` and the others) need no migration, no
 setting and no permission: everyone who could open the SRP summaries can open the reports, except the reviewer and
 payer reports, which are for SRP staff only. Killmails stored before 0.3.0b1 show the region "Unknown" in the region
@@ -256,6 +278,16 @@ Rolling back `0032` drops the payment batches (the claims keep their status, amo
 the batch they were paid in), the insurance prices, the stored attackers, the revision numbers and the five settings.
 Claims, amounts and statuses are not changed. Export the batches first if you need them. To behave like the previous
 version before rolling back, untick **Members can change their pending claims**.
+Rolling back `0033` drops the external ID of the claims. **`0035`, the last migration of this version, is the guard for the
+whole way back.** It checks everything that makes going back unsafe, once and before anything is changed, and stops the
+rollback (to `0023` or to any migration of this version, also a partial one such as `0032`) with a list while:
+payout rules belong to a category (the rule IDs are listed), links without a fleet have claims or links were imported
+from aa-srp (the link codes are listed), or claims were imported from aa-srp ("Run fleetops_import_aasrp --undo first").
+Run `python manage.py fleetops_srp_rollback_check` first: it makes the same checks, only reads, and prints what is in the
+way. The steps are: `fleetops_import_aasrp --undo`, delete or generalise the rules and delete the links it lists, run the
+check until everything passes, then `python manage.py migrate fleetops 0023`, then install the previous package.
+`0034` and the older guards (`0025`, `0029`) remain a second line of defence. The imported history is lost by the
+undo; export the reports you need first, or restore the backup instead.
 The reports and the period selection of the SRP files store nothing and have no migration: installing the previous
 package removes the report page and the new files, and bookmarks to them stop working. The older files lose the columns
 added at their end.

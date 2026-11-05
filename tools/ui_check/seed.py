@@ -151,6 +151,7 @@ def build_pages():
         Page("srp-reports", "srp", u("srp_reports")),
         Page("srp-reports-categories", "srp", u("srp_reports", query="?report=categories&preset=last_12")),
         Page("srp-claim-pending", "srp", lambda ctx: reverse("fleetops:srp_claim", args=[ctx.claim_pending.uuid])),
+        Page("srp-claim-imported", "srp", lambda ctx: reverse("fleetops:srp_claim", args=[ctx.claim_imported.uuid])),
         Page("srp-links", "srp", u("srp_links")),
         Page("srp-link-new", "srp", u("srp_link_new")),
         Page("srp-link-edit", "srp", lambda ctx: reverse("fleetops:srp_link_edit", args=[ctx.standing_link.code])),
@@ -591,6 +592,21 @@ def build_data(login_count):
     f.claim_event(ctx.claim_paid, m.SrpClaimEvent.Action.PAID, actor=users["srp"], amount=20_000_000)
     f.srp_claim(users["pilot04"], status=m.SrpClaim.Status.REJECTED, amount=20_000_000, decided_by=users["srp"])
     f.srp_claim(users["pilot05"], status=m.SrpClaim.Status.WITHDRAWN, amount=20_000_000)
+    # A claim imported from aa-srp: paid, with a stand-in killmail (the time of the loss is an estimate).
+    imported_pilot = users["pilot03"]
+    imported_km = f.srp_killmail(
+        f.main_of(imported_pilot), killmail_hash="", origin="aasrp", zkill_status="disabled", solar_system_id=0, solar_system_name=""
+    )
+    ctx.claim_imported = f.srp_claim(
+        imported_pilot, killmail=imported_km, status=m.SrpClaim.Status.PAID, amount=35_000_000, decided_by=users["srp"],
+        source="aasrp", external_id="aasrp:4711", payout_basis="imported", scope=m.SrpClaim.Scope.IN_FLEET,
+        fleet_label="Example fleet - 2026-09-12 19:00 EVE", payment_note="Imported from aa-srp", policy={}, calculation={},
+        category=f.fleet_category(),
+    )
+    f.claim_event(
+        ctx.claim_imported, m.SrpClaimEvent.Action.IMPORT, actor=users["srp"], amount=35_000_000,
+        data={"aasrp_request": 4711, "request_code": "EXAMPLE0001", "aasrp_status": "approved", "killmail_time_estimated": True},
+    )
 
     # Loss discovery: the main character is authorized and the alt is not; one loss found for each character, one of them
     # matched to the example fleet, one in a blocked ship group, one that is claimed already (the paid claim).

@@ -28,7 +28,7 @@ from fleetops.forms_srp import (
     SubmitClaimForm,
     WithdrawForm,
 )
-from fleetops.models import SrpClaim, SrpFleetLink, SrpSettings
+from fleetops.models import SrpClaim, SrpClaimEvent, SrpFleetLink, SrpKillmail, SrpSettings
 from fleetops.providers.esi import FleetESIError
 from fleetops.services import sde
 from fleetops.services.periods import month_bounds
@@ -450,6 +450,19 @@ def link_candidates(claim):
     )
 
 
+def _import_info(claim) -> dict:
+    """What the claim page says about an imported claim: the aa-srp request number and code, and whether the time of the
+    loss is only an estimate (the killmail is still the stand-in made by the import)."""
+    event = claim.events.filter(action=SrpClaimEvent.Action.IMPORT).order_by("pk").first()
+    data = event.data if event is not None and isinstance(event.data, dict) else {}
+    killmail = claim.killmail
+    return {
+        "request": data.get("aasrp_request"),
+        "code": data.get("request_code", ""),
+        "estimated": killmail.origin == SrpKillmail.Origin.AASRP and not killmail.killmail_hash,
+    }
+
+
 def claim_page_context(request, claim, *, bound=None, settings_obj=None):
     """What claim.html shows. ``bound`` maps an action to the form the person just sent, with its input and errors."""
     user = request.user
@@ -490,11 +503,17 @@ def claim_page_context(request, claim, *, bound=None, settings_obj=None):
     if is_owner and claim.status == SrpClaim.Status.PENDING and settings_obj.member_edit_enabled:
         # A banned member can still withdraw, but not change the claim.
         context["can_edit"] = bans.active_ban(user) is None
-    context["insurance"] = insurance.estimate(
-        claim.ship_type_id,
-        claim.approved_amount if claim.status in (SrpClaim.Status.APPROVED, SrpClaim.Status.PAID) else claim.suggested_amount,
-        settings_obj,
-    )
+    context["is_imported"] = claim.is_imported
+    if claim.is_imported:
+        # A claim imported from aa-srp is a record (IMP-6): no calculation, no insurance estimate, no buttons.
+        context["insurance"] = None
+        context["import_info"] = _import_info(claim)
+    else:
+        context["insurance"] = insurance.estimate(
+            claim.ship_type_id,
+            claim.approved_amount if claim.status in (SrpClaim.Status.APPROVED, SrpClaim.Status.PAID) else claim.suggested_amount,
+            settings_obj,
+        )
     if is_staff:
         context["attackers"] = attackers.summary(claim.killmail)
         context["limits_now"] = review_info.limits_now(claim)
@@ -515,7 +534,8 @@ def claim_page_context(request, claim, *, bound=None, settings_obj=None):
         actions = tuple(
             action
             for action in ACTIONS_BY_STATUS.get(claim.status, ())
-            if (can_decide if action in REVIEW_BUTTONS else not (undo_block if action == "unpaid" else pay_block))
+            if not claim.is_imported
+            and (can_decide if action in REVIEW_BUTTONS else not (undo_block if action == "unpaid" else pay_block))
         )
         if actions:
             forms = {

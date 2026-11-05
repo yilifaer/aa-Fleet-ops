@@ -10,7 +10,7 @@ from io import StringIO
 
 from django.apps import apps
 from django.contrib.auth.models import Group, Permission, User
-from django.core.management import call_command
+from django.core.management import CommandError, call_command
 from django.db import connection
 from django.db.migrations.exceptions import IrreversibleError
 from django.db.migrations.executor import MigrationExecutor
@@ -43,6 +43,9 @@ links_guard = importlib.import_module("fleetops.migrations.0029_srp_links_guard"
 intake_blocks = importlib.import_module("fleetops.migrations.0030_srp_intake_blocks")
 discovery_schema = importlib.import_module("fleetops.migrations.0031_srp_discovery")
 review_payments = importlib.import_module("fleetops.migrations.0032_srp_review_payments")
+import_schema = importlib.import_module("fleetops.migrations.0033_srp_import")
+import_guard = importlib.import_module("fleetops.migrations.0034_srp_import_guard")
+rollback_guard = importlib.import_module("fleetops.migrations.0035_srp_rollback_guard")
 
 NEW_CODENAMES = ("request_srp", "manage_srp")
 # Permissions of 0.3.0b1 (REV-1): registered with the model options, granted to nobody.
@@ -81,6 +84,9 @@ class MigrationModuleTests(TestCase):
             intake_blocks,
             discovery_schema,
             review_payments,
+            import_schema,
+            import_guard,
+            rollback_guard,
         ):
             source = inspect.getsource(module)
             with self.subTest(module=module.__name__):
@@ -115,6 +121,9 @@ class MigrationModuleTests(TestCase):
         self.assertEqual(intake_blocks.Migration.dependencies[0], ("fleetops", "0029_srp_links_guard"))
         self.assertEqual(discovery_schema.Migration.dependencies[0], ("fleetops", "0030_srp_intake_blocks"))
         self.assertEqual(review_payments.Migration.dependencies[0], ("fleetops", "0031_srp_discovery"))
+        self.assertEqual(import_schema.Migration.dependencies[0], ("fleetops", "0032_srp_review_payments"))
+        self.assertEqual(import_guard.Migration.dependencies, [("fleetops", "0033_srp_import")])
+        self.assertEqual(rollback_guard.Migration.dependencies, [("fleetops", "0034_srp_import_guard")])
 
     def test_the_migrations_start_with_the_plain_header(self):
         for module in (
@@ -127,6 +136,9 @@ class MigrationModuleTests(TestCase):
             intake_blocks,
             discovery_schema,
             review_payments,
+            import_schema,
+            import_guard,
+            rollback_guard,
         ):
             with self.subTest(module=module.__name__):
                 self.assertTrue(inspect.getsource(module).startswith("# AA FleetOps 0.3.0b1:"))
@@ -151,6 +163,9 @@ class MigrationModuleTests(TestCase):
             intake_blocks,
             discovery_schema,
             review_payments,
+            import_schema,
+            import_guard,
+            rollback_guard,
         ):
             source = inspect.getsource(module)
             with self.subTest(module=module.__name__):
@@ -1322,3 +1337,269 @@ class ReviewPaymentsRoundTripTests(TransactionTestCase):
         self.assertFalse(hasattr(row, "payment_batch_id"))
         again = self.migrate(self.after)
         self.assertEqual(again.get_model("fleetops", "SrpClaim").objects.get(pk=claim.pk).member_revision, 0)
+
+
+class RollbackGuardFunctionTests(TestCase):
+    """The summary guard 0035, the guard 0034 and the read-only command, on the current models (IMP-7, chapter 3.2)."""
+
+    def setUp(self):
+        self.user = f.create_user("guard-pilot", perms=f.SRP_MEMBER_PERMS)
+        self.category = f.srp_category("Home defense")
+
+    def codes(self, problems):
+        return {code: detail for code, detail in problems}
+
+    def command(self):
+        from fleetops.srp import rollback
+
+        return {problem.code: problem for problem in rollback.check_all()}
+
+    def test_the_hint_for_imported_links_is_the_undo_command(self):
+        from fleetops.srp import rollback
+
+        Link = SrpFleetLink
+        Link.objects.create(kind="fleet", code="aa-hint", origin="aasrp", external_id="aasrp:3")
+
+        [problem] = [p for p in rollback.check_all() if p.code == rollback.LINKS]
+
+        self.assertIn("for imported links run fleetops_import_aasrp --undo", rollback.describe(problem))
+
+    def test_the_migration_is_the_last_one_and_the_guard_is_its_only_reverse(self):
+        executor = MigrationExecutor(connection)
+        self.assertEqual(executor.loader.graph.leaf_nodes("fleetops"), [("fleetops", "0035_srp_rollback_guard")])
+        [operation] = rollback_guard.Migration.operations
+        self.assertIs(operation.reverse_code, rollback_guard.refuse_rollback)
+        [operation] = import_guard.Migration.operations
+        self.assertIs(operation.reverse_code, import_guard.refuse_if_imported)
+
+    def test_the_constants_copied_into_the_guards_match_the_app(self):
+        from fleetops.models import SrpClaim, SrpFleetLink
+        from fleetops.srp import rollback
+
+        self.assertEqual(rollback_guard.AASRP, SrpClaim.Source.AASRP)
+        self.assertEqual(rollback_guard.AASRP, SrpFleetLink.Origin.AASRP)
+        self.assertEqual(import_guard.AASRP, SrpClaim.Source.AASRP)
+        self.assertEqual(rollback_guard.MAX_LISTED, rollback.MAX_LISTED)
+        self.assertEqual((rollback_guard.RULES, rollback_guard.LINKS, rollback_guard.CLAIMS), (rollback.RULES, rollback.LINKS, rollback.CLAIMS))
+
+    def test_a_database_without_the_three_things_passes_both_checks(self):
+        self.assertEqual(rollback_guard.check_all(apps), [])
+        self.assertEqual(self.command(), {})
+        rollback_guard.refuse_rollback(apps, None)
+        import_guard.refuse_if_imported(apps, None)
+
+    def make_problems(self):
+        """The three kinds of problem, with names that must not appear in any message."""
+        rule = f.payout_rule(587, 5_000_000, category=self.category)
+        # A duplicate that differs only by its category is a category rule as well.
+        general = f.payout_rule(587, 6_000_000)
+        link = f.standing_link(category=self.category, name="Secret link name", code="busy-code")
+        f.srp_claim(self.user, link=link)
+        imported = SrpFleetLink.objects.create(kind="fleet", code="imported-code", origin="aasrp", external_id="aasrp:1")
+        km = f.srp_killmail(f.main_of(self.user))
+        claim = f.srp_claim(self.user, killmail=km, source="aasrp", external_id="aasrp:77")
+        return rule, general, link, imported, claim
+
+    def test_the_summary_guard_lists_everything_that_is_in_the_way_at_once(self):
+        rule, general, _link, _imported, _claim = self.make_problems()
+
+        problems = self.codes(rollback_guard.check_all(apps))
+
+        self.assertEqual(set(problems), {"rules", "links", "claims"})
+        self.assertEqual(problems["rules"], {"count": 1, "listed": [rule.pk]})
+        self.assertEqual(problems["links"], {"count": 2, "listed": ["busy-code", "imported-code"]})
+        self.assertEqual(problems["claims"]["count"], 1)
+        self.assertNotIn(general.pk, problems["rules"]["listed"])
+
+    def test_the_refusal_names_only_ids_and_codes_and_tells_what_to_do(self):
+        rule, *_ = self.make_problems()
+
+        with self.assertRaises(IrreversibleError) as caught:
+            rollback_guard.refuse_rollback(apps, None)
+
+        message = str(caught.exception)
+        self.assertIn(f"IDs: {rule.pk}", message)
+        self.assertIn("busy-code, imported-code", message)
+        self.assertIn("1 claims were imported from aa-srp. Run fleetops_import_aasrp --undo first.", message)
+        self.assertIn("fleetops_srp_rollback_check", message)
+        for private in ("Secret link name", "Home defense", "6000000", "5000000"):
+            self.assertNotIn(private, message)
+
+    def test_the_command_check_and_the_migration_check_agree_on_the_same_data(self):
+        scenarios = {
+            "nothing": lambda: None,
+            "category rule": lambda: f.payout_rule(587, 1, category=self.category),
+            "stale category key": lambda: SrpPayoutRule.objects.filter(
+                pk=f.payout_rule(588, 1, category=self.category).pk
+            ).update(category=None),
+            "standing link with a claim": lambda: f.srp_claim(self.user, link=f.standing_link(category=self.category)),
+            "standing link without a claim": lambda: f.standing_link(category=self.category),
+            "imported link": lambda: SrpFleetLink.objects.create(kind="fleet", code="imp", origin="aasrp"),
+            "imported claim": lambda: f.srp_claim(self.user, source="aasrp", external_id="aasrp:5"),
+        }
+        for name, make in scenarios.items():
+            with self.subTest(scenario=name):
+                SrpClaim.objects.all().delete()
+                SrpFleetLink.objects.all().delete()
+                SrpPayoutRule.objects.all().delete()
+                make()
+
+                migration = self.codes(rollback_guard.check_all(apps))
+                command = self.command()
+
+                self.assertEqual(set(migration), set(command))
+                for code, detail in migration.items():
+                    self.assertEqual((detail["count"], detail["listed"]), (command[code].count, command[code].listed))
+
+    def test_the_lists_are_cut_in_both_copies(self):
+        for index in range(rollback_guard.MAX_LISTED + 3):
+            SrpFleetLink.objects.create(kind="fleet", code=f"imp-{index:03d}", origin="aasrp")
+
+        with self.assertRaises(IrreversibleError) as caught:
+            rollback_guard.refuse_rollback(apps, None)
+        problem = self.command()["links"]
+
+        self.assertIn("3 more, 53 in total", str(caught.exception))
+        self.assertEqual((problem.count, len(problem.listed)), (53, 50))
+
+    def test_the_command_prints_only_a_verdict_and_changes_nothing(self):
+        out = StringIO()
+        call_command("fleetops_srp_rollback_check", stdout=out)
+        self.assertIn("OK      Payout rules without a category", out.getvalue())
+        self.assertIn("All checks passed", out.getvalue())
+
+        self.make_problems()
+        before = (SrpClaim.objects.count(), SrpFleetLink.objects.count(), SrpPayoutRule.objects.count(), AuditLog.objects.count())
+        out = StringIO()
+        with self.assertRaises(CommandError):
+            call_command("fleetops_srp_rollback_check", stdout=out)
+        text = out.getvalue()
+
+        self.assertEqual(
+            (SrpClaim.objects.count(), SrpFleetLink.objects.count(), SrpPayoutRule.objects.count(), AuditLog.objects.count()),
+            before,
+        )
+        self.assertEqual(text.count("FAILED"), 3)
+        self.assertIn("Run fleetops_import_aasrp --undo first.", text)
+        self.assertNotIn("Secret link name", text)
+
+    def test_the_guard_of_0034_names_the_undo_command_and_counts(self):
+        f.srp_claim(self.user, source="aasrp", external_id="aasrp:1")
+
+        with self.assertRaises(IrreversibleError) as caught:
+            import_guard.refuse_if_imported(apps, None)
+
+        self.assertIn("1 SRP claims were imported", str(caught.exception))
+        self.assertIn("fleetops_import_aasrp --undo", str(caught.exception))
+
+
+class ImportRoundTripTests(TransactionTestCase):
+    """0033 to 0035 forward, the summary guard when going back, and the way back after the data is removed."""
+
+    serialized_rollback = True
+    before_import = [("fleetops", "0032_srp_review_payments")]
+    after_schema = [("fleetops", "0033_srp_import")]
+    after_guard = [("fleetops", "0034_srp_import_guard")]
+    latest = [("fleetops", "0035_srp_rollback_guard")]
+    oldest = [("fleetops", "0023_group_members_are_leaders_help")]
+
+    def migrate(self, nodes):
+        executor = MigrationExecutor(connection)
+        executor.loader.build_graph()
+        executor.migrate(nodes)
+        return executor.loader.project_state(nodes).apps
+
+    def migrate_to_latest(self):
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes("fleetops"))
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(self.migrate_to_latest)
+
+    def claim(self, apps_, number, **values):
+        from django.utils import timezone
+
+        Killmail = apps_.get_model("fleetops", "SrpKillmail")
+        km = Killmail.objects.create(
+            killmail_id=number, killmail_hash=f"{number:040d}", killmail_time=timezone.now(), solar_system_id=2, ship_type_id=3
+        )
+        return apps_.get_model("fleetops", "SrpClaim").objects.create(
+            killmail=km, scope="out_of_fleet", character_id=number, character_name=f"Pilot {number}",
+            killmail_time=km.killmail_time, ship_type_id=3, **values,
+        )
+
+    def test_old_claims_have_no_external_id_and_the_upgrade_changes_nothing_else(self):
+        old = self.migrate(self.before_import)
+        self.claim(old, 1, status="approved", approved_amount=500)
+
+        new = self.migrate(self.latest)
+
+        row = new.get_model("fleetops", "SrpClaim").objects.get()
+        self.assertEqual((row.external_id, row.source, row.status, row.approved_amount), (None, "paste", "approved", 500))
+        # Two claims can both have no external ID.
+        self.claim(new, 2)
+        self.assertEqual(new.get_model("fleetops", "SrpClaim").objects.filter(external_id__isnull=True).count(), 2)
+
+    def test_going_back_is_stopped_at_the_end_of_the_chain_with_nothing_changed(self):
+        new = self.migrate(self.latest)
+        Category = new.get_model("fleetops", "SrpCategory")
+        category = Category.objects.create(key="solo", name="Solo")
+        rule = new.get_model("fleetops", "SrpPayoutRule").objects.create(
+            ship_type_id=589, doctrine_key="", scope="any", amount=5, category=category, category_key=category.pk
+        )
+        Link = new.get_model("fleetops", "SrpFleetLink")
+        busy = Link.objects.create(kind="standing", code="busy-code", name="Busy", category=category)
+        self.claim(new, 1, link=busy)
+        Link.objects.create(kind="fleet", code="aa-code", origin="aasrp", external_id="aasrp:3")
+        self.claim(new, 2, source="aasrp", external_id="aasrp:9", status="paid")
+
+        with self.assertRaises(IrreversibleError) as caught:
+            self.migrate(self.oldest)
+
+        message = str(caught.exception)
+        self.assertIn(str(rule.pk), message)
+        self.assertIn("busy-code", message)
+        self.assertIn("aa-code", message)
+        self.assertIn("fleetops_import_aasrp --undo", message)
+        self.assertIn("for imported links run fleetops_import_aasrp --undo", message)
+        # The database was not touched: every table and column of 0024 to 0034 is still there.
+        current = MigrationExecutor(connection).loader.project_state(self.latest).apps
+        for name in ("SrpBan", "SrpLoss", "SrpLossScan", "SrpPaymentBatch", "SrpInsurancePrice", "SrpCategory"):
+            self.assertEqual(current.get_model("fleetops", name).objects.count() >= 0, True)
+        self.assertEqual(current.get_model("fleetops", "SrpClaim").objects.filter(external_id="aasrp:9").count(), 1)
+        self.assertEqual(current.get_model("fleetops", "SrpPayoutRule").objects.filter(category__isnull=False).count(), 1)
+        columns = {c.name for c in connection.introspection.get_table_description(connection.cursor(), "fleetops_srpclaim")}
+        self.assertIn("external_id", columns)
+        self.assertIn("payment_batch_id", columns)
+
+        # Fix the three things; now the way back works, and forward again.
+        current.get_model("fleetops", "SrpPayoutRule").objects.all().delete()
+        current.get_model("fleetops", "SrpFleetLink").objects.all().delete()
+        current.get_model("fleetops", "SrpClaim").objects.filter(source="aasrp").delete()
+        # The way all the way back to 0023 is not walked here: every deep cycle leaves dropped columns in the row
+        # definition of the claim tables, and MariaDB runs out of row size for the later tests of this module.
+        self.assertEqual(rollback_guard.check_all(current), [])
+        self.assertEqual(current.get_model("fleetops", "SrpClaim").objects.count(), 1)
+
+    def test_a_partial_rollback_is_stopped_too(self):
+        new = self.migrate(self.latest)
+        self.claim(new, 1, source="aasrp", external_id="aasrp:1", status="paid")
+
+        with self.assertRaises(IrreversibleError) as caught:
+            self.migrate(self.before_import)
+
+        self.assertIn("1 claims were imported", str(caught.exception))
+
+    def test_the_guard_of_0034_alone_stops_before_0033_is_undone(self):
+        new = self.migrate(self.after_guard)
+        self.claim(new, 1, source="aasrp", external_id="aasrp:1", status="paid")
+
+        with self.assertRaises(IrreversibleError):
+            self.migrate(self.after_schema)
+
+        current = MigrationExecutor(connection).loader.project_state(self.after_guard).apps
+        self.assertEqual(current.get_model("fleetops", "SrpClaim").objects.filter(external_id="aasrp:1").count(), 1)
+        current.get_model("fleetops", "SrpClaim").objects.all().delete()
+        old = self.migrate(self.before_import)
+        self.assertNotIn("external_id", {f_.name for f_ in old.get_model("fleetops", "SrpClaim")._meta.get_fields()})

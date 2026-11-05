@@ -5,7 +5,7 @@
 <div class="d-flex flex-wrap align-items-start gap-3 mb-3">
   <img class="fo-render" src="{% ship_render_url claim.ship_type_id 64 %}" width="64" height="64" alt="" loading="lazy">
   <div class="flex-grow-1">
-    <h2 class="mb-1">{{ claim.reference }} {{ claim|srp_status_badge }}{% if claim.auto_rejected %} {% pill "neutral" _("Automatic") %}{% endif %}</h2>
+    <h2 class="mb-1">{{ claim.reference }} {{ claim|srp_status_badge }}{% if claim.auto_rejected %} {% pill "neutral" _("Automatic") %}{% endif %}{% if is_imported %} {% translate "aa-srp import" as import_label %}{% pill "neutral" import_label %}{% endif %}</h2>
     <div class="text-muted">{% blocktranslate trimmed with ship=claim.ship_type_name|default:claim.ship_type_id time=claim.killmail_time|eve_time pilot=claim.character_name %}{{ ship }} lost {{ time }} EVE &middot; {{ pilot }}{% endblocktranslate %}</div>
   </div>
   <div class="text-end">
@@ -19,6 +19,14 @@
 {% if claim.decision_reason and claim.status != "pending" %}
 <div class="alert {% if claim.status == 'rejected' %}alert-danger{% else %}alert-secondary{% endif %}">
   <strong>{% if claim.status == "rejected" %}{% if claim.decided_at %}{% blocktranslate trimmed with time=claim.decided_at|eve_time %}Rejected {{ time }} EVE:{% endblocktranslate %}{% else %}{% translate "Rejected:" %}{% endif %}{% else %}{% if claim.decided_at %}{% blocktranslate trimmed with time=claim.decided_at|eve_time %}Decision {{ time }} EVE:{% endblocktranslate %}{% else %}{% translate "Decision:" %}{% endif %}{% endif %}</strong> {{ claim.decision_reason|stored_text|linebreaksbr }}
+</div>
+{% endif %}
+
+{% if is_imported %}
+<div class="alert alert-secondary" id="srp-imported-note">
+  {% translate "This claim was imported from aa-srp. It is a record of what was decided there and cannot be changed here; an internal note can still be added." %}
+  {% if import_info.request %}<div class="small mt-1">{% blocktranslate trimmed with number=import_info.request code=import_info.code %}aa-srp request {{ number }} (code {{ code }}).{% endblocktranslate %}</div>{% endif %}
+  {% if import_info.estimated %}<div class="small mt-1" id="srp-time-estimated">{% translate "The time of the loss is an estimate: it is the time of the fleet link in aa-srp." %}</div>{% endif %}
 </div>
 {% endif %}
 
@@ -51,8 +59,20 @@
     </div>
 
     <div class="card mb-3">
+      {% if is_imported %}
+      <div class="card-header"><strong>{% translate "Amount as recorded in aa-srp" %}</strong></div>
+      <div class="card-body" id="srp-imported-amounts">
+        <dl class="row mb-0">
+          <dt class="col-sm-5">{% translate "Loss value" %}</dt>
+          <dd class="col-sm-7">{% if claim.loss_value is None %}<span class="text-muted">{% translate "Not available yet" %}</span>{% else %}{{ claim.loss_value|isk }}{% endif %}</dd>
+          <dt class="col-sm-5">{% if claim.status == "rejected" %}{% translate "Payout recorded" %}{% else %}{% translate "Paid out" %}{% endif %}</dt>
+          <dd class="col-sm-7"><strong>{% if claim.status == "rejected" %}{{ claim.suggested_amount|isk }}{% else %}{{ claim.approved_amount|isk }}{% endif %}</strong></dd>
+        </dl>
+      </div>
+      {% else %}
       <div class="card-header d-flex justify-content-between align-items-center"><strong>{% translate "Calculation" %}</strong>{% if calculation.computed_at %}<span class="small text-muted">{{ calculation.computed_at|eve_time }} EVE</span>{% endif %}</div>
       <div class="card-body">{% include "fleetops/srp/_calculation.html" %}</div>
+      {% endif %}
     </div>
 
     {% if show_limits %}
@@ -94,7 +114,7 @@
     <div class="card mb-3">
       <div class="card-header"><strong>{% translate "Checks" %}</strong></div>
       <div class="card-body fleetops-srp-checks">
-        {% if claim.scope == "in_fleet" %}<div class="mb-2"><span class="text-muted">{% translate "Fleet presence:" %}</span> {% include "fleetops/srp/_fleet_check.html" %}</div>{% endif %}
+        {% if claim.scope == "in_fleet" and not is_imported %}<div class="mb-2"><span class="text-muted">{% translate "Fleet presence:" %}</span> {% include "fleetops/srp/_fleet_check.html" %}</div>{% endif %}
         {% for warning in claim_warnings|srp_flags %}<div class="mb-2">{{ warning|srp_warning_badge }}</div>{% empty %}<span class="text-muted">{% translate "No warnings." %}</span>{% endfor %}
       </div>
     </div>

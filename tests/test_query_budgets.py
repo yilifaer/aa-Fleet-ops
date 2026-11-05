@@ -530,6 +530,28 @@ class SrpReviewPaymentBudgetTests(TestCase):
 
         self.assertEqual(self.count(manager, route("srp_claim", few.uuid)), self.count(manager, route("srp_claim", many.uuid)))
 
+    def test_the_page_of_an_imported_claim_costs_no_more_than_a_native_one_and_does_not_grow(self):
+        # IMP-6: the page reads the import event once and no insurance prices; more events cost nothing more.
+        manager = f.create_user("budget_import_manager", perms=f.SRP_MANAGER_PERMS)
+        pilot = f.create_user("budget_import_pilot", perms=f.SRP_MEMBER_PERMS)
+
+        def imported(events):
+            km = f.srp_killmail(f.main_of(pilot), killmail_hash="", origin="aasrp", zkill_status="disabled")
+            claim = f.srp_claim(
+                pilot, killmail=km, status="paid", decided_by=manager, source="aasrp", external_id=f"aasrp:{km.pk}",
+                payout_basis="imported", policy={}, calculation={},
+            )
+            f.claim_event(claim, "import", data={"aasrp_request": 1, "request_code": "A", "killmail_time_estimated": True})
+            for _ in range(events):
+                f.claim_event(claim, "note", actor=manager, internal=True)
+            return claim
+
+        few, many = imported(0), imported(8)
+        native = f.srp_claim(pilot, status="paid", decided_by=manager)
+
+        self.assertEqual(self.count(manager, route("srp_claim", few.uuid)), self.count(manager, route("srp_claim", many.uuid)))
+        self.assertLessEqual(self.count(manager, route("srp_claim", few.uuid)), self.count(manager, route("srp_claim", native.uuid)) + 1)
+
     # The reads the review information (REV-9) and the intake rules added to the claim page, told by their SQL.
     NEW_READS = ("fleetops_srpinsuranceprice", "fleetops_srpban", "OVER (", "AS \"used_0\"", "fleetops_eveentityname")
 

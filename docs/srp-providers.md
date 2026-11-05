@@ -32,8 +32,10 @@ supported SRP provider is available.`
 
 A site that does not enable FleetOps SRP sees no change. A site that enables it and still wants aa-srp or
 Alliance Auth SRP links picks that provider explicitly instead of *Automatic*. A killmail that is also claimed
-in aa-srp or Alliance Auth SRP shows a warning on the FleetOps claim ("Also claimed in …"); nothing is blocked,
-and nothing is imported from the other apps except that check.
+in aa-srp or Alliance Auth SRP shows a warning on the FleetOps claim ("Also claimed in …"); nothing is blocked.
+Nothing is imported from the other apps unless an administrator runs the command that imports the history of aa-srp
+(`fleetops_import_aasrp`, see [Importing the history of aa-srp](configuration.md#importing-the-history-of-aa-srp)).
+Alliance Auth SRP is never imported.
 
 ## FleetOps SRP provider
 

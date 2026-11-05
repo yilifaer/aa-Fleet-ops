@@ -208,6 +208,9 @@ def _apply_open(link_pk, *, actor, is_open, reason="") -> tuple[SrpFleetLink, bo
     """Open or close the link under a row lock; the locked row and whether anything changed."""
     with transaction.atomic():
         current = SrpFleetLink.objects.select_for_update().get(pk=link_pk)
+        if is_open and current.origin == SrpFleetLink.Origin.AASRP:
+            # What aa-srp recorded stays recorded: members cannot claim through a link that was imported.
+            raise SrpStateError("imported", texts.SRP_IMPORTED_LINK_CLOSED())
         changed = current.is_open != bool(is_open)
         if changed:
             if is_open:

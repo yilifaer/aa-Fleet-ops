@@ -482,7 +482,11 @@ def by_category(start, end) -> list[SrpCategoryRow]:
         .values("category_id")
         .annotate(
             members=Count("user_id", distinct=True),
-            capped=Count("pk", filter=Q(suggested_amount__lt=F("base_amount"))),
+            # A rejection imported from aa-srp has no requested amount (0 against its loss value): it was not cut by a cap.
+            capped=Count(
+                "pk",
+                filter=Q(suggested_amount__lt=F("base_amount")) & ~Q(source=SrpClaim.Source.AASRP, status=Status.REJECTED),
+            ),
             **_aggregates(),
         )
     )

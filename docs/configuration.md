@@ -918,6 +918,79 @@ page. Claims that were decided already are never changed.
 A monthly cap for one corporation, replacing the default corporation cap. An empty cap means no limit for that
 corporation.
 
+## Importing the history of aa-srp
+
+`python manage.py fleetops_import_aasrp` copies the SRP history of aa-srp into FleetOps, so that the reports reach
+across the day an alliance switches and a loss paid in aa-srp cannot be claimed again. It needs aa-srp installed
+(app label `aasrp`) and reads its tables; it never writes to aa-srp. Without aa-srp it stops with `aa-srp (aasrp) is not
+installed.` and nothing else in FleetOps is affected (`--undo` and `--enrich` do not need aa-srp, so they still work after it is removed).
+
+**What is imported.**
+
+| aa-srp | FleetOps |
+|---|---|
+| Approved request | A **paid** claim for the recorded payout (the loss when the payout is 0). The payer is empty, the payment date is the date of the decision, the note says "Imported from aa-srp". There is no payment batch. |
+| Rejected request | A **rejected** claim with the reason aa-srp recorded. Its requested amount is the recorded payout (normally 0), not the loss, so the rejection does not add to the requested ISK. |
+| Pending request | **Not imported.** Decide on every pending request in aa-srp before the switch: the report counts them and a real run warns when any are left. |
+| SRP link | A closed link of the claims imported through it, in FleetOps called an *imported link* (code `aa` and the aa-srp code, no fleet). A link is **completed** when every claim imported through it is paid or rejected and one is paid. Links whose name matches a rule of `--category-map` become standing links of that category and their claims are claims outside a fleet in that category. All other links are fleet links, their claims are in the **Fleet** category and count for the FC of the link when the commander's character belongs to a user. |
+| The killmail | A stand-in killmail (no hash, no system, `zKillboard disabled`) that keeps the loss from being claimed again. |
+
+Every imported claim has the source *aa-srp import*, the external ID `aasrp:<request number>`, the payout basis
+*Amount as recorded in aa-srp* and an *Imported from aa-srp* event in its timeline (and an audit entry
+`srp.claim_import`). The claimant, the reviewer and the main character, corporation and alliance are looked up in
+Alliance Auth when the import runs: the creator of the aa-srp request (the owner of the character when the creator is
+the "deleted" user), the user who wrote the last status comment (the `creator` of the comment), and the main character the user has **now**, so the
+corporation of an old claim is the corporation of the main at the time of the import. A claim whose owner cannot be
+found is kept without a user. The time of a loss is the time of its fleet link in aa-srp (the claim says so); use
+`--enrich` for the real time. The loss value is taken as aa-srp recorded it, and the value source is set from the
+aa-srp setting (total or fitted value).
+
+**Options.**
+
+- `--dry-run` prints the report and writes nothing. Run it first, and again against a copy of the production database.
+  The report lists the links and requests read, the requests by month of the link and status (number and ISK, to
+  compare with aa-srp), what would be created, changed and left alone, what is skipped and why (no killmail ID, the same
+  killmail in another aa-srp request, already a FleetOps claim with its `SRP-` number, pending, ship not found, no
+  character), the link names no rule of the category map matched, and how many loss times are estimates.
+- `--since YYYY-MM-DD` and `--until YYYY-MM-DD` limit the requests by their posting date (EVE time, `--until` excluded).
+- `--category-map PATH` is a JSON list such as `[{"pattern": "(?i)solo", "category": "solo-pvp"}]`; the first rule whose
+  regular expression is found in a link's name decides, and the category must exist. Without a map every link is a
+  fleet link.
+- `--actor USERNAME` names the user the audit entries are written for.
+- `--batch-size N` (500): every batch runs in one transaction while it holds the SRP lock, so **a real run blocks every
+  SRP submission and decision on the site until it ends: run it in a maintenance window.** The report prints the time.
+- Running it again is safe: claims are matched by the aa-srp request number, claims that changed in aa-srp are updated
+  (and say what changed in their timeline), unchanged ones are left alone, and **claims that were not imported are
+  never touched**. When the same killmail has several aa-srp requests, the approved one wins over the rejected one,
+  then the newest; the others are counted as duplicates.
+- `--undo` removes everything the import made: the imported claims (their timeline goes with them), the stand-in
+  killmails nobody claims any more and the imported links, and writes `srp.import_aasrp_undo`. `--undo --dry-run` counts. The reason of a rejection is `reject_info`, else the last "Reject Reason" comment, else the text of the status comment. `--undo` takes no filters: combined with `--since`, `--until`, `--category-map` or `--batch-size` the command refuses.
+  Claims made in FleetOps are not touched; importing again afterwards gives the same result.
+- `--enrich` looks up the real killmail of every stand-in (the hash from zKillboard, then the killmail from ESI) at
+  `--rate` lookups per second (1), at most `--limit` (0 = all); it can be interrupted and run again, and it refuses to run
+  while zKillboard is switched off in the SRP settings. It fills in the time, system and attackers of the killmail and
+  moves the claim to the real time (which can change its month). It is optional and slow: ten thousand killmails take
+  about three hours.
+
+**Imported claims cannot be changed.** Nobody can approve, reject, pay, reopen, move, recalculate, withdraw or change an
+imported claim, and an imported link cannot be opened again; the claim page says so, shows the amount as recorded in
+aa-srp and has no buttons. An internal note can still be added. Imported claims are in the reports, the exports (with
+the source *aa-srp import*) and **My SRP**, count toward the monthly limits like any paid claim of their category and
+month, and appear in the reviewer report as "aa-srp (unknown)" when no user wrote the decision.
+
+**A loss that was imported cannot be claimed again.** Pasting the link of a stand-in killmail, from zKillboard or from
+the game, answers "already claimed". A link from the game (with the hash) also completes the stand-in once from ESI.
+The stand-in is never sent to zKillboard for a price.
+
+### Importing a payout table
+
+`python manage.py fleetops_srp_import_payouts PATH --category KEY --column "Amounts"` reads payout rules from a CSV file:
+a `type_id` column, a column with the amounts (`--column`, default `amount`) and optionally the English ship name
+(`--name-column`, default `name`; without it the ship is looked up). Rows without an amount, or with 0, are skipped; a
+rule for the same ship, scope (`--scope`, default `any`) and category is updated, others are created, each with its audit
+entry `configuration.create` or `configuration.update` ("Imported from" and the name of the file). Bad rows are listed
+with their line number and skipped. Without `--apply` nothing is written and the command only counts.
+
 ## Example: an alliance that moves from aa-srp
 
 These values are one alliance's choices, not defaults. A new installation keeps the defaults of the tables above
@@ -952,6 +1025,15 @@ on the pages named; nothing in FleetOps sets them for you.
 
 With these values, a solo loss of 300m in the `solo-pvp` category is suggested at 250m, and a 571m loss claimed
 through a fleet link at 571m.
+
+## Going back to FleetOps 0.2.x
+
+Migration `0035` is the last one of the 0.3.0b1 chain and checks everything that makes going back unsafe before the
+first migration is undone: payout rules that belong to a category, links without a fleet that have claims (standing
+links) or that were imported, and claims imported from aa-srp. It stops **any** way back, a partial one included
+(`migrate fleetops 0032` is stopped too). `python manage.py fleetops_srp_rollback_check` runs the same checks, reads only and
+changes nothing; it lists rule IDs and link codes and exits with an error while something is in the way. See the
+rollback notes of the [changelog](../CHANGELOG.md) for the steps.
 
 ## History and retention
 

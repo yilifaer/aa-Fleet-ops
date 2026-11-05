@@ -2881,6 +2881,7 @@ class SrpClaim(models.Model):
         RULE = "rule", _("Payout table")
         PERCENTAGE = "percentage", _("Percentage of the value")
         NONE = "none", _("No automatic amount")
+        IMPORTED = "imported", _("Amount as recorded in aa-srp")
 
     class Source(models.TextChoices):
         PASTE = "paste", _("Pasted link")
@@ -2924,6 +2925,10 @@ class SrpClaim(models.Model):
     )
     source = models.CharField(
         verbose_name=_("Source"), max_length=10, choices=Source.choices, default=Source.PASTE
+    )
+    # "aasrp:<request number>" of a claim imported from aa-srp; empty (stored as NULL) for every other claim.
+    external_id = models.CharField(
+        verbose_name=_("External ID"), max_length=64, null=True, blank=True, unique=True, editable=False
     )
     # "<type> — <FC> — YYYY-MM-DD HH:MM EVE", kept when the fleet is deleted.
     fleet_label = models.CharField(verbose_name=_("Fleet label"), max_length=255, blank=True)
@@ -3066,6 +3071,17 @@ class SrpClaim(models.Model):
     def reference(self):
         return f"SRP-{self.pk}" if self.pk else "SRP"
 
+    @property
+    def is_imported(self) -> bool:
+        """Whether the claim was imported from aa-srp: it is a record, nobody can decide on it again."""
+        return self.source == self.Source.AASRP
+
+    def save(self, *args, **kwargs):
+        # The unique column holds NULL, never an empty string, when it has no value.
+        if not self.external_id:
+            self.external_id = None
+        super().save(*args, **kwargs)
+
 
 class SrpClaimEvent(models.Model):
     """One step in the history of a claim; the claimant sees all but the internal notes."""
@@ -3088,6 +3104,7 @@ class SrpClaimEvent(models.Model):
         RECHECK = "recheck", _("Fleet presence checked again")
         VALUE_UPDATE = "value_update", _("Loss value updated")
         MEMBER_EDIT = "member_edit", _("Changed by the claimant")
+        IMPORT = "import", _("Imported from aa-srp")
         NOTE = "note", _("Internal note")
 
     claim = models.ForeignKey(SrpClaim, verbose_name=_("Claim"), on_delete=models.CASCADE, related_name="events")

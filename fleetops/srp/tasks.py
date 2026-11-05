@@ -32,10 +32,16 @@ def due_killmails(now):
     """Killmails the sweep has work for: waiting for zKillboard, or without an estimate that is still
     wanted, whose time has come; oldest first."""
     status = SrpKillmail.ZkillStatus
-    return SrpKillmail.objects.filter(zkill_next_attempt_at__lte=now).filter(
-        Q(zkill_status__in=values.WAITING_STATUSES)
-        | Q(zkill_status__in=(status.UNAVAILABLE, status.DISABLED), esi_estimate__isnull=True)
-    ).order_by("zkill_next_attempt_at", "pk")
+    return (
+        SrpKillmail.objects.filter(zkill_next_attempt_at__lte=now)
+        .filter(
+            Q(zkill_status__in=values.WAITING_STATUSES)
+            | Q(zkill_status__in=(status.UNAVAILABLE, status.DISABLED), esi_estimate__isnull=True)
+        )
+        # The stand-in of an imported claim (IMP-5) is never priced.
+        .exclude(origin=SrpKillmail.Origin.AASRP)
+        .order_by("zkill_next_attempt_at", "pk")
+    )
 
 
 def _refresh_one(km, zkill_enabled: bool, when):

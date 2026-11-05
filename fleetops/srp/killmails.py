@@ -259,8 +259,16 @@ def _wants_estimate(km: SrpKillmail) -> bool:
     return km.esi_estimate is None and SrpSettings.get_solo().value_source == SrpSettings.ValueSource.ESI_ESTIMATE
 
 
+def is_placeholder(km: SrpKillmail) -> bool:
+    """Whether the killmail is the stand-in of a claim imported from aa-srp that ESI has not completed yet."""
+    return km.origin == SrpKillmail.Origin.AASRP and not km.killmail_hash
+
+
 def _update_value(km: SrpKillmail, zkill_ok: bool, zkill_result: ZkillResult | None) -> None:
     """Bring the value of a killmail up to date for the claim check; never raises for a value problem."""
+    if km.origin == SrpKillmail.Origin.AASRP:
+        # An imported killmail keeps the amount aa-srp recorded: it is never priced, never queued for zKillboard.
+        return
     now = timezone.now()
     if zkill_result is not None:
         values.apply_zkill_result(km, zkill_result, now=now)
@@ -290,6 +298,12 @@ def fetch_killmail(ref: KillmailRef, *, zkill_ok: bool) -> SrpKillmail:
     """
     km = SrpKillmail.objects.filter(pk=ref.killmail_id).first()
     zkill_result = None
+    if km is not None and is_placeholder(km):
+        # The killmail of an imported claim (IMP-5): a link with a hash completes it once from ESI, a link without one
+        # is taken as it is. Neither asks zKillboard for a price.
+        if ref.killmail_hash:
+            km = _complete_from_esi(km, ref.killmail_hash.lower())
+        return km
     if km is None:
         killmail_hash = ref.killmail_hash
         if killmail_hash is None:
@@ -307,6 +321,75 @@ def fetch_killmail(ref: KillmailRef, *, zkill_ok: bool) -> SrpKillmail:
     except Exception as exc:  # the value is a convenience here; the claim check goes on without it
         log_failure(logger, "SRP loss value lookup", exc)
         km.refresh_from_db()
+    return km
+
+
+def _complete_from_esi(km: SrpKillmail, killmail_hash: str) -> SrpKillmail:
+    """Complete the placeholder of an imported claim with the killmail ESI returns for ``killmail_hash``.
+
+    A hash ESI does not know, or a killmail with another ID, is answered like any wrong hash (``not_found``).
+    """
+    if not HASH_RE.fullmatch(killmail_hash):
+        raise SrpError("not_found", KILLMAIL_NOT_FOUND)
+    try:
+        payload = get_killmail(km.killmail_id, killmail_hash)
+    except FleetESIError as exc:
+        if exc.code == "KILLMAIL_NOT_FOUND":
+            raise SrpError("not_found", str(exc)) from exc
+        message = str(exc)
+        if "try again" not in message.lower():
+            message = f"{message} {texts.SRP_TRY_AGAIN()}"
+        raise SrpError("esi_unavailable", message) from exc
+    if killmail_fields(payload)["killmail_id"] != km.killmail_id:
+        raise SrpError("not_found", KILLMAIL_NOT_FOUND)
+    return complete_placeholder(km, payload, killmail_hash)
+
+
+def complete_placeholder(km: SrpKillmail, payload: dict, killmail_hash: str, *, actor=None) -> SrpKillmail:
+    """Fill the placeholder of an imported claim with the real killmail: hash, time, system, location, attackers and
+    items. The claim's killmail time and system name follow (the month of the loss may change). Audited as
+    ``srp.import_enrich``. Never queues a zKillboard lookup. Runs outside ``quota_lock`` (ESI and names are read first).
+    """
+    from fleetops.models import SrpClaim
+    from fleetops.services.audit import audit
+    from fleetops.srp import quota
+
+    killmail_hash = killmail_hash.lower() if isinstance(killmail_hash, str) else ""
+    if not HASH_RE.fullmatch(killmail_hash):
+        raise SrpError("invalid_hash", KILLMAIL_NOT_FOUND)
+    fields = killmail_fields(payload)
+    if fields["killmail_id"] != km.killmail_id:
+        raise SrpError("not_found", KILLMAIL_NOT_FOUND)
+    ship_name, system_name = _names(fields["ship_type_id"], fields["solar_system_id"])
+    fields.update(location_fields(fields["ship_type_id"], fields["solar_system_id"]))
+    fields.pop("killmail_id")
+    with quota.quota_lock():
+        current = SrpKillmail.objects.select_for_update().get(pk=km.pk)
+        if current.killmail_hash:
+            # Completed meanwhile by another request.
+            return current
+        old_time = current.killmail_time
+        for name, value in fields.items():
+            setattr(current, name, value)
+        current.killmail_hash = killmail_hash
+        current.solar_system_name = system_name or current.solar_system_name
+        current.ship_type_name = current.ship_type_name or ship_name
+        # Not zKillboard: the placeholder stays out of the price queue.
+        current.zkill_next_attempt_at = None
+        current.save()
+        claim_fields = {"killmail_time": current.killmail_time}
+        if system_name:
+            claim_fields["solar_system_name"] = system_name
+        SrpClaim.objects.filter(killmail_id=current.pk).update(**claim_fields)
+        audit(
+            actor,
+            "srp.import_enrich",
+            current,
+            {"killmail_time": old_time.isoformat()},
+            {"killmail_time": current.killmail_time.isoformat(), "solar_system_id": current.solar_system_id},
+        )
+    attacker_info.queue_name_warming(current)
+    km.refresh_from_db()
     return km
 
 
@@ -403,6 +486,9 @@ def schedule_zkill(km: SrpKillmail, *, now: datetime | None = None) -> None:
     A killmail that has its value, or that zKillboard gave up on, is left alone.
     """
     if km.zkill_status in (ZkillStatus.OK, ZkillStatus.UNAVAILABLE):
+        return
+    if km.origin == SrpKillmail.Origin.AASRP:
+        # The killmail of an imported claim never waits for a price: schedule_zkill would turn "disabled" into "pending".
         return
     km.zkill_next_attempt_at = values.first_zkill_check(km.killmail_time, now=now)
     fields = ["zkill_next_attempt_at"]

@@ -135,6 +135,20 @@ def lock_claim(claim) -> SrpClaim:
         raise SrpError("missing", texts.SRP_CLAIM_GONE()) from None
 
 
+def require_native(claim) -> None:
+    """Refuse an action on a claim imported from aa-srp (IMP-6): it is a record of what happened there. Only an
+    internal note may be added to it. Raises ``SrpStateError`` (code ``imported``)."""
+    if claim.source == SrpClaim.Source.AASRP:
+        raise SrpStateError("imported", texts.SRP_IMPORTED_READ_ONLY())
+
+
+def lock_native(claim) -> SrpClaim:
+    """``lock_claim`` for the actions that change a claim: an imported claim is refused."""
+    locked = lock_claim(claim)
+    require_native(locked)
+    return locked
+
+
 def sync_claim(target, source):
     """Copy the stored fields of ``source`` (the locked row) onto the caller's instance."""
     for field in source._meta.concrete_fields:
@@ -555,7 +569,7 @@ def _refresh_value(km, now) -> bool:
 
     Returns whether the killmail has new values.
     """
-    if km.killmail_time > now - MIN_KILL_AGE:
+    if km.origin == SrpKillmail.Origin.AASRP or km.killmail_time > now - MIN_KILL_AGE:
         return False
     if km.zkill_next_attempt_at is not None and km.zkill_next_attempt_at > now:
         return False
@@ -919,7 +933,7 @@ def withdraw_claim(claim: SrpClaim, *, actor, reason: str = "") -> SrpClaim:
         raise SrpError("forbidden", texts.SRP_ONLY_CLAIMANT_WITHDRAWS())
     reason = clean_reason(reason)
     with quota.quota_lock():
-        locked = lock_claim(claim)
+        locked = lock_native(claim)
         if locked.status != Status.PENDING:
             raise wrong_state(locked, texts.SRP_ONLY_PENDING_WITHDRAWN(), Status.WITHDRAWN)
         previous = locked.status
@@ -948,7 +962,7 @@ def resubmit_claim(claim: SrpClaim, *, actor) -> SrpClaim:
     now = timezone.now()
     with quota.quota_lock() as srp:
         missing_alts = discovery.unauthorized_characters(actor, srp)
-        locked = lock_claim(claim)
+        locked = lock_native(claim)
         if locked.status != Status.WITHDRAWN:
             raise wrong_state(locked, texts.SRP_ONLY_WITHDRAWN_RESUBMITTED(), Status.PENDING)
         km = locked.killmail
@@ -1026,7 +1040,7 @@ def recalculate_under_lock(claim, *, actor, reason: str, action: str = Action.RE
     """
     now = timezone.now()
     with quota.quota_lock() as srp:
-        locked = lock_claim(claim)
+        locked = lock_native(claim)
         if locked.status != Status.PENDING:
             raise wrong_state(locked, texts.SRP_ONLY_PENDING_RECALCULATED())
         km = locked.killmail
@@ -1244,7 +1258,7 @@ def edit_claim(
 
     with quota.quota_lock() as srp:
         missing_alts = discovery.unauthorized_characters(actor, srp)
-        locked = lock_claim(claim)
+        locked = lock_native(claim)
         if not srp.member_edit_enabled:
             raise SrpError("edit_off", texts.SRP_MEMBER_EDIT_OFF())
         if locked.status != Status.PENDING:
