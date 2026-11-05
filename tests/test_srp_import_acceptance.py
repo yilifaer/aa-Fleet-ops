@@ -34,7 +34,7 @@ END = datetime(2026, 10, 1, tzinfo=dt_timezone.utc)
 GROUPS = {
     "Solo PVP": ("solo-pvp", ["HD/SOLO/PVP 250M", "Solo PVP Fleet", "Solo PVP Fleet"], 1220, 1204, 15, 1, 141, 1062, 134, 8),
     "Fleet links": (None, ["Fleet of FC one", "Fleet of FC two", "Fleet of FC three"], 148, 140, 2, 6, 90, 139, 0, 1),
-    "GSF": ("gsf", ["GSF-Fleets", "GSF-Fleets"], 22, 21, 0, 1, 11, 20, 0, 1),
+    "Alliance fleets": ("alliance-fleets", ["Alliance Fleets", "Alliance Fleets"], 22, 21, 0, 1, 11, 20, 0, 1),
     "Home defense": ("home-defense", ["Home defense Fleet", "Home defense Fleet"], 58, 54, 0, 4, 29, 48, 6, 0),
     "Home defense ESS": ("home-defense-ess", ["Home defense ESS Fleets", "Home defense ESS Fleets"], 82, 82, 0, 0, 34, 67, 15, 0),
     "Corp roaming": ("corp-roaming", ["Corp Roaming Fleets", "Corp Roaming Fleets"], 108, 103, 1, 4, 32, 98, 5, 0),
@@ -86,7 +86,7 @@ class ProductionShapeTests(TestCase):
     def setUp(self):
         self.srp.install(self)
         for key, name in (
-            ("solo-pvp", "Solo PVP"), ("gsf", "GSF"), ("home-defense", "Home defense"), ("home-defense-ess", "Home defense ESS"),
+            ("solo-pvp", "Solo PVP"), ("alliance-fleets", "Alliance fleets"), ("home-defense", "Home defense"), ("home-defense-ess", "Home defense ESS"),
             ("corp-roaming", "Corp roaming"), ("corp-roaming-ess", "Corp roaming ESS"),
         ):
             f.srp_category(name, key=key)
@@ -95,7 +95,7 @@ class ProductionShapeTests(TestCase):
         json.dump(
             [
                 {"pattern": r"(?i)solo", "category": "solo-pvp"},
-                {"pattern": r"^GSF", "category": "gsf"},
+                {"pattern": r"^Alliance Fleets", "category": "alliance-fleets"},
                 {"pattern": r"^Home defense ESS", "category": "home-defense-ess"},
                 {"pattern": r"^Home defense", "category": "home-defense"},
                 {"pattern": r"^Corp Roaming ESS", "category": "corp-roaming-ess"},
@@ -121,7 +121,7 @@ class ProductionShapeTests(TestCase):
         expected = {
             "solo-pvp": GROUPS["Solo PVP"],
             "": GROUPS["Fleet links"],
-            "gsf": GROUPS["GSF"],
+            "alliance-fleets": GROUPS["Alliance fleets"],
             "home-defense": GROUPS["Home defense"],
             "home-defense-ess": GROUPS["Home defense ESS"],
             "corp-roaming": GROUPS["Corp roaming"],

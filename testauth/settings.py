@@ -58,6 +58,23 @@ if _test_db_url.startswith("mysql://"):
         }
     }
 
+if _test_db_url.startswith(("postgres://", "postgresql://")):
+    from urllib.parse import urlparse
+
+    _db = urlparse(_test_db_url)
+    _db_name = _db.path.lstrip("/") or "fleetops"
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": _db_name,
+            "USER": _db.username or "postgres",
+            "PASSWORD": _db.password or "",
+            "HOST": _db.hostname or "127.0.0.1",
+            "PORT": str(_db.port or 5432),
+            "TEST": {"NAME": f"test_{_db_name}"},
+        }
+    }
+
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",

@@ -22,6 +22,8 @@ from fleetops.services.stats_access import BASIC_ACCESS, VIEW_ALL_STATS, VIEW_CO
 from fleetops.srp import access, summaries
 from fleetops.srp.access import MANAGE_SRP, PAY_SRP, REVIEW_SRP
 from fleetops.srp.links import set_link_open
+from fleetops.srp.types import SrpError
+from fleetops.texts import translate_stored
 from fleetops.views import _period_render_context, _year_month
 from fleetops.views_errors import OWN_CORPORATION_STATISTICS_REASON, OWN_FLEETS_SUMMARY_REASON, denied, not_found
 from fleetops.views_srp import srp_render
@@ -177,6 +179,13 @@ def fc_summary(request, user_id=None):
     )
 
 
+def _after_toggle(request, link):
+    if link.operation_id is None:
+        # A standing link has no fleet page.
+        return back(request, redirect("fleetops:srp_links"))
+    return back(request, redirect("fleetops:operation_detail", operation_uuid=link.operation.uuid))
+
+
 @require_POST
 @fleetops_permission_required((MANAGE_SRP, REVIEW_SRP, PAY_SRP), any_perm=True, page=False)
 def link_toggle(request, code, is_open):
@@ -188,7 +197,11 @@ def link_toggle(request, code, is_open):
         raise PermissionDenied
     link = get_object_or_404(SrpFleetLink.objects.select_related("operation"), code=code)
     was_open = link.is_open
-    set_link_open(link, actor=request.user, is_open=is_open)
+    try:
+        set_link_open(link, actor=request.user, is_open=is_open)
+    except SrpError as exc:
+        messages.error(request, translate_stored(exc.message))
+        return _after_toggle(request, link)
     if was_open == is_open:
         if is_open:
             messages.info(request, _("The SRP link was already open."))
@@ -201,7 +214,4 @@ def link_toggle(request, code, is_open):
             request,
             _("SRP link closed. Members can no longer submit losses through it; claims already made stay."),
         )
-    if link.operation_id is None:
-        # A standing link has no fleet page.
-        return back(request, redirect("fleetops:srp_links"))
-    return back(request, redirect("fleetops:operation_detail", operation_uuid=link.operation.uuid))
+    return _after_toggle(request, link)

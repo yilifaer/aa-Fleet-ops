@@ -52,3 +52,28 @@ LOGGING = {
         "allianceauth": {"handlers": ["err"], "level": "ERROR", "propagate": False},
     },
 }
+
+
+class DetectFleetAnswerMiddleware:
+    """Answer the fleet detection of the start pages with "not in a fleet" instead of calling ESI.
+
+    The start page asks for the fleet of the chosen character as soon as the page is open. The check must not
+    reach ESI (the network guard stays on), so the lookup is replaced by the ordinary answer of a pilot who is not
+    in a fleet. Nothing else is touched.
+    """
+
+    def __init__(self, get_response):
+        from fleetops import views
+        from fleetops.providers.esi import FleetESIError
+
+        def not_in_fleet(user, character_id, fresh=False):
+            raise FleetESIError("NOT_IN_FLEET", "Character is currently not in a fleet.", 404)
+
+        views.detect_character_fleet = not_in_fleet
+        self.get_response = get_response
+
+    def __call__(self, request):
+        return self.get_response(request)
+
+
+MIDDLEWARE = [*MIDDLEWARE, "tools.ui_check.settings.DetectFleetAnswerMiddleware"]  # noqa: F405

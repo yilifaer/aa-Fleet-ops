@@ -8,6 +8,7 @@ from datetime import timedelta
 from decimal import Decimal
 from unittest import mock
 
+from django.contrib.messages import get_messages
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
@@ -336,6 +337,19 @@ class ImportedPageTests(PlaceholderTestCase):
 
         self.assertNotIn('id="srp-time-estimated"', self.page(self.manager).content.decode())
 
+    def test_opening_an_imported_link_through_the_route_is_refused_with_a_message(self):
+        link = SrpFleetLink.objects.get(origin="aasrp")
+        client = Client()
+        client.force_login(self.manager)
+
+        response = client.post(reverse("fleetops:srp_link_open", args=[link.code]))
+
+        self.assertEqual(response.status_code, 302)
+        link.refresh_from_db()
+        self.assertFalse(link.is_open)
+        shown = [str(m) for m in get_messages(response.wsgi_request)]
+        self.assertIn(texts.SRP_IMPORTED_LINK_CLOSED(), shown)
+
     def test_a_reviewer_who_posts_an_action_gets_the_error_and_nothing_changes(self):
         client = Client()
         client.force_login(self.manager)
@@ -440,6 +454,47 @@ class UndoTests(ImportTestCase):
 
         self.assertTrue(SrpKillmail.objects.filter(pk=km.pk).exists())
         self.assertFalse(SrpClaim.objects.exists())
+
+    def test_undo_deletes_exactly_what_the_import_made_and_nothing_native(self):
+        # IMP-7: native claims with their events, native killmails (claimed or not) and native links stay untouched.
+        link = f.fleet_link(f.create_operation(self.reviewer))
+        native = f.srp_claim(self.pilot, amount=2_000_000, link=link)
+        lonely = f.srp_killmail(self.pilot_char, killmail_id=70_000_001)
+        reused = f.srp_killmail(self.pilot_char, killmail_id=self.approved().killmail_id)
+        self.approved(status="Rejected", payout=0, reject_info="no")
+        native_state = lambda: (  # noqa: E731
+            list(SrpClaim.objects.filter(pk=native.pk).values()),
+            list(SrpKillmail.objects.filter(pk__in=[native.killmail_id, lonely.pk, reused.pk]).values()),
+            list(SrpFleetLink.objects.filter(pk=link.pk).values()),
+            list(SrpClaimEvent.objects.filter(claim=native).values_list("pk", flat=True)),
+        )
+        before = native_state()
+        self.run_import()
+        imported_ids = set(SrpClaim.objects.filter(source="aasrp").values_list("pk", flat=True))
+        stand_ins = set(SrpKillmail.objects.filter(origin="aasrp").values_list("pk", flat=True))
+        self.assertEqual((len(imported_ids), len(stand_ins)), (2, 1))
+
+        counts = importer.undo(self.reviewer)
+
+        self.assertEqual((counts["claims"], counts["killmails"], counts["links"]), (2, 1, 1))
+        self.assertEqual(native_state(), before)
+        self.assertFalse(SrpClaim.objects.filter(source="aasrp").exists())
+        self.assertFalse(SrpKillmail.objects.filter(origin="aasrp").exists())
+        self.assertFalse(SrpFleetLink.objects.filter(origin="aasrp").exists())
+        self.assertFalse(SrpClaimEvent.objects.filter(claim_id__in=imported_ids).exists())
+
+    def test_undo_removes_a_completed_stand_in_and_a_dry_run_counts_the_same(self):
+        self.approved()
+        self.run_import()
+        SrpKillmail.objects.update(killmail_hash=HASH)  # a stand-in that was completed from a pasted link
+        before = self.snapshot()
+
+        dry = importer.undo(None, dry_run=True)
+        self.assertEqual(self.snapshot(), before)
+        real = importer.undo(None)
+
+        self.assertEqual({k: v for k, v in dry.items() if k != "dry_run"}, {k: v for k, v in real.items() if k != "dry_run"})
+        self.assertEqual(SrpKillmail.objects.count(), 0)
 
     def test_undo_still_works_when_aasrp_has_been_removed(self):
         self.approved()

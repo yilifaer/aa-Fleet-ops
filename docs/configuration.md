@@ -964,7 +964,7 @@ aa-srp setting (total or fitted value).
   never touched**. When the same killmail has several aa-srp requests, the approved one wins over the rejected one,
   then the newest; the others are counted as duplicates.
 - `--undo` removes everything the import made: the imported claims (their timeline goes with them), the stand-in
-  killmails nobody claims any more and the imported links, and writes `srp.import_aasrp_undo`. `--undo --dry-run` counts. The reason of a rejection is `reject_info`, else the last "Reject Reason" comment, else the text of the status comment. `--undo` takes no filters: combined with `--since`, `--until`, `--category-map` or `--batch-size` the command refuses.
+  killmails nobody claims any more and the imported links, and writes `srp.import_aasrp_undo`. It deletes only these three: native claims, real killmails (also the ones the import reused) and native links are not touched. `--undo --dry-run` counts. The reason of a rejection is `reject_info`, else the last "Reject Reason" comment, else the text of the status comment. `--undo` takes no filters: combined with `--since`, `--until`, `--category-map` or `--batch-size` the command refuses.
   Claims made in FleetOps are not touched; importing again afterwards gives the same result.
 - `--enrich` looks up the real killmail of every stand-in (the hash from zKillboard, then the killmail from ESI) at
   `--rate` lookups per second (1), at most `--limit` (0 = all); it can be interrupted and run again, and it refuses to run
@@ -1018,10 +1018,15 @@ on the pages named; nothing in FleetOps sets them for you.
 | | Find losses automatically | on (the scope is in the EVE application) |
 | | Minutes between two reads of a character | 60 |
 | | Members must authorize loss reading for all their characters | on |
+| | Members can change their pending claims, Members can replace the loss of a pending claim | on, on |
+| | Complete SRP links automatically | on (a closed link completes only when all its claims are paid, rejected or withdrawn) |
+| | Show the insurance estimate, Insurance level shown | on, Platinum |
+| | SRP reviewers may decide on their own claims, SRP payers may mark their own claims paid, The approver of a claim may not pay it | left to the alliance; the example does not set them |
 | SRP Categories | `fleet` (built in) | Per-loss cap: **No per-loss cap**; percentage inherited |
 | | `alliance-fleets`, `home-defense`, `home-defense-ess`, `corp-roaming`, `corp-roaming-ess`, `solo-pvp` | Members can choose it; per-loss cap: **Own per-loss cap**, 250m; percentage inherited; monthly caps empty |
-| | Make a standing link every day, Close links after (hours) | on for the six categories above; 48 (the link closes at the end of the next day), or empty to let links stay open |
+| | Make a standing link every day, Name template of links, Close links after (hours) | on for the six categories above; `{category} {date}`; 48 (the link closes at the end of the next day), or empty to let links stay open |
 | SRP Payout Table | | Not used at first; add rules per category when needed |
+| Permissions | `review_srp`, `pay_srp`, `request_srp` groups | Not given out by the example; the alliance chooses the groups (nothing is granted by the upgrade) |
 
 With these values, a solo loss of 300m in the `solo-pvp` category is suggested at 250m, and a 571m loss claimed
 through a fleet link at 571m.
@@ -1042,6 +1047,6 @@ left the alliances in **Member alliance IDs**, old member events and the old tex
 (their audit entries stay); add `--dry-run` to see the counts first.
 The daily beat task `fleetops.tasks.prune_attendance_history` does the same and also deletes SRP killmails
 nobody claimed (their location fields go with them) and the losses the scan found that are no use any more (see
-[SRP loss discovery](#srp-loss-discovery)). SRP bans are never deleted by retention: the reason, the end and
+[SRP loss discovery](#srp-loss-discovery)). SRP claims with their timelines, payment batches, links and categories are the payment record and are never deleted by retention; the insurance prices are one row per ship that is rewritten daily. SRP bans are never deleted by retention: the reason, the end and
 who lifted the ban stay as a history; lifted and expired bans cost nothing. `python manage.py fleetops_refresh_names` rewrites ship and solar system names of fleet member
 records in English from the SDE (`--dry-run` available). Ship and solar system names are English everywhere.

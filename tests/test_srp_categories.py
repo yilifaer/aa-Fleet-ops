@@ -621,7 +621,7 @@ class PayoutRuleCategoryTests(CategoryBase):
         solo = self.category("Solo PVP")
         f.payout_rule(FLYCATCHER)
         f.payout_rule(FLYCATCHER, category=solo)
-        f.payout_rule(FLYCATCHER, category=self.category("GSF"))
+        f.payout_rule(FLYCATCHER, category=self.category("Alliance fleets"))
 
         self.assertEqual(SrpPayoutRule.objects.count(), 3)
 
@@ -658,7 +658,7 @@ class PayoutRuleCategoryTests(CategoryBase):
         )
 
     def test_a_rule_of_another_category_never_matches(self):
-        f.payout_rule(FLYCATCHER, category=self.category("GSF"))
+        f.payout_rule(FLYCATCHER, category=self.category("Alliance fleets"))
 
         self.assertIsNone(rules.match_rule(ship_type_id=FLYCATCHER, scope=OUT_OF_FLEET, category=None))
         self.assertIsNone(
@@ -717,9 +717,9 @@ class CategoryUsageTests(CategoryBase):
 
     def test_the_usage_of_a_category_only_counts_its_claims(self):
         solo = self.category("Solo PVP")
-        gsf = self.category("GSF")
+        alliance_fleets = self.category("Alliance fleets")
         f.srp_claim(self.user, status=Status.APPROVED, amount=900_000_000, category=solo, time=SEPTEMBER)
-        f.srp_claim(self.user, status=Status.APPROVED, amount=100_000_000, category=gsf, time=SEPTEMBER)
+        f.srp_claim(self.user, status=Status.APPROVED, amount=100_000_000, category=alliance_fleets, time=SEPTEMBER)
         f.srp_claim(self.user, status=Status.APPROVED, amount=50_000_000, time=SEPTEMBER)
         year, month = self.month()
 
@@ -825,7 +825,7 @@ class CategoryLimitFlowTests(CategoryBase):
 
     def test_another_category_is_not_affected(self):
         self.used_up()
-        other = self.category("GSF")
+        other = self.category("Alliance fleets")
 
         claim = self.submit(category=other)
 
@@ -833,7 +833,7 @@ class CategoryLimitFlowTests(CategoryBase):
         self.assertEqual(len(claim.calculation["limits"]), 2)
 
     def test_a_category_without_caps_has_two_limits(self):
-        claim = self.submit(category=self.category("GSF"))
+        claim = self.submit(category=self.category("Alliance fleets"))
 
         self.assertEqual([state["kind"] for state in claim.calculation["limits"]], ["personal", "corporation"])
 
@@ -942,9 +942,9 @@ class OutdatedClaimsTests(CategoryBase):
 
     def test_only_the_claims_of_a_changed_category_are_outdated(self):
         solo = self.category("Solo PVP", loss_cap_mode=Mode.CUSTOM, loss_cap=250_000_000)
-        gsf = self.category("GSF", loss_cap_mode=Mode.CUSTOM, loss_cap=250_000_000)
+        alliance_fleets = self.category("Alliance fleets", loss_cap_mode=Mode.CUSTOM, loss_cap=250_000_000)
         in_solo = self.submit(category=solo)
-        in_gsf = self.submit(self.killmail(self.other), user=self.other, category=gsf)
+        in_alliance_fleets = self.submit(self.killmail(self.other), user=self.other, category=alliance_fleets)
 
         SrpCategory.objects.filter(pk=solo.pk).update(loss_cap=300_000_000)
 
@@ -952,7 +952,7 @@ class OutdatedClaimsTests(CategoryBase):
         review.recalculate_pending(actor=self.manager)
         self.assertEqual(rules.outdated_pending_claims(), [])
         self.assertEqual(SrpClaim.objects.get(pk=in_solo.pk).suggested_amount, 300_000_000)
-        self.assertEqual(SrpClaim.objects.get(pk=in_gsf.pk).suggested_amount, 250_000_000)
+        self.assertEqual(SrpClaim.objects.get(pk=in_alliance_fleets.pk).suggested_amount, 250_000_000)
 
     def test_every_effect_of_the_category_is_detected(self):
         changes = {

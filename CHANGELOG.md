@@ -2,8 +2,14 @@
 
 ## [0.3.0b1] - Unreleased
 
-The SRP rework. This pre-release is built phase by phase; this section lists what is in the build so far.
-Install it like the previous pre-release (`pip install --no-deps aa-fleetops==0.3.0b1`).
+The SRP rework: categories, separate review and payment permissions, standing links, automatic loss discovery, the
+rules for what is not covered, bans, changes by the claimant, payment batches, reports for any period and the import of
+the aa-srp history. Install it like the previous pre-release (`pip install --no-deps aa-fleetops==0.3.0b1`).
+
+**Before you upgrade:** add the scope `esi-killmails.read_killmails.v1` to the EVE application of your site (the one
+that belongs to `ESI_SSO_CLIENT_ID` on the EVE developer website), then upgrade the package. Without the scope the SSO
+login of the loss reading fails with "invalid scope" and members cannot authorize their characters; nothing else
+depends on it. Read the upgrade notes and the rollback notes below before you start.
 
 ### Added
 
@@ -197,9 +203,16 @@ Install it like the previous pre-release (`pip install --no-deps aa-fleetops==0.
 - The stored calculation of a claim (policy snapshot) is version 2 and carries the category. Claims calculated before
   keep their snapshot and are not reported as "calculated with earlier settings" by the upgrade.
 
+### Known items
+
+- The models of FleetOps 0.2.x keep Django's default permissions (add, change, delete, view) in this release. Taking
+  them away is planned for a later release.
+
 ### Upgrade notes
 
-Back up the database first, install the release with `--no-deps`, then run `python manage.py migrate fleetops` and
+First add the scope `esi-killmails.read_killmails.v1` to the EVE application of the site on the EVE developer website
+(see above). Then back up the database, install the release with `--no-deps`, run `python manage.py migrate fleetops`,
+run `python manage.py collectstatic --noinput` (the SRP pages bring changed JavaScript: `fleetops.js` and `srp.js`) and
 restart the web process, the Celery worker and Celery beat. Migration `0024` adds the category table and columns and
 replaces the unique constraint of the payout table by one that includes the category. Migration `0025` creates the
 **Fleet** category, puts the claims made through a fleet link into it, and switches the value source of a site that
@@ -237,7 +250,9 @@ behaviour. Restart the Celery worker so the two new tasks are known. The public 
 Migration `0033` adds the external ID of a claim (empty for every existing claim), the payout basis *Amount as recorded
 in aa-srp* and the claim event *Imported from aa-srp*; `0034` and `0035` change nothing going forward. Nothing is
 imported by the upgrade: run `fleetops_import_aasrp --dry-run` yourself, in the time you choose, when you move from
-aa-srp (the command needs aa-srp installed and decide on every pending request there first).
+aa-srp (the command needs aa-srp installed and decide on every pending request there first; pending requests are not imported).
+For the real run, choose a maintenance window: every batch holds the SRP lock, so SRP submissions and reviews of the whole
+site wait while it runs. Make sure the EVE application has the new scope first.
 
 The reports and the new files of the SRP rework (period selection, `srp-trend` and the others) need no migration, no
 setting and no permission: everyone who could open the SRP summaries can open the reports, except the reviewer and
@@ -246,6 +261,26 @@ report until `python manage.py fleetops_srp_backfill_killmails` has read them. T
 summaries now reads a period; nothing is stored differently.
 
 ### Rollback notes
+
+**The order that works.** (1) Switch the new functions off (below) if you want to stay on this version a while longer.
+(2) To go back to 0.2.x: export what you need (categories, standing links, bans, batches, reports), run
+`python manage.py fleetops_import_aasrp --undo` if the aa-srp history was imported, delete or generalise the payout rules
+of a category and deal with the standing links that have claims (delete the link: its claims stay, without a link, as
+claims outside a fleet; or restore the backup taken before the upgrade). (3) Run
+`python manage.py fleetops_srp_rollback_check` until every line passes. (4) Run `python manage.py migrate fleetops 0023`.
+(5) Only then install the previous package. **Migrations first, package second:** the older package does not know the
+newer migrations and could not undo them.
+
+**What the rollback loses:** the categories and the category of every claim, standing links and the new fields of every link,
+payment batches, bans, insurance prices, the attackers and location fields of the killmails, the found losses and their
+scan state, the revision numbers of claims and the new settings. Claims, amounts, statuses and payments stay. The permission
+rows `review_srp` and `pay_srp` and the killmail-scope tokens members authorized stay in the database; they do no harm.
+
+**To behave like 0.2.x without rolling back:** untick **Find losses automatically**, **Make a standing link every day**,
+**Members can change their pending claims** and **Show the insurance estimate**, clear the block lists of **Not covered**,
+and set **Value source** back to *zKillboard fitted value* if the upgrade switched it (migration `0025` does for a site
+that never saved its SRP settings). Keep using `manage_srp`: it still means review and pay together; `review_srp` and
+`pay_srp` are only needed for split roles.
 
 Roll back the migrations first (`python manage.py migrate fleetops 0023`), then install the previous package.
 The rollback is refused, and the database is left as it is, while any payout rule belongs to a category: without the

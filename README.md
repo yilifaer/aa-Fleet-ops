@@ -95,12 +95,18 @@ Status: beta. The current pre-release is 0.3.0b1 (0.2.0b1 was a test build that 
   the queue by category, link, date and member and see the attackers, the limits as they are now and the member's
   rejection history; payers filter the payments, pay in batches and export the list to pay; an insurance estimate is
   shown next to the amounts (informational only).
+- SRP categories (for example fleet, home defense, solo): each with its own per-loss cap, monthly caps, payout rules,
+  doctrine text and daily link; claims keep the category they were made in.
+- Reports and exports for any period (a month, a quarter, a year or a date range): trend, by category, member, reviewer
+  and payer, region and limits, on the page and as CSV or Excel files.
+- Import of the aa-srp history (`fleetops_import_aasrp`, with a dry run and an undo) and of a payout table from a
+  CSV file, so a site can move to FleetOps SRP with its records.
 
 **Administration**
 
 - All configuration is in the web interface; no Django admin access is needed. Every change and every
   privileged action is in the audit log.
-- Permissions for members, corporation managers, FCs, FC leads and SRP managers.
+- Permissions for members, corporation managers, FCs, FC leads, SRP reviewers, SRP payers and SRP managers (both roles).
 - English and Simplified Chinese pages that follow each user's Alliance Auth language, in every Alliance Auth
   theme (Flatly, Darkly, Materia, Bootstrap and Bootstrap Dark), on phones and on desktops.
 
@@ -271,10 +277,18 @@ FleetOps works without all of them. See [docs/integrations.md](https://github.co
 ## Upgrading
 
 1. Back up the database.
-2. Install the new release into the virtual environment (`pip install --no-deps aa-fleetops==<version>`).
-3. Read the upgrade notes of the release in the [CHANGELOG](https://github.com/yilifaer/aa-fleetops/blob/dev/CHANGELOG.md).
-4. Run `python manage.py migrate fleetops` and `python manage.py collectstatic --noinput`.
-5. Restart the web process, the Celery worker and Celery beat.
+2. **Before the upgrade to 0.3.0b1**, add the scope `esi-killmails.read_killmails.v1` to the EVE application that belongs to
+   your `ESI_SSO_CLIENT_ID` on the EVE developer website. Without it the SSO login of the loss reading ends with an
+   "invalid scope" error and members cannot authorize their characters (everything else keeps working).
+3. Install the new release into the virtual environment (`pip install --no-deps aa-fleetops==<version>`).
+4. Read the upgrade notes of the release in the [CHANGELOG](https://github.com/yilifaer/aa-fleetops/blob/dev/CHANGELOG.md).
+5. Run `python manage.py migrate fleetops` and `python manage.py collectstatic --noinput`.
+6. Restart the web process, the Celery worker and Celery beat.
+
+**Going back from 0.3.0b1 to 0.2.x.** Roll the migrations back first (`python manage.py migrate fleetops 0023`), then
+install the previous package. Run `python manage.py fleetops_srp_rollback_check` before: it lists what stops the
+rollback (payout rules of a category, standing links with claims, imported history) and changes nothing. The
+[CHANGELOG](https://github.com/yilifaer/aa-fleetops/blob/dev/CHANGELOG.md) has the steps and the list of what the rollback loses.
 
 ## Translations
 

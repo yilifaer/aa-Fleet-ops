@@ -24,7 +24,7 @@ staff 或 superuser 账号。
 | `fleetops.manage_incentives` | Can manage FC incentives | 审核、重新计算、放弃领取、定稿和解锁每月的 FC 奖金周期。只有在"常规设置"里勾选了"启用 FC 奖金"（Incentive enabled，默认关闭）时这些页面才存在。 |
 | `fleetops.manage_configuration` | Can manage FleetOps configuration | 使用 FleetOps 后台设置：常规设置、舰队类型、语音预设、后勤和加成频道、Ping 频道和 Ping 身份组（含"从 Discord 同步身份组"）、PAP 倍率、特殊角色、月度达标线、舰船功能及规则、结构模板、消息模板，以及 SRP 设置、SRP 类别、赔付表和军团限额。在自己能打开的舰队里，从编成页快速归类舰船。 |
 | `fleetops.view_audit_log` | Can view FleetOps audit log | 打开"操作日志"页。 |
-| `fleetops.request_srp` | Can request SRP | 在 FleetOps SRP 中提交舰船损失申请（"我的 SRP"和舰队的 SRP 链接），查看自己的申请和本月额度。需要先启用 FleetOps SRP。加入 SRP 功能的那次迁移已经把它授予所有已拥有 `basic_access` 的用户组、状态和用户；之后新建的用户组需要自己加上。 |
+| `fleetops.request_srp` | Can request SRP | 在 FleetOps SRP 中提交舰船损失申请（"我的 SRP"和舰队的 SRP 链接），查看自己的申请和本月额度。需要先启用 FleetOps SRP。加入 SRP 功能的那次迁移已经把它授予所有已拥有 `basic_access` 的用户组、状态和用户；之后新建的用户组需要自己加上。如果不想让所有成员都能提交申请，请在 Alliance Auth 管理后台里打开对应的用户组、状态或用户，从权限中移除 `Can request SRP`，只把它加给应当提交申请的用户组。安装 0.3.0b1 不会把它加回来。 |
 | `fleetops.manage_srp` | Can review and pay SRP claims | `review_srp` 和 `pay_srp` 加在一起能做的所有事：审核并支付申请。这是旧版本的权限，含义不变，所以已有持有人既不会多也不会少。因为它决定付款，所以不会默认授予任何人。 |
 | `fleetops.review_srp` | Can review SRP claims | 审核申请：通过、修改金额、拒绝、撤销、重新打开、重新归类、更改类别、重新计算、重新检查在队情况。添加内部备注，打开、关闭和完成 SRP 链接，创建和编辑常驻链接，查看所有 SRP 汇总、申请和内部备注。不能标记已付款，也不能撤销付款。不会默认授予任何人；升级不会把它授予任何用户组、状态或用户。 |
 | `fleetops.pay_srp` | Can pay SRP claims | 支付申请：打开付款页，单条或批量标记已付款，撤销付款。添加内部备注，关闭和完成 SRP 链接（不能重新打开），查看链接列表、所有 SRP 汇总、申请和内部备注（只读，付款人可以打开申请核对付的是什么；从申请打开舰队需要 `view_all_fleets`）。不能通过或拒绝申请。不会默认授予任何人；升级不会把它授予任何用户组、状态或用户。 |

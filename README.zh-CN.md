@@ -63,11 +63,14 @@
 - 不赔付的损失（舰船组、舰船、空域；保存列表之前什么都不拦）和禁止提交的 SRP 封禁。
 - 自动发现损失（打开之前是关闭的）：用成员自己的令牌从 ESI 读取各角色最近的损失，列在“我的 SRP”里并匹配角色当时所在的舰队；仍然可以贴链接。可以要求成员的每个角色都授权。运行在已经安装的 Beat 任务里。
 - 成员可以在审核前修改待审核的申请（备注、类别或链接、损失）；审核人按类别、链接、日期和成员筛选队列，并看到攻击者、现在的限额和该成员的驳回历史；付款人筛选待付款申请、按批次付款并导出待付款清单；金额旁显示保险估算（只作参考）。
+- SRP 类别（例如舰队、本土防御、单人）：每个类别有自己的单笔上限、月度上限、赔付规则、阵容说明和每日链接；申请保留提交时的类别。
+- 任意时间段的报表和导出（月、季度、年或日期范围）：趋势，按类别、成员、审核人和付款人、星域及限额，可在页面查看，也可导出为 CSV 或 Excel 文件。
+- 导入 aa-srp 的历史记录（`fleetops_import_aasrp`，带试运行和撤销）以及从 CSV 文件导入赔付表，方便站点带着记录迁移到 FleetOps SRP。
 
 **管理**
 
 - 所有配置都在网页界面里完成，不需要 Django 后台权限。每次修改和每个特权操作都有操作日志。
-- 为成员、军团管理、FC、FC 主管和 SRP 管理员分别设置权限。
+- 为成员、军团管理、FC、FC 主管、SRP 审核人、SRP 付款人和 SRP 管理员（两个角色）分别设置权限。
 - 英文和简体中文页面，跟随每位用户的 Alliance Auth 语言；适配 Alliance Auth 的所有主题（Flatly、Darkly、Materia、Bootstrap、Bootstrap Dark），手机和电脑都能用。
 
 ## 环境要求
@@ -216,10 +219,13 @@ PAP 登记链接用飞行员自己的令牌读取他在哪里、开什么船、�
 ## 升级
 
 1. 备份数据库。
-2. 把新版本安装到虚拟环境里（`pip install --no-deps aa-fleetops==<version>`）。
-3. 阅读该版本在 [CHANGELOG](CHANGELOG.md)（英文）里的升级说明。
-4. 运行 `python manage.py migrate fleetops` 和 `python manage.py collectstatic --noinput`。
-5. 重启 Web 进程、Celery Worker 和 Celery Beat。
+2. **升级到 0.3.0b1 之前**，先在 EVE 开发者网站上，给本站 `ESI_SSO_CLIENT_ID` 对应的 EVE 应用加上权限范围 `esi-killmails.read_killmails.v1`。不加的话，损失读取的 SSO 登录会报 invalid scope，成员无法为自己的角色授权（其余功能照常）。
+3. 把新版本安装到虚拟环境里（`pip install --no-deps aa-fleetops==<version>`）。
+4. 阅读该版本在 [CHANGELOG](CHANGELOG.md)（英文）里的升级说明。
+5. 运行 `python manage.py migrate fleetops` 和 `python manage.py collectstatic --noinput`。
+6. 重启 Web 进程、Celery Worker 和 Celery Beat。
+
+**从 0.3.0b1 回退到 0.2.x。** 先回退迁移（`python manage.py migrate fleetops 0023`），再安装旧版本的包。回退之前先运行 `python manage.py fleetops_srp_rollback_check`：它列出会挡住回退的东西（属于某个类别的赔付规则、有申请的常驻链接、导入的历史），不改任何数据。步骤和回退会丢失的数据见 [CHANGELOG](CHANGELOG.md)（英文）。
 
 ## 翻译
 

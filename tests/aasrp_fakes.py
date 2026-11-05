@@ -112,6 +112,11 @@ def _fk(name, to=EveCharacter):
     return model_field(name, models.ForeignKey(to, null=True, blank=True, on_delete=models.SET_NULL))
 
 
+# The field names below were compared with the models of aa-srp 5.5.0 (SrpLink, SrpRequest, RequestComment, Setting):
+# the request has no ship name, only the ``ship`` relation to the SDE item type (its ``name``), and the comment types are
+# "Comment", "Request Added", "Request Information", "Reject Reason", "Status Changed" and "Reviser Comment".
+
+
 def link_model():
     return _model(
         [
@@ -146,7 +151,6 @@ def request_model(shape="5.x"):
         fields += [
             model_field("killmail_id", models.BigIntegerField(null=True)),
             _fk("ship", User),  # a relation to the ship type; only the attribute names matter here
-            model_field("ship_name", models.CharField(max_length=254, blank=True)),
             model_field("reject_info", models.TextField(blank=True)),
         ]
     elif shape == "ship_name":
@@ -243,7 +247,6 @@ class FakeAaSrp:
             row.killmail_id = killmail_id
             row.ship_id = ship_id
             row.ship = SimpleNamespace(name=ship_name)
-            row.ship_name = ship_name
             row.reject_info = reject_info
         elif self.shape == "ship_name":
             row.ship_name = ship_name
@@ -264,7 +267,7 @@ class FakeAaSrp:
             comment=text,
             comment_time=when or FLEET_TIME,
             creator_id=getattr(commenter, "pk", None),
-            comment_type=comment_type or ("Status Change" if new_status else "Comment"),
+            comment_type=comment_type or ("Status Changed" if new_status else "Comment"),
             new_status=new_status,
         )
         self.comments.objects.rows.append(row)

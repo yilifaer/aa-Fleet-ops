@@ -91,6 +91,45 @@ jobs:
       - name: Coverage report
         run: coverage report --skip-covered --sort=cover
 
+  postgres:
+    name: Migrations on PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: fleetops
+          POSTGRES_DB: fleetops
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      FLEETOPS_TEST_REDIS: redis://localhost:6379/1
+      FLEETOPS_TEST_DB: postgres://postgres:fleetops@127.0.0.1:5432/fleetops
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install "allianceauth==5.4.0" "django-esi<10" "psycopg[binary]>=3.1"
+          pip install -e ".[test]"
+
+      - name: Run the migration tests (round trips, guards, data migrations)
+        run: python runtests.py tests.test_migration_srp tests.test_migration_b2 tests.test_migration_pap_rules tests.test_migration_fleet_management tests.test_migration_translatable_labels tests.test_migrations_ping_targets
+
   translations:
     name: Translations
     runs-on: ubuntu-latest

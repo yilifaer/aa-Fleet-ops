@@ -241,3 +241,65 @@ Restore a copy of the data of a site that runs the previous release, then:
   window and a known form-up system opens the system's. Try an FC whose bloodline is not Amarr.
 - [ ] **Confirmations.** Posting a ping, Reject (fleet, PAP rows, SRP claim) and Undo payment ask first; approving
   does not.
+
+## 16. The SRP rework of 0.3.0b1
+
+Do this on a test site, never on a production site. Back up the test database first; the rollback drill below needs the
+backup of the state before the upgrade. Every step ends with a look at the **Audit log**: the action is there with the
+right actor.
+
+**Preparation**
+
+- [ ] The EVE application of the test site has `esi-killmails.read_killmails.v1`; then the package was upgraded
+  (README, *Upgrading*). Without the scope, the loss reading shows the hint for administrators and nothing else breaks.
+- [ ] Configure the site as in the [example for an alliance that moves from aa-srp](configuration.md#example-an-alliance-that-moves-from-aa-srp)
+  (categories, caps, block lists, loss discovery, daily links). Give `review_srp` and `pay_srp` to test groups; the
+  upgrade grants nothing.
+
+**Walk through**
+
+- [ ] Authorize the main character and two alts for loss reading (CharLink or the **Loss reading** card). A character
+  without a token is listed as not authorized; with the setting **Members must authorize loss reading for all their
+  characters** on, checking and submitting are refused until it is done, and a token of another account does not count.
+- [ ] Lose a ship with each of the three characters: all three appear under **My recent losses** after the scan (or after
+  **Refresh**, at most every five minutes).
+- [ ] A loss that matches a tracked fleet is preselected as in fleet. A solo loss of 300m in a category with a 250m cap is
+  suggested at 250m; a 571m loss through a fleet link at 571m.
+- [ ] As the member: change the category and the comment of a pending claim, replace the loss; the audit has
+  `srp.claim_member_edit`. A banned member can only withdraw.
+- [ ] As a reviewer: change the claim while the member edits it (the page shows the old number of changes) and see the
+  refusal; filter the queue by category, link, date and member; approve; recalculate.
+- [ ] As a payer: mark several claims paid in one step (one batch `PAY-n`, one audit entry), export the claims to pay and
+  copy "name and amount" (tab-separated); the total of the file is the total on the page. A reviewer gets 403 on the batch.
+- [ ] Close several links at once, then complete the ones whose claims are all settled; a link with a claim waiting is
+  refused with the reason and not closed by the attempt.
+- [ ] The next day: the daily link of every category exists and the ones past their closing time are closed
+  (`srp.link_close` without an actor).
+- [ ] Ban a member for 7 days with the pending claims rejected, then lift the ban.
+- [ ] A Covetor loss and a high security loss are refused with their reason on the check page and on My SRP (the
+  buttons are missing there); a payout table entry for the Covetor lifts the block.
+- [ ] Open **SRP** > **Reports**: a custom range, the presets, the category report with used and remaining for a single
+  month, the personal limits report; download two files and check the file names (`...-YYYY-MM-DD_YYYY-MM-DD`).
+- [ ] Import: on a **copy** of the aa-srp database run `fleetops_import_aasrp --dry-run` (pending must be 0 after you
+  decided them in aa-srp), compare the report with the counts of the old site (links, requests, approved ISK per month), import for real in a maintenance window, open the reports over the imported months, try to claim
+  an imported killmail (refused), then `--undo` and import once more: the same result.
+- [ ] Each step above left its entry in the audit log.
+
+**Rollback drill** (on a copy, README and CHANGELOG rollback notes)
+
+- [ ] Functional rollback: switch off loss discovery, daily links and member changes; clear the block lists.
+- [ ] Data rollback: `fleetops_import_aasrp --undo`, delete or generalise the category payout rules, delete the standing links
+  with claims, run `fleetops_srp_rollback_check` (it must pass), `migrate fleetops 0023`, install 0.2.0b3 and start it.
+  Claims, amounts and statuses are as before; the categories, standing links, batches, bans and found losses are gone.
+- [ ] With imported claims, rules of a category or standing links with claims still in place, `migrate fleetops 0023`
+  stops at `0035` and the database is unchanged.
+
+**Version and database matrix** (CI runs SQLite and MariaDB with the whole suite and the migration tests on PostgreSQL; the PostgreSQL job covers the migrations only, so run the rest of this list on PostgreSQL by hand for a release)
+
+- [ ] Alliance Auth 5.2 with django-esi 9, the latest 5.x with django-esi 9 and with django-esi 10: the app starts, and
+  the loss reading, the universe lookups and the insurance prices work (their ESI operations exist in the client).
+- [ ] SQLite, PostgreSQL and MariaDB: an empty database migrates, `migrate fleetops 0023` and `migrate` go round, and so
+  does a database with 0.2.0b3 data (claim amounts and statuses unchanged, 0 claims "calculated with earlier settings").
+- [ ] Without aa-srp the import command stops with a clear message; without django-eveonline-sde the location and the ship
+  group come from ESI and a failed lookup lets the claim through; without aa-charlink the authorization page works; without
+  fittings nothing changes.

@@ -561,7 +561,6 @@ class CommandTests(ImportTestCase):
         no_killmail.killboard_link = "nothing here"
         no_ship = self.approved()
         no_ship.ship_id = None
-        no_ship.ship_name = ""
         no_ship.ship = SimpleNamespace(name="")
         no_character = self.approved()
         no_character.character = None
