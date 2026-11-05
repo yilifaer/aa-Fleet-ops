@@ -571,7 +571,8 @@ class CheckFlowTests(ViewBase):
         with CaptureQueriesContext(connection) as queries:
             claims.submit_claim(self.user, token)
 
-        reads = [q for q in queries.captured_queries if "FROM \"fleetops_srpsettings\"" in q["sql"] and q["sql"].startswith("SELECT")]
+        table = connection.ops.quote_name("fleetops_srpsettings")  # "..." on SQLite, `...` on MariaDB
+        reads = [q for q in queries.captured_queries if f"FROM {table}" in q["sql"] and q["sql"].startswith("SELECT")]
         self.assertEqual(len(reads), 1)  # the lock's own read
 
     def test_a_token_names_a_source_that_the_server_signed_only(self):
