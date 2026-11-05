@@ -6,6 +6,7 @@
 ESI and zKillboard are never reached; killmails come from the factories and the clock is passed in.
 """
 
+import contextlib
 from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 from unittest import mock
@@ -603,7 +604,12 @@ class BeatHookTests(TestCase):
         self.addCleanup(cache.clear)
 
     def beat(self):
-        with mock.patch.object(fleet_tasks, "_queue_srp_sweep"), mock.patch.object(fleet_tasks, "cancel_abandoned_starts"):
+        # Only the standing-link upkeep is under test: the other SRP jobs of the beat (the insurance read queued once a
+        # day while SRP is on, the loss scan) would otherwise run here and reach ESI.
+        quiet = ("_queue_srp_sweep", "cancel_abandoned_starts", "_queue_srp_insurance", "_queue_srp_loss_scan")
+        with contextlib.ExitStack() as stack:
+            for name in quiet:
+                stack.enter_context(mock.patch.object(fleet_tasks, name))
             return fleet_tasks.schedule_active_fleet_tracking()
 
     def test_the_beat_runs_the_upkeep_at_most_every_ten_minutes(self):

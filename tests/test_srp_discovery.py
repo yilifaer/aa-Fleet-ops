@@ -692,6 +692,14 @@ class BudgetTests(ScanBase):
 
 
 class TaskTests(ScanBase):
+    def setUp(self):
+        super().setUp()
+        # The minute beat also queues the daily insurance read while SRP is on; it is not under test here and would
+        # reach ESI.
+        patcher = mock.patch.object(fleet_tasks, "_queue_srp_insurance")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_the_task_returns_disabled_while_the_feature_is_off(self):
         f.srp_settings(loss_discovery_enabled=False)
         self.assertEqual(fleet_tasks.scan_srp_losses(), "disabled")

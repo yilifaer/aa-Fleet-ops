@@ -3,8 +3,10 @@
 
 """The test run cannot reach hosts outside the loopback address."""
 
+import os
 import socket
-from unittest import TestCase
+from pathlib import Path
+from unittest import TestCase, mock
 
 from testauth import netguard
 
@@ -47,3 +49,43 @@ class NetworkGuardTests(TestCase):
             self.assertTrue(netguard.is_loopback(host), host)
         for host in ("zkillboard.com", "10.0.0.1", "esi.evetech.net", "::2"):
             self.assertFalse(netguard.is_loopback(host), host)
+
+    def test_a_proxy_on_loopback_is_blocked_and_named(self):
+        with socket.socket() as server:
+            server.bind(("127.0.0.1", 0))
+            server.listen(1)
+            port = server.getsockname()[1]
+            with mock.patch.dict(os.environ, {"HTTPS_PROXY": f"http://127.0.0.1:{port}"}):
+                with self.assertRaises(netguard.NetworkBlocked) as caught:
+                    socket.create_connection(("127.0.0.1", port), timeout=2)
+            self.assertIn(f"proxy at 127.0.0.1:{port}", str(caught.exception))
+            # The same port is fine again once no proxy names it.
+            with mock.patch.dict(os.environ, {"HTTPS_PROXY": "http://127.0.0.1:9"}):
+                with socket.create_connection(("127.0.0.1", port), timeout=2):
+                    pass
+
+    def test_proxy_variables_in_either_case_and_without_a_scheme(self):
+        values = {
+            "https_proxy": "127.0.0.1:3128",
+            "ALL_PROXY": "socks5://localhost",
+            "HTTP_PROXY": "http://[::1]:8118",
+            "http_proxy": "http://proxy.example.org:8080",  # remote: blocked by its host already
+            "NO_PROXY": "localhost",
+        }
+        with mock.patch.dict(os.environ, values):
+            ports = netguard.proxy_ports()
+        self.assertTrue({3128, 1080, 8118} <= ports, ports)
+        self.assertNotIn(8080, ports)
+
+
+class PatchHygieneTests(TestCase):
+    def test_no_test_stops_every_patch(self):
+        # tests/__init__.py patches the location lookups for the whole run; stopping every patch would let the tests
+        # after it reach ESI (blocked in CI, but possibly through a local proxy elsewhere).
+        needle = "patch." + "stopall"
+        offenders = [
+            path.name
+            for path in Path(__file__).resolve().parent.glob("*.py")
+            if needle in path.read_text(encoding="utf-8")
+        ]
+        self.assertEqual(offenders, [], f"use patcher.stop instead of mock.{needle}")

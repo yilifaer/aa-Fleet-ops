@@ -7,14 +7,22 @@
 which names the host. Unix sockets and ``localhost``, ``127.0.0.0/8`` and ``::1`` stay open: Redis and MariaDB
 are reached that way, locally and in CI. A test that needs another host has to mock the call.
 
+A proxy on the loopback address (``HTTPS_PROXY=http://127.0.0.1:3128`` and the like, in either case) is blocked as
+well: HTTP clients send every request through it, so a request to a remote host would leave the machine although the
+socket only connects to localhost. Without this a missing mock passes on a machine with such a proxy and fails in CI.
+
 ``NetworkBlocked`` is a ``BaseException`` on purpose: the code under test catches ``Exception`` around its
 requests, and a blocked call must not be mistaken for a network failure the code is expected to handle.
 """
 
 import ipaddress
+import os
 import socket
+from urllib.parse import urlsplit
 
 LOOPBACK_NAMES = frozenset({"localhost", "localhost.localdomain", "ip6-localhost"})
+PROXY_VARIABLES = frozenset({"http_proxy", "https_proxy", "all_proxy"})
+_DEFAULT_PROXY_PORTS = {"http": 80, "https": 443, "socks4": 1080, "socks5": 1080, "socks5h": 1080}
 
 
 class NetworkBlocked(BaseException):
@@ -35,9 +43,32 @@ def is_loopback(host) -> bool:
         return False
 
 
+def proxy_ports() -> frozenset:
+    """The ports of the proxies on the loopback address that the environment names (read on every call)."""
+    ports = set()
+    for name, value in os.environ.items():
+        if name.lower() not in PROXY_VARIABLES or not value:
+            continue
+        try:
+            parts = urlsplit(value if "://" in value else f"http://{value}")
+            port = parts.port
+        except ValueError:
+            continue
+        if parts.hostname and is_loopback(parts.hostname):
+            ports.add(port or _DEFAULT_PROXY_PORTS.get(parts.scheme.lower(), 80))
+    return frozenset(ports)
+
+
 def _block(host):
     raise NetworkBlocked(
         f"Test tried to reach {host!r} over the network. Tests may only use localhost; mock the call instead."
+    )
+
+
+def _block_proxy(host, port):
+    raise NetworkBlocked(
+        f"Test tried to reach the network through the proxy at {host}:{port}. "
+        "Tests may only use localhost; mock the call instead."
     )
 
 
@@ -59,6 +90,8 @@ def install() -> None:
             return
         if not is_loopback(address[0]):
             _block(address[0])
+        if len(address) > 1 and address[1] in proxy_ports():
+            _block_proxy(address[0], address[1])
 
     def connect(self, address):
         check_address(self, address)

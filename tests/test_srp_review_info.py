@@ -554,9 +554,10 @@ class BackfillCommandTests(TestCase):
         self.current = f.srp_killmail(f.main_of(self.user), damage_taken=5, solar_system_security=Decimal("0.5"))
         f.srp_claim(self.user, killmail=self.current)
         f.srp_killmail(f.main_of(self.user))
-        self.addCleanup(mock.patch.stopall)
+        # Stop only this patch: stopping every patch would also stop the run-wide lookups patched in tests/__init__.py.
         patcher = mock.patch("fleetops.management.commands.fleetops_srp_backfill_killmails.time.sleep")
         self.sleep = patcher.start()
+        self.addCleanup(patcher.stop)
 
     def test_a_dry_run_only_counts(self):
         with mock.patch("fleetops.management.commands.fleetops_srp_backfill_killmails.get_killmail") as read:
