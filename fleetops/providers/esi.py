@@ -70,8 +70,9 @@ from fleetops.texts import (
 
 logger = get_extension_logger(__name__)
 
-# Public reads for SRP: a killmail by ID and hash, and CCP's market prices (see providers/esi_killmails.py).
-KILLMAIL_OPERATIONS = ("GetKillmailsKillmailIdKillmailHash", "GetMarketsPrices")
+# Public reads for SRP: a killmail by ID and hash, CCP's market prices and the insurance prices (see
+# providers/esi_killmails.py).
+KILLMAIL_OPERATIONS = ("GetKillmailsKillmailIdKillmailHash", "GetMarketsPrices", "GetInsurancePrices")
 # Reading the recent killmails of a character needs the token of that character (providers/esi_killmails.py).
 LOSS_OPERATIONS = ("GetCharactersCharacterIdKillmailsRecent",)
 # Public universe reads for SRP: where a ship was lost and what group a ship type is in (providers/esi_universe.py).

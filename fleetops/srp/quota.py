@@ -16,7 +16,7 @@ Do not open ``quota_lock()`` inside a transaction that already read claims; the 
 from contextlib import contextmanager
 
 from django.db import transaction
-from django.db.models import Case, Sum, When
+from django.db.models import Case, Q, Sum, When
 
 from fleetops.models import SrpCategory, SrpClaim, SrpSettings
 from fleetops.services import periods
@@ -109,11 +109,45 @@ def month_usage(
     return int(totals["used"] or 0), int(totals["pending"] or 0)
 
 
+def _usage_filter(*, user_id=None, corporation_id=None, category_id=None) -> Q:
+    """The claims one limit counts (the same rules as ``month_usage``)."""
+    condition = Q()
+    if category_id is not None:
+        condition &= Q(category_id=category_id)
+    if user_id is not None:
+        condition &= Q(user_id=user_id)
+        if category_id is None:
+            condition &= Q(counts_personal=True)
+    if corporation_id is not None:
+        condition &= Q(corporation_id=corporation_id)
+        if category_id is None:
+            condition &= Q(counts_corporation=True)
+    return condition
+
+
+def month_usages(specs, *, year, month, exclude_claim_id=None) -> list[tuple[int, int]]:
+    """``month_usage`` for several limits in one query (no locking): ``specs`` is a list of dicts with ``user_id``,
+    ``corporation_id`` and ``category_id`` as that function takes them; the result has one ``(used, pending)`` each."""
+    start, end = periods.month_bounds(year, month)
+    claims = SrpClaim.objects.filter(killmail_time__gte=start, killmail_time__lt=end)
+    if exclude_claim_id is not None:
+        claims = claims.exclude(pk=exclude_claim_id)
+    sums = {}
+    for index, spec in enumerate(specs):
+        condition = _usage_filter(**spec)
+        sums[f"used_{index}"] = Sum(Case(When(condition & Q(status__in=USAGE_STATUSES), then="approved_amount")))
+        sums[f"pending_{index}"] = Sum(Case(When(condition & Q(status=SrpClaim.Status.PENDING), then="limited_amount")))
+    totals = claims.aggregate(**sums)
+    return [(int(totals[f"used_{i}"] or 0), int(totals[f"pending_{i}"] or 0)) for i in range(len(specs))]
+
+
 def _state(
-    kind, cap, applies, *, year, month, usage_id, exclude_claim_id, locking, id_name, category_id=None
+    kind, cap, applies, *, year, month, usage_id, exclude_claim_id, locking, id_name, category_id=None, usage=None
 ) -> LimitState:
     used = pending = 0
-    if usage_id is not None:
+    if usage is not None:
+        used, pending = usage
+    elif usage_id is not None:
         used, pending = month_usage(
             year=year,
             month=month,
@@ -178,63 +212,62 @@ def limit_states(
     policy,
     exclude_claim_id=None,
     locking: bool = False,
+    one_query: bool = False,
 ) -> tuple[LimitState, ...]:
     """The personal and the corporation limit for a claim of that month, and those of the claim's category when
     the policy has a monthly cap for it; ``locking`` reads the usage rows with ``select_for_update``.
 
     The caps come from ``policy`` (the corporation's already resolved, override or default). A limit does not
     ``apply`` to an in-fleet claim when its switch says in-fleet losses do not count toward it. The
-    remaining amount is the cap less what approved and paid claims of the month used, never below 0.
+    remaining amount is the cap less what approved and paid claims of the month used, never below 0. ``one_query``
+    reads all the usage in a single query (not with ``locking``): for pages that only show the states.
     """
     year, month = claim_month(killmail_time)
     out_of_fleet = scope == SrpClaim.Scope.OUT_OF_FLEET
-    common = {
-        "year": year,
-        "month": month,
-        "exclude_claim_id": exclude_claim_id,
-        "locking": locking,
-    }
-    states = [
-        _state(
-            LIMIT_PERSONAL,
-            policy.personal_monthly_cap,
-            out_of_fleet or policy.personal_cap_includes_in_fleet,
-            usage_id=user_id,
-            id_name="user_id",
-            **common,
-        ),
-        _state(
+    category = policy.category
+    # (kind, cap, applies, id name, id, category id) of every limit that is checked
+    limits = [
+        (LIMIT_PERSONAL, policy.personal_monthly_cap, out_of_fleet or policy.personal_cap_includes_in_fleet, "user_id", user_id, None),
+        (
             LIMIT_CORPORATION,
             policy.corporation_monthly_cap,
             out_of_fleet or policy.corporation_cap_includes_in_fleet,
-            usage_id=corporation_id,
-            id_name="corporation_id",
-            **common,
+            "corporation_id",
+            corporation_id,
+            None,
         ),
     ]
-    category = policy.category
     if category is not None and category.personal_monthly_cap is not None:
-        states.append(
-            _state(
-                LIMIT_CATEGORY_PERSONAL,
-                category.personal_monthly_cap,
-                True,
-                usage_id=user_id,
-                id_name="user_id",
-                category_id=category.id,
-                **common,
-            )
-        )
+        limits.append((LIMIT_CATEGORY_PERSONAL, category.personal_monthly_cap, True, "user_id", user_id, category.id))
     if category is not None and category.corporation_monthly_cap is not None:
-        states.append(
-            _state(
-                LIMIT_CATEGORY_CORPORATION,
-                category.corporation_monthly_cap,
-                True,
-                usage_id=corporation_id,
-                id_name="corporation_id",
-                category_id=category.id,
-                **common,
-            )
+        limits.append(
+            (LIMIT_CATEGORY_CORPORATION, category.corporation_monthly_cap, True, "corporation_id", corporation_id, category.id)
         )
-    return tuple(states)
+    usages = [None] * len(limits)
+    if one_query and not locking:
+        wanted = [index for index, limit in enumerate(limits) if limit[4] is not None]
+        if wanted:
+            found = month_usages(
+                [{limits[i][3]: limits[i][4], "category_id": limits[i][5]} for i in wanted],
+                year=year,
+                month=month,
+                exclude_claim_id=exclude_claim_id,
+            )
+            for index, usage in zip(wanted, found):
+                usages[index] = usage
+    return tuple(
+        _state(
+            kind,
+            cap,
+            applies,
+            year=year,
+            month=month,
+            usage_id=usage_id,
+            id_name=id_name,
+            category_id=category_id,
+            exclude_claim_id=exclude_claim_id,
+            locking=locking,
+            usage=usage,
+        )
+        for (kind, cap, applies, id_name, usage_id, category_id), usage in zip(limits, usages)
+    )

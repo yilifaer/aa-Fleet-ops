@@ -658,8 +658,19 @@ class SrpSettingsForm(forms.ModelForm):
                 "allow_self_payment",
                 "require_different_payer",
                 "auto_complete_links",
+                "member_edit_enabled",
+                "member_swap_loss_enabled",
+                "review_history_days",
                 "member_instructions",
             ],
+        ),
+        (
+            _("Insurance"),
+            _(
+                "Next to each claim FleetOps can show what the pilot would get from insurance, from the prices ESI "
+                "publishes. It is only a hint: it changes no amount, limit or payment."
+            ),
+            ["show_insurance", "insurance_level"],
         ),
         (
             _("Loss discovery"),
@@ -738,6 +749,11 @@ class SrpSettingsForm(forms.ModelForm):
             "allow_self_payment",
             "require_different_payer",
             "auto_complete_links",
+            "member_edit_enabled",
+            "member_swap_loss_enabled",
+            "review_history_days",
+            "show_insurance",
+            "insurance_level",
             "notify_members",
             "member_instructions",
         ]
@@ -746,6 +762,7 @@ class SrpSettingsForm(forms.ModelForm):
             "claim_deadline_days": forms.NumberInput(attrs={"min": "0", "max": "3650"}),
             "ban_default_days": forms.NumberInput(attrs={"min": "1", "max": "3650"}),
             "ban_max_days": forms.NumberInput(attrs={"min": "1", "max": "3650"}),
+            "review_history_days": forms.NumberInput(attrs={"min": "0", "max": "3650"}),
             "loss_discovery_interval_minutes": forms.NumberInput(attrs={"min": "15", "max": "1440"}),
             "member_instructions": forms.Textarea(attrs={"rows": 4, "maxlength": "2000"}),
         }
@@ -759,7 +776,7 @@ class SrpSettingsForm(forms.ModelForm):
             )
         self.fields["default_category"].label_from_instance = category_label
         # A submission without the ban lengths (a script, an older form) keeps the stored ones.
-        for name in ("ban_default_days", "ban_max_days", "loss_discovery_interval_minutes"):
+        for name in ("ban_default_days", "ban_max_days", "loss_discovery_interval_minutes", "review_history_days", "insurance_level"):
             self.fields[name].required = False
         self.warnings = []
         self._set_up_blocks()
@@ -824,6 +841,14 @@ class SrpSettingsForm(forms.ModelForm):
 
     def clean_ban_max_days(self):
         return self.cleaned_data.get("ban_max_days") or self.instance.ban_max_days
+
+    def clean_review_history_days(self):
+        # 0 means "all rejections"; only a missing value keeps the stored one.
+        value = self.cleaned_data.get("review_history_days")
+        return self.instance.review_history_days if value is None else value
+
+    def clean_insurance_level(self):
+        return self.cleaned_data.get("insurance_level") or self.instance.insurance_level
 
     def clean_loss_discovery_interval_minutes(self):
         return self.cleaned_data.get("loss_discovery_interval_minutes") or self.instance.loss_discovery_interval_minutes

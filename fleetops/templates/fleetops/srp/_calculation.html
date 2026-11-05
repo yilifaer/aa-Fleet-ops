@@ -29,6 +29,15 @@
     <strong{% if calculation.over_limit %} class="text-danger"{% endif %}>{{ calculation.limited|isk }}</strong>
     {% if calculation.over_limit %}{% translate "Over limit" as over_limit_label %}{% pill "bad" over_limit_label %}{% if calculation.binding_limit %}<div class="small text-muted">{% blocktranslate trimmed with limit=calculation.binding_limit|srp_limit_label %}Held down by the {{ limit }}.{% endblocktranslate %}</div>{% endif %}{% endif %}
   </dd>
+  {% if insurance %}
+  <dt class="col-sm-5">{% translate "With insurance" %}</dt>
+  <dd class="col-sm-7" id="srp-insurance-line">
+    {% blocktranslate trimmed with compensation=insurance.compensation|isk %}compensation {{ compensation }}{% endblocktranslate %} +
+    {% if insurance.insurance is None %}<span class="text-muted">&ndash;</span>{% else %}{% blocktranslate trimmed with net=insurance.insurance|isk %}insurance payout {{ net }}{% endblocktranslate %}{% endif %} =
+    <strong>{{ insurance.total|isk }}</strong>
+    <div class="small text-muted">{% translate "Estimate from the current ESI insurance prices; only paid out if the pilot insured the ship." %}</div>
+  </dd>
+  {% endif %}
 </dl>
 {% if calculation.notes %}
 <ul class="small text-muted mb-0 mt-2">

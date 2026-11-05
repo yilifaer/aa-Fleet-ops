@@ -40,6 +40,8 @@ class DatasetRegistryTests(TestCase):
                 "corporations", "members", "member-fleets", "fcs", "attendance", "incentives",
                 # FleetOps SRP; tests/test_srp_exports.py covers their access rules.
                 "srp-claims", "srp-members", "srp-corporations", "srp-fcs",
+                # REV-6 (0.3.0b1): the claims waiting for payment.
+                "srp-payable",
             },
         )
         for slug, dataset in DATASETS.items():

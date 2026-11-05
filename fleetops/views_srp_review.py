@@ -6,13 +6,14 @@ SRP payers pay them (``manage_srp`` is both)."""
 
 import re
 from datetime import datetime, time, timedelta, timezone as dt_timezone
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db.models import Count, Q, Sum
 from django.http import Http404
-from django.shortcuts import redirect
+from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext as _
@@ -20,13 +21,20 @@ from django.utils.translation import ngettext
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from fleetops.decorators import fleetops_permission_required
-from fleetops.forms_srp import ClaimSelectionForm, PaidForm, PaymentFilterForm, ReviewFilterForm
-from fleetops.models import SrpClaim, SrpFleetLink, SrpSettings
+from fleetops.forms_srp import (
+    NO_CATEGORY,
+    ClaimSelectionForm,
+    PaidForm,
+    PayableFilterForm,
+    PaymentFilterForm,
+    ReviewFilterForm,
+)
+from fleetops.models import SrpCategory, SrpClaim, SrpFleetLink, SrpPaymentBatch, SrpSettings
 from fleetops.services.periods import eve_now, month_bounds
-from fleetops.srp import access, display, review
-from fleetops.srp import policy as rules
+from fleetops.srp import access, bans, display, payments as srp_payments, review
 from fleetops.srp.access import MANAGE_SRP, PAY_SRP, REVIEW_SRP
-from fleetops.srp.types import SrpError, SrpPayRow, SrpStateError
+from fleetops.srp.display import category_label
+from fleetops.srp.types import SrpError, SrpStateError
 from fleetops.texts import translate_stored
 from fleetops.ui_notices import push_notice
 from fleetops.views import _period_render_context, _year_month
@@ -41,8 +49,22 @@ from fleetops.views_srp import (
 )
 
 # The query parameters the review queue keeps when the month changes.
-REVIEW_FILTERS = ("status", "scope", "flag", "corporation", "fc", "q")
-PAYMENT_FILTERS = ("paid_from", "paid_to")
+REVIEW_FILTERS = (
+    "status",
+    "scope",
+    "flag",
+    "corporation",
+    "fc",
+    "q",
+    "category",
+    "link",
+    "submitted_from",
+    "submitted_to",
+    "user",
+)
+PAYMENT_FILTERS = ("paid_from", "paid_to", "category", "link", "corporation")
+# Links offered by the link filters (a datalist of the most recent ones).
+LINK_HINTS_SHOWN = 100
 REVIEW_PER_PAGE = 50
 PAID_SHOWN = 200
 PAID_DEFAULT_DAYS = 30
@@ -116,6 +138,18 @@ def expected_amounts(form, claims):
     return {claim.pk: shown[claim.uuid] for claim in claims if claim.uuid in shown}
 
 
+def revision_kwargs(form) -> dict:
+    """``{"expected_revision": n}`` when the form carried the number of changes by the claimant that the page showed."""
+    shown = form.cleaned_data.get("shown_revision")
+    return {} if shown is None else {"expected_revision": shown}
+
+
+def expected_revisions(form, claims):
+    """``{claim ID: member_revision}`` the list showed for the ticked ``claims`` (``ClaimSelectionForm.shown_revisions``)."""
+    shown = form.shown_revisions()
+    return {claim.pk: shown[claim.uuid] for claim in claims if claim.uuid in shown}
+
+
 def split_by_review_right(user, claims, settings_obj, kind="review"):
     """The claims ``user`` may decide on (``kind="review"``) or pay (``kind="pay"``), and the skip entries of the
     others (their own, or in a payment the ones the user approved)."""
@@ -154,9 +188,23 @@ def filter_choices():
     return list(corporations.items()), list(fcs.items())
 
 
+def category_choices_list():
+    """``[(id, label)]`` of the categories for the filter drop-downs; one that is switched off says so."""
+    rows = []
+    for category in SrpCategory.objects.order_by("sort_order", "pk"):
+        label = category_label(category)
+        rows.append((category.pk, label if category.is_active else _("%(name)s (off)") % {"name": label}))
+    return rows
+
+
+def link_hints():
+    """``[(code, name)]`` of the latest links, for the ``datalist`` of the link filters (one query)."""
+    return list(SrpFleetLink.objects.order_by("-created_at", "-pk").values_list("code", "name")[:LINK_HINTS_SHOWN])
+
+
 def filtered_claims(filters, bounds=None):
     """Claims for the queue's filters (``ReviewFilterForm.cleaned_data``), the month of the loss when given."""
-    claims = SrpClaim.objects.select_related("category")
+    claims = SrpClaim.objects.select_related("category", "link")
     status = filters.get("status") or SrpClaim.Status.PENDING
     if status != ReviewFilterForm.ANY_STATUS:
         claims = claims.filter(status=status)
@@ -175,6 +223,20 @@ def filtered_claims(filters, bounds=None):
         claims = claims.filter(corporation_id=filters["corporation"])
     if filters.get("fc"):
         claims = claims.filter(fc_user_id=filters["fc"])
+    category = filters.get("category")
+    if category == NO_CATEGORY:
+        claims = claims.filter(category__isnull=True)
+    elif category and category.isdigit():
+        claims = claims.filter(category_id=int(category))
+    if filters.get("link"):
+        claims = claims.filter(link__code=filters["link"])
+    if filters.get("user"):
+        claims = claims.filter(user_id=filters["user"])
+    submitted_lower, submitted_upper = day_bounds(filters.get("submitted_from"), filters.get("submitted_to"))
+    if submitted_lower is not None:
+        claims = claims.filter(submitted_at__gte=submitted_lower)
+    if submitted_upper is not None:
+        claims = claims.filter(submitted_at__lt=submitted_upper)
     text = filters.get("q")
     if text:
         match = Q(character_name__icontains=text) | Q(main_character_name__icontains=text) | Q(ship_type_name__icontains=text)
@@ -200,12 +262,14 @@ def review_queue(request):
     if data.get("status") not in {ReviewFilterForm.ANY_STATUS, *dict(ReviewFilterForm.STATUSES)}:
         data["status"] = SrpClaim.Status.PENDING
     corporations, fcs = filter_choices()
-    form = ReviewFilterForm(data, corporations=corporations, fcs=fcs)
+    form = ReviewFilterForm(data, corporations=corporations, fcs=fcs, categories=category_choices_list())
     form.is_valid()  # a value that does not check out is left out of cleaned_data
     page = Paginator(filtered_claims(form.cleaned_data, bounds), REVIEW_PER_PAGE).get_page(request.GET.get("page"))
     rows = list(page.object_list)
+    banned = bans.banned_user_ids(claim.user_id for claim in rows)
     for claim in rows:
         claim.reviewable = access.can_review(request.user, claim, settings_obj=settings_obj)
+        claim.member_banned = claim.user_id in banned
     # The queue is narrowed when it is not the default list of pending claims (the empty state then says so).
     filters = form.cleaned_data
     filters_active = (
@@ -222,6 +286,7 @@ def review_queue(request):
             request=request,
             preserve=REVIEW_FILTERS,
             filter_form=form,
+            link_hints=link_hints(),
             page=page,
             claims=rows,
             month_filter_active=bounds is not None,
@@ -246,8 +311,12 @@ def bulk_approve(request):
     ticked = list(SrpClaim.objects.filter(uuid__in=form.cleaned_data["claim"]))
     reviewable, skipped = split_by_review_right(request.user, ticked, settings_obj)
     if reviewable:
+        revisions = expected_revisions(form, reviewable)
         result = review.approve_clean_claims(
-            reviewable, actor=request.user, expected_amounts=expected_amounts(form, reviewable)
+            reviewable,
+            actor=request.user,
+            expected_amounts=expected_amounts(form, reviewable),
+            **({"expected_revisions": revisions} if revisions else {}),
         )
         skipped.extend(result.skipped)
         if result.done:
@@ -309,7 +378,7 @@ def do_approve(request, claim, form):
 
 
 def do_reject(request, claim, form):
-    review.reject_claim(claim, actor=request.user, reason=form.cleaned_data["reason"])
+    review.reject_claim(claim, actor=request.user, reason=form.cleaned_data["reason"], **revision_kwargs(form))
     return _("%(reference)s rejected.") % {"reference": claim.reference}
 
 
@@ -330,6 +399,7 @@ def do_paid(request, claim, form):
     )
     if result.skipped:
         raise SrpStateError("not_payable", result.skipped[0][1])
+    report_batch(request, result.batch)
     return _("%(reference)s marked paid.") % {"reference": claim.reference}
 
 
@@ -364,6 +434,7 @@ def do_reclassify(request, claim, form):
         link=link,
         reason=form.cleaned_data["reason"],
         category=form.cleaned_data.get("category"),
+        **revision_kwargs(form),
     )
     if scope == SrpClaim.Scope.IN_FLEET:
         text = _("%(reference)s moved to in fleet and recalculated.")
@@ -374,7 +445,11 @@ def do_reclassify(request, claim, form):
 
 def do_recategorize(request, claim, form):
     review.recategorize_claim(
-        claim, actor=request.user, category=form.cleaned_data.get("category"), reason=form.cleaned_data["reason"]
+        claim,
+        actor=request.user,
+        category=form.cleaned_data.get("category"),
+        reason=form.cleaned_data["reason"],
+        **revision_kwargs(form),
     )
     return _("%(reference)s moved to another category and recalculated.") % {"reference": claim.reference}
 
@@ -478,28 +553,31 @@ def claim_action(request, claim_uuid, action):
 
 
 def pay_rows(claims):
-    """Approved claims grouped by the player to pay, the largest sums first.
-
-    A row is named after the player's main character as it is now (``policy.pay_to``), not the one recorded
-    when the claim was made. Read the claims with ``select_related("user__profile__main_character")``.
-    """
-    groups: dict[tuple, SrpPayRow] = {}
-    for claim in claims:
-        key = ("user", claim.user_id) if claim.user_id else ("main", claim.main_character_id or claim.character_id)
-        row = groups.get(key)
-        if row is None:
-            main_id, name = rules.pay_to(claim)
-            row = groups[key] = SrpPayRow(claim.user_id, main_id, name)
-        row.total += claim.approved_amount or 0
-        row.claims.append(claim)
-    return sorted(groups.values(), key=lambda row: (-row.total, row.main_character_name.casefold()))
+    """Approved claims grouped by the player to pay, the largest sums first (see ``payments.pay_rows``)."""
+    return srp_payments.pay_rows(claims)
 
 
 def day_bounds(start, end):
     """Datetimes (EVE time) from the start of the first to the end of the last day; either may be None."""
     lower = datetime.combine(start, time.min, tzinfo=dt_timezone.utc) if start else None
-    upper = datetime.combine(end + timedelta(days=1), time.min, tzinfo=dt_timezone.utc) if end else None
+    upper = None
+    if end:
+        try:
+            upper = datetime.combine(end + timedelta(days=1), time.min, tzinfo=dt_timezone.utc)
+        except OverflowError:  # the last day the calendar knows: no upper bound
+            upper = None
     return lower, upper
+
+
+def report_batch(request, batch):
+    """Name the payment batch a payment made."""
+    if batch is not None:
+        messages.info(request, _("Payment batch %(batch)s.") % {"batch": batch.reference})
+
+
+def posted_filters(request):
+    """The filters of the payments page that a payment form carries along (hidden fields), kept with the batch."""
+    return srp_payments.parse_filters(request.POST)
 
 
 def mark_selected_paid(request, settings_obj):
@@ -519,6 +597,7 @@ def mark_selected_paid(request, settings_obj):
             actor=request.user,
             note=note_form.cleaned_data["note"],
             expected_amounts=expected_amounts(form, reviewable),
+            **({"filters": filters} if (filters := posted_filters(request)) else {}),
         )
         skipped.extend(result.skipped)
         if result.done:
@@ -528,10 +607,44 @@ def mark_selected_paid(request, settings_obj):
                 "%(count)s claim marked paid (%(total)s).", "%(count)s claims marked paid (%(total)s).", count
             )
             messages.success(request, text % {"count": count, "total": _isk(total)})
+            report_batch(request, result.batch)
     report_skipped(request, skipped)
     if not reviewable and not skipped:
         messages.error(request, _("None of the selected claims exist any more."))
     return back(request, redirect("fleetops:srp_payments"))
+
+
+def payable_corporations():
+    """The corporations that have approved claims, for the filter of the payments page."""
+    rows = {}
+    for pk, name in (
+        SrpClaim.objects.filter(status=SrpClaim.Status.APPROVED)
+        .exclude(corporation_id=None)
+        .values_list("corporation_id", "corporation_name")
+        .order_by("corporation_name")
+    ):
+        rows.setdefault(pk, name or str(pk))
+    return list(rows.items())
+
+
+@require_GET
+@fleetops_permission_required((MANAGE_SRP, PAY_SRP), any_perm=True)
+def payment_batch(request, batch_uuid):
+    """One payment batch: who was paid how much, and the claims whose payment was undone since. Payers only (a
+    reviewer without a payment permission gets a 403)."""
+    batch = get_object_or_404(SrpPaymentBatch, uuid=batch_uuid)
+    rows = srp_payments.batch_claims(batch)
+    return srp_render(
+        request,
+        "fleetops/srp/payment_batch.html",
+        {
+            "batch": batch,
+            "claims": rows,
+            "undone": srp_payments.undone_count(batch, len(rows)),
+            "current_total": sum(claim.approved_amount or 0 for claim in rows),
+            "pay_rows": pay_rows(rows),
+        },
+    )
 
 
 @require_http_methods(["GET", "POST"])
@@ -561,9 +674,14 @@ def payments(request):
     base = SrpClaim.objects.all()
     if bounds is not None:
         base = base.filter(killmail_time__gte=bounds[0], killmail_time__lt=bounds[1])
+    payable_form = PayableFilterForm(
+        request.GET, corporations=payable_corporations(), categories=category_choices_list()
+    )
+    payable_form.is_valid()
+    payable_filters = srp_payments.clean_filters(payable_form.cleaned_data)
     to_pay = list(
-        base.filter(status=SrpClaim.Status.APPROVED)
-        .select_related("user__profile__main_character", "category")
+        srp_payments.apply_filters(base.filter(status=SrpClaim.Status.APPROVED), payable_filters)
+        .select_related("user__profile__main_character", "category", "link")
         .order_by("killmail_time", "pk")
     )
     for claim in to_pay:
@@ -588,7 +706,16 @@ def payments(request):
             pay_rows=rows,
             to_pay_total=sum(row.total for row in rows),
             to_pay_count=len(to_pay),
-            paid_claims=list(paid.select_related("paid_by", "category").order_by("-paid_at", "-pk")[:PAID_SHOWN]),
+            paid_claims=list(
+                paid.select_related("paid_by", "category", "link", "payment_batch").order_by("-paid_at", "-pk")[:PAID_SHOWN]
+            ),
+            paid_dates={name: request.GET[name] for name in ("paid_from", "paid_to") if request.GET.get(name)},
+            payable_form=payable_form,
+            payable_filters=payable_filters,
+            payable_filtered=bool(payable_filters),
+            export_query=urlencode({**payable_filters, **({"year": year, "month": month} if bounds is not None else {})}),
+            link_hints=link_hints(),
+            recent_batches=srp_payments.recent_batches(),
             paid_total=paid_sums["total"] or 0,
             paid_count=paid_sums["count"],
             paid_shown=PAID_SHOWN,

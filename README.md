@@ -91,6 +91,10 @@ Status: beta. The current pre-release is 0.3.0b1 (0.2.0b1 was a test build that 
   ESI with the member's own token and listed on My SRP, matched to the fleet the character was in; pasting a link stays
   possible. Optionally every character of a member must authorize it. It runs inside the beat task that is installed
   already.
+- Members can change a pending claim (comment, category or link, the loss) before a reviewer decides; reviewers filter
+  the queue by category, link, date and member and see the attackers, the limits as they are now and the member's
+  rejection history; payers filter the payments, pay in batches and export the list to pay; an insurance estimate is
+  shown next to the amounts (informational only).
 
 **Administration**
 

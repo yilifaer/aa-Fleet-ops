@@ -37,6 +37,7 @@ from fleetops.models import (
     PingTarget,
     ShipFunction,
     SrpClaim,
+    SrpPaymentBatch,
     SrpSettings,
 )
 from fleetops.providers.esi import FleetDetectionResult, FleetESIError
@@ -453,6 +454,9 @@ class SrpViewTestCase(FleetOpsViewTestCase):
         cls.claim_out = f.srp_claim(member, time=loss_time)
         cls.claim_other_corp = f.srp_claim(cls.outsider, time=loss_time)
         cls.claim_manager = f.srp_claim(cls.srp_users["srp_manager"], time=loss_time)
+        cls.srp_batch = SrpPaymentBatch.objects.create(
+            created_by=cls.srp_users["srp_payer"], created_by_name="Payer", claim_count=1, payee_count=1, total=1
+        )
         # An internal note of a reviewer and a line every viewer sees.
         f.claim_event(
             cls.claim_fleet, "note", actor=cls.srp_users["srp_manager2"], internal=True,
@@ -714,10 +718,27 @@ class PermissionMatrixTests(SrpViewTestCase):
             claimant_only("srp_claim_withdraw outside a fleet", "srp_claim_withdraw", self.claim_out, "srp_member"),
             claimant_only("srp_claim_resubmit", "srp_claim_resubmit", self.claim_fleet, "srp_member"),
             claimant_only("srp_claim_resubmit manager", "srp_claim_resubmit", self.claim_manager, "srp_manager"),
+            # INT-13: only the claimant changes a claim; everybody else with FleetOps access, SRP staff included, gets the 404 page.
+            Case("srp_claim_edit", "get", self.claim_url(self.claim_fleet, "srp_claim_edit"), None,
+                 {role: (OK if role == "srp_member" else HIDDEN) for role in SRP_ROLES}),
+            Case("srp_claim_edit manager's own", "get", self.claim_url(self.claim_manager, "srp_claim_edit"), None,
+                 {role: (OK if role == "srp_manager" else HIDDEN) for role in SRP_ROLES}),
+            Case("srp_claim_edit unknown", "get", r("fleetops:srp_claim_edit", args=[uuid.uuid4()]), None,
+                 by_srp_role(SRP_ROLES, granted=HIDDEN)),
+            # REV-5, REV-6: the batch page and the list to pay are for payers; a reviewer without pay_srp is refused.
+            Case("srp_payment_batch", "get", r("fleetops:srp_payment_batch", args=[self.srp_batch.uuid]), None,
+                 by_srp_role(SRP_PAYERS)),
+            Case("srp_payment_batch unknown", "get", r("fleetops:srp_payment_batch", args=[uuid.uuid4()]), None,
+                 by_srp_role(SRP_PAYERS, granted=HIDDEN)),
+            Case("export srp-payable", "get", r("fleetops:export", args=["srp-payable"]), {"format": "csv"},
+                 by_srp_role(SRP_PAYERS)),
             Case("srp_review", "get", r("fleetops:srp_review"), None, reviewers),
             Case("srp_review filters", "get", r("fleetops:srp_review"),
                  {"status": "paid", "scope": "zzz", "flag": "over_limit", "corporation": "x", "fc": "-1", "q": "pilot",
                   "year": "99999", "month": "13", "page": "abc"}, reviewers),
+            Case("srp_review new filters", "get", r("fleetops:srp_review"),
+                 {"category": "x", "link": "y" * 99, "submitted_from": "no", "submitted_to": "2026-99-99", "user": "-4"},
+                 reviewers),
             Case("srp_review_bulk_approve", "post", r("fleetops:srp_review_bulk_approve"),
                  {"claim": [str(self.claim_fleet.uuid)]}, reviewer_redirects),
             Case("srp_review_recalculate", "post", r("fleetops:srp_review_recalculate"), None, reviewer_redirects),
@@ -748,6 +769,8 @@ class PermissionMatrixTests(SrpViewTestCase):
             Case("srp_payments", "get", r("fleetops:srp_payments"), None, payers),
             Case("srp_payments dates", "get", r("fleetops:srp_payments"),
                  {"paid_from": "2026-01-01", "paid_to": "nonsense"}, payers),
+            Case("srp_payments filters", "get", r("fleetops:srp_payments"),
+                 {"category": "none", "link": "abc", "corporation": "nonsense"}, payers),
             Case("srp_link_close", "post", r("fleetops:srp_link_close", args=[self.srp_link.code]), None,
                  staff_redirects),
             # LINK (INT-9, decision 22): opening a link lets members submit again, so it is for reviewers; closing

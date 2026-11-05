@@ -122,6 +122,15 @@ def entity_names(ids) -> dict[int, str]:
     return {entity_id: row.name for entity_id, row in rows.items() if row.name}
 
 
+def cached_entity_names(ids) -> dict[int, str]:
+    """Names of EVE IDs of any category from the cache only (``EveEntityName``); ESI is not called, so it is safe on
+    a page. IDs without a cached name are left out."""
+    ids = _ids(ids)
+    if not ids:
+        return {}
+    return dict(EveEntityName.objects.filter(id__in=ids).exclude(name="").values_list("id", "name"))
+
+
 def cached_identities(character_ids) -> dict[int, ExternalIdentity]:
     """Name, corporation and alliance of characters from the caches; ESI is not called.
 

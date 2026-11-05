@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-04 20:38+0000\n"
+"POT-Creation-Date: 2026-11-04 23:57+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -515,6 +515,14 @@ msgid "Members and review"
 msgstr "成员与审核"
 
 #: forms_config.py
+msgid "Insurance"
+msgstr "保险"
+
+#: forms_config.py
+msgid "Next to each claim FleetOps can show what the pilot would get from insurance, from the prices ESI publishes. It is only a hint: it changes no amount, limit or payment."
+msgstr "FleetOps 可以在每条申请旁，按 ESI 公布的价格显示飞行员能从保险得到多少。这只是提示：它不改变任何金额、限额或付款。"
+
+#: forms_config.py
 msgid "Loss discovery"
 msgstr "自动发现损失"
 
@@ -581,6 +589,7 @@ msgstr "教义规则只适用于舰队内的损失；请选择“舰队内和舰
 #: templates/fleetops/srp/_claims_table.html
 #: templates/fleetops/srp/_losses.html
 #: templates/fleetops/srp/_summary_table.html templates/fleetops/srp/claim.html
+#: templates/fleetops/srp/payment_batch.html
 #: templates/fleetops/srp/payments.html views_config.py
 msgid "Ship"
 msgstr "舰船"
@@ -1050,7 +1059,7 @@ msgstr "角色名称"
 msgid "Looked up in Alliance Auth, then in EVE."
 msgstr "先在 Alliance Auth 中查找，再到 EVE 中查找。"
 
-#: forms_operation.py models.py
+#: forms_operation.py models.py services/export_datasets.py
 msgid "Character ID"
 msgstr "角色 ID"
 
@@ -1275,6 +1284,7 @@ msgstr "一次最多选择 %(max)s 条申请。"
 #: templates/fleetops/srp/_claims_table.html
 #: templates/fleetops/srp/_losses.html
 #: templates/fleetops/srp/_summary_table.html
+#: templates/fleetops/srp/payment_batch.html
 #: templates/fleetops/srp/payments.html
 msgid "Claim"
 msgstr "补损申请"
@@ -1295,8 +1305,11 @@ msgstr "游戏内 KM 链接、zKillboard 链接，或 KM ID 与哈希"
 msgid "Paste the in-game killmail link (works immediately) or a zKillboard link."
 msgstr "粘贴游戏内 KM 链接（立即可用）或 zKillboard 链接。"
 
-#: forms_srp.py models.py templates/fleetops/srp/claim.html
-#: templates/fleetops/srp/links.html views_config.py
+#: forms_srp.py models.py services/export_datasets.py
+#: templates/fleetops/srp/claim.html
+#: templates/fleetops/srp/claim_edit_preview.html
+#: templates/fleetops/srp/links.html templates/fleetops/srp/payment_batch.html
+#: templates/fleetops/srp/payments.html views_config.py
 msgid "Category"
 msgstr "类别"
 
@@ -1317,6 +1330,7 @@ msgid "Optional. The category decides the payout table and the limits."
 msgstr "可选。类别决定赔付表和限额。"
 
 #: forms_srp.py templates/fleetops/srp/claim.html
+#: templates/fleetops/srp/claim_edit_preview.html
 msgctxt "FleetOps"
 msgid "Comment"
 msgstr "说明"
@@ -1339,6 +1353,7 @@ msgstr "按指定金额通过"
 
 #: forms_srp.py models.py templates/fleetops/srp/_claims_table.html
 #: templates/fleetops/srp/_decision_forms.html
+#: templates/fleetops/srp/payment_batch.html
 #: templates/fleetops/srp/payments.html views_config.py
 msgid "Amount"
 msgstr "金额"
@@ -1530,6 +1545,33 @@ msgid "Pilot, ship or SRP-123"
 msgstr "飞行员、舰船或 SRP-123"
 
 #: forms_srp.py
+msgid "Any category"
+msgstr "任意类别"
+
+#: forms_srp.py models.py services/export_datasets.py
+#: templates/fleetops/operation/_links.html templates/fleetops/srp/links.html
+#: templates/fleetops/srp/payment_batch.html
+#: templates/fleetops/srp/payments.html
+msgid "Link"
+msgstr "链接"
+
+#: forms_srp.py
+msgid "Link code"
+msgstr "链接代码"
+
+#: forms_srp.py
+msgid "Submitted from"
+msgstr "提交日期从"
+
+#: forms_srp.py
+msgid "Submitted to"
+msgstr "提交日期到"
+
+#: forms_srp.py
+msgid "No category"
+msgstr "无类别"
+
+#: forms_srp.py
 msgid "Paid from"
 msgstr "付款起始日"
 
@@ -1553,10 +1595,6 @@ msgstr "状态"
 #: forms_srp.py models.py views_config.py
 msgid "Kind"
 msgstr "种类"
-
-#: forms_srp.py
-msgid "Any category"
-msgstr "任意类别"
 
 #: forms_srp.py
 msgid "From"
@@ -1678,6 +1716,38 @@ msgstr "请填写驳回待审申请的理由。"
 #: forms_srp.py
 msgid "Enter the length in days, or tick Permanent."
 msgstr "请输入封禁天数，或勾选“永久”。"
+
+#: forms_srp.py templates/fleetops/srp/preview.html
+msgid "Anything the reviewer should know."
+msgstr "审核人需要了解的任何信息。"
+
+#: forms_srp.py
+msgid "Category or link"
+msgstr "类别或链接"
+
+#: forms_srp.py
+msgid "Move the claim to another fleet, a standing link or a category. The claim is calculated again."
+msgstr "把申请移到另一支舰队、一个常驻链接或一个类别。申请会重新计算。"
+
+#: forms_srp.py
+msgid "Replace the loss with a killmail link"
+msgstr "用一个 KM 链接替换损失"
+
+#: forms_srp.py
+msgid "Paste the in-game killmail link or a zKillboard link of your other loss."
+msgstr "请粘贴你另一笔损失的游戏内 KM 链接或 zKillboard 链接。"
+
+#: forms_srp.py
+msgid "or choose one of your recent losses"
+msgstr "或选择你近期损失中的一个"
+
+#: forms_srp.py
+msgid "Keep as it is"
+msgstr "保持不变"
+
+#: forms_srp.py
+msgid "Keep this loss"
+msgstr "保留这笔损失"
 
 #: models.py
 #, python-format
@@ -2784,11 +2854,6 @@ msgid "PAP link %(pk)s @ %(operation)s"
 msgstr "PAP 登记链接 %(pk)s @ %(operation)s"
 
 #: models.py templates/fleetops/operation/_links.html
-#: templates/fleetops/srp/links.html
-msgid "Link"
-msgstr "链接"
-
-#: models.py templates/fleetops/operation/_links.html
 msgid "Online"
 msgstr "在线"
 
@@ -3255,6 +3320,30 @@ msgid "Enter the per-loss cap."
 msgstr "请输入单笔上限。"
 
 #: models.py
+msgid "Basic"
+msgstr "基础"
+
+#: models.py
+msgid "Standard"
+msgstr "标准"
+
+#: models.py
+msgid "Bronze"
+msgstr "青铜"
+
+#: models.py
+msgid "Silver"
+msgstr "白银"
+
+#: models.py
+msgid "Gold"
+msgstr "黄金"
+
+#: models.py
+msgid "Platinum"
+msgstr "白金"
+
+#: models.py
 msgid "zKillboard fitted value (ship, modules, drones, implants)"
 msgstr "zKillboard 装配价值（舰船、装备、无人机、植入体）"
 
@@ -3500,6 +3589,46 @@ msgid "A member with a character that has not authorized loss reading cannot sub
 msgstr "只要有角色没有授权损失读取，该成员就不能提交申请。没有这个开关时，这些角色的损失不会被自动发现，仍可以贴链接申请。仅在自动发现损失开启时生效。"
 
 #: models.py
+msgid "Members can change their pending claims"
+msgstr "成员可以修改待审核的申请"
+
+#: models.py
+msgid "A member can change the comment, the category or link and the loss of a claim that is still pending. Not part of the policy snapshot."
+msgstr "成员可以在申请还处于待审核时修改备注、类别或链接和损失。不属于政策快照。"
+
+#: models.py
+msgid "Members can replace the loss of a pending claim"
+msgstr "成员可以替换待审核申请的损失"
+
+#: models.py
+msgid "Only in force while members can change their pending claims."
+msgstr "仅在成员可以修改待审核申请时生效。"
+
+#: models.py
+msgid "Show the insurance estimate"
+msgstr "显示保险估算"
+
+#: models.py
+msgid "Show the net insurance payout next to the SRP amount, from the insurance prices ESI publishes. Informational only; it changes no amount, limit or payment."
+msgstr "在 SRP 金额旁，按 ESI 公布的保险价格显示保险净赔付。仅供参考；不改变任何金额、限额或付款。"
+
+#: models.py
+msgid "Insurance level shown"
+msgstr "显示的保险档位"
+
+#: models.py
+msgid "The level the estimate is made for."
+msgstr "估算所用的档位。"
+
+#: models.py
+msgid "Days of rejection history shown to reviewers"
+msgstr "给审核人看的驳回历史天数"
+
+#: models.py
+msgid "The review page counts the member's rejections of the last days. 0 = all."
+msgstr "审核页统计该成员最近这些天里被驳回的申请。0 = 全部。"
+
+#: models.py
 msgid "Notify members"
 msgstr "通知成员"
 
@@ -3668,8 +3797,7 @@ msgstr "%(name)s 的 SRP 封禁"
 #: templates/fleetops/srp/_claims_table.html
 #: templates/fleetops/srp/_losses.html
 #: templates/fleetops/srp/_summary_table.html
-#: templates/fleetops/srp/payments.html templates/fleetops/start_fleet.html
-#: texts.py
+#: templates/fleetops/start_fleet.html texts.py
 msgid "Fleet"
 msgstr "舰队"
 
@@ -3857,6 +3985,14 @@ msgstr "星域 ID"
 msgid "Location checked at"
 msgstr "位置查询时间"
 
+#: models.py templates/fleetops/srp/_review_info.html
+msgid "Attackers"
+msgstr "攻击者"
+
+#: models.py
+msgid "Damage taken"
+msgstr "承受的伤害"
+
 #: models.py
 msgid "Items"
 msgstr "物品"
@@ -3981,6 +4117,7 @@ msgid "Loss scan of character %(id)s"
 msgstr "角色 %(id)s 的损失读取"
 
 #: models.py templates/fleetops/srp/claim.html
+#: templates/fleetops/srp/claim_edit_preview.html
 #: templates/fleetops/srp/preview.html
 msgid "Loss"
 msgstr "损失"
@@ -4025,6 +4162,60 @@ msgstr "SRP 发现的损失"
 #, python-format
 msgid "Loss %(id)s"
 msgstr "损失 %(id)s"
+
+#: models.py
+msgid "Created by (name)"
+msgstr "创建者（名字）"
+
+#: models.py services/export_datasets.py templates/fleetops/operation/_srp.html
+#: templates/fleetops/srp/_summary_table.html templates/fleetops/srp/home.html
+#: templates/fleetops/srp/payment_batch.html
+#: templates/fleetops/srp/payments.html
+msgid "Claims"
+msgstr "申请"
+
+#: models.py
+msgid "Payees"
+msgstr "收款人数"
+
+#: models.py services/export_datasets.py
+#: templates/fleetops/srp/payment_batch.html
+#: templates/fleetops/srp/payments.html
+msgid "Total"
+msgstr "合计"
+
+#: models.py
+msgid "Shown to the members."
+msgstr "显示给成员。"
+
+#: models.py
+msgid "Filters"
+msgstr "筛选条件"
+
+#: models.py
+msgid "SRP payment batch"
+msgstr "SRP 付款批次"
+
+#: models.py
+msgid "SRP payment batches"
+msgstr "SRP 付款批次"
+
+#: models.py
+msgid "Levels"
+msgstr "档位"
+
+#: models.py
+msgid "SRP insurance price"
+msgstr "SRP 保险价格"
+
+#: models.py
+msgid "SRP insurance prices"
+msgstr "SRP 保险价格"
+
+#: models.py
+#, python-format
+msgid "Insurance of type %(id)s"
+msgstr "类型 %(id)s 的保险"
 
 #: models.py templates/fleetops/srp/_calculation.html
 msgid "Payout table"
@@ -4072,6 +4263,7 @@ msgid "Policy"
 msgstr "规则"
 
 #: models.py templates/fleetops/srp/claim.html
+#: templates/fleetops/srp/claim_edit_preview.html
 #: templates/fleetops/srp/preview.html
 msgid "Calculation"
 msgstr "计算"
@@ -4140,6 +4332,18 @@ msgstr "付款人"
 msgid "Paid at"
 msgstr "付款时间"
 
+#: models.py services/export_datasets.py
+msgid "Payment batch"
+msgstr "付款批次"
+
+#: models.py
+msgid "Member revision"
+msgstr "成员修改次数"
+
+#: models.py
+msgid "Changed by the claimant at"
+msgstr "申请人修改于"
+
 #: models.py
 msgid "Submitted at"
 msgstr "提交时间"
@@ -4203,6 +4407,10 @@ msgstr "已重新核对舰队在场情况"
 #: models.py
 msgid "Loss value updated"
 msgstr "损失价值已更新"
+
+#: models.py
+msgid "Changed by the claimant"
+msgstr "申请人修改"
 
 #: models.py
 msgid "From status"
@@ -4623,6 +4831,7 @@ msgstr "排名"
 #: templates/fleetops/statistics/_member_table.html
 #: templates/fleetops/statistics/leaderboard.html
 #: templates/fleetops/statistics/member_detail.html views_config.py
+#: views_srp_edit.py
 msgid "Fleets"
 msgstr "舰队"
 
@@ -4759,12 +4968,24 @@ msgid "Claims count in the EVE month of the loss (killmail time). Withdrawn clai
 msgstr "申请计入损失发生所在的 EVE 月（按 KM 时间）。已撤回的申请不计入。“已通过”包含已通过和已付款的申请；“未付”等于已通过减去已付。"
 
 #: services/export_datasets.py
-msgid "Total"
-msgstr "合计"
+msgid "Approved claims that are not paid yet, with the filters of the payments page. Only payers can export this list."
+msgstr "尚未付款的已通过申请，带付款页的筛选。只有付款人可以导出这份清单。"
+
+#: services/export_datasets.py
+msgid "Pay to"
+msgstr "收款人"
+
+#: services/export_datasets.py
+msgid "Approved (ISK)"
+msgstr "已通过（ISK）"
 
 #: services/export_datasets.py
 msgid "Loss time (EVE)"
 msgstr "损失时间（EVE）"
+
+#: services/export_datasets.py
+msgid "SRP to pay"
+msgstr "SRP 待付款"
 
 #: services/export_datasets.py
 msgid "Pilot (main)"
@@ -4788,10 +5009,6 @@ msgid "Within limit (ISK)"
 msgstr "限额内（ISK）"
 
 #: services/export_datasets.py
-msgid "Approved (ISK)"
-msgstr "已通过（ISK）"
-
-#: services/export_datasets.py
 msgid "Decided at (EVE)"
 msgstr "处理时间（EVE）"
 
@@ -4809,11 +5026,6 @@ msgstr "范围：%(value)s"
 msgid "%(count)s claim"
 msgid_plural "%(count)s claims"
 msgstr[0] "%(count)s 笔申请"
-
-#: services/export_datasets.py templates/fleetops/operation/_srp.html
-#: templates/fleetops/srp/_summary_table.html templates/fleetops/srp/home.html
-msgid "Claims"
-msgstr "申请"
 
 #: services/export_datasets.py
 msgid "Approved claims"
@@ -6219,8 +6431,9 @@ msgstr "保存"
 #: templates/fleetops/operation/_members.html
 #: templates/fleetops/operation_edit.html
 #: templates/fleetops/partials/confirm_modal.html
-#: templates/fleetops/srp/ban_form.html templates/fleetops/srp/link_form.html
-#: templates/fleetops/srp/preview.html
+#: templates/fleetops/srp/ban_form.html templates/fleetops/srp/claim_edit.html
+#: templates/fleetops/srp/claim_edit_preview.html
+#: templates/fleetops/srp/link_form.html templates/fleetops/srp/preview.html
 msgid "Cancel"
 msgstr "取消"
 
@@ -6731,7 +6944,8 @@ msgstr "筛选"
 
 #: templates/fleetops/fleet_operations.html
 #: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/bans.html
-#: templates/fleetops/srp/links.html templates/fleetops/srp/review.html
+#: templates/fleetops/srp/links.html templates/fleetops/srp/payments.html
+#: templates/fleetops/srp/review.html
 #: templates/fleetops/statistics/members.html
 msgid "Reset"
 msgstr "重置"
@@ -8001,6 +8215,8 @@ msgid "Characters"
 msgstr "角色"
 
 #: templates/fleetops/operation/_header.html
+#: templates/fleetops/srp/payment_batch.html
+#: templates/fleetops/srp/payments.html
 msgid "Players"
 msgstr "玩家"
 
@@ -8349,6 +8565,7 @@ msgstr "已于 %(completed)s EVE 完成。"
 
 #: templates/fleetops/operation/_srp.html
 #: templates/fleetops/srp/_summary_table.html templates/fleetops/srp/claim.html
+#: templates/fleetops/srp/claim_edit_preview.html
 #: templates/fleetops/srp/home.html
 msgid "Requested"
 msgstr "已申请"
@@ -9118,6 +9335,24 @@ msgstr "在月度限额内"
 msgid "Held down by the %(limit)s."
 msgstr "受%(limit)s限制。"
 
+#: templates/fleetops/srp/_calculation.html
+msgid "With insurance"
+msgstr "含保险"
+
+#: templates/fleetops/srp/_calculation.html
+#, python-format
+msgid "compensation %(compensation)s"
+msgstr "补损 %(compensation)s"
+
+#: templates/fleetops/srp/_calculation.html
+#, python-format
+msgid "insurance payout %(net)s"
+msgstr "保险净赔付 %(net)s"
+
+#: templates/fleetops/srp/_calculation.html
+msgid "Estimate from the current ESI insurance prices; only paid out if the pilot insured the ship."
+msgstr "按当前 ESI 保险价格估算；只有飞行员给这艘船投了保才会赔付。"
+
 #: templates/fleetops/srp/_claim_steps.html
 msgid "Progress of the claim"
 msgstr "申请进度"
@@ -9136,6 +9371,10 @@ msgstr "损失（EVE）"
 msgctxt "loss value"
 msgid "Value"
 msgstr "价值"
+
+#: templates/fleetops/srp/_claims_table.html
+msgid "Category / link"
+msgstr "类别 / 链接"
 
 #: templates/fleetops/srp/_claims_table.html
 msgid "Flags"
@@ -9159,6 +9398,10 @@ msgstr "自己的"
 #: templates/fleetops/srp/_claims_table.html
 msgid "Submitted (EVE time)"
 msgstr "提交时间（EVE）"
+
+#: templates/fleetops/srp/_claims_table.html
+msgid "Banned"
+msgstr "已封禁"
 
 #: templates/fleetops/srp/_claims_table.html
 msgid "est."
@@ -9509,6 +9752,98 @@ msgstr "只有赔付表里列出了胶囊时，才赔付胶囊。"
 msgid "A ship that is in the payout table is covered even when its group or the ship itself is listed above."
 msgstr "赔付表里有的舰船，即使它的组或这艘船在上面的列表里，也照赔。"
 
+#: templates/fleetops/srp/_review_info.html
+msgid "Review information"
+msgstr "审核附加信息"
+
+#: templates/fleetops/srp/_review_info.html
+#, python-format
+msgid "The claimant changed this claim %(revision)s time, last at %(time)s EVE."
+msgid_plural "The claimant changed this claim %(revision)s times, last at %(time)s EVE."
+msgstr[0] "申请人修改过这条申请 %(revision)s 次，最近一次在 %(time)s EVE。"
+
+#: templates/fleetops/srp/_review_info.html
+#, python-format
+msgid "%(total)s attackers: %(players)s players, %(npcs)s NPCs."
+msgstr "共 %(total)s 名攻击者：%(players)s 名玩家，%(npcs)s 个 NPC。"
+
+#: templates/fleetops/srp/_review_info.html
+msgid "Only the biggest damage dealers are stored, so these numbers are a lower bound."
+msgstr "只保存伤害最高的攻击者，所以这些数字是下限。"
+
+#: templates/fleetops/srp/_review_info.html
+msgid "Solo"
+msgstr "单挑"
+
+#: templates/fleetops/srp/_review_info.html
+msgid "NPC"
+msgstr "NPC"
+
+#: templates/fleetops/srp/_review_info.html
+msgid "Awox"
+msgstr "内鬼"
+
+#: templates/fleetops/srp/_review_info.html
+msgid "Final blow"
+msgstr "最后一击"
+
+#: templates/fleetops/srp/_review_info.html
+msgid "Most damage"
+msgstr "伤害最高"
+
+#: templates/fleetops/srp/_review_info.html
+msgid "Biggest groups"
+msgstr "人数最多的组织"
+
+#: templates/fleetops/srp/_review_info.html
+#, python-format
+msgid "%(total)s attackers. This killmail was stored before attacker details were kept."
+msgstr "共 %(total)s 名攻击者。这条 KM 入库时还没有保存攻击者详情。"
+
+#: templates/fleetops/srp/_review_info.html
+msgid "Monthly limits now"
+msgstr "现在的月度限额"
+
+#: templates/fleetops/srp/_review_info.html
+msgid "without this claim"
+msgstr "不含这条申请"
+
+#: templates/fleetops/srp/_review_info.html
+#, python-format
+msgid "The suggested amount is %(over)s over what the tightest limit leaves (%(remaining)s). Approving it needs the box \"Approve over the monthly limit\"."
+msgstr "建议金额比最紧的限额剩下的（%(remaining)s）多出 %(over)s。批准它需要勾选“超出月度限额通过”。"
+
+#: templates/fleetops/srp/_review_info.html
+msgid "History of the claimant"
+msgstr "申请人的历史"
+
+#: templates/fleetops/srp/_review_info.html
+#, python-format
+msgid "%(total)s claims; rejected %(manual)s + %(auto)s (by a reviewer + automatically); %(withdrawn)s withdrawn."
+msgstr "共 %(total)s 条申请；驳回 %(manual)s + %(auto)s（审核人 + 自动）；撤回 %(withdrawn)s 条。"
+
+#: templates/fleetops/srp/_review_info.html
+#, python-format
+msgid "Rejected in the last %(days)s days: %(count)s."
+msgstr "最近 %(days)s 天内被驳回：%(count)s 条。"
+
+#: templates/fleetops/srp/_review_info.html
+#, python-format
+msgid "Rejected in total: %(count)s."
+msgstr "被驳回总数：%(count)s 条。"
+
+#: templates/fleetops/srp/_review_info.html
+msgid "automatic"
+msgstr "自动"
+
+#: templates/fleetops/srp/_review_info.html
+msgid "All claims of this member"
+msgstr "该成员的所有申请"
+
+#: templates/fleetops/srp/_review_info.html
+msgid "This claim has no account."
+msgstr "这条申请没有关联的账号。"
+
 #: templates/fleetops/srp/_summary_table.html
 #, python-format
 msgid "%(pending)s pending &middot; %(approved)s approved &middot; %(rejected)s rejected"
@@ -9689,7 +10024,9 @@ msgstr "时间"
 msgid "%(id)s on zKillboard"
 msgstr "zKillboard 上的 %(id)s"
 
-#: templates/fleetops/srp/claim.html templates/fleetops/srp/review.html
+#: templates/fleetops/srp/claim.html
+#: templates/fleetops/srp/claim_edit_preview.html
+#: templates/fleetops/srp/review.html
 msgid "Where"
 msgstr "发生于"
 
@@ -9707,6 +10044,7 @@ msgid "Open the fleet"
 msgstr "打开舰队"
 
 #: templates/fleetops/srp/claim.html
+#: templates/fleetops/srp/claim_edit_preview.html
 msgid "Outside a FleetOps fleet"
 msgstr "不在 FleetOps 舰队内"
 
@@ -9736,7 +10074,9 @@ msgstr "金额"
 msgid "Within limits"
 msgstr "限额内"
 
-#: templates/fleetops/srp/claim.html templates/fleetops/srp/preview.html
+#: templates/fleetops/srp/claim.html
+#: templates/fleetops/srp/claim_edit_preview.html
+#: templates/fleetops/srp/preview.html
 msgid "Checks"
 msgstr "核对"
 
@@ -9751,6 +10091,14 @@ msgstr "没有警告。"
 #: templates/fleetops/srp/claim.html
 msgid "Your claim"
 msgstr "你的申请"
+
+#: templates/fleetops/srp/claim.html
+msgid "Change claim"
+msgstr "修改申请"
+
+#: templates/fleetops/srp/claim.html
+msgid "Change the comment, the category or link, or replace the loss while the claim is pending."
+msgstr "申请待审核期间，可以修改备注、类别或链接，或替换损失。"
 
 #: templates/fleetops/srp/claim.html
 msgid "Reason <span class=\"text-muted\">(optional)</span>"
@@ -9797,13 +10145,60 @@ msgstr "返回我的 SRP"
 msgid "Back to the review queue"
 msgstr "返回审核队列"
 
-#: templates/fleetops/srp/claim.html
+#: templates/fleetops/srp/claim.html templates/fleetops/srp/payment_batch.html
 msgid "Back to payments"
 msgstr "返回付款页"
 
 #: templates/fleetops/srp/claim.html templates/fleetops/srp/preview.html
 msgid "Back"
 msgstr "返回"
+
+#: templates/fleetops/srp/claim_edit.html
+#, python-format
+msgid "Change %(reference)s"
+msgstr "修改 %(reference)s"
+
+#: templates/fleetops/srp/claim_edit.html
+#, python-format
+msgid "%(ship)s lost %(time)s EVE"
+msgstr "%(ship)s 损失于 %(time)s EVE"
+
+#: templates/fleetops/srp/claim_edit.html texts.py
+msgid "A reviewer has already moved this claim. You can still change the comment or replace the loss."
+msgstr "审核人已经移动过这条申请。你仍可以修改备注或替换损失。"
+
+#: templates/fleetops/srp/claim_edit.html
+msgid "Your change"
+msgstr "你的修改"
+
+#: templates/fleetops/srp/claim_edit.html
+msgid "Check the change"
+msgstr "检查修改"
+
+#: templates/fleetops/srp/claim_edit_preview.html
+#, python-format
+msgid "Check the change to %(reference)s"
+msgstr "检查对 %(reference)s 的修改"
+
+#: templates/fleetops/srp/claim_edit_preview.html
+msgid "Nothing is saved until you confirm."
+msgstr "确认之前不会保存任何内容。"
+
+#: templates/fleetops/srp/claim_edit_preview.html
+msgid "The other loss happened in another EVE month. The monthly limits of that month apply to the claim."
+msgstr "另一个损失发生在另一个 EVE 月，申请将适用那个月的月度限额。"
+
+#: templates/fleetops/srp/claim_edit_preview.html
+msgid "What changes"
+msgstr "会改变什么"
+
+#: templates/fleetops/srp/claim_edit_preview.html
+msgid "Save the change"
+msgstr "保存修改"
+
+#: templates/fleetops/srp/claim_edit_preview.html
+msgid "Change it again"
+msgstr "再改一次"
 
 #: templates/fleetops/srp/home.html
 #, python-format
@@ -10051,6 +10446,38 @@ msgstr "打开所选"
 msgid "<span data-srp-selected-count>0</span> selected. Closing stops new claims. A link can only be completed when every claim on it is paid, rejected or withdrawn; the others are listed afterwards."
 msgstr "已选择 <span data-srp-selected-count>0</span> 条。关闭后不再接收新申请。只有链接上的所有申请都已付款、驳回或撤回，链接才能完成；其余的会在之后列出。"
 
+#: templates/fleetops/srp/payment_batch.html
+#, python-format
+msgid "Payment batch %(reference)s"
+msgstr "付款批次 %(reference)s"
+
+#: templates/fleetops/srp/payment_batch.html
+#, python-format
+msgid "Paid %(time)s EVE by %(name)s"
+msgstr "由 %(name)s 于 %(time)s EVE 付款"
+
+#: templates/fleetops/srp/payment_batch.html
+msgid "at the time of payment"
+msgstr "付款时的数字"
+
+#: templates/fleetops/srp/payment_batch.html
+msgid "Undone since"
+msgstr "之后已撤销"
+
+#: templates/fleetops/srp/payment_batch.html
+#, python-format
+msgid "%(counter)s claim of this batch was paid back to approved"
+msgid_plural "%(counter)s claims of this batch were paid back to approved"
+msgstr[0] "这个批次里有 %(counter)s 条申请的付款已撤销，回到已通过"
+
+#: templates/fleetops/srp/payment_batch.html views_srp_review.py
+msgid "Undo payment…"
+msgstr "撤销付款…"
+
+#: templates/fleetops/srp/payment_batch.html
+msgid "No claim is paid in this batch any more."
+msgstr "这个批次里已经没有已付款的申请。"
+
 #: templates/fleetops/srp/payments.html
 msgid "SRP Payments"
 msgstr "SRP 付款"
@@ -10069,10 +10496,26 @@ msgid "Showing the losses of all months. Pick a month above to narrow the lists.
 msgstr "显示所有月份的损失。在上方选择月份可缩小列表范围。"
 
 #: templates/fleetops/srp/payments.html
+msgid "Export the claims to pay with the current filters:"
+msgstr "按当前筛选导出待付款的申请："
+
+#: templates/fleetops/srp/payments.html
+msgid "One row per player"
+msgstr "每位玩家一行"
+
+#: templates/fleetops/srp/payments.html
+msgid "One row per claim"
+msgstr "每条申请一行"
+
+#: templates/fleetops/srp/payments.html
 #, python-format
 msgid "%(counter)s player"
 msgid_plural "%(counter)s players"
 msgstr[0] "%(counter)s 名玩家"
+
+#: templates/fleetops/srp/payments.html
+msgid "by the current filters"
+msgstr "按当前筛选"
 
 #: templates/fleetops/srp/payments.html
 #, python-format
@@ -10091,6 +10534,14 @@ msgstr "选择 %(name)s 的所有申请"
 #: templates/fleetops/srp/payments.html
 msgid "Copy name"
 msgstr "复制名称"
+
+#: templates/fleetops/srp/payments.html
+msgid "total of this group by the current filters"
+msgstr "本组合计（按当前筛选）"
+
+#: templates/fleetops/srp/payments.html
+msgid "Copy name and amount"
+msgstr "复制名字和金额"
 
 #: templates/fleetops/srp/payments.html
 msgid "You approved this claim: a different payer has to pay it."
@@ -10126,12 +10577,36 @@ msgid "Nothing waits for payment."
 msgstr "没有待付款项。"
 
 #: templates/fleetops/srp/payments.html
-msgid "Payment dates in EVE time. Without a date the last 30 days are shown."
-msgstr "付款日期为 EVE 时间。不填日期时显示最近 30 天。"
+msgid "Recent payment batches"
+msgstr "最近的付款批次"
+
+#: templates/fleetops/srp/payments.html
+msgid "last 30 days"
+msgstr "最近 30 天"
+
+#: templates/fleetops/srp/payments.html
+msgid "Batch"
+msgstr "批次"
 
 #: templates/fleetops/srp/payments.html
 msgid "Paid (EVE)"
 msgstr "付款时间（EVE）"
+
+#: templates/fleetops/srp/payments.html
+msgid "No payment batch in the last 30 days."
+msgstr "最近 30 天没有付款批次。"
+
+#: templates/fleetops/srp/payments.html
+msgid "Payment dates in EVE time. Without a date the last 30 days are shown."
+msgstr "付款日期为 EVE 时间。不填日期时显示最近 30 天。"
+
+#: templates/fleetops/srp/payments.html
+msgid "Paid before payment batches existed."
+msgstr "付款批次功能出现之前就已付款。"
+
+#: templates/fleetops/srp/payments.html
+msgid "(before batches)"
+msgstr "（批次功能之前）"
 
 #: templates/fleetops/srp/payments.html
 msgid "No claim was paid in these dates."
@@ -10206,10 +10681,6 @@ msgstr "提交"
 #: templates/fleetops/srp/preview.html
 msgid "Comment <span class=\"text-muted\">(optional)</span>"
 msgstr "说明 <span class=\"text-muted\">（可选）</span>"
-
-#: templates/fleetops/srp/preview.html
-msgid "Anything the reviewer should know."
-msgstr "审核人需要了解的任何信息。"
 
 #: templates/fleetops/srp/preview.html
 msgid "Submit claim"
@@ -11204,6 +11675,11 @@ msgstr "无法读取最近的损失：%(detail)s"
 #: texts.py
 msgid "ESI refused to show the recent losses of this character."
 msgstr "ESI 拒绝提供这个角色最近的损失。"
+
+#: texts.py
+#, python-format
+msgid "Could not read insurance prices: %(detail)s"
+msgstr "无法读取保险价格：%(detail)s"
 
 #: texts.py
 #, python-format
@@ -12682,6 +13158,46 @@ msgid "This category has no open SRP link for the day of the loss."
 msgstr "该类别在损失当天没有开放的 SRP 链接。"
 
 #: texts.py
+msgid "Members cannot change their claims."
+msgstr "成员不能修改自己的申请。"
+
+#: texts.py
+msgid "Only the claimant can change this claim."
+msgstr "只有申请人才能修改这条申请。"
+
+#: texts.py
+msgid "Only pending claims can be changed."
+msgstr "只能修改待审核的申请。"
+
+#: texts.py
+msgid "Replacing the loss of a claim is switched off."
+msgstr "替换申请的损失已关闭。"
+
+#: texts.py
+msgid "Nothing was changed."
+msgstr "没有任何修改。"
+
+#: texts.py
+msgid "This is the loss of the claim already."
+msgstr "这已经是这条申请的损失。"
+
+#: texts.py
+msgid "This change would be rejected automatically because the monthly limit is used up. The claim stays as it is."
+msgstr "这个修改会因月度限额用完而被自动拒绝。申请保持原样。"
+
+#: texts.py
+msgid "The claim changed since you checked your change. Check it again."
+msgstr "你检查修改之后申请又变了，请重新检查。"
+
+#: texts.py
+msgid "The claimant changed this claim just now. Reload the page and check it again."
+msgstr "申请人刚修改过这条申请。请刷新页面后重新检查。"
+
+#: texts.py
+msgid "Choose one loss: a pasted link or one from your recent losses."
+msgstr "只能选一个损失：粘贴的链接，或你近期损失里的一个。"
+
+#: texts.py
 #, python-format
 msgid "Authorize loss reading for all your characters first: %(names)s."
 msgstr "请先为你所有的角色授权损失读取：%(names)s。"
@@ -14120,6 +14636,19 @@ msgstr "已驳回 %(count)s 笔待审申请。"
 msgid "The SRP ban was lifted."
 msgstr "SRP 封禁已解除。"
 
+#: views_srp_edit.py
+msgid "Standing links"
+msgstr "常驻链接"
+
+#: views_srp_edit.py
+msgid "Categories (outside a fleet)"
+msgstr "类别（不在舰队内）"
+
+#: views_srp_edit.py
+#, python-format
+msgid "%(reference)s changed. A reviewer will decide on it."
+msgstr "%(reference)s 已修改。审核人会处理它。"
+
 #: views_srp_links.py
 msgid "This category has a link of the day for this date already."
 msgstr "这个类别在这一天已经有当日链接了。"
@@ -14220,6 +14749,11 @@ msgstr "用户 %(id)s"
 
 #: views_srp_review.py
 #, python-format
+msgid "%(name)s (off)"
+msgstr "%(name)s（停用）"
+
+#: views_srp_review.py
+#, python-format
 msgid "%(count)s claim approved at the suggested amount."
 msgid_plural "%(count)s claims approved at the suggested amount."
 msgstr[0] "已按建议金额通过 %(count)s 条申请。"
@@ -14303,8 +14837,9 @@ msgid "Note added. Only SRP staff can see it."
 msgstr "已添加备注。只有 SRP 人员能看到。"
 
 #: views_srp_review.py
-msgid "Undo payment…"
-msgstr "撤销付款…"
+#, python-format
+msgid "Payment batch %(batch)s."
+msgstr "付款批次 %(batch)s。"
 
 #: views_srp_review.py
 #, python-format

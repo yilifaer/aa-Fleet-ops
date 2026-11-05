@@ -18,6 +18,7 @@
   <input type="hidden" name="shown_status" value="{{ claim.status }}">
   <input type="hidden" name="shown_suggested" value="{{ claim.suggested_amount }}">
   <input type="hidden" name="shown_limited" value="{{ claim.limited_amount }}">
+  <input type="hidden" name="shown_revision" value="{{ claim.member_revision }}">
   <h3 class="h6">{% if claim.status == "approved" %}{% translate "Change the amount" %}{% else %}{% translate "Approve" %}{% endif %}</h3>
   {{ form.non_field_errors }}
   {% if claim.status == "pending" %}
@@ -55,6 +56,7 @@
 {% for item in reason_actions %}
 <form method="post" action="{% url 'fleetops:srp_claim_action' claim.uuid item.action %}" class="fleetops-srp-form mb-4" data-srp-once{% if item.action == "unpaid" %} id="undo-payment"{% endif %}>
   {% csrf_token %}
+  <input type="hidden" name="shown_revision" value="{{ claim.member_revision }}">
   <h3 class="h6">{{ item.title }}</h3>
   <div class="mb-2">
     <label class="form-label" for="{{ item.form.reason.id_for_label }}">{% translate "Reason" %}</label>
@@ -87,6 +89,7 @@
 {% with form=forms.reclassify %}
 <form method="post" action="{% url 'fleetops:srp_claim_action' claim.uuid 'reclassify' %}" class="fleetops-srp-form mb-4" data-srp-once>
   {% csrf_token %}
+  <input type="hidden" name="shown_revision" value="{{ claim.member_revision }}">
   <h3 class="h6">{% translate "Move between fleet and out of fleet" %}</h3>
   {{ form.non_field_errors }}
   <div class="mb-2">
@@ -122,6 +125,7 @@
 {% with form=forms.recategorize %}
 <form method="post" action="{% url 'fleetops:srp_claim_action' claim.uuid 'recategorize' %}" class="fleetops-srp-form mb-4" data-srp-once>
   {% csrf_token %}
+  <input type="hidden" name="shown_revision" value="{{ claim.member_revision }}">
   <h3 class="h6">{% translate "Change the category" %}</h3>
   {{ form.non_field_errors }}
   <div class="mb-2">

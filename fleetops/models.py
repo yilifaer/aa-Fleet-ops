@@ -1910,6 +1910,17 @@ class SrpCategory(models.Model):
             raise ValidationError(errors)
 
 
+INSURANCE_LEVELS = ("basic", "standard", "bronze", "silver", "gold", "platinum")
+INSURANCE_LEVEL_CHOICES = [
+    ("basic", _("Basic")),
+    ("standard", _("Standard")),
+    ("bronze", _("Bronze")),
+    ("silver", _("Silver")),
+    ("gold", _("Gold")),
+    ("platinum", _("Platinum")),
+]
+
+
 class SrpSettings(models.Model):
     """FleetOps SRP configuration; one row (pk=1)."""
 
@@ -2143,6 +2154,40 @@ class SrpSettings(models.Model):
             "switch such characters are not found automatically; their losses can still be pasted as links. Only "
             "in force while losses are found automatically."
         ),
+    )
+    member_edit_enabled = models.BooleanField(
+        _("Members can change their pending claims"),
+        default=True,
+        help_text=_(
+            "A member can change the comment, the category or link and the loss of a claim that is still pending. "
+            "Not part of the policy snapshot."
+        ),
+    )
+    member_swap_loss_enabled = models.BooleanField(
+        _("Members can replace the loss of a pending claim"),
+        default=True,
+        help_text=_("Only in force while members can change their pending claims."),
+    )
+    show_insurance = models.BooleanField(
+        _("Show the insurance estimate"),
+        default=True,
+        help_text=_(
+            "Show the net insurance payout next to the SRP amount, from the insurance prices ESI publishes. "
+            "Informational only; it changes no amount, limit or payment."
+        ),
+    )
+    insurance_level = models.CharField(
+        _("Insurance level shown"),
+        max_length=10,
+        choices=INSURANCE_LEVEL_CHOICES,
+        default="platinum",
+        help_text=_("The level the estimate is made for."),
+    )
+    review_history_days = models.PositiveSmallIntegerField(
+        _("Days of rejection history shown to reviewers"),
+        default=90,
+        validators=[MaxValueValidator(3650)],
+        help_text=_("The review page counts the member's rejections of the last days. 0 = all."),
     )
     notify_members = models.BooleanField(
         _("Notify members"),
@@ -2590,6 +2635,10 @@ class SrpKillmail(models.Model):
     origin = models.CharField(
         verbose_name=_("Origin"), max_length=10, choices=Origin.choices, default=Origin.ESI
     )
+    # The attackers as ESI lists them, reduced to IDs, damage and the final blow (at most 50, by damage; the final
+    # blow is always kept) and the damage the victim took. Empty on killmails stored before 0.3.0.
+    attackers = models.JSONField(verbose_name=_("Attackers"), default=list, blank=True)
+    damage_taken = models.PositiveBigIntegerField(verbose_name=_("Damage taken"), null=True, blank=True)
     # The victim's items as ESI returns them: flag, type, quantities, singleton and nested items.
     items = models.JSONField(verbose_name=_("Items"), default=list, blank=True)
     fetched_at = models.DateTimeField(verbose_name=_("Fetched at"), default=timezone.now)
@@ -2756,6 +2805,62 @@ class SrpLoss(models.Model):
 
     def __str__(self):
         return gettext("Loss %(id)s") % {"id": self.killmail_id}
+
+
+class SrpPaymentBatch(models.Model):
+    """One round of payments: the claims a payer marked paid together. The numbers are those of the moment of
+    payment and do not change when a payment is undone later."""
+
+    uuid = models.UUIDField(verbose_name=_("UUID"), default=uuid.uuid4, unique=True, editable=False)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("Created by"),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    created_by_name = models.CharField(verbose_name=_("Created by (name)"), max_length=255, blank=True)
+    created_at = models.DateTimeField(verbose_name=_("Created at"), default=timezone.now, db_index=True)
+    claim_count = models.PositiveIntegerField(verbose_name=_("Claims"), default=0)
+    payee_count = models.PositiveIntegerField(verbose_name=_("Payees"), default=0)
+    total = models.PositiveBigIntegerField(verbose_name=_("Total"), default=0)
+    note = models.CharField(verbose_name=_("Note"), max_length=255, blank=True, help_text=_("Shown to the members."))
+    # The filters of the payments page when the batch was made (names and values, nothing secret).
+    filters = models.JSONField(verbose_name=_("Filters"), default=dict, blank=True)
+
+    class Meta:
+        verbose_name = _("SRP payment batch")
+        verbose_name_plural = _("SRP payment batches")
+        ordering = ["-created_at", "-pk"]
+        default_permissions = ()
+
+    def __str__(self):
+        return self.reference
+
+    @property
+    def reference(self):
+        return f"PAY-{self.pk}" if self.pk else "PAY"
+
+
+class SrpInsurancePrice(models.Model):
+    """The insurance levels ESI publishes for one ship type, kept for the estimate shown next to SRP amounts.
+
+    ``levels`` maps a level name in lower case to ``{"cost": "...", "payout": "..."}`` (ISK as strings).
+    """
+
+    ship_type_id = models.BigIntegerField(verbose_name=_("Ship type ID"), primary_key=True)
+    levels = models.JSONField(verbose_name=_("Levels"), default=dict, blank=True)
+    fetched_at = models.DateTimeField(verbose_name=_("Fetched at"), default=timezone.now)
+
+    class Meta:
+        verbose_name = _("SRP insurance price")
+        verbose_name_plural = _("SRP insurance prices")
+        ordering = ["ship_type_id"]
+        default_permissions = ()
+
+    def __str__(self):
+        return gettext("Insurance of type %(id)s") % {"id": self.ship_type_id}
 
 
 class SrpClaim(models.Model):
@@ -2926,6 +3031,18 @@ class SrpClaim(models.Model):
     )
     paid_at = models.DateTimeField(verbose_name=_("Paid at"), null=True, blank=True, db_index=True)
     payment_note = models.CharField(verbose_name=_("Payment note"), max_length=255, blank=True)
+    payment_batch = models.ForeignKey(
+        SrpPaymentBatch,
+        verbose_name=_("Payment batch"),
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="claims",
+    )
+    # How often the claimant changed the claim while it was pending; the review actions carry the number they were
+    # shown and are refused when it moved on.
+    member_revision = models.PositiveIntegerField(verbose_name=_("Member revision"), default=0)
+    member_edited_at = models.DateTimeField(verbose_name=_("Changed by the claimant at"), null=True, blank=True)
 
     submitted_at = models.DateTimeField(verbose_name=_("Submitted at"), default=timezone.now, db_index=True)
     updated_at = models.DateTimeField(verbose_name=_("Updated at"), auto_now=True)
@@ -2970,6 +3087,7 @@ class SrpClaimEvent(models.Model):
         RECALCULATE = "recalculate", _("Recalculated")
         RECHECK = "recheck", _("Fleet presence checked again")
         VALUE_UPDATE = "value_update", _("Loss value updated")
+        MEMBER_EDIT = "member_edit", _("Changed by the claimant")
         NOTE = "note", _("Internal note")
 
     claim = models.ForeignKey(SrpClaim, verbose_name=_("Claim"), on_delete=models.CASCADE, related_name="events")

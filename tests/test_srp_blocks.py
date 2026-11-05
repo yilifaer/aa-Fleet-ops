@@ -624,7 +624,13 @@ class PureBlocksTests(TestCase):
 
 
 class SecurityDisplayTests(SrpPagesTestCase):
-    """REV-9a: the claim page and the preview show the security status and the band; unknown says so."""
+    """REV-9a: the claim page shows the security status and the band; unknown says so."""
+
+    def setUp(self):
+        super().setUp()
+        # Changed in 0.3.0b1 (REV-9, decision 26): the security status is shown to SRP staff only, so these pages are
+        # read as a manager. The claimant keeps seeing the system name (test_srp_review_info checks both sides).
+        self.client = self.client_for(self.manager)
 
     def claim_with(self, **values):
         km = f.srp_killmail(f.main_of(self.member), fitted="1000000", **values)

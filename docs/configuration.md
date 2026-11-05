@@ -487,6 +487,11 @@ history; it never moves ISK.
 | SRP payers may mark their own claims paid | off | Normally another payer pays a payer's own claims. Allow this for small alliances. Before 0.3.0b1 the setting above also covered payments; the upgrade copies it here, so a site that allowed one keeps allowing the other. |
 | The approver of a claim may not pay it | off | Four-eyes rule: the person who approved a claim cannot mark it paid, another payer has to. Undoing a payment is not bound by it. |
 | Complete SRP links automatically | off | A closed [SRP link](#srp-links) is marked completed as soon as none of its claims waits for review or payment. A completed link whose claim becomes unsettled again (payment undone, claim reopened or submitted again) goes back to closed whatever this says. |
+| Members can change their pending claims | on | A member can change the comment, the category or link and the loss of a claim while it is pending. See [Changing a pending claim](#changing-a-pending-claim). Off removes the button and refuses the request. |
+| Members can replace the loss of a pending claim | on | Only in force while the switch above is on. Off leaves members the comment and the category or link. |
+| Days of rejection history shown to reviewers | 90 | The claim page tells reviewers how many of the member's claims were rejected in the last days (0 = all). Between 0 and 3650. |
+| Show the insurance estimate | on | Next to the amount of each claim FleetOps shows what the pilot would get from insurance, from the prices ESI publishes. Informational only. See [Insurance estimate](#insurance-estimate). |
+| Insurance level shown | platinum | One of basic, standard, bronze, silver, gold and platinum. |
 | Member instructions | empty | Free text, up to 2000 characters, shown on My SRP and on the SRP page of a fleet. |
 
 The group **Not covered** of the settings page refuses losses when a claim is checked. **Nothing is refused on a new
@@ -591,9 +596,49 @@ To enable FleetOps SRP:
   that category; it needs a reason, is shown in the claim's timeline ("Category changed") and is audited as
   `srp.claim_recategorize`. Internal notes are never copied into the audit log.
 - **SRP** > **Payments** groups approved claims by player and names each group after the player's main
-  character as it is now. It has copy buttons for the name and the amount. Pay in game, tick the claims, add
+  character as it is now. It has copy buttons for the name, the amount and **Copy name and amount** (the name, a
+  tab and the plain number, ready for the in-game window or a spreadsheet). Pay in game, tick the claims, add
   an optional note and **Mark selected paid**. **Mark paid** is refused when the approved amount is not the one
   the payer was asked to send.
+- The queue of **SRP** > **Review** can also be filtered by category (including "No category"; a category that is
+  switched off is offered too, marked "off"), by link code (the latest 100 links are suggested), by the EVE dates of the
+  submission and, through `?user=<id>`, by member. The filters are kept when the month changes and combine with each
+  other and with the month. Values that do not check out are ignored. The table shows the category and the link of
+  each claim, and a **Banned** badge for members with an [SRP ban](#srp-bans) in force.
+- **SRP** > **Payments** has the same kind of filter for the claims to pay: category, link and corporation. The
+  group totals, the copy buttons and the count above the list are those of the claims left by the filter. The paid
+  claims list shows the category, the link and the payment batch of each claim.
+- **Payment batches.** Every payment makes a batch (`PAY-<number>`): the claims a payer marked paid together, the
+  number of players, the total and the optional note, which members see in the claim (the note is the payment note).
+  The numbers are those of the moment of payment and do not change when a payment is undone later. A single payment
+  makes a batch of one. If nothing could be paid (everything was skipped) no batch is left. The batch is audited once as
+  `srp.payment_batch` (claims, players, total and the length of the note, the note itself as the reason); every
+  claim's payment event names the batch. **Recent payment batches** on the payments page lists the batches of the last 30
+  days (50 at most); the page of a batch (payers only; a reviewer without a payment permission gets a 403) lists the
+  claims still paid in it, says how many payments were undone since and links to **Undo payment...** on each claim.
+  Claims paid before 0.3.0b1 have no batch and show "(before batches)". A batch that stayed empty is deleted by the daily
+  cleanup after an hour.
+- **Export of the claims to pay.** The payments page offers the approved claims (with the filters of the page) as a
+  file, one row per claim or one row per player: whom to pay (the main character as it is now), the character ID, the
+  claim, the loss time, the ship, the category, the link and the approved amount; the last row is the total. The dataset
+  `srp-payable` is for payers only (`pay_srp` or `manage_srp`) and every download is audited as `srp.export`. The file
+  `srp-claims` has one more column at the end, **Payment batch**, filled in for SRP staff only.
+- **Review information.** The claim page shows SRP staff, beside the claim, the attackers (how many, players and NPCs,
+  the zKillboard solo, NPC and awox flags, the final blow, the attacker with the most damage and the three biggest
+  alliances or corporations), the monthly limits as they are now without the claim itself (red when nothing is left; a
+  note says how far the suggested amount goes beyond what the tightest limit leaves, the same figures the approval
+  checks) and the member's history: claims, rejections by reviewers + automatic rejections, withdrawn claims and the
+  rejections of the last days, with the latest three and a link to all claims of the member. Members do not see the
+  attackers, the security status of the system, the limits table or the history on their own claims (the system name stays, and the
+  reason on the check page for a loss that is not covered keeps the kind of space and its security status). Attackers are stored
+  as IDs only (at most the 50 who did the most damage, and always the final blow); names come from FleetOps' name cache and an
+  unknown ID is shown as the number; a background task looks the names up after the killmail was stored, a page never calls
+  ESI. Killmails stored before 0.3.0b1 show only the number of attackers. `python manage.py fleetops_srp_backfill_killmails
+  [--security] [--attackers] [--limit N] [--dry-run]` reads them again (claimed killmails only, one read at a time with a
+  pause).
+- If the claimant changed a claim after a reviewer opened it, approving, rejecting, moving or changing the category of it
+  is refused with "The claimant changed this claim just now. Reload the page and check it again." The bulk approval skips
+  such claims and says so. The review page shows when the claimant changed a claim.
 - A decision is made on the claim the reviewer looked at: when the suggested amount changed while the page was
   open, the approval is refused with the old and new amount.
 - Reviewers cannot decide on their own claims unless "SRP reviewers may decide on their own claims" allows it, and payers cannot mark their own claims paid unless "SRP payers may mark their own claims paid" allows it. With "The approver of a claim may not pay it" on, the approver cannot mark the claim paid either.
@@ -602,6 +647,33 @@ To enable FleetOps SRP:
 - The fleet page has an SRP card with the link and a Copy button, **Close SRP link** and **Mark SRP link complete**
   for SRP staff and **Open SRP link** for reviewers (a closed link takes no new claims), **Request SRP for this
   fleet** for pilots, and **Create SRP link** for a fleet without a link. Creating a link twice changes nothing.
+
+### Changing a pending claim
+
+While a claim is pending (and **Members can change their pending claims** is on) the claimant sees **Change claim**
+on it: the page offers the comment, a new place (another open fleet the member took part in, an open standing link, or a
+category) and a different loss (a pasted link, or one of the recent unclaimed losses of **My SRP**, when losses are found
+automatically). The next page shows the claim as it would be, with the new amount; nothing is saved until the change is
+confirmed (the preview is valid for an hour and is refused when the claim changed meanwhile). A new place or loss is
+checked like a new claim (ban, characters that did not authorize loss reading, deadline, capsule, not-covered ships and
+space, open link) and the claim is calculated again with the rules of the new place; the claim number stays. Replacing the
+loss moves the claim to the new killmail (the old one is free again and is cleaned up with the other unclaimed killmails
+after seven days); a loss another member claimed is refused; a loss of another EVE month uses the monthly limits of that
+month and the preview says so. With **Reject automatically**, a change that would leave nothing under a limit is refused
+and the claim stays as it was. After a reviewer moved the claim between fleet and out of fleet or changed its category,
+the member can still change the comment and the loss. A banned member can only withdraw. Each change counts a revision,
+is shown in the timeline ("Changed by the claimant") and audited as `srp.claim_member_edit`; the text of a comment stays in
+the timeline and is not copied to the audit log.
+
+### Insurance estimate
+
+With **Show the insurance estimate** on, the claim page and the check page show, for the ship type of the claim,
+"compensation X + insurance payout Y = total Z" (compensation: the approved amount of an approved or paid claim, else the
+suggested amount; insurance payout: payout minus cost of the chosen level; a dash when ESI has no prices for the ship).
+It is an estimate from the current ESI insurance prices and is only paid out if the pilot insured the ship. It is not part
+of any amount, limit, export or payment. The prices (`GET /insurance/prices`, public, no token) are read at most once a day
+by a task queued from the existing beat task, only while SRP is enabled and the estimate is shown; the stored prices are
+replaced as a whole in one transaction, a failed read keeps the old ones (and is tried again after an hour).
 
 ## SRP Links
 

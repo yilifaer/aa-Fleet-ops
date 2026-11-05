@@ -106,8 +106,37 @@ Install it like the previous pre-release (`pip install --no-deps aa-fleetops==0.
   authorize from checking or submitting any claim; it is ignored while the feature is off. Audited:
   `srp.loss_ignore`, `srp.loss_unignore`. The new tables hold no claim data and are read only in Django admin.
 
+- **Members change a pending claim.** While a claim is pending the claimant can **Change claim**: the comment, the
+  category or link (another open fleet, a standing link or a category) and the loss (a pasted link or one of the recent
+  losses). The change is previewed first and calculated like a new claim; the claim number stays, the old killmail is free
+  again, and a change that would reject the claim on the spot (automatic rejection, nothing left under a limit) is
+  refused. A banned member can only withdraw; after a reviewer moved the claim only the comment and the loss can be
+  changed. Settings **Members can change their pending claims** and **Members can replace the loss of a pending claim**
+  (both on). Audited as `srp.claim_member_edit`; the timeline shows "Changed by the claimant". Reviewers' decisions,
+  moves and the bulk approval carry the number of changes the page showed and are refused when the claimant changed the
+  claim since.
+- **Review queue filters.** Category (and "No category"), link code, submission dates (EVE days) and member; kept with the
+  month filter. The table shows the category and link and a **Banned** badge.
+- **Payments by category and link.** Filters for the claims to pay (category, link, corporation) that also decide the group
+  totals and the copy buttons; the paid list shows category, link and batch; **Copy name and amount** copies the name, a
+  tab and the plain number.
+- **Payment batches.** Every payment makes a batch (`PAY-<n>`) with the number of claims, players, the total and the note,
+  a page for it (payers only), a list of the recent ones, one audit entry `srp.payment_batch` and the batch in each claim's
+  payment event. Payments made before the upgrade have no batch.
+- **Export of the claims to pay.** The dataset `srp-payable` (payers only), one row per claim or per player, with the
+  filters of the payments page and a total; `srp-claims` gets a **Payment batch** column at the end (staff only).
+- **Review information.** SRP staff see on a claim the attackers (summary from IDs, names from the cache; a task looks
+  them up after the killmail was stored), the monthly limits as they are now and the history of the claimant's rejections
+  (`Days of rejection history shown to reviewers`, 90). The command `fleetops_srp_backfill_killmails` fills in the
+  attackers and the location of killmails stored before. Members do not see this information.
+- **Insurance estimate.** "Compensation + insurance payout = total" for the chosen level (platinum by default) on claims and
+  on the check page, from the public ESI insurance prices (read once a day, kept in `SrpInsurancePrice`). Settings **Show
+  the insurance estimate** (on) and **Insurance level shown**. It is a hint only and changes no amount.
+
 ### Changed
 
+- **The security status of a system is shown to SRP staff only** on a claim (members keep seeing the system name and, on
+  the check page, the reason a loss is not covered).
 - **"SRP managers may decide on their own claims" is now "SRP reviewers may decide on their own claims"** and only
   covers decisions. Marking a claim paid and undoing a payment follow **SRP payers may mark their own claims paid**.
   Because the old setting covered both, the upgrade copies it into the new one: a site that allowed its managers to
@@ -162,6 +191,13 @@ open **SRP Settings**, group **Loss discovery**, switch **Find losses automatica
 authorize their characters (CharLink does it for all characters at once). The scan task runs inside the existing beat
 entry `fleetops_track_active_fleets`; restart the Celery worker and beat so that the new tasks are known. Characters that
 changed hands keep working for the new owner only.
+Migration `0032` adds the revision number of a claim, the payment batch table and a claim's batch, the table of insurance
+prices, the attackers and damage of a killmail and the five settings (members may change and swap, insurance estimate and
+level, rejection history days). It fills in nothing: old payments have no batch, old killmails no attackers (the review
+page then shows their number only; run `python manage.py fleetops_srp_backfill_killmails` to fill them in) and the insurance
+prices arrive with the first daily read. Members can change their pending claims and the insurance estimate is shown right
+after the upgrade; untick **Members can change their pending claims** or **Show the insurance estimate** to keep the old
+behaviour. Restart the Celery worker so the two new tasks are known. The public ESI insurance prices need no new scope.
 
 ### Rollback notes
 
@@ -192,6 +228,10 @@ ones) and the three loss discovery settings. Claims, amounts and statuses are no
 version before rolling back, switch **Find losses automatically** off: the page, the scan and the CharLink item go
 away, and **Members must authorize loss reading ...** stops blocking at once. The tokens members authorized stay in
 Alliance Auth, harmless.
+Rolling back `0032` drops the payment batches (the claims keep their status, amount, payer and payment date, and lose only
+the batch they were paid in), the insurance prices, the stored attackers, the revision numbers and the five settings.
+Claims, amounts and statuses are not changed. Export the batches first if you need them. To behave like the previous
+version before rolling back, untick **Members can change their pending claims**.
 
 ## [0.2.0b3] - Unreleased
 

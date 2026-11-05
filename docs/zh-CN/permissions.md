@@ -179,6 +179,8 @@ FC 统计不受影响。
 | 重新打开 SRP 链接（舰队页卡片、**打开所选**） | `fleetops.manage_srp` 或 `fleetops.review_srp`；只有 `pay_srp` 不行，因为重新打开会让成员能再次提交 |
 | 创建常驻链接（**新建常驻链接**）；编辑常驻链接的名称、类别、日期、教义文字、报告和关闭时间，或舰队链接的教义文字和报告 | `fleetops.manage_srp` 或 `fleetops.review_srp`。FC 和只有付款权限的人得到 403。 |
 | 审核队列、对申请的各种决定（通过、修改金额、拒绝、撤销、重新打开、重新归类、更改类别）、批量通过、"重新计算"、重新检查在队情况 | `fleetops.manage_srp` 或 `fleetops.review_srp`；不能处理审核人自己的申请，除非勾选了"SRP 审核人可以处理自己的申请"（返回 403；批量操作会跳过并给出提示）。重新检查在队情况不受这条限制。 |
+| **修改申请**（修改待审核申请的备注、类别或链接、损失）及其预览和确认 | `fleetops.request_srp`，而且只有申请人本人：其他人（包括 SRP 人员）得到 404。**成员可以修改待审核的申请** 关闭时、申请不是待审核时、成员有生效的 SRP 封禁时，都会被拒绝。 |
+| 付款批次页、待付款清单导出（`srp-payable`） | `fleetops.manage_srp` 或 `fleetops.pay_srp`；只有 `review_srp` 的审核人得到 403，`view_all_stats` 也是。 |
 | 付款页、"标记已付款"（单条或勾选的几条）、"撤销付款" | `fleetops.manage_srp` 或 `fleetops.pay_srp`；不能支付付款人自己的申请，除非勾选了"SRP 付款人可以把自己的申请标记为已付款"；勾选"批准申请的人不能付款"后，也不能支付自己批准的申请（返回 403；批量付款会跳过并给出提示）。撤销付款不受"批准的人不能付款"限制。 |
 | 在“我的 SRP”授权损失读取、**立即读取我的角色**、**申请**、**忽略**和**重新显示**（损失自动发现） | `fleetops.request_srp`，只针对用户自己账号下的角色，且功能开启时。别人的损失对所有操作都返回 404。授权是一次 EVE 登录，权限范围为 `esi-killmails.read_killmails.v1`；令牌属于用户自己，只用于那个角色。 |
 | SRP 封禁列表、做出 SRP 封禁（也可以从申请页进入）和解除封禁 | `fleetops.manage_srp` 或 `fleetops.review_srp`。付款人、成员和 FC 得到 403。任何人都不能封禁自己。封禁的内部备注只在审核人的封禁页和申请页上显示；成员只看到理由，操作日志里也不会有内部备注。 |
@@ -196,12 +198,15 @@ SRP 文件地址为 `/fleetops/statistics/export/<dataset>/`：
 |---|---|
 | `srp-claims`、`srp-members` | SRP 人员或 `view_all_stats` 可导出全联盟或任意军团（`corporation=<id>`）；`view_corp_stats` 只能带上本军团的 ID（其他军团返回 404，没带军团返回 403） |
 | `srp-corporations`、`srp-fcs` | SRP 人员或 `view_all_stats` |
+| `srp-payable`（待付款的申请，带付款页的筛选） | 只有 `fleetops.manage_srp` 或 `fleetops.pay_srp`（`group=player` 为每人一行） |
 
-`srp-claims` 里的"处理人"（Decided by）和"付款人"（Paid by）两列只对 SRP 人员填写。FC 和普通成员没有 SRP 文件。每次下载都记为 `srp.export`。
+`srp-claims` 里的"处理人"（Decided by）、"付款人"（Paid by）和"付款批次"（Payment batch）三列只对 SRP 人员填写。FC 和普通成员没有 SRP 文件。每次下载都记为 `srp.export`。
 其他 SRP 操作都会记入操作日志，并显示在申请自己的时间线上：`srp.link_create`、`srp.link_update`、`srp.link_open`、`srp.link_close`、`srp.link_complete`、`srp.link_uncomplete`、`srp.claim_submit`、
 `srp.claim_auto_reject`、`srp.claim_withdraw`、`srp.claim_resubmit`、`srp.claim_approve`、`srp.claim_amount_change`、`srp.claim_reject`、
-`srp.claim_revoke`、`srp.claim_paid`、`srp.claim_unpaid`、`srp.claim_reopen`、`srp.claim_reclassify`、`srp.claim_recategorize`、`srp.claim_recalculate`、
-`srp.claim_recheck`、`srp.claim_note`。记录里只有 ID、状态和金额，不会出现令牌或 Webhook 地址；`srp.claim_note` 只记录备注的长度。
+`srp.claim_revoke`、`srp.claim_paid`、`srp.claim_unpaid`、`srp.claim_reopen`、`srp.claim_reclassify`、`srp.claim_recategorize`、`srp.claim_member_edit`、`srp.claim_recalculate`、
+`srp.claim_recheck`、`srp.claim_note`、`srp.payment_batch`。记录里只有 ID、状态和金额，不会出现令牌或 Webhook 地址；`srp.claim_note` 只记录备注的长度；`srp.claim_member_edit` 只记录修改后备注的长度，不记正文。
+
+申请上的攻击者、星系的安全等级、现在的月度限额和申请人的驳回历史只显示给 SRP 人员；申请人和其他查看者看不到。申请人仍能看到星系名称；检查页上“不赔付”的原因仍会写出空间类型和安全等级（“Jita 0.9”），因为这是在向成员解释为什么被拒绝。
 
 ## 预约舰队（预 Ping）
 

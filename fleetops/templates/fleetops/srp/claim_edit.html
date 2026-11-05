@@ -1,0 +1,50 @@
+{% extends "fleetops/base.html" %}
+{% load i18n static fleetops_i18n fleetops_srp fleetops_messages fleetops_ui %}
+{% block fleetops_content %}
+<div class="mb-3">
+  <h2 class="mb-1">{% blocktranslate trimmed with reference=claim.reference %}Change {{ reference }}{% endblocktranslate %}</h2>
+  <div class="text-muted">{% blocktranslate trimmed with ship=claim.ship_type_name|default:claim.ship_type_id time=claim.killmail_time|eve_time %}{{ ship }} lost {{ time }} EVE{% endblocktranslate %}</div>
+</div>
+{% if reviewer_moved %}<div class="alert alert-secondary">{% translate "A reviewer has already moved this claim. You can still change the comment or replace the loss." %}</div>{% endif %}
+<div class="card mb-3">
+  <div class="card-header"><strong>{% translate "Your change" %}</strong></div>
+  <div class="card-body">
+    <form method="post" action="{% url 'fleetops:srp_claim_edit' claim.uuid %}" class="fleetops-srp-form" data-srp-once>
+      {% csrf_token %}
+      {% include "fleetops/partials/form_errors.html" with errors=form.non_field_errors %}
+      <div class="mb-3">
+        <label class="form-label" for="{{ form.comment.id_for_label }}">{{ form.comment.label }}</label>
+        {{ form.comment }}
+        <div class="form-text">{{ form.comment.help_text }}</div>
+        {{ form.comment.errors }}
+      </div>
+      {% if form.target %}
+      <div class="mb-3">
+        <label class="form-label" for="{{ form.target.id_for_label }}">{{ form.target.label }}</label>
+        {{ form.target }}
+        <div class="form-text">{{ form.target.help_text }}</div>
+        {{ form.target.errors }}
+      </div>
+      {% endif %}
+      {% if form.killmail %}
+      <div class="mb-3">
+        <label class="form-label" for="{{ form.killmail.id_for_label }}">{{ form.killmail.label }}</label>
+        {{ form.killmail }}
+        <div class="form-text">{{ form.killmail.help_text }}</div>
+        {{ form.killmail.errors }}
+      </div>
+      {% endif %}
+      {% if form.loss %}
+      <div class="mb-3">
+        <label class="form-label" for="{{ form.loss.id_for_label }}">{{ form.loss.label }}</label>
+        {{ form.loss }}
+        {{ form.loss.errors }}
+      </div>
+      {% endif %}
+      <button type="submit" class="btn btn-primary">{% translate "Check the change" %}</button>
+      <a class="btn btn-outline-secondary" href="{% url 'fleetops:srp_claim' claim.uuid %}">{% translate "Cancel" %}</a>
+    </form>
+  </div>
+</div>
+<script src="{% static 'fleetops/srp.js' %}?v={{ fleetops_version }}" defer></script>
+{% endblock %}

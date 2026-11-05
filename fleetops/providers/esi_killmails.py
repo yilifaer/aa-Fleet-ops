@@ -191,3 +191,29 @@ def get_market_prices() -> dict[int, Decimal]:
         if price is not None:
             prices[type_id] = price
     return prices
+
+
+def get_insurance_prices() -> dict[int, dict[str, tuple[Decimal, Decimal]]]:
+    """``{type_id: {level: (cost, payout)}}`` from ``GET /insurance/prices``; the level names are asked for in English
+    (``Accept-Language: en``) and returned in lower case. Rows and levels that are not what ESI documents are left out."""
+    try:
+        rows = _read(esi_provider.esi.client.Insurance.GetInsurancePrices(Accept_Language="en"))
+    except Exception as exc:
+        raise _failure("ESI_ERROR", texts.INSURANCE_READ_FAILED, exc) from exc
+    prices = {}
+    for row in to_plain(rows) or ():
+        if not isinstance(row, dict):
+            continue
+        type_id = row.get("type_id")
+        if isinstance(type_id, bool) or not isinstance(type_id, int):
+            continue
+        levels = {}
+        for level in row.get("levels") or ():
+            if not isinstance(level, dict) or not isinstance(level.get("name"), str):
+                continue
+            cost, payout = _price(level.get("cost")), _price(level.get("payout"))
+            if cost is not None and payout is not None:
+                levels[level["name"].strip().lower()] = (cost, payout)
+        if levels:
+            prices[type_id] = levels
+    return prices

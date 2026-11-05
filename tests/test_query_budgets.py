@@ -498,3 +498,97 @@ class SrpLinkBudgetTests(TestCase):
             f.srp_category(f"Budget form {index}")
 
         self.assertEqual(self.count(reviewer, url), small)
+
+
+class SrpReviewPaymentBudgetTests(TestCase):
+    """0.3.0b1 (INT-13, REV-5, REV-9): the claim page for staff, the edit page and the batch page cost a fixed number of
+    queries, whatever the number of attackers, claims or batches."""
+
+    def count(self, user, url):
+        self.client.force_login(user)
+        self.client.get(url)
+        cache.clear()
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        return len(queries)
+
+    def test_the_claim_page_does_not_grow_with_the_attackers(self):
+        manager = f.create_user("budget_review_manager", perms=f.SRP_MANAGER_PERMS)
+        pilot = f.create_user("budget_review_pilot", perms=f.SRP_MEMBER_PERMS)
+
+        def claim_with(count):
+            attackers = [
+                {"character_id": 90_000 + index, "corporation_id": 80_000 + index, "alliance_id": 70_000 + index % 3,
+                 "ship_type_id": 587, "weapon_type_id": 2_873, "damage_done": index, "final_blow": index == 0}
+                for index in range(count)
+            ]
+            km = f.srp_killmail(f.main_of(pilot), attackers=attackers, attacker_count=count, damage_taken=1000)
+            return f.srp_claim(pilot, killmail=km)
+
+        few, many = claim_with(2), claim_with(50)
+
+        self.assertEqual(self.count(manager, route("srp_claim", few.uuid)), self.count(manager, route("srp_claim", many.uuid)))
+
+    # The reads the review information (REV-9) and the intake rules added to the claim page, told by their SQL.
+    NEW_READS = ("fleetops_srpinsuranceprice", "fleetops_srpban", "OVER (", "AS \"used_0\"", "fleetops_eveentityname")
+
+    def new_reads(self, user, url):
+        self.client.force_login(user)
+        self.client.get(url)
+        cache.clear()
+        with CaptureQueriesContext(connection) as queries:
+            self.assertEqual(self.client.get(url).status_code, 200)
+        return [q["sql"] for q in queries.captured_queries if any(mark in q["sql"] for mark in self.NEW_READS)]
+
+    def test_staff_pay_at_most_four_new_queries_on_the_claim_page_and_the_claimant_two(self):
+        manager = f.create_user("budget_review_staff", perms=f.SRP_MANAGER_PERMS)
+        pilot = f.create_user("budget_review_owner", perms=f.SRP_MEMBER_PERMS)
+        attackers = [{"character_id": 90_001, "corporation_id": 80_001, "ship_type_id": 587, "damage_done": 10, "final_blow": True}]
+        claim = f.srp_claim(pilot, killmail=f.srp_killmail(f.main_of(pilot), attackers=attackers, attacker_count=1, damage_taken=10))
+        f.srp_settings(show_insurance=True)
+        url = route("srp_claim", claim.uuid)
+
+        # Staff: the insurance line, the names of the attackers, the limits now, the history and the ban of the member:
+        # five reads b3 did not have. b3 read the SRP settings three times on this page (the context, the render and the
+        # menu); the page reads them twice now, so the cost against b3 is four (REV-9). The claimant: the insurance line
+        # and the ban check, two reads minus the one saved.
+        staff_reads = self.new_reads(manager, url)
+        self.assertLessEqual(len(staff_reads), 5)
+        self.assertLessEqual(len(self.new_reads(pilot, url)), 2)
+        self.client.force_login(manager)
+        self.client.get(url)
+        cache.clear()
+        with CaptureQueriesContext(connection) as queries:
+            self.client.get(url)
+        settings_reads = [q for q in queries.captured_queries if "FROM \"fleetops_srpsettings\"" in q["sql"]]
+        self.assertLessEqual(len(settings_reads), 2)
+
+    def test_the_edit_page_costs_a_fixed_number_of_queries(self):
+        pilot = f.create_user("budget_edit_pilot", perms=f.SRP_MEMBER_PERMS)
+        f.srp_settings(loss_discovery_enabled=True)
+        claim = f.srp_claim(pilot)
+        url = route("srp_claim_edit", claim.uuid)
+        small = self.count(pilot, url)
+        for index in range(12):
+            f.srp_category(f"Budget category {index}")
+            f.standing_link(category=f.srp_category(f"Budget link category {index}"))
+
+        self.assertEqual(self.count(pilot, url), small)
+
+    def test_the_batch_page_does_not_grow_with_the_claims(self):
+        from fleetops.models import SrpPaymentBatch
+
+        payer = f.create_user("budget_batch_payer", perms=f.SRP_PAYER_PERMS)
+        approver = f.create_user("budget_batch_approver", perms=f.SRP_MANAGER_PERMS)
+        batch = SrpPaymentBatch.objects.create(created_by=payer, created_by_name="Payer", claim_count=2, payee_count=2, total=2)
+        for index in range(2):
+            pilot = f.create_user(f"budget_batch_pilot_{index}", perms=f.SRP_MEMBER_PERMS)
+            f.srp_claim(pilot, status="paid", decided_by=approver, payment_batch=batch)
+        url = route("srp_payment_batch", batch.uuid)
+        small = self.count(payer, url)
+        for index in range(2, 12):
+            pilot = f.create_user(f"budget_batch_pilot_{index}", perms=f.SRP_MEMBER_PERMS)
+            f.srp_claim(pilot, status="paid", decided_by=approver, payment_batch=batch)
+
+        self.assertEqual(self.count(payer, url), small)

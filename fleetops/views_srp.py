@@ -5,6 +5,7 @@
 
 from datetime import timedelta
 from functools import partial
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.core.paginator import Paginator
@@ -32,7 +33,7 @@ from fleetops.providers.esi import FleetESIError
 from fleetops.services import sde
 from fleetops.services.periods import month_bounds
 from fleetops.services.stats_access import BASIC_ACCESS
-from fleetops.srp import access, bans, blocks, categories, claims, discovery, links, summaries
+from fleetops.srp import access, attackers, bans, blocks, categories, claims, discovery, insurance, links, review_info, summaries
 from fleetops.srp import policy as rules
 from fleetops.srp.access import REQUEST_SRP
 from fleetops.srp.types import Calculation, PolicySnapshot, SrpDuplicateError, SrpError, warnings_from_json
@@ -227,10 +228,15 @@ def srp_home(request):
 def preview_response(request, preview, *, link=None, input_text="", settings_obj=None, loss=None):
     """The preview of a checked loss with the form that submits it. ``loss`` is the found loss the check started
     from (the pages then offer the fleet suggestion through that loss, not through a pasted link)."""
+    settings_obj = settings_obj or SrpSettings.get_solo()
+    estimate = None
+    if preview.calculation is not None:
+        estimate = insurance.estimate(preview.killmail.ship_type_id, preview.calculation.suggested, settings_obj)
     return srp_render(
         request,
         "fleetops/srp/preview.html",
         {
+            "insurance": estimate,
             "preview": preview,
             "link": link,
             "loss": loss,
@@ -469,6 +475,7 @@ def claim_page_context(request, claim, *, bound=None, settings_obj=None):
         "is_payer": is_payer,
         "can_decide": can_decide,
         "can_withdraw": is_owner and claim.status == SrpClaim.Status.PENDING,
+        "can_edit": False,
         "can_resubmit": is_owner and claim.status == SrpClaim.Status.WITHDRAWN,
         "calculation": calculation,
         "policy": PolicySnapshot.from_json(claim.policy),
@@ -478,6 +485,19 @@ def claim_page_context(request, claim, *, bound=None, settings_obj=None):
         "item_groups": item_groups(claim.killmail.items),
         "withdraw_form": WithdrawForm(auto_id="id_withdraw_%s"),
     }
+    if is_owner and claim.status == SrpClaim.Status.PENDING and settings_obj.member_edit_enabled:
+        # A banned member can still withdraw, but not change the claim.
+        context["can_edit"] = bans.active_ban(user) is None
+    context["insurance"] = insurance.estimate(
+        claim.ship_type_id,
+        claim.approved_amount if claim.status in (SrpClaim.Status.APPROVED, SrpClaim.Status.PAID) else claim.suggested_amount,
+        settings_obj,
+    )
+    if is_staff:
+        context["attackers"] = attackers.summary(claim.killmail)
+        context["limits_now"] = review_info.limits_now(claim)
+        context["rejection_history"] = review_info.rejection_history(claim, settings_obj)
+        context["review_filter_query"] = urlencode({"user": claim.user_id, "status": "all"}) if claim.user_id else ""
     if is_reviewer and claim.user_id is not None and not is_owner:
         # The reviewer can ban the member or lift the ban, from the claim.
         context["member_ban"] = bans.active_ban(claim.user)
@@ -526,6 +546,7 @@ def claim_page_context(request, claim, *, bound=None, settings_obj=None):
 
 
 def claim_response(request, claim, *, bound=None, settings_obj=None):
+    settings_obj = settings_obj or SrpSettings.get_solo()  # read once for the context and the page
     return srp_render(
         request,
         "fleetops/srp/claim.html",

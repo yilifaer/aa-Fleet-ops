@@ -217,6 +217,8 @@ The read-only side is the same for all three: every SRP staff user sees all SRP 
 | Open an SRP link again (the fleet card, **Open selected**) | `fleetops.manage_srp` or `fleetops.review_srp`; not `pay_srp` alone, because opening lets members submit again |
 | Make a standing link (**New standing link**), edit the name, category, date, doctrine text, report and closing time of a standing link, or the doctrine text and report of a fleet link | `fleetops.manage_srp` or `fleetops.review_srp`. FCs and payers get 403. |
 | Review queue, decisions on a claim (approve, change the amount, reject, revoke, reopen, reclassify, change the category), bulk approval, **Recalculate**, checking the fleet presence again | `fleetops.manage_srp` or `fleetops.review_srp`; not on the reviewer's own claims unless **SRP reviewers may decide on their own claims** is ticked (403; bulk actions skip them with a message). Checking the fleet presence again is not bound by that rule. |
+| **Change claim** (the comment, the category or link, the loss of a pending claim), its preview and confirmation | `fleetops.request_srp` and only the claimant: everybody else, SRP staff included, gets 404. Refused while **Members can change their pending claims** is off, for a claim that is not pending and for a member with an SRP ban in force. |
+| Payment batch page, the export of the claims to pay (`srp-payable`) | `fleetops.manage_srp` or `fleetops.pay_srp`; a reviewer with only `review_srp` gets 403, and so does `view_all_stats`. |
 | Payments page, **Mark paid** (one claim or the ticked ones), **Undo payment** | `fleetops.manage_srp` or `fleetops.pay_srp`; not on the payer's own claims unless **SRP payers may mark their own claims paid** is ticked, and, with **The approver of a claim may not pay it** ticked, not on a claim the user approved (403; bulk payments skip them with a message). Undoing a payment is not bound by the approver rule. |
 | The SRP Bans list, making an SRP ban (also from a claim page) and lifting one | `fleetops.manage_srp` or `fleetops.review_srp`. Payers, members and FCs get 403. Nobody can ban themselves. The internal note of a ban is shown to reviewers on the ban pages and claim pages only; the member sees the reason, and the audit log never holds the note. |
 | Authorizing loss reading, **Read my characters now**, **Claim**, **Ignore** and **Show again** on My SRP (loss discovery) | `fleetops.request_srp`, for characters on the user's own account and while the feature is on. A found loss of somebody else is 404, for every action. Authorizing is an EVE login for `esi-killmails.read_killmails.v1`; the token is the user's own and is used only for that character. |
@@ -234,15 +236,22 @@ SRP files are at `/fleetops/statistics/export/<dataset>/`:
 |---|---|
 | `srp-claims`, `srp-members` | SRP staff or `view_all_stats` for the alliance or any corporation (`corporation=<id>`); `view_corp_stats` only with the own corporation's ID (any other corporation is 404, no corporation is 403) |
 | `srp-corporations`, `srp-fcs` | SRP staff or `view_all_stats` |
+| `srp-payable` (the claims to pay, with the filters of the payments page) | `fleetops.manage_srp` or `fleetops.pay_srp` only (`group=player` for one row per player) |
 
-The *Decided by* and *Paid by* columns of `srp-claims` are filled for SRP staff only. FCs and members have no
+The *Decided by*, *Paid by* and *Payment batch* columns of `srp-claims` are filled for SRP staff only. FCs and members have no
 SRP file. Every download is audited as `srp.export`. Every other SRP action is audited and shown in the
 claim's timeline: `srp.link_create`, `srp.link_update`, `srp.link_open`, `srp.link_close`, `srp.link_complete`, `srp.link_uncomplete`, `srp.claim_submit`,
 `srp.claim_auto_reject`, `srp.claim_withdraw`, `srp.claim_resubmit`, `srp.claim_approve`,
 `srp.claim_amount_change`, `srp.claim_reject`, `srp.claim_revoke`, `srp.claim_paid`, `srp.claim_unpaid`,
-`srp.claim_reopen`, `srp.claim_reclassify`, `srp.claim_recategorize`, `srp.claim_recalculate`, `srp.claim_recheck`, `srp.claim_note`.
+`srp.claim_reopen`, `srp.claim_reclassify`, `srp.claim_recategorize`, `srp.claim_member_edit`, `srp.claim_recalculate`, `srp.claim_recheck`, `srp.claim_note`,
+`srp.payment_batch`.
 The entries hold IDs, statuses and amounts, never a token or a webhook URL; `srp.claim_note` holds only the
-length of the note.
+length of the note; `srp.claim_member_edit` holds the length of a changed comment, not its text.
+
+On a claim, the attackers, the security status of the system, the monthly limits as they are now and the history of the
+claimant's rejections are shown to SRP staff only; the claimant and the other viewers do not see them. The claimant still sees
+the name of the system, and the reason a loss is not covered on the check page still names the kind of space and its
+security status ("Jita 0.9"), because it explains the refusal.
 
 ## Scheduled fleets (pre pings)
 

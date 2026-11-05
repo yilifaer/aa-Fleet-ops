@@ -1,0 +1,40 @@
+{% extends "fleetops/base.html" %}
+{% load i18n static fleetops_i18n fleetops_srp fleetops_messages fleetops_ui %}
+{% block fleetops_content %}
+<div class="mb-3">
+  <h2 class="mb-1">{% blocktranslate trimmed with reference=batch.reference %}Payment batch {{ reference }}{% endblocktranslate %}</h2>
+  <div class="text-muted">{% blocktranslate trimmed with time=batch.created_at|eve_time name=batch.created_by_name %}Paid {{ time }} EVE by {{ name }}{% endblocktranslate %}{% if batch.note %} &middot; {{ batch.note }}{% endif %}</div>
+</div>
+<div class="row g-3 mb-3 fo-srp-stats">
+  <div class="col-6 col-xl-3"><div class="stat-card"><span>{% translate "Claims" %}</span><strong>{{ batch.claim_count }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="stat-card"><span>{% translate "Players" %}</span><strong>{{ batch.payee_count }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="stat-card"><span>{% translate "Total" %}</span><strong>{{ batch.total|isk }}</strong><small class="text-muted">{% translate "at the time of payment" %}</small></div></div>
+  {% if undone %}<div class="col-6 col-xl-3"><div class="stat-card"><span>{% translate "Undone since" %}</span><strong>{{ undone }}</strong><small class="text-muted">{% blocktranslate trimmed count counter=undone %}{{ counter }} claim of this batch was paid back to approved{% plural %}{{ counter }} claims of this batch were paid back to approved{% endblocktranslate %}</small></div></div>{% endif %}
+</div>
+{% for row in pay_rows %}
+<div class="card mb-3">
+  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2"><strong>{{ row.main_character_name }}</strong><span class="fo-pay-total">{{ row.total|isk }}</span></div>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0 fo-table-pin">
+      <thead><tr><th scope="col">{% translate "Claim" %}</th><th scope="col">{% translate "Ship" %}</th><th scope="col">{% translate "Category" %}</th><th scope="col">{% translate "Link" %}</th><th scope="col" class="text-end">{% translate "Amount" %}</th><th scope="col"></th></tr></thead>
+      <tbody>
+        {% for claim in row.claims %}
+        <tr>
+          <td><a href="{% url 'fleetops:srp_claim' claim.uuid %}">{{ claim.reference }}</a></td>
+          <td>{{ claim.ship_type_name|default:claim.ship_type_id }}</td>
+          <td>{% if claim.category_id %}{{ claim.category|srp_category_label }}{% else %}<span class="text-muted">&ndash;</span>{% endif %}</td>
+          <td>{% if claim.link_id %}<span class="small">{{ claim.link.name|default:claim.link.code }}</span>{% else %}<span class="text-muted">&ndash;</span>{% endif %}</td>
+          <td class="text-end text-nowrap">{{ claim.approved_amount|isk }}</td>
+          <td class="text-end"><a class="btn btn-sm btn-outline-danger" href="{% url 'fleetops:srp_claim' claim.uuid %}#undo-payment">{% translate "Undo payment…" %}</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% empty %}
+<div class="card mb-3"><div class="card-body text-muted">{% translate "No claim is paid in this batch any more." %}</div></div>
+{% endfor %}
+<a class="btn btn-outline-secondary" href="{% url 'fleetops:srp_payments' %}">{% translate "Back to payments" %}</a>
+<script src="{% static 'fleetops/srp.js' %}?v={{ fleetops_version }}" defer></script>
+{% endblock %}

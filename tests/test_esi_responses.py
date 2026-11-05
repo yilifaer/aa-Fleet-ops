@@ -14,7 +14,7 @@ import shutil
 import tempfile
 import uuid
 from contextlib import contextmanager
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 from importlib import import_module
 from types import SimpleNamespace
@@ -667,6 +667,18 @@ def _fleet_spec():
             "x-compatibility-date": "2020-01-01",
         }
 
+    def insurance_prices(operation_id):
+        spec = public_read(operation_id, "Insurance", [], "InsurancePrices")
+        spec["parameters"].append(
+            {
+                "name": "Accept-Language",
+                "in": "header",
+                "required": False,
+                "schema": {"type": "string", "enum": ["en", "de", "fr", "ja", "ru", "zh", "ko", "es"], "default": "en"},
+            }
+        )
+        return spec
+
     def recent_killmails(operation_id, scope):
         spec = operation(operation_id, scope, ["character_id"], "200", "RecentKillmails", tag="Killmails")
         spec["parameters"].append({"name": "page", "in": "query", "required": False, "schema": {"type": "integer", "minimum": 1, "default": 1}})
@@ -700,6 +712,7 @@ def _fleet_spec():
             {"name": "Location"},
             {"name": "Killmails"},
             {"name": "Market"},
+            {"name": "Insurance"},
         ],
         "paths": {
             "/characters/{character_id}/fleet": {
@@ -767,6 +780,8 @@ def _fleet_spec():
                 ),
             },
             "/markets/prices": {"get": public_read("GetMarketsPrices", "Market", [], "MarketPrices")},
+            # 0.3.0b1 (REV-10): the insurance levels of every ship type, in the language asked for.
+            "/insurance/prices": {"get": insurance_prices("GetInsurancePrices")},
             # 0.3.0b1 (INT-1): the recent killmails of a character, paged, with the scope of the character.
             "/characters/{character_id}/killmails/recent": {
                 "get": recent_killmails("GetCharactersCharacterIdKillmailsRecent", KILLMAIL_SCOPE),
@@ -966,6 +981,28 @@ def _fleet_spec():
                     },
                     "required": ["group_id", "name", "published", "type_id"],
                 },
+                "InsurancePrices": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "type_id": integer,
+                            "levels": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "cost": {"type": "number"},
+                                        "name": {"type": "string"},
+                                        "payout": {"type": "number"},
+                                    },
+                                    "required": ["cost", "name", "payout"],
+                                },
+                            },
+                        },
+                        "required": ["type_id", "levels"],
+                    },
+                },
                 "MarketPrices": {
                     "type": "array",
                     "items": {
@@ -1025,18 +1062,22 @@ class RecordedESI:
         # The query string and the Authorization header of every request, in the order they came.
         self.queries = []
         self.authorizations = []
+        # The Accept-Language header of every request (None when it was not sent).
+        self.languages = []
 
     def send(self, request, *args, **kwargs):
         body = json.loads(request.content) if request.content else None
         self.requests.append((request.method, request.url.path, request.headers.get("If-None-Match"), body))
         self.queries.append(dict(request.url.params))
         self.authorizations.append(request.headers.get("Authorization"))
+        self.languages.append(request.headers.get("Accept-Language"))
         route = self.routes.get((request.method, request.url.path), (404, {"error": "Not found"}))
         # A route may answer according to the request body.
         status, payload = route(body) if callable(route) else route
         headers = {}
         if self.cache_seconds:
-            expires = timezone.now() + timedelta(seconds=self.cache_seconds)
+            # The real clock, as django-esi reads it: a test that moves django's clock must not move the server's.
+            expires = datetime.now(dt_timezone.utc) + timedelta(seconds=self.cache_seconds)
             headers["Expires"] = expires.strftime("%a, %d %b %Y %H:%M:%S GMT")
         if request.method == "GET" and status == 200:
             etag = f'"{hashlib.md5(json.dumps(payload, sort_keys=True).encode()).hexdigest()}"'
@@ -1580,6 +1621,52 @@ class DjangoEsiOperationTests(TestCase):
 
         self.assertLessEqual(set(esi_killmails.KILLMAIL_OPERATIONS), set(operations))
         self.assertEqual(esi_killmails.KILLMAIL_OPERATIONS, esi_provider.KILLMAIL_OPERATIONS)
+        # 0.3.0b1 (REV-10): the insurance prices are one of the public reads of SRP.
+        self.assertIn("GetInsurancePrices", esi_killmails.KILLMAIL_OPERATIONS)
+        self.assertTrue(hasattr(esi_provider.esi.client.Insurance, "GetInsurancePrices"))
+
+    # -- Insurance prices (REV-10) ------------------------------------------------------------------
+
+    INSURANCE_ROUTE = ("GET", "/insurance/prices")
+
+    def insurance_body(self):
+        return [
+            {
+                "type_id": 587,
+                "levels": [
+                    {"name": "Basic", "cost": 10.5, "payout": 100.0},
+                    {"name": "Platinum", "cost": 750000.0, "payout": 1500000.0},
+                ],
+            },
+            {"type_id": 588, "levels": [{"name": "Gold", "cost": 1.0, "payout": 3.0}]},
+            {"type_id": 589, "levels": []},
+        ]
+
+    def test_the_insurance_prices_are_read_in_english_and_keyed_by_level(self):
+        self.server.routes[self.INSURANCE_ROUTE] = (200, self.insurance_body())
+
+        prices = esi_killmails.get_insurance_prices()
+
+        self.assertEqual(self.server.languages, ["en"])
+        self.assertEqual(set(prices), {587, 588})
+        self.assertEqual(prices[587]["platinum"], (Decimal("750000.0"), Decimal("1500000.0")))
+        self.assertEqual(prices[587]["basic"], (Decimal("10.5"), Decimal("100.0")))
+        self.assertEqual(list(prices[588]), ["gold"])
+
+    def test_an_answer_that_does_not_match_the_schema_is_a_failed_read(self):
+        self.server.routes[self.INSURANCE_ROUTE] = (200, [{"type_id": "bad", "levels": []}])
+        with self.assertRaises(FleetESIError):
+            esi_killmails.get_insurance_prices()
+
+    def test_a_failed_insurance_read_is_a_short_error_without_headers(self):
+        self.server.error_headers = {"X-Secret-Header": "do-not-show"}
+        self.server.routes[self.INSURANCE_ROUTE] = (500, {"error": "Internal"})
+
+        with self.assertRaises(FleetESIError) as caught:
+            esi_killmails.get_insurance_prices()
+
+        self.assertIn("Could not read insurance prices", str(caught.exception))
+        self.assertNotIn("do-not-show", str(caught.exception))
 
     # -- The recent killmails of a character (INT-1) -----------------------------------------------
 

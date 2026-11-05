@@ -21,8 +21,11 @@ from fleetops.services.fleet_refresh import REFRESH_TASK_LOCK_SECONDS, refresh_n
 from fleetops.services.names import apply_names_to_operation, resolve_and_store
 from fleetops.services.operations import cancel_abandoned_starts, end_fleet, finish_requested_end
 from fleetops.services.tracking import observe_unreadable_fleet, sync_operation, unreadable_fleet_message
+from fleetops.srp import attackers as srp_attackers
 from fleetops.srp import discovery as srp_discovery
+from fleetops.srp import insurance as srp_insurance
 from fleetops.srp import links as srp_links
+from fleetops.srp import payments as srp_payments
 from fleetops.srp.killmails import prune_unclaimed
 from fleetops.srp.tasks import queue_srp_sweep, refresh_srp_values as sweep_srp_values
 
@@ -95,6 +98,7 @@ def schedule_active_fleet_tracking():
     _recover_stuck_ends(now)
     cancel_abandoned_starts(now=now)
     _queue_srp_sweep(now)
+    _queue_srp_insurance(now)
     _maintain_standing_links(now)
     _queue_srp_loss_scan(now)
     return queued
@@ -123,6 +127,15 @@ def _queue_srp_loss_scan(now):
         srp_discovery.queue_loss_scan(now)
     except Exception as exc:
         log_failure(logger, "SRP loss scan", exc)
+
+
+def _queue_srp_insurance(now):
+    """Queue the daily read of the insurance prices (only while SRP and the estimate are on); a problem there must never
+    stop the fleet tracking."""
+    try:
+        srp_insurance.queue_refresh(now)
+    except Exception as exc:
+        log_failure(logger, "SRP insurance prices", exc)
 
 
 def _queue_srp_sweep(now):
@@ -386,6 +399,34 @@ def refresh_srp_values():
 
 
 @shared_task
+def warm_srp_killmail_names(killmail_id):
+    """Look up the names of the attackers of a stored SRP killmail so the review page can show them (queued when the
+    killmail is stored). Returns how many IDs were asked for."""
+    try:
+        return srp_attackers.warm_names(killmail_id)
+    except Exception as exc:
+        log_failure(logger, "SRP attacker name lookup", exc)
+        return 0
+
+
+@shared_task
+def refresh_srp_insurance():
+    """Read the insurance prices from ESI and replace the stored ones (queued by the minute beat, at most once a day,
+    only while the insurance estimate is shown). A failure keeps the old prices."""
+    try:
+        return srp_insurance.refresh_prices()
+    except FleetESIError:
+        # The provider logged what went wrong; the stored prices stay and the next try is an hour away.
+        logger.warning("FleetOps: the insurance prices could not be read; the stored ones are kept.")
+        srp_insurance.retry_soon()
+        return 0
+    except Exception as exc:
+        log_failure(logger, "SRP insurance prices", exc)
+        srp_insurance.retry_soon()
+        return 0
+
+
+@shared_task
 def scan_srp_losses():
     """Read the recent killmails of the members' characters that are due (queued by the minute beat). Returns a short
     result text; ``disabled`` while SRP or the discovery is off."""
@@ -433,4 +474,8 @@ def prune_attendance_history():
         srp_discovery.prune_losses()
     except Exception as exc:
         log_failure(logger, "SRP found-loss cleanup", exc)
+    try:
+        srp_payments.prune_empty_batches()
+    except Exception as exc:
+        log_failure(logger, "SRP payment batch cleanup", exc)
     return result

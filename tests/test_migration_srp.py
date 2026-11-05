@@ -42,6 +42,7 @@ links_schema = importlib.import_module("fleetops.migrations.0028_srp_links")
 links_guard = importlib.import_module("fleetops.migrations.0029_srp_links_guard")
 intake_blocks = importlib.import_module("fleetops.migrations.0030_srp_intake_blocks")
 discovery_schema = importlib.import_module("fleetops.migrations.0031_srp_discovery")
+review_payments = importlib.import_module("fleetops.migrations.0032_srp_review_payments")
 
 NEW_CODENAMES = ("request_srp", "manage_srp")
 # Permissions of 0.3.0b1 (REV-1): registered with the model options, granted to nobody.
@@ -79,6 +80,7 @@ class MigrationModuleTests(TestCase):
             links_guard,
             intake_blocks,
             discovery_schema,
+            review_payments,
         ):
             source = inspect.getsource(module)
             with self.subTest(module=module.__name__):
@@ -112,6 +114,7 @@ class MigrationModuleTests(TestCase):
         self.assertEqual(links_guard.Migration.dependencies, [("fleetops", "0028_srp_links")])
         self.assertEqual(intake_blocks.Migration.dependencies[0], ("fleetops", "0029_srp_links_guard"))
         self.assertEqual(discovery_schema.Migration.dependencies[0], ("fleetops", "0030_srp_intake_blocks"))
+        self.assertEqual(review_payments.Migration.dependencies[0], ("fleetops", "0031_srp_discovery"))
 
     def test_the_migrations_start_with_the_plain_header(self):
         for module in (
@@ -123,6 +126,7 @@ class MigrationModuleTests(TestCase):
             links_guard,
             intake_blocks,
             discovery_schema,
+            review_payments,
         ):
             with self.subTest(module=module.__name__):
                 self.assertTrue(inspect.getsource(module).startswith("# AA FleetOps 0.3.0b1:"))
@@ -139,7 +143,15 @@ class MigrationModuleTests(TestCase):
         self.assertEqual(declared["pay_srp"], "Can pay SRP claims")
 
     def test_no_migration_of_this_phase_grants_a_permission_or_creates_a_task(self):
-        for module in (review_schema, self_payment_data, links_schema, links_guard, intake_blocks, discovery_schema):
+        for module in (
+            review_schema,
+            self_payment_data,
+            links_schema,
+            links_guard,
+            intake_blocks,
+            discovery_schema,
+            review_payments,
+        ):
             source = inspect.getsource(module)
             with self.subTest(module=module.__name__):
                 for word in ("Permission", "permissions.add", "user_permissions", "PeriodicTask", "Group"):
@@ -1220,3 +1232,93 @@ class DiscoveryRoundTripTests(TransactionTestCase):
         source = inspect.getsource(discovery_schema)
         for word in ("Permission", "user_permissions", "PeriodicTask", "Group", "RunPython", "requests", "urllib"):
             self.assertNotIn(word, source)
+
+
+class ReviewPaymentsRoundTripTests(TransactionTestCase):
+    """0032: member edits, payment batches, insurance and review information; the way back to 0023 works."""
+
+    serialized_rollback = True
+    before = [("fleetops", "0031_srp_discovery")]
+    after = [("fleetops", "0032_srp_review_payments")]
+    oldest = [("fleetops", "0023_group_members_are_leaders_help")]
+
+    def migrate(self, nodes):
+        executor = MigrationExecutor(connection)
+        executor.loader.build_graph()
+        executor.migrate(nodes)
+        return executor.loader.project_state(nodes).apps
+
+    def migrate_to_latest(self):
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes("fleetops"))
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(self.migrate_to_latest)
+        old = self.migrate(self.before)
+        from django.utils import timezone
+
+        old.get_model("fleetops", "SrpKillmail").objects.create(
+            killmail_id=4713, killmail_hash="0" * 40, killmail_time=timezone.now(), solar_system_id=30000142, ship_type_id=587
+        )
+        old.get_model("fleetops", "SrpSettings").objects.update_or_create(pk=1, defaults={"claim_deadline_days": 9})
+
+    def make_claim(self, apps):
+        from django.utils import timezone
+
+        return apps.get_model("fleetops", "SrpClaim").objects.create(
+            killmail_id=4713,
+            scope="out_of_fleet",
+            character_id=90000001,
+            character_name="Example Pilot",
+            killmail_time=timezone.now(),
+            ship_type_id=587,
+            status="approved",
+            suggested_amount=1000,
+            approved_amount=1000,
+        )
+
+    def test_old_data_gets_the_defaults_and_keeps_its_amounts(self):
+        old = self.migrate(self.before)
+        claim = self.make_claim(old)
+
+        new = self.migrate(self.after)
+
+        row = new.get_model("fleetops", "SrpClaim").objects.get(pk=claim.pk)
+        self.assertEqual((row.member_revision, row.member_edited_at, row.payment_batch_id, row.approved_amount), (0, None, None, 1000))
+        killmail = new.get_model("fleetops", "SrpKillmail").objects.get(pk=4713)
+        self.assertEqual((killmail.attackers, killmail.damage_taken), ([], None))
+        settings_row = new.get_model("fleetops", "SrpSettings").objects.get()
+        self.assertEqual(
+            (
+                settings_row.member_edit_enabled,
+                settings_row.member_swap_loss_enabled,
+                settings_row.show_insurance,
+                settings_row.insurance_level,
+                settings_row.review_history_days,
+                settings_row.claim_deadline_days,
+            ),
+            (True, True, True, "platinum", 90, 9),
+        )
+        self.assertEqual(new.get_model("fleetops", "SrpPaymentBatch").objects.count(), 0)
+        self.assertEqual(new.get_model("fleetops", "SrpInsurancePrice").objects.count(), 0)
+
+    def test_the_way_back_drops_the_tables_and_columns_and_forward_works_again(self):
+        old = self.migrate(self.before)
+        claim = self.make_claim(old)
+        new = self.migrate(self.after)
+        batch = new.get_model("fleetops", "SrpPaymentBatch").objects.create(claim_count=1, payee_count=1, total=1000)
+        new.get_model("fleetops", "SrpClaim").objects.filter(pk=claim.pk).update(payment_batch=batch, member_revision=2)
+        new.get_model("fleetops", "SrpInsurancePrice").objects.create(ship_type_id=587, levels={"platinum": {"cost": "1", "payout": "2"}})
+
+        oldest = self.migrate(self.oldest)
+
+        for name in ("SrpPaymentBatch", "SrpInsurancePrice"):
+            with self.assertRaises(LookupError):
+                oldest.get_model("fleetops", name)
+        row = oldest.get_model("fleetops", "SrpClaim").objects.get(pk=claim.pk)
+        self.assertEqual((row.status, row.approved_amount), ("approved", 1000))
+        self.assertFalse(hasattr(row, "member_revision"))
+        self.assertFalse(hasattr(row, "payment_batch_id"))
+        again = self.migrate(self.after)
+        self.assertEqual(again.get_model("fleetops", "SrpClaim").objects.get(pk=claim.pk).member_revision, 0)

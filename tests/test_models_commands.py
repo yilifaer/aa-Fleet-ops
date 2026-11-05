@@ -64,6 +64,8 @@ from fleetops.models import (
     SrpKillmail,
     SrpLoss,
     SrpLossScan,
+    SrpInsurancePrice,
+    SrpPaymentBatch,
     SrpSettings,
     StandalonePing,
 )
@@ -89,6 +91,9 @@ READ_ONLY_ADMIN_MODELS = (
     # 0.3.0b1 (INT-2): the losses the scan found and its schedule are written by the scan only.
     SrpLoss,
     SrpLossScan,
+    # 0.3.0b1 (REV-5, REV-10): payment batches and insurance prices are written by the pages and the task only.
+    SrpPaymentBatch,
+    SrpInsurancePrice,
 )
 
 ALL_PERMISSIONS = [
@@ -1291,6 +1296,8 @@ class AdminTests(TestCase):
         SrpBan.objects.create(user=cls.fc, main_character_name="Boss Main", reason="Admin page test")
         SrpLoss.objects.create(character_id=9_000_001, killmail_id=987001, kind=SrpLoss.Kind.LOSS)
         SrpLossScan.objects.create(character_id=9_000_001, user=cls.fc)
+        SrpPaymentBatch.objects.create(created_by=cls.fc, created_by_name="Boss Main", claim_count=1, payee_count=1, total=1)
+        SrpInsurancePrice.objects.create(ship_type_id=587, levels={})
         cls.group = Group.objects.create(name="Sig A")
         cls.access = GroupAccess.objects.create(group=cls.group, mode=GroupAccess.Mode.FLEETS)
         cls.access.fleet_types.add(cls.fleet_type)

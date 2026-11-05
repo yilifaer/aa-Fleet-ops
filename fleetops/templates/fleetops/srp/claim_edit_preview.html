@@ -1,0 +1,57 @@
+{% extends "fleetops/base.html" %}
+{% load i18n static fleetops_i18n fleetops_srp fleetops_messages fleetops_ui %}
+{% block fleetops_content %}
+<div class="mb-3">
+  <h2 class="mb-1">{% blocktranslate trimmed with reference=claim.reference %}Check the change to {{ reference }}{% endblocktranslate %}</h2>
+  <div class="text-muted">{% translate "Nothing is saved until you confirm." %}</div>
+</div>
+{% if edit.month_changed %}
+<div class="alert alert-warning" role="alert">{% translate "The other loss happened in another EVE month. The monthly limits of that month apply to the claim." %}</div>
+{% endif %}
+<div class="row g-3 mb-3">
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header"><strong>{% translate "What changes" %}</strong></div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          {% if changed_loss %}
+          <dt class="col-sm-4">{% translate "Loss" %}</dt>
+          <dd class="col-sm-8">{{ claim.ship_type_name|default:claim.ship_type_id }} &rarr; <strong>{{ after.ship_type_name|default:after.ship_type_id }}</strong><div class="small text-muted">{{ after.killmail_time|eve_time }} EVE &middot; {{ after.solar_system_name }} &middot; {{ after.character_name }}</div></dd>
+          {% endif %}
+          {% if changed_place %}
+          <dt class="col-sm-4">{% translate "Category" %}</dt>
+          <dd class="col-sm-8">{% if claim.category_id %}{{ claim.category|srp_category_label }}{% else %}<span class="text-muted">&ndash;</span>{% endif %} &rarr; <strong>{% if after.category_id %}{{ after.category|srp_category_label }}{% else %}&ndash;{% endif %}</strong></dd>
+          <dt class="col-sm-4">{% translate "Where" %}</dt>
+          <dd class="col-sm-8">{{ claim.fleet_label|default:_("Outside a FleetOps fleet") }} &rarr; <strong>{{ after.fleet_label|default:_("Outside a FleetOps fleet") }}</strong></dd>
+          {% endif %}
+          {% if changed_comment %}
+          <dt class="col-sm-4">{% translate "Comment" context "FleetOps" %}</dt>
+          <dd class="col-sm-8">{{ after.member_comment|default:"-"|linebreaksbr }}</dd>
+          {% endif %}
+          <dt class="col-sm-4">{% translate "Requested" %}</dt>
+          <dd class="col-sm-8">{{ claim.suggested_amount|isk }} &rarr; <strong>{{ after.suggested_amount|isk }}</strong></dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+  {% if edit.evaluation %}<div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between align-items-center"><strong>{% translate "Calculation" %}</strong><span class="fo-claim-amount">{{ calculation.limited|isk }}</span></div>
+      <div class="card-body">{% include "fleetops/srp/_calculation.html" %}</div>
+    </div>
+  </div>{% endif %}
+</div>
+{% if claim_warnings %}
+<div class="card mb-3">
+  <div class="card-header"><strong>{% translate "Checks" %}</strong></div>
+  <div class="card-body fleetops-srp-checks">{% for warning in claim_warnings|srp_flags %}<div class="mb-2">{{ warning|srp_warning_badge }}</div>{% endfor %}</div>
+</div>
+{% endif %}
+<form method="post" action="{% url 'fleetops:srp_claim_edit' claim.uuid %}" class="fleetops-srp-form" data-srp-once>
+  {% csrf_token %}<input type="hidden" name="token" value="{{ token }}">
+  <button type="submit" class="btn btn-primary">{% translate "Save the change" %}</button>
+  <a class="btn btn-outline-secondary" href="{% url 'fleetops:srp_claim_edit' claim.uuid %}">{% translate "Change it again" %}</a>
+  <a class="btn btn-outline-secondary" href="{% url 'fleetops:srp_claim' claim.uuid %}">{% translate "Cancel" %}</a>
+</form>
+<script src="{% static 'fleetops/srp.js' %}?v={{ fleetops_version }}" defer></script>
+{% endblock %}

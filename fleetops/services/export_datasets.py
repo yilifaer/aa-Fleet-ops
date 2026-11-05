@@ -40,9 +40,11 @@ from fleetops.services.attendance_history import SCOPES as ATTENDANCE_SCOPES
 from fleetops.services.attendance_history import history_month, history_queryset, retention_days
 from fleetops.services.audit import audit_event
 from fleetops.services.exports import Column, Table, export_filename, export_response
-from fleetops.services.periods import eve_now, parse_year_month
+from fleetops.services.periods import eve_now, month_bounds, parse_year_month
 from fleetops.srp import access as srp_access
 from fleetops.srp import display as srp_display
+from fleetops.srp import payments as srp_payments
+from fleetops.srp import policy as srp_rules
 from fleetops.srp import summaries as srp_summaries
 from fleetops.srp.types import warnings_from_json
 from fleetops.texts import translate_stored
@@ -674,6 +676,9 @@ SRP_RULE = gettext_lazy(
     "Claims count in the EVE month of the loss (killmail time). Withdrawn claims are left out. "
     "Approved counts approved and paid claims; outstanding is approved minus paid."
 )
+SRP_PAYABLE_RULE = gettext_lazy(
+    "Approved claims that are not paid yet, with the filters of the payments page. Only payers can export this list."
+)
 SRP_AUDIT = {"audit_action": "srp.export", "audit_object": "SrpSummary"}
 SRP_STATUS_FILTERS = (
     SrpClaim.Status.PENDING,
@@ -741,6 +746,21 @@ def check_srp_fcs(request) -> ExportScope:
     return ExportScope("srp-fcs", "alliance", year, month, params=_params(year=year, month=month))
 
 
+def check_srp_payable(request) -> ExportScope:
+    """The claims waiting for payment, with the filters of the payments page; payers only (``manage_srp`` or
+    ``pay_srp``), and nobody else even when they may see all statistics."""
+    if not srp_access.is_payer(request.user):
+        raise PermissionDenied
+    filters = srp_payments.parse_filters(request.GET)
+    group = "player" if request.GET.get("group") == "player" else ""
+    # The month of the loss narrows the page's list only once picked; the file follows the page.
+    year = month = None
+    if "year" in request.GET or "month" in request.GET:
+        year, month = parse_year_month(request.GET)
+    params = _params(group=group, year=year, month=month, **filters)
+    return ExportScope("srp-payable", "alliance", year, month, params=params)
+
+
 def _label(choices, value) -> str:
     return dict(choices).get(value, value or "")
 
@@ -752,7 +772,9 @@ def _srp_claim_lines(claims, *, show_reviewers: bool = False) -> Iterator[list]:
     page shows them to SRP managers alone, and the file must not tell more than the page.
     """
     if show_reviewers:
-        claims = claims.select_related("decided_by__profile__main_character", "paid_by__profile__main_character")
+        claims = claims.select_related(
+            "decided_by__profile__main_character", "paid_by__profile__main_character", "payment_batch"
+        )
     rows = claims.order_by("killmail_time", "pk")[: exports.MAX_EXPORT_ROWS + 1]
     value_sources = SrpSettings.ValueSource.choices
     for claim in rows.iterator(chunk_size=ATTENDANCE_CHUNK_ROWS):
@@ -781,7 +803,83 @@ def _srp_claim_lines(claims, *, show_reviewers: bool = False) -> Iterator[list]:
             _display_name(claim.paid_by) if show_reviewers and claim.paid_by_id else "",
             srp_display.presence_text(claim.fleet_check, claim.fleet_check_params) if claim.fleet_check else "",
             "; ".join(warning.text for warning in warnings_from_json(claim.warnings)),
+            # Appended at the end (decision 26). Like the names of the deciders, only staff see the batch.
+            claim.payment_batch.reference if show_reviewers and claim.payment_batch_id else "",
         ]
+
+
+def build_srp_payable(request, scope):
+    """The approved claims to pay (the same ones as the payments page for these filters): one row per claim, or one
+    row per player with the claims and the sum. The footer is the total of the approved amounts."""
+    params = scope.params
+    filters = {key: params[key] for key in srp_payments.FILTER_NAMES if key in params}
+    claims = srp_payments.apply_filters(SrpClaim.objects.filter(status=SrpClaim.Status.APPROVED), filters)
+    if scope.year and scope.month:
+        lower, upper = month_bounds(scope.year, scope.month)
+        claims = claims.filter(killmail_time__gte=lower, killmail_time__lt=upper)
+    claims = claims.select_related("user__profile__main_character", "category", "link").order_by("killmail_time", "pk")
+    # One row past the limit shows a cut; the file then says so (a payer must not take a short list for the whole one).
+    rows = list(claims[: exports.MAX_EXPORT_ROWS + 1])
+    cut = len(rows) > exports.MAX_EXPORT_ROWS
+    rows = rows[: exports.MAX_EXPORT_ROWS]
+    total = sum(claim.approved_amount or 0 for claim in rows)
+    if params.get("group") == "player":
+        columns = [
+            Column("pay_to", gettext("Pay to")),
+            Column("character_id", gettext("Character ID"), "int"),
+            Column("claims", gettext("Claims"), "int"),
+            Column("total", gettext("Approved (ISK)"), "int"),
+        ]
+        lines = [
+            [row.main_character_name, row.main_character_id, len(row.claims), row.total]
+            for row in srp_payments.pay_rows(rows)
+        ]
+        footer = [str(SRP_TOTAL_ROW), None, len(rows), total]
+    else:
+        columns = [
+            Column("pay_to", gettext("Pay to")),
+            Column("character_id", gettext("Character ID"), "int"),
+            Column("claim", gettext("Claim")),
+            Column("loss", gettext("Loss time (EVE)"), "datetime"),
+            Column("ship", gettext("Ship")),
+            Column("category", gettext("Category")),
+            Column("link", gettext("Link")),
+            Column("approved", gettext("Approved (ISK)"), "int"),
+        ]
+        lines = []
+        for claim in rows:
+            character_id, name = srp_rules.pay_to(claim)
+            lines.append(
+                [
+                    name,
+                    character_id,
+                    claim.reference,
+                    claim.killmail_time,
+                    claim.ship_type_name or claim.ship_type_id,
+                    srp_display.category_label(claim.category) if claim.category_id else "",
+                    (claim.link.name or claim.link.code) if claim.link_id else "",
+                    claim.approved_amount,
+                ]
+            )
+        footer = [str(SRP_TOTAL_ROW), None, len(rows), None, None, None, None, total]
+    filter_text = "; ".join(f"{key}: {value}" for key, value in filters.items())
+    table, filename = _table(
+        request,
+        scope,
+        gettext("SRP to pay"),
+        columns,
+        lines,
+        scope_text=pgettext("FleetOps", "Alliance"),
+        details=[
+            (pgettext("FleetOps", "Filters"), filter_text),
+            (gettext("Counting rule"), str(SRP_PAYABLE_RULE)),
+        ],
+    )
+    if cut:
+        # A payer must not take a short list for the whole one: the note stands in the file, above the total.
+        table.rows.append([exports.truncation_note()] + [None] * (len(columns) - 1))
+    table.footer.append(footer)
+    return table, filename
 
 
 def _srp_scope_text(scope, name="") -> str:
@@ -824,6 +922,7 @@ def build_srp_claims(request, scope):
         Column("paid_by", gettext("Paid by")),
         Column("fleet_check", gettext("Fleet check")),
         Column("warnings", gettext("Warnings")),
+        Column("payment_batch", gettext("Payment batch")),
     ]
     filters = "; ".join(
         text
@@ -988,6 +1087,7 @@ DATASETS = {
             **SRP_AUDIT,
         ),
         Dataset("srp-fcs", gettext_lazy("SRP FCs"), check_srp_fcs, build_srp_fcs, **SRP_AUDIT),
+        Dataset("srp-payable", gettext_lazy("SRP to pay"), check_srp_payable, build_srp_payable, **SRP_AUDIT),
     )
 }
 

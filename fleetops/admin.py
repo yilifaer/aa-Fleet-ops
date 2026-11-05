@@ -48,6 +48,8 @@ from fleetops.models import (
     SrpKillmail,
     SrpLoss,
     SrpLossScan,
+    SrpInsurancePrice,
+    SrpPaymentBatch,
     SrpPayoutRule,
     SrpSettings,
     StandalonePing,
@@ -470,6 +472,23 @@ class SrpLossScanAdmin(SrpReadOnlyAdmin):
     list_display = ("character_id", "user", "status", "last_checked_at", "next_check_at", "failures")
     list_filter = ("status",)
     search_fields = ("character_id",)
+
+
+@admin.register(SrpPaymentBatch)
+class SrpPaymentBatchAdmin(SrpReadOnlyAdmin):
+    """The payment batches are made by the payers on the SRP Payments page and never changed (superusers see them
+    here; the model has no Django default permissions)."""
+
+    list_display = ("__str__", "created_by_name", "created_at", "claim_count", "payee_count", "total")
+    search_fields = ("created_by_name",)
+
+
+@admin.register(SrpInsurancePrice)
+class SrpInsurancePriceAdmin(SrpReadOnlyAdmin):
+    """The insurance prices read from ESI once a day; written by that task only."""
+
+    list_display = ("ship_type_id", "fetched_at")
+    search_fields = ("ship_type_id",)
 
 
 @admin.register(SrpKillmail)

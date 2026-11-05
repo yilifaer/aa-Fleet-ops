@@ -57,6 +57,19 @@ def active_ban(user, now=None) -> SrpBan | None:
     )
 
 
+def banned_user_ids(user_ids, now=None) -> set:
+    """The IDs among ``user_ids`` that have a ban in force (one query), for a badge in a list."""
+    ids = {pk for pk in user_ids if pk}
+    if not ids:
+        return set()
+    now = now or timezone.now()
+    return set(
+        SrpBan.objects.filter(user_id__in=ids, lifted_at__isnull=True, starts_at__lte=now)
+        .filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
+        .values_list("user_id", flat=True)
+    )
+
+
 def ban_message(ban) -> str:
     """The sentence a banned member reads when a claim is refused (in the active language)."""
     reason = translate_stored(ban.reason)

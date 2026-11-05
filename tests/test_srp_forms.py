@@ -367,14 +367,25 @@ class ReviewFilterFormTests(SimpleTestCase):
         self.assertTrue(form.is_valid(), form.errors)
         self.assertEqual(
             form.cleaned_data,
-            {"status": "approved", "scope": "in_fleet", "flag": "over_limit", "corporation": 98_000_001, "fc": 7, "q": "pilot"},
+            # REV-3 (0.3.0b1): the new filters are empty here.
+            {
+                "status": "approved", "scope": "in_fleet", "flag": "over_limit", "corporation": 98_000_001, "fc": 7,
+                "q": "pilot", "category": "", "link": "", "submitted_from": None, "submitted_to": None, "user": None,
+            },
         )
 
     def test_values_that_do_not_check_out_are_dropped_and_the_rest_kept(self):
         form = ReviewFilterForm({"status": "zzz", "scope": "in_fleet", "corporation": "98000009", "fc": "x", "q": "ship"})
 
         self.assertFalse(form.is_valid())
-        self.assertEqual(form.cleaned_data, {"scope": "in_fleet", "flag": "", "q": "ship"})
+        # REV-3 (0.3.0b1): the new filters are empty.
+        self.assertEqual(
+            form.cleaned_data,
+            {
+                "scope": "in_fleet", "flag": "", "q": "ship", "category": "", "link": "", "submitted_from": None,
+                "submitted_to": None, "user": None,
+            },
+        )
         self.assertEqual(set(form.errors), {"status", "corporation", "fc"})
 
     def test_any_status_is_a_value_of_its_own(self):

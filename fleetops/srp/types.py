@@ -543,6 +543,8 @@ class BulkResult:
 
     done: list = field(default_factory=list)
     skipped: list[tuple[Any, str]] = field(default_factory=list)
+    # The payment batch a payment created (None for other actions and when nothing was paid).
+    batch: Any = None
 
 
 # --- Summaries -----------------------------------------------------------------------------------------

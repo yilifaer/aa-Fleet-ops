@@ -50,6 +50,14 @@ class StandingBase(ClaimBase):
         values.setdefault("link_date", today())
         return f.standing_link(**values)
 
+    def killmail(self, character=None, **kwargs):
+        # The default killmail time of the factories is an hour ago, which is yesterday (EVE time) in the first hour after
+        # 00:00 UTC; the standing link is dated today, so the loss is never earlier than the start of today.
+        if kwargs.get("time") is None:
+            start = utc(*today().timetuple()[:3])
+            kwargs["time"] = max(timezone.now() - timedelta(hours=1), start)
+        return super().killmail(character, **kwargs)
+
     def loss_on(self, day, hour=12, **extra):
         return self.killmail(time=utc(day.year, day.month, day.day, hour), **extra)
 

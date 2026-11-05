@@ -19,6 +19,7 @@ from fleetops.providers.esi import FleetESIError
 from fleetops.providers.esi_killmails import KILLMAIL_NOT_FOUND, get_killmail
 from fleetops.services import names, sde, universe
 from fleetops.services.errors import log_failure
+from fleetops.srp import attackers as attacker_info
 from fleetops.srp import values
 from fleetops.srp.types import KillmailRef, SrpError, ZkillResult
 
@@ -57,6 +58,9 @@ UNRECOGNISED = texts.SRP_UNRECOGNISED()
 
 MAX_ITEMS = 5000
 MAX_ITEM_DEPTH = 3
+# The attackers kept per killmail (REV-9b): the ones who did the most damage, and always the final blow.
+MAX_ATTACKERS_STORED = 50
+ATTACKER_ID_FIELDS = ("character_id", "corporation_id", "alliance_id", "faction_id", "ship_type_id", "weapon_type_id")
 
 ZkillStatus = SrpKillmail.ZkillStatus
 HASH_RE = re.compile(r"[0-9a-f]{40}")
@@ -123,6 +127,10 @@ def _count(value) -> int | None:
     return value
 
 
+def _plain_count(value) -> bool:
+    return not isinstance(value, bool) and isinstance(value, int) and value >= 0
+
+
 def _utc(value) -> datetime:
     if isinstance(value, str):
         value = parse_datetime(value)
@@ -160,6 +168,39 @@ def _clean_items(items, depth: int, budget: list[int]) -> list[dict]:
     return cleaned
 
 
+def clean_attackers(attackers) -> list[dict]:
+    """The attackers of an ESI killmail reduced to what the review page shows: IDs, the damage and the final blow.
+
+    A row that is not an object is left out and so is a value of the wrong type (it becomes None, or 0 for the
+    damage); a bad row never fails the killmail. At most ``MAX_ATTACKERS_STORED`` rows are kept, the ones with the
+    most damage first, and the final blow is always among them.
+    """
+    rows = []
+    for attacker in attackers if isinstance(attackers, list) else ():
+        if not isinstance(attacker, dict):
+            continue
+        row = {}
+        for name in ATTACKER_ID_FIELDS:
+            try:
+                row[name] = _optional_id(attacker.get(name))
+            except ValueError:
+                row[name] = None
+        try:
+            row["damage_done"] = _count(attacker.get("damage_done")) or 0
+        except ValueError:
+            row["damage_done"] = 0
+        row["final_blow"] = attacker.get("final_blow") is True
+        rows.append(row)
+    # sorted() is stable: rows with equal damage stay in the order ESI listed them.
+    rows = sorted(rows, key=lambda row: -row["damage_done"])
+    kept = rows[:MAX_ATTACKERS_STORED]
+    if len(rows) > MAX_ATTACKERS_STORED and not any(row["final_blow"] for row in kept):
+        final = next((row for row in rows if row["final_blow"]), None)
+        if final is not None:
+            kept[-1] = final
+    return kept
+
+
 def killmail_fields(payload: dict) -> dict:
     """The stored fields of an ESI killmail, with types checked and items reduced to what SRP uses."""
     try:
@@ -176,6 +217,8 @@ def killmail_fields(payload: dict) -> dict:
             "victim_alliance_id": _optional_id(victim.get("alliance_id")),
             "ship_type_id": _id(victim["ship_type_id"]),
             "attacker_count": len(attackers) if isinstance(attackers, list) else 0,
+            "attackers": clean_attackers(attackers),
+            "damage_taken": _count(victim.get("damage_taken")) if _plain_count(victim.get("damage_taken")) else None,
             "war_id": _optional_id(payload.get("war_id")),
             "items": _clean_items(victim.get("items"), 1, [MAX_ITEMS]),
         }
@@ -349,6 +392,8 @@ def store_killmail(payload: dict, killmail_hash: str) -> SrpKillmail:
             raise
         return km
     schedule_zkill(km)
+    # The names of the attackers are looked up in a worker, never on a page (REV-9b).
+    attacker_info.queue_name_warming(km)
     return km
 
 

@@ -35,7 +35,7 @@
           <dt class="col-sm-4">{% translate "Ship" %}</dt>
           <dd class="col-sm-8">{{ claim.ship_type_name|default:claim.ship_type_id }}</dd>
           <dt class="col-sm-4">{% translate "Time" %}</dt>
-          <dd class="col-sm-8">{{ claim.killmail_time|eve_time }} EVE{% if claim.solar_system_name %} &middot; {{ claim.solar_system_name }}{% endif %} &middot; {{ killmail|srp_security }}</dd>
+          <dd class="col-sm-8">{{ claim.killmail_time|eve_time }} EVE{% if claim.solar_system_name %} &middot; {{ claim.solar_system_name }}{% endif %}{% if is_staff %} &middot; {{ killmail|srp_security }}{% endif %}</dd>
           <dt class="col-sm-4">{% translate "Killmail" %}</dt>
           <dd class="col-sm-8"><a href="{{ claim.killmail_id|zkill_url }}" target="_blank" rel="noopener noreferrer">{% blocktranslate trimmed with id=claim.killmail_id %}{{ id }} on zKillboard{% endblocktranslate %}</a></dd>
           <dt class="col-sm-4">{% translate "Where" %}</dt>
@@ -61,6 +61,8 @@
       <div class="card-body p-0">{% include "fleetops/srp/_limits.html" %}</div>
     </div>
     {% endif %}
+
+    {% if is_staff %}{% include "fleetops/srp/_review_info.html" %}{% endif %}
 
     {% if item_groups %}
     <details class="card mb-3">
@@ -101,6 +103,8 @@
     <div class="card mb-3">
       <div class="card-header"><strong>{% translate "Your claim" %}</strong></div>
       <div class="card-body">
+        {% if can_edit %}<a class="btn btn-primary mb-3" id="srp-claim-edit" href="{% url 'fleetops:srp_claim_edit' claim.uuid %}">{% translate "Change claim" %}</a>
+        <div class="small text-muted mb-3">{% translate "Change the comment, the category or link, or replace the loss while the claim is pending." %}</div>{% endif %}
         {% if can_withdraw %}
         <form method="post" action="{% url 'fleetops:srp_claim_withdraw' claim.uuid %}" class="fleetops-srp-form" data-srp-once>
           {% csrf_token %}

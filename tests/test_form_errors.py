@@ -40,6 +40,8 @@ PLACES = {
     "configuration/settings_form.html": 1,
     "configuration/srp_settings.html": 1,
     "send_ping.html": 1,
+    # INT-13 (0.3.0b1): the page where a member changes a pending claim.
+    "srp/claim_edit.html": 1,
 }
 NOT_IN_FLEET = "Character is currently not in a fleet."
 FLEET_ID = 1_046_000_000_001
@@ -119,7 +121,7 @@ class TemplateUseTests(SimpleTestCase):
         for name, count in PLACES.items():
             with self.subTest(template=name):
                 self.assertEqual(len(include.findall(sources[name])), count)
-        self.assertEqual(sum(PLACES.values()), 13)
+        self.assertEqual(sum(PLACES.values()), 14)
         used = {name for name, source in sources.items() if PARTIAL in source and name != "partials/form_errors.html"}
         self.assertEqual(used, set(PLACES))
 

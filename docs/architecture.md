@@ -154,7 +154,7 @@ templates, roles) is never translated.
 |---|---|
 | `schedule_active_fleet_tracking` | Beat, every minute: queues the polls that are due, finishes lost ends, cancels abandoned starts, queues the SRP value sweep, (at most every ten minutes) makes the day's standing SRP links and closes the ones that are due, and (at most every five minutes, only while SRP and loss discovery are on) queues the loss scan |
 | `prune_attendance_history` | Beat, daily: retention, departed members, unclaimed SRP killmails, found losses that are no use any more |
-| `track_operation`, `finish_fleet_end`, `refresh_fleet_structure`, `run_fleet_job`, `resolve_character_names`, `refresh_srp_values`, `scan_srp_losses`, `scan_srp_losses_for_user` | Queued by the code; no beat entry |
+| `track_operation`, `finish_fleet_end`, `refresh_fleet_structure`, `run_fleet_job`, `resolve_character_names`, `refresh_srp_values`, `scan_srp_losses`, `scan_srp_losses_for_user`, `refresh_srp_insurance`, `warm_srp_killmail_names` | Queued by the code; no beat entry |
 
 `kick_members` is no longer queued: kicks run as fleet jobs (`run_fleet_job`). The task stays so that messages
 an earlier version left in the broker still run.

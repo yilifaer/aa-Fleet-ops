@@ -834,6 +834,10 @@ class SettingsPageTests(TestCase):
                 "allow_self_payment",
                 "require_different_payer",
                 "auto_complete_links",
+                # REV-9d / INT-13 (0.3.0b1): the member edit switches and the days of rejection history joined.
+                "member_edit_enabled",
+                "member_swap_loss_enabled",
+                "review_history_days",
                 "member_instructions",
             ],
         )

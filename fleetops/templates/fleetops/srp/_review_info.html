@@ -1,0 +1,44 @@
+{% load i18n fleetops_srp fleetops_i18n fleetops_messages fleetops_ui %}{# What staff see on a claim besides the claim: the attackers, the limits as they are now and the claimant's history. Context: claim, killmail, attackers, limits_now, rejection_history, review_filter_query. #}
+<div class="card mb-3" id="srp-review-info">
+  <div class="card-header"><strong>{% translate "Review information" %}</strong></div>
+  <div class="card-body">
+    {% if claim.member_edited_at %}
+    <div class="alert alert-secondary py-2 small mb-3" id="srp-member-edited">{% blocktranslate trimmed with time=claim.member_edited_at|eve_time count revision=claim.member_revision %}The claimant changed this claim {{ revision }} time, last at {{ time }} EVE.{% plural %}The claimant changed this claim {{ revision }} times, last at {{ time }} EVE.{% endblocktranslate %}</div>
+    {% endif %}
+
+    <h3 class="h6">{% translate "Attackers" %}</h3>
+    <div class="mb-3" id="srp-attackers">
+      {% if attackers.stored %}
+        <div>{% blocktranslate trimmed with total=attackers.total players=attackers.players npcs=attackers.npcs %}{{ total }} attackers: {{ players }} players, {{ npcs }} NPCs.{% endblocktranslate %}{% if attackers.truncated %} <span class="small text-muted">{% translate "Only the biggest damage dealers are stored, so these numbers are a lower bound." %}</span>{% endif %}</div>
+        <div class="my-1">{% if attackers.solo %}{% translate "Solo" as label %}{% pill "info" label %} {% endif %}{% if attackers.npc %}{% translate "NPC" as label %}{% pill "neutral" label %} {% endif %}{% if attackers.awox %}{% translate "Awox" as label %}{% pill "warn" label %}{% endif %}</div>
+        {% with person=attackers.final_blow %}{% if person %}<div class="small"><strong>{% translate "Final blow" %}:</strong> {% if person.character %}{{ person.character }}{% else %}{% translate "NPC" %}{% endif %}{% if person.corporation %} ({{ person.corporation }}{% if person.alliance %} / {{ person.alliance }}{% endif %}){% endif %}{% if person.ship %} &middot; {{ person.ship }}{% endif %}{% if person.weapon %} &middot; {{ person.weapon }}{% endif %}</div>{% endif %}{% endwith %}
+        {% with person=attackers.top_damage %}{% if person %}<div class="small"><strong>{% translate "Most damage" %}:</strong> {% if person.character %}{{ person.character }}{% else %}{% translate "NPC" %}{% endif %}{% if person.corporation %} ({{ person.corporation }}{% if person.alliance %} / {{ person.alliance }}{% endif %}){% endif %} &middot; {{ person.damage|floatformat:0 }}{% if person.percent is not None %} ({{ person.percent }}%){% endif %}</div>{% endif %}{% endwith %}
+        {% if attackers.groups %}<div class="small"><strong>{% translate "Biggest groups" %}:</strong> {% for group in attackers.groups %}{{ group.name }} ({{ group.count }}){% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+      {% else %}
+        <div class="text-muted small">{% blocktranslate trimmed with total=attackers.total %}{{ total }} attackers. This killmail was stored before attacker details were kept.{% endblocktranslate %}</div>
+      {% endif %}
+    </div>
+
+    <h3 class="h6">{% translate "Monthly limits now" %} <span class="small text-muted fw-normal">{% translate "without this claim" %}</span></h3>
+    <div class="mb-3" id="srp-limits-now">
+      {% include "fleetops/srp/_limits.html" with limits=limits_now.states %}
+      {% if limits_now.over_by %}<div class="alert alert-danger py-2 small mt-2 mb-0">{% blocktranslate trimmed with over=limits_now.over_by|isk remaining=limits_now.remaining|isk %}The suggested amount is {{ over }} over what the tightest limit leaves ({{ remaining }}). Approving it needs the box "Approve over the monthly limit".{% endblocktranslate %}</div>{% endif %}
+    </div>
+
+    <h3 class="h6">{% translate "History of the claimant" %}</h3>
+    <div id="srp-rejection-history">
+      {% if rejection_history %}
+        <div class="small">{% blocktranslate trimmed with total=rejection_history.total manual=rejection_history.manual auto=rejection_history.auto withdrawn=rejection_history.withdrawn %}{{ total }} claims; rejected {{ manual }} + {{ auto }} (by a reviewer + automatically); {{ withdrawn }} withdrawn.{% endblocktranslate %}</div>
+        <div class="small">{% if rejection_history.days %}{% blocktranslate trimmed with count=rejection_history.recent days=rejection_history.days %}Rejected in the last {{ days }} days: {{ count }}.{% endblocktranslate %}{% else %}{% blocktranslate trimmed with count=rejection_history.recent %}Rejected in total: {{ count }}.{% endblocktranslate %}{% endif %}</div>
+        {% if rejection_history.latest %}
+        <ul class="small mb-1">
+          {% for item in rejection_history.latest %}<li><a href="{% url 'fleetops:srp_claim' item.uuid %}">{{ item.reference }}</a>{% if item.auto_rejected %} ({% translate "automatic" %}){% endif %}{% if item.decision_reason %}: {{ item.decision_reason|stored_text|truncatechars:120 }}{% endif %}</li>{% endfor %}
+        </ul>
+        {% endif %}
+        {% if is_reviewer and review_filter_query %}<a class="small" href="{% url 'fleetops:srp_review' %}?{{ review_filter_query }}">{% translate "All claims of this member" %}</a>{% endif %}
+      {% else %}
+        <span class="text-muted small">{% translate "This claim has no account." %}</span>
+      {% endif %}
+    </div>
+  </div>
+</div>

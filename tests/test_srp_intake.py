@@ -244,7 +244,8 @@ class KillmailFieldsTests(SimpleTestCase):
     def test_fields_from_an_esi_payload(self):
         fields = killmail_fields(esi_killmail_payload())
         self.assertEqual(
-            {key: value for key, value in fields.items() if key != "items"},
+            # REV-9b (0.3.0b1): the attackers are checked in test_srp_review_info.
+            {key: value for key, value in fields.items() if key not in ("items", "attackers")},
             {
                 "killmail_id": KILL_ID,
                 "killmail_time": KILL_TIME,
@@ -254,6 +255,7 @@ class KillmailFieldsTests(SimpleTestCase):
                 "victim_alliance_id": 99_000_100,
                 "ship_type_id": RIFTER,
                 "attacker_count": 2,
+                "damage_taken": 2345,
                 "war_id": None,
             },
         )
@@ -892,7 +894,11 @@ class EsiKillmailTests(FakeEsiTestCase):
         self.assertEqual(str(ctx.exception), "Could not read market prices: ESI returned HTTP 503.")
 
     def test_operations_are_named(self):
-        self.assertEqual(esi_killmails.KILLMAIL_OPERATIONS, ("GetKillmailsKillmailIdKillmailHash", "GetMarketsPrices"))
+        # REV-10 (0.3.0b1): the insurance prices joined the public reads.
+        self.assertEqual(
+            esi_killmails.KILLMAIL_OPERATIONS,
+            ("GetKillmailsKillmailIdKillmailHash", "GetMarketsPrices", "GetInsurancePrices"),
+        )
 
 
 # ---------------------------------------------------------------------------

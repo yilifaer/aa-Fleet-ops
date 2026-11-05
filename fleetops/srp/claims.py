@@ -7,6 +7,7 @@ The helpers at the top (``record_event``, ``evaluate``, ``apply_evaluation``, th
 with ``review``, which decides on the claims created here.
 """
 
+import copy
 from dataclasses import dataclass
 from datetime import timezone as dt_timezone
 from decimal import ROUND_HALF_UP, Decimal
@@ -18,7 +19,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from fleetops import texts
-from fleetops.models import SrpCategory, SrpClaim, SrpClaimEvent, SrpFleetLink, SrpKillmail, SrpSettings
+from fleetops.models import MAX_DATABASE_ID, SrpCategory, SrpClaim, SrpClaimEvent, SrpFleetLink, SrpKillmail, SrpSettings
 from fleetops.providers.zkillboard import MIN_KILL_AGE
 from fleetops.services.audit import audit
 from fleetops.services.identity import character_label
@@ -65,6 +66,13 @@ CALCULATION_WARNING_CODES = frozenset({"over_limit", "reduced_by_limit", "value_
 PRESENCE_WARNING_CODES = frozenset(
     {display.NEAR, display.NOT_IN_FLEET, display.NEVER_SEEN, display.REGISTERED, display.OUTSIDE_WINDOW, "ship_mismatch"}
 )
+
+# Warnings about the same loss on another site's claims (aa-srp); replaced when the loss of a claim is replaced.
+EXTERNAL_WARNING_CODES = frozenset({"external_claim"})
+# A reviewer who moved a claim between fleet and category leaves the claimant only the comment and the loss.
+REVIEWER_MOVE_ACTIONS = (Action.RECLASSIFY, Action.RECATEGORIZE)
+# "Not given" for the arguments of ``edit_claim``: None is a value there (no category, no link).
+UNSET = object()
 
 # Warnings that follow from the link of the claim (a loss of another day than the standing link's) and are replaced
 # whenever the link, the scope or the category changes. They are kept apart from the presence codes on purpose:
@@ -153,12 +161,14 @@ def record_event(
     data=None,
     old=None,
     new=None,
+    audit_reason=None,
 ) -> SrpClaimEvent:
     """Write the claim event (the timeline of the claim) and the audit entry of the same step.
 
     The audit action is ``srp.claim_<action>``; a value update is audited as a recalculation. ``old`` and ``new``
     are the audit values (status, amounts, scope), ``reason`` is the reason given. The text of an internal event
-    (a manager's note) stays on the claim event: the audit log is open to people who may not see it.
+    (a manager's note) stays on the claim event: the audit log is open to people who may not see it. ``audit_reason``
+    replaces the reason of the audit entry (``""`` keeps a text on the event only, such as a member's comment).
     """
     action = getattr(action, "value", action)
     event = SrpClaimEvent.objects.create(
@@ -173,7 +183,9 @@ def record_event(
         data=data or {},
     )
     audit_action = "recalculate" if action == Action.VALUE_UPDATE else action
-    audit(actor, f"srp.claim_{audit_action}", claim, old, new, "" if internal else reason)
+    if audit_reason is None:
+        audit_reason = "" if internal else reason
+    audit(actor, f"srp.claim_{audit_action}", claim, old, new, audit_reason)
     if claim.link_id and from_status and from_status != claim.status:
         # A claim that is settled (or unsettled again) can complete its link, or take it back to closed.
         from fleetops.srp import links
@@ -979,6 +991,9 @@ def resubmit_claim(claim: SrpClaim, *, actor) -> SrpClaim:
         locked.decision_reason = reason
         locked.decided_by = None
         locked.decided_at = now if status == Status.REJECTED else None
+        # The numbers were calculated anew: a reviewer who opened the claim before must see it again (INT-13).
+        locked.member_revision += 1
+        locked.member_edited_at = now
         locked.save()
         auto_ban = bans.auto_ban_for_cap(actor, locked, evaluation.calculation, srp, now=now)
         record_event(
@@ -1101,3 +1116,384 @@ def on_value_updated(km: SrpKillmail) -> None:
     except SrpStateError:
         # Decided or withdrawn while the value was being looked up.
         return
+
+
+# --- The claimant changes a pending claim (INT-13) ----------------------------------------------------------
+
+
+def resolve_target(text):
+    """``(link, category)`` for a choice like ``fleet:<code>``, ``link:<code>`` or ``category:<id>``. Raises ``SrpError``.
+
+    The same choices the list of found losses offers; an empty text is not handled here (the callers decide what it
+    means)."""
+    kind, _separator, value = (text or "").strip().partition(":")
+    if kind in ("fleet", "link"):
+        wanted = SrpFleetLink.Kind.FLEET if kind == "fleet" else SrpFleetLink.Kind.STANDING
+        link = (
+            SrpFleetLink.objects.select_related("operation__fleet_type", "fc_user", "category")
+            .filter(code=value[:64], kind=wanted)
+            .first()
+        )
+        if link is None:
+            raise SrpError("link_unavailable", texts.SRP_LOSS_LINK_UNAVAILABLE())
+        return link, None
+    if kind == "category" and value.isdigit() and int(value) <= MAX_DATABASE_ID:
+        category = SrpCategory.objects.filter(pk=int(value)).first()
+        if category is None:
+            raise SrpError("category_unavailable", texts.SRP_CATEGORY_UNAVAILABLE())
+        return None, category
+    raise SrpError("invalid_target", texts.SRP_LOSS_LINK_UNAVAILABLE())
+
+
+@dataclass(slots=True)
+class ClaimEdit:
+    """The outcome of ``edit_claim``: the claim (saved, or as it would be after a dry run), what changed and the
+    calculation before and after."""
+
+    claim: SrpClaim
+    changed: list
+    previous: dict
+    evaluation: Evaluation | None = None
+    killmail: SrpKillmail | None = None
+    old_killmail_id: int | None = None
+    month_changed: bool = False
+    revision: int = 0
+
+
+def _link_code(link):
+    return link.code if link is not None else None
+
+
+def _category_key(category):
+    return category.key if category is not None else None
+
+
+def _edit_target(*, locked, srp, category, target_link, killmail_time):
+    """``(scope, link, category, no_link)`` a change of category or link leads to; raises ``SrpError``.
+
+    A fleet link makes the claim in-fleet with the category of the fleet; a standing link gives its own category;
+    a category alone (or nothing) is a claim outside a fleet, put under the day's standing link of the category when
+    there is one (see ``standing_target``).
+    """
+    if target_link is not UNSET and target_link is not None:
+        link = (
+            SrpFleetLink.objects.select_related("operation__fleet_type", "fc_user", "category")
+            .filter(pk=target_link.pk)
+            .first()
+        )
+        if link is None:
+            raise SrpError("link_unavailable", texts.SRP_LOSS_LINK_UNAVAILABLE())
+        if link.kind == SrpFleetLink.Kind.FLEET and link.operation_id is not None:
+            scope = Scope.IN_FLEET
+        elif link.kind == SrpFleetLink.Kind.STANDING:
+            scope = Scope.OUT_OF_FLEET
+        else:
+            raise SrpError("link_unavailable", texts.SRP_LOSS_LINK_UNAVAILABLE())
+        resolved = categories.resolve_category(
+            scope=scope, link=link, operation=link.operation, chosen=None, settings_obj=srp
+        )
+        return scope, link, resolved, None
+    chosen = None if category is UNSET else category
+    resolved = categories.resolve_category(
+        scope=Scope.OUT_OF_FLEET, link=None, operation=None, chosen=chosen, settings_obj=srp
+    )
+    link, no_link = standing_target(
+        scope=Scope.OUT_OF_FLEET, link=None, category=resolved, killmail_time=killmail_time, srp=srp
+    )
+    return Scope.OUT_OF_FLEET, link, resolved, no_link
+
+
+def edit_claim(
+    claim: SrpClaim,
+    *,
+    actor,
+    comment=UNSET,
+    category=UNSET,
+    target_link=UNSET,
+    new_ref: KillmailRef | None = None,
+    expected_revision: int | None = None,
+    dry_run: bool = False,
+) -> ClaimEdit:
+    """The claimant changes a pending claim: the comment, the category or link, the loss. Raises ``SrpError``.
+
+    ``comment`` is the new text; ``category`` and ``target_link`` name where the loss belongs (``None`` is a value:
+    no category, no link; ``UNSET`` leaves it as it is); ``new_ref`` replaces the loss (read from ESI before the lock is
+    taken). A reviewer who moved the claim (reclassify, recategorize) leaves the claimant only the comment and the loss.
+    A change of category, link or loss calculates the claim again like a new one, with the rules of the new place
+    (eligibility without the "link is open" check where the link does not change); a result that would reject the claim
+    on the spot (``over_limit_action`` reject, nothing left) is refused and the claim stays as it was.
+
+    Writes ``member_revision`` + 1 and ``member_edited_at`` and the ``member_edit`` event (audit ``srp.claim_member_edit``;
+    the text of a comment stays on the event). ``expected_revision`` is the revision the previewed change was made
+    for. With ``dry_run`` nothing is written and ``ClaimEdit.claim`` is the claim as it would be.
+    """
+    if actor is None or claim.user_id != actor.pk:
+        raise SrpError("forbidden", texts.SRP_ONLY_CLAIMANT_EDITS())
+    if comment is not UNSET:
+        comment = _clean_comment(comment)
+    km_new = None
+    if new_ref is not None:
+        settings_now = SrpSettings.get_solo()
+        if not settings_now.member_edit_enabled:
+            raise SrpError("edit_off", texts.SRP_MEMBER_EDIT_OFF())
+        if not settings_now.member_swap_loss_enabled:
+            raise SrpError("swap_off", texts.SRP_EDIT_SWAP_OFF())
+        # The network read comes before the lock; the quota lock never waits for ESI.
+        km_new = killmails.fetch_killmail(new_ref, zkill_ok=settings_now.zkillboard_enabled)
+    now = timezone.now()
+
+    with quota.quota_lock() as srp:
+        missing_alts = discovery.unauthorized_characters(actor, srp)
+        locked = lock_claim(claim)
+        if not srp.member_edit_enabled:
+            raise SrpError("edit_off", texts.SRP_MEMBER_EDIT_OFF())
+        if locked.status != Status.PENDING:
+            raise wrong_state(locked, texts.SRP_ONLY_PENDING_EDITED())
+        if expected_revision is not None and locked.member_revision != expected_revision:
+            raise SrpStateError("changed", texts.SRP_EDIT_STALE())
+        ban = bans.active_ban(actor, now)
+        if ban is not None:
+            # A banned member can still withdraw the claim.
+            raise SrpError("banned", bans.ban_message(ban))
+        if km_new is not None and not srp.member_swap_loss_enabled:
+            raise SrpError("swap_off", texts.SRP_EDIT_SWAP_OFF())
+
+        wants_where = category is not UNSET or target_link is not UNSET
+        if wants_where and locked.events.filter(action__in=REVIEWER_MOVE_ACTIONS).exists():
+            raise SrpError("after_review", texts.SRP_EDIT_AFTER_REVIEW())
+
+        work = copy.copy(locked) if dry_run else locked
+        old_link_id = locked.link_id
+        old_km = locked.killmail
+        km = old_km
+        changed = []
+        before = {}
+        after = {}
+
+        if comment is not UNSET and comment != locked.member_comment:
+            changed.append("comment")
+            before["comment"] = locked.member_comment
+            after["comment"] = comment
+            work.member_comment = comment
+
+        link, scope, resolved, no_link = locked.link, locked.scope, locked.category, None
+        where_changed = False
+        if km_new is not None:
+            try:
+                km_new = SrpKillmail.objects.select_for_update().get(pk=km_new.pk)
+            except SrpKillmail.DoesNotExist:
+                raise SrpError("expired", EXPIRED_TEXT) from None
+            if km_new.pk == old_km.pk:
+                raise SrpError("same_loss", texts.SRP_EDIT_SAME_LOSS())
+            duplicate = _duplicate(actor, km_new)
+            if duplicate is not None:
+                raise duplicate
+            km = km_new
+        if wants_where:
+            scope, link, resolved, no_link = _edit_target(
+                locked=locked, srp=srp, category=category, target_link=target_link, killmail_time=km.killmail_time
+            )
+            where_changed = (scope, link.pk if link is not None else None, resolved.pk if resolved is not None else None) != (
+                locked.scope,
+                locked.link_id,
+                locked.category_id,
+            )
+        swapped = km_new is not None
+
+        previous = calculation_snapshot(locked)
+        evaluation = None
+        if where_changed or swapped:
+            blockers = rules.eligibility(
+                km=km,
+                user=actor,
+                scope=scope,
+                link=link,
+                operation=link.operation if link is not None else None,
+                settings_obj=srp,
+                now=now,
+                category=resolved,
+                via_standing_link=is_standing(link),
+                # The link of a claim that stays where it is need not be open; a new one has to be.
+                check_link_open=where_changed,
+                missing_alts=missing_alts,
+            )
+            if where_changed and no_link:
+                blockers.append(no_link)
+            if blockers:
+                raise SrpError("not_eligible", blockers[0])
+
+        if where_changed:
+            if _link_code(link) != _link_code(locked.link):
+                before["link"], after["link"] = _link_code(locked.link), _link_code(link)
+                changed.append("link")
+            if (resolved.pk if resolved is not None else None) != locked.category_id:
+                before["category"], after["category"] = _category_key(locked.category), _category_key(resolved)
+                changed.append("category")
+            if scope != locked.scope:
+                before["scope"], after["scope"] = locked.scope, scope
+            work.scope = scope
+            for field, value in fleet_fields(link, resolved).items():
+                setattr(work, field, value)
+        if swapped:
+            identity = claim_identity(actor, km)
+            changed.append("loss")
+            before["killmail_id"], after["killmail_id"] = old_km.pk, km.pk
+            work.killmail = km
+            work.killmail_time = km.killmail_time
+            work.ship_type_id = km.ship_type_id
+            work.ship_type_name = km.ship_type_name
+            work.solar_system_name = km.solar_system_name
+            if identity is not None:
+                work.character_id, work.character_name = identity.character_id, identity.character_name
+        if not changed:
+            raise SrpError("nothing_changed", texts.SRP_EDIT_NOTHING())
+
+        if where_changed or swapped:
+            evaluation = evaluate(
+                km=km,
+                user_id=locked.user_id,
+                corporation_id=locked.corporation_id,
+                scope=work.scope,
+                operation=work.operation,
+                settings_obj=srp,
+                category=work.category,
+                exclude_claim_id=locked.pk,
+                locking=True,
+                now=now,
+            )
+            status, _reason, _rejection = decide_submission(evaluation.calculation, evaluation.policy)
+            if status == Status.REJECTED:
+                raise SrpError("edit_would_reject", texts.SRP_EDIT_WOULD_REJECT())
+            apply_evaluation(work, evaluation, km)
+            apply_presence(work, loss_presence(work.scope, work.link, km), now)
+            if swapped:
+                work.warnings = replace_warnings(work.warnings, EXTERNAL_WARNING_CODES, _external_warnings(km.killmail_id))
+
+        month_changed = swapped and quota.claim_month(old_km) != quota.claim_month(km)
+        work.member_revision = locked.member_revision + 1
+        work.member_edited_at = now
+        result = ClaimEdit(
+            claim=work,
+            changed=changed,
+            previous=previous,
+            evaluation=evaluation,
+            killmail=km,
+            old_killmail_id=old_km.pk if swapped else None,
+            month_changed=month_changed,
+            revision=locked.member_revision,
+        )
+        if dry_run:
+            return result
+
+        try:
+            with transaction.atomic():
+                work.save()
+        except IntegrityError:
+            # The killmail was claimed meanwhile by a row that bypassed the lock (an import).
+            duplicate = _duplicate(actor, km)
+            if duplicate is None:
+                raise
+            raise duplicate from None
+        if swapped and km.origin != SrpKillmail.Origin.AASRP and km.zkill_next_attempt_at is None:
+            # A killmail read for this change waits for its value like any other; an imported placeholder never does.
+            killmails.schedule_zkill(km)
+        data = {"changed": changed, "from": before, "to": after, "revision": work.member_revision}
+        if evaluation is not None:
+            data["previous"] = previous
+        if swapped:
+            data["old_killmail_id"] = old_km.pk
+        audit_new = {key: value for key, value in after.items() if key != "comment"}
+        if "comment" in after:
+            audit_new["comment_length"] = len(after["comment"])
+        record_event(
+            work,
+            Action.MEMBER_EDIT,
+            actor=actor,
+            from_status=Status.PENDING,
+            amount=work.suggested_amount,
+            reason=after.get("comment", ""),
+            data=data,
+            old={"revision": locked.member_revision, "suggested_amount": previous["suggested_amount"]},
+            new={
+                "changed": changed,
+                "revision": work.member_revision,
+                "suggested_amount": work.suggested_amount,
+                **audit_new,
+            },
+            audit_reason="",
+        )
+        if "link" in changed:
+            # The claim left its old link (that one may be settled now) and joined another.
+            from fleetops.srp import links as srp_links
+
+            srp_links.settle_after_commit(old_link_id, link.pk if link is not None else None)
+    sync_claim(claim, work)
+    result.claim = claim
+    return result
+
+
+EDIT_SALT = "fleetops.srp.edit"
+EDIT_MAX_AGE = 3600
+
+
+def edit_reference(user, text: str = "", loss_id=None) -> KillmailRef | None:
+    """The loss a member wants to put on a claim instead: pasted text, or a loss of the member's own list of found
+    losses (by killmail ID). None when neither is given; both is an error. Counts toward the preview throttle."""
+    text = (text or "").strip()
+    if text and loss_id:
+        raise SrpError("loss_source", texts.SRP_EDIT_LOSS_SOURCE())
+    if text:
+        _throttle(user)
+        return killmails.parse_killmail_reference(text)
+    if loss_id:
+        loss = discovery.owned_loss(user, loss_id) if 0 < int(loss_id) <= MAX_DATABASE_ID else None
+        if loss is None:
+            raise SrpError("loss_unavailable", texts.SRP_LOSS_LINK_UNAVAILABLE())
+        _throttle(user)
+        return KillmailRef(loss.killmail_id, loss.killmail_hash or None, "discovered")
+    return None
+
+
+def _edit_arguments(target, comment, ref):
+    """The keyword arguments of ``edit_claim`` for the posted choices (``target`` is ``fleet:<code>`` and the like)."""
+    arguments = {}
+    if comment is not UNSET:
+        arguments["comment"] = comment
+    if target:
+        link, category = resolve_target(target)
+        arguments["target_link"] = link
+        if link is None:
+            arguments["category"] = category
+    if ref is not None:
+        arguments["new_ref"] = ref
+    return arguments
+
+
+def preview_edit(user, claim, *, comment=UNSET, target: str = "", ref: KillmailRef | None = None):
+    """``(ClaimEdit, token)`` for a change the member asked for: what the claim would be after it, nothing written.
+    The token (signed, one hour, this user) carries the change and the revision it was checked against, for
+    ``submit_edit``. Raises ``SrpError``."""
+    arguments = _edit_arguments(target, comment, ref)
+    result = edit_claim(claim, actor=user, dry_run=True, **arguments)
+    payload = {"claim": claim.pk, "rev": result.revision, "u": user.pk}
+    if comment is not UNSET:
+        payload["cmt"] = comment
+    if target:
+        payload["tgt"] = target
+    if ref is not None:
+        payload["km"] = result.killmail.pk
+    return result, signing.dumps(payload, salt=EDIT_SALT)
+
+
+def submit_edit(user, claim, token: str) -> ClaimEdit:
+    """Apply the change a previewed token stands for. A claim that changed since the preview (its revision moved on) or
+    an expired token is refused. Raises ``SrpError``."""
+    try:
+        data = signing.loads(token or "", salt=EDIT_SALT, max_age=EDIT_MAX_AGE)
+    except signing.BadSignature:
+        raise SrpError("invalid_token", EXPIRED_TEXT) from None
+    if not isinstance(data, dict) or data.get("u") != user.pk or data.get("claim") != claim.pk:
+        raise SrpError("invalid_token", EXPIRED_TEXT)
+    ref = KillmailRef(int(data["km"]), None, "edit") if data.get("km") else None
+    arguments = _edit_arguments(data.get("tgt") or "", data["cmt"] if "cmt" in data else UNSET, ref)
+    return edit_claim(claim, actor=user, expected_revision=data.get("rev"), **arguments)

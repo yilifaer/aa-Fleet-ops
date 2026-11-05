@@ -69,6 +69,13 @@ ESI's `Expires` says and kept for 7 days by FleetOps (a failure for one hour). W
 is stored without them and nothing is refused because of it. Without the SDE this lookup runs in the first web request that
 reads the killmail (at most these three cached reads); installing django-eveonline-sde is recommended and avoids it.
 
+FleetOps SRP also reads the public insurance prices (`GET /insurance/prices`, no scope, no token, asked for in English) to
+show an insurance estimate next to SRP amounts. The read is queued from the existing minute beat task at most once a day
+and only while SRP is enabled and **Show the insurance estimate** is on; django-esi keeps the answer as long as ESI's
+`Expires` says, and the prices are stored in FleetOps (replaced as a whole). A failed read keeps the old prices and is tried
+again after an hour. The attackers of a killmail are read from the same killmail answer that is read anyway: no extra
+request is made when a claim is checked; their names are looked up by a background task after the killmail was stored.
+
 ## SRP apps
 
 FleetOps can create an SRP link for every fleet when it starts (**SRP auto create**). Three providers exist:

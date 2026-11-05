@@ -248,7 +248,12 @@ class StoredLocationTests(KillmailTestCase):
         self.assertEqual(km.origin, SrpKillmail.Origin.ESI)
 
     def test_when_the_lookups_find_nothing_the_fields_stay_empty_but_the_check_is_noted(self):
-        km = self.store()
+        # The lookups are patched to find nothing: left unpatched they would read whatever another test left in the
+        # shared caches, which made this test depend on the order and on the time of day.
+        with mock.patch.object(universe, "system_infos", return_value={}), mock.patch.object(
+            universe, "type_groups", return_value={}
+        ):
+            km = self.store()
 
         km.refresh_from_db()
         self.assertEqual((km.solar_system_security, km.region_id, km.ship_group_id), (None, None, None))

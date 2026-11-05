@@ -388,6 +388,12 @@ class DefaultsInDocsTests(SimpleTestCase):
         "Find losses automatically": "loss_discovery_enabled",
         "Minutes between two reads of a character": "loss_discovery_interval_minutes",
         "Members must authorize loss reading for all their characters": "require_all_alts_authorized",
+        # 0.3.0b1 (INT-13, REV-9d, REV-10): member edits, the rejection history and the insurance estimate.
+        "Members can change their pending claims": "member_edit_enabled",
+        "Members can replace the loss of a pending claim": "member_swap_loss_enabled",
+        "Days of rejection history shown to reviewers": "review_history_days",
+        "Show the insurance estimate": "show_insurance",
+        "Insurance level shown": "insurance_level",
     }
 
     @staticmethod

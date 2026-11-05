@@ -647,6 +647,7 @@ KILLMAIL_EMPTY = StoredText(gettext_noop("Could not read the killmail: ESI retur
 MARKET_READ_FAILED = StoredText(gettext_noop("Could not read market prices: %(detail)s"), nested=("detail",))
 LOSS_LIST_FAILED = StoredText(gettext_noop("Could not read the recent losses: %(detail)s"), nested=("detail",))
 LOSS_READ_DENIED = StoredText(gettext_noop("ESI refused to show the recent losses of this character."))
+INSURANCE_READ_FAILED = StoredText(gettext_noop("Could not read insurance prices: %(detail)s"), nested=("detail",))
 UNIVERSE_READ_FAILED = StoredText(gettext_noop("Could not read game data: %(detail)s"), nested=("detail",))
 ESI_ERROR_LIMIT_MINUTE = StoredText(gettext_noop("ESI error limit reached; try again in a minute."))
 ESI_HTTP_PLAIN = StoredText(gettext_noop("ESI returned HTTP %(status)s."))
@@ -1226,6 +1227,25 @@ SRP_LINK_AUTO_UNCOMPLETED = StoredText(gettext_noop("A claim of the link is wait
 SRP_LINK_NO_DAILY_CATEGORY = StoredText(gettext_noop("Choose a category for the link."))
 SRP_LINK_AUTO_CLOSED = StoredText(gettext_noop("Closed automatically at the time set for the link."))
 SRP_NO_LINK_FOR_DAY = StoredText(gettext_noop("This category has no open SRP link for the day of the loss."))
+
+# SRP member edits and the revision check of the review (INT-13).
+SRP_MEMBER_EDIT_OFF = StoredText(gettext_noop("Members cannot change their claims."))
+SRP_ONLY_CLAIMANT_EDITS = StoredText(gettext_noop("Only the claimant can change this claim."))
+SRP_ONLY_PENDING_EDITED = StoredText(gettext_noop("Only pending claims can be changed."))
+SRP_EDIT_SWAP_OFF = StoredText(gettext_noop("Replacing the loss of a claim is switched off."))
+SRP_EDIT_AFTER_REVIEW = StoredText(
+    gettext_noop("A reviewer has already moved this claim. You can still change the comment or replace the loss.")
+)
+SRP_EDIT_NOTHING = StoredText(gettext_noop("Nothing was changed."))
+SRP_EDIT_SAME_LOSS = StoredText(gettext_noop("This is the loss of the claim already."))
+SRP_EDIT_WOULD_REJECT = StoredText(
+    gettext_noop("This change would be rejected automatically because the monthly limit is used up. The claim stays as it is.")
+)
+SRP_EDIT_STALE = StoredText(gettext_noop("The claim changed since you checked your change. Check it again."))
+SRP_MEMBER_CHANGED = StoredText(
+    gettext_noop("The claimant changed this claim just now. Reload the page and check it again.")
+)
+SRP_EDIT_LOSS_SOURCE = StoredText(gettext_noop("Choose one loss: a pasted link or one from your recent losses."))
 
 # SRP loss discovery.
 SRP_ALTS_NOT_AUTHORIZED = StoredText(gettext_noop("Authorize loss reading for all your characters first: %(names)s."))

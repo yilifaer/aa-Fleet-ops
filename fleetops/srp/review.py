@@ -20,7 +20,7 @@ from django.utils import timezone
 from fleetops.constants import MAX_ISK
 from fleetops import texts
 from fleetops.models import SrpClaim, SrpClaimEvent, SrpFleetLink, SrpSettings
-from fleetops.srp import access, categories, claims, display, links, quota
+from fleetops.srp import access, categories, claims, display, links, payments, quota
 from fleetops.srp import policy as rules
 from fleetops.srp.types import BINDING_ORDER, BulkResult, PolicySnapshot, SrpError, SrpLimitError, SrpStateError
 
@@ -122,9 +122,12 @@ def _approval_state(claim) -> dict:
     }
 
 
-def _check_shown(locked: SrpClaim, *, status=None, suggested=None, limited=None) -> None:
-    """Refuse a decision made on a claim that is not the one the reviewer looked at: another status, or other
-    stored amounts than those on the button that was pressed. ``None`` means nothing was shown to compare."""
+def _check_shown(locked: SrpClaim, *, status=None, suggested=None, limited=None, revision=None) -> None:
+    """Refuse a decision made on a claim that is not the one the reviewer looked at: another status, other stored
+    amounts than those on the button that was pressed, or a claim the claimant changed since (``revision`` is the
+    ``member_revision`` the page showed). ``None`` means nothing was shown to compare."""
+    if revision is not None and locked.member_revision != revision:
+        raise SrpStateError("changed", texts.SRP_MEMBER_CHANGED())
     if status is not None and locked.status != status:
         raise SrpStateError(
             "changed",
@@ -152,6 +155,7 @@ def _approve_locked(
     expected_status=None,
     expected_suggested=None,
     expected_limited=None,
+    expected_revision=None,
 ) -> SrpClaim:
     """Approve (or change the amount of) a locked claim. Call it inside ``quota_lock``."""
     if locked.status == Status.PAID:
@@ -161,7 +165,13 @@ def _approve_locked(
     changing = locked.status == Status.APPROVED
     if changing and amount == locked.approved_amount:
         raise SrpStateError("already", texts.SRP_ALREADY_APPROVED(amount=display.format_isk(amount)))
-    _check_shown(locked, status=expected_status, suggested=expected_suggested, limited=expected_limited)
+    _check_shown(
+        locked,
+        status=expected_status,
+        suggested=expected_suggested,
+        limited=expected_limited,
+        revision=expected_revision,
+    )
 
     policy = PolicySnapshot.from_json(locked.policy)
     states = quota.limit_states(
@@ -247,6 +257,7 @@ def approve_claim(
     expected_status: str | None = None,
     expected_suggested: int | None = None,
     expected_limited: int | None = None,
+    expected_revision: int | None = None,
 ) -> SrpClaim:
     """Pending to approved (or a changed amount on an approved claim). A reason is required when ``amount``
     differs from the suggested amount, for every change of an approved amount and when going over a limit;
@@ -274,17 +285,18 @@ def approve_claim(
             expected_status=expected_status,
             expected_suggested=expected_suggested,
             expected_limited=expected_limited,
+            expected_revision=expected_revision,
         )
     return claims.sync_claim(claim, locked)
 
 
-def _approve_clean(claim, actor, expected_suggested=None) -> SrpClaim:
+def _approve_clean(claim, actor, expected_suggested=None, expected_revision=None) -> SrpClaim:
     with quota.quota_lock() as srp:
         locked = claims.lock_claim(claim)
         _require_reviewer(actor, locked, srp)
         if locked.status != Status.PENDING:
             raise claims.wrong_state(locked, texts.SRP_ONLY_PENDING_APPROVED(), Status.APPROVED)
-        _check_shown(locked, suggested=expected_suggested)
+        _check_shown(locked, suggested=expected_suggested, revision=expected_revision)
         if locked.warnings or locked.over_limit:
             raise SrpError("not_clean", texts.SRP_HAS_WARNINGS())
         if locked.suggested_amount <= 0:
@@ -319,26 +331,33 @@ def _claim_list(claims_) -> list:
     return [claims_] if isinstance(claims_, SrpClaim) else list(claims_)
 
 
-def approve_clean_claims(claims_, *, actor, expected_amounts=None) -> BulkResult:
+def approve_clean_claims(claims_, *, actor, expected_amounts=None, expected_revisions=None) -> BulkResult:
     """Approve pending claims without warnings at the suggested amount, each under its own lock.
 
     Claims with warnings, without a suggested amount or that no longer fit into a monthly limit are skipped,
     and so are the reviewer's own claims. ``expected_amounts`` maps a claim's ID to the suggested amount the
-    reviewer saw; a claim whose suggested amount is another one by now is skipped as well.
+    reviewer saw; a claim whose suggested amount is another one by now is skipped as well, and so is a claim the
+    claimant changed since (``expected_revisions`` maps a claim's ID to the ``member_revision`` the list showed).
     """
     _require_reviewer_role(actor)
     expected = expected_amounts or {}
-    return _each(_claim_list(claims_), lambda claim: _approve_clean(claim, actor, expected.get(claim.pk)))
+    revisions = expected_revisions or {}
+    return _each(
+        _claim_list(claims_),
+        lambda claim: _approve_clean(claim, actor, expected.get(claim.pk), revisions.get(claim.pk)),
+    )
 
 
-def reject_claim(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
-    """Pending to rejected; the reason is shown to the claimant."""
+def reject_claim(claim: SrpClaim, *, actor, reason: str, expected_revision: int | None = None) -> SrpClaim:
+    """Pending to rejected; the reason is shown to the claimant. ``expected_revision`` is the ``member_revision`` the
+    page showed (a claim the claimant changed since is refused)."""
     reason = claims.clean_reason(reason, required=True, what="reason for the rejection")
     with quota.quota_lock() as srp:
         locked = claims.lock_claim(claim)
         _require_reviewer(actor, locked, srp)
         if locked.status != Status.PENDING:
             raise claims.wrong_state(locked, texts.SRP_ONLY_PENDING_REJECTED(), Status.REJECTED)
+        _check_shown(locked, revision=expected_revision)
         previous = locked.status
         locked.status = Status.REJECTED
         locked.approved_amount = None
@@ -391,7 +410,7 @@ def revoke_approval(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
     return claims.sync_claim(claim, locked)
 
 
-def _mark_paid(claim, actor, note, expected_amount=None) -> SrpClaim:
+def _mark_paid(claim, actor, note, expected_amount=None, batch=None) -> SrpClaim:
     with quota.quota_lock() as srp:
         locked = claims.lock_claim(claim)
         _require_payer(actor, locked, srp)
@@ -408,6 +427,7 @@ def _mark_paid(claim, actor, note, expected_amount=None) -> SrpClaim:
         locked.paid_by = actor
         locked.paid_at = timezone.now()
         locked.payment_note = note
+        locked.payment_batch = batch
         locked.save()
         claims.record_event(
             locked,
@@ -416,6 +436,7 @@ def _mark_paid(claim, actor, note, expected_amount=None) -> SrpClaim:
             from_status=Status.APPROVED,
             amount=locked.approved_amount,
             reason=note,
+            data={"batch": batch.pk} if batch is not None else None,
             old={"status": Status.APPROVED},
             new={"status": locked.status, "approved_amount": locked.approved_amount},
         )
@@ -423,8 +444,13 @@ def _mark_paid(claim, actor, note, expected_amount=None) -> SrpClaim:
     return claims.sync_claim(claim, locked)
 
 
-def mark_paid(claims_, *, actor, note: str = "", expected_amounts=None) -> BulkResult:
-    """Approved to paid, each claim under its own row lock.
+def mark_paid(claims_, *, actor, note: str = "", expected_amounts=None, filters=None) -> BulkResult:
+    """Approved to paid, each claim under its own row lock, all in one payment batch (``SrpPaymentBatch``).
+
+    The batch is made first, in a transaction of its own; the claims that could be paid point to it and their paid event
+    names it. Afterwards the batch gets the numbers of the payment (claims, payees, total) and one audit entry; when
+    nothing could be paid the batch is deleted again. ``filters`` are the filters of the payments page, kept with the
+    batch.
 
     Claims that are not approved are skipped with the reason, and so are the payer's own claims and, with
     ``require_different_payer``, the ones the payer approved.
@@ -436,7 +462,17 @@ def mark_paid(claims_, *, actor, note: str = "", expected_amounts=None) -> BulkR
     if len(note) > MAX_PAYMENT_NOTE_LENGTH:
         raise SrpError("note_too_long", texts.SRP_NOTE_TOO_LONG(max=MAX_PAYMENT_NOTE_LENGTH))
     expected = expected_amounts or {}
-    return _each(_claim_list(claims_), lambda claim: _mark_paid(claim, actor, note, expected.get(claim.pk)))
+    batch = payments.create_batch(actor, note, filters)
+    try:
+        result = _each(_claim_list(claims_), lambda claim: _mark_paid(claim, actor, note, expected.get(claim.pk), batch))
+    except BaseException:
+        # Whatever stopped the payment: claims that were paid keep their batch, with the numbers they add up to; a batch
+        # nobody was paid in must not stay.
+        payments.finish_batch(batch, SrpClaim.objects.filter(payment_batch=batch), note)
+        raise
+    if payments.finish_batch(batch, result.done, note) is not None:
+        result.batch = batch
+    return result
 
 
 def undo_payment(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
@@ -451,10 +487,12 @@ def undo_payment(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
         if locked.status != Status.PAID:
             raise claims.wrong_state(locked, texts.SRP_ONLY_PAID_UNPAID(), Status.APPROVED)
         previous = {"status": locked.status, "paid_at": locked.paid_at.isoformat() if locked.paid_at else None}
+        previous_batch = locked.payment_batch_id
         locked.status = Status.APPROVED
         locked.paid_by = None
         locked.paid_at = None
         locked.payment_note = ""
+        locked.payment_batch = None
         locked.save()
         claims.record_event(
             locked,
@@ -463,6 +501,7 @@ def undo_payment(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
             from_status=Status.PAID,
             amount=locked.approved_amount,
             reason=reason,
+            data={"batch": previous_batch} if previous_batch is not None else None,
             old=previous,
             new={"status": locked.status},
         )
@@ -515,7 +554,9 @@ def reopen_claim(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
     return claims.sync_claim(claim, locked)
 
 
-def reclassify_claim(claim: SrpClaim, *, actor, scope: str, link=None, reason: str, category=None) -> SrpClaim:
+def reclassify_claim(
+    claim: SrpClaim, *, actor, scope: str, link=None, reason: str, category=None, expected_revision: int | None = None
+) -> SrpClaim:
     """Move a pending claim between in fleet and out of fleet; in fleet needs an open fleet link.
 
     The category follows the move: a claim moved into a fleet gets the category of that fleet; a claim moved out
@@ -533,6 +574,7 @@ def reclassify_claim(claim: SrpClaim, *, actor, scope: str, link=None, reason: s
         _require_reviewer(actor, locked, srp)
         if locked.status != Status.PENDING:
             raise claims.wrong_state(locked, texts.SRP_ONLY_PENDING_MOVED())
+        _check_shown(locked, revision=expected_revision)
         target = None
         if scope == Scope.IN_FLEET:
             if link is None:
@@ -611,7 +653,9 @@ def reclassify_claim(claim: SrpClaim, *, actor, scope: str, link=None, reason: s
     return claims.sync_claim(claim, locked)
 
 
-def recategorize_claim(claim: SrpClaim, *, actor, category, reason: str) -> SrpClaim:
+def recategorize_claim(
+    claim: SrpClaim, *, actor, category, reason: str, expected_revision: int | None = None
+) -> SrpClaim:
     """Change the category of a pending claim (``None`` for no category) and calculate it again: the payout
     rules, the percentage, the caps and the monthly limits of the new category apply. A reason is required.
 
@@ -626,6 +670,7 @@ def recategorize_claim(claim: SrpClaim, *, actor, category, reason: str) -> SrpC
         _require_reviewer(actor, locked, srp)
         if locked.status != Status.PENDING:
             raise claims.wrong_state(locked, texts.SRP_ONLY_PENDING_RECATEGORIZED())
+        _check_shown(locked, revision=expected_revision)
         new_id = category.pk if category is not None else None
         if locked.category_id == new_id:
             raise SrpError("unchanged", texts.SRP_CATEGORY_UNCHANGED())

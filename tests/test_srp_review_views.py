@@ -288,7 +288,8 @@ class ReviewQueueTests(ManagerPagesTestCase):
         self.assertEqual(cost(), small)
         # The framework needs about 21 of them (session, user, permissions, menu, saving the session), its
         # notification badge is counted apart.
-        self.assertLessEqual(small, 30 + f.notification_badge_queries(self.manager))
+        # 0.3.0b1 (REV-3): the category choices, the link hints and the ban badges are three more reads (30 before).
+        self.assertLessEqual(small, 33 + f.notification_badge_queries(self.manager))
 
     def test_queue_page_loads_the_script(self):
         self.assertContains(self.client.get(route("srp_review")), "fleetops/srp.js?v=")

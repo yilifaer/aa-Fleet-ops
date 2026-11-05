@@ -16,7 +16,7 @@ from django.utils.translation import pgettext_lazy
 from fleetops.constants import MAX_ISK
 from fleetops.forms import _style
 from fleetops.forms_operation import EveDateTimeField
-from fleetops.models import SrpBan, SrpCategory, SrpFleetLink, SrpSettings
+from fleetops.models import MAX_DATABASE_ID, SrpBan, SrpCategory, SrpFleetLink, SrpSettings
 from fleetops.srp.categories import default_category, selectable_categories
 from fleetops.srp.display import category_label
 from fleetops.srp.killmails import parse_killmail_reference
@@ -30,6 +30,8 @@ REASON_LENGTH = 1000
 NOTE_LENGTH = 255
 # Claims ticked in one list.
 MAX_SELECTED_CLAIMS = 200
+# The length of an SRP link code.
+LINK_CODE_LENGTH = 32
 
 ISK_EXAMPLES = _("250m, 1.2b or 250,000,000")
 ISK_INVALID = format_lazy(_("Enter an amount in ISK, for example {examples}."), examples=ISK_EXAMPLES)
@@ -131,6 +133,12 @@ class IskField(forms.Field):
             return True
 
 
+def _shown_revision():
+    """The hidden field that carries the ``member_revision`` the page showed: the decision is refused when the claimant
+    changed the claim since. Optional; without it nothing is compared."""
+    return forms.IntegerField(required=False, min_value=0, max_value=2**31 - 1, widget=forms.HiddenInput())
+
+
 class ClaimIdsField(forms.MultipleChoiceField):
     """The claims ticked in a list, as UUIDs; the view looks the claims up and skips the ones it cannot use."""
 
@@ -166,10 +174,18 @@ class ClaimSelectionForm(forms.Form):
 
     def shown_amounts(self) -> dict:
         """``{uuid: amount}`` of the ticked claims that posted a readable amount; others are left out."""
+        return self._shown("shown-", 19)
+
+    def shown_revisions(self) -> dict:
+        """``{uuid: member_revision}`` of the ticked claims (``rev-<uuid>``): the number of changes by the claimant the
+        list showed. Others are left out."""
+        return self._shown("rev-", 9)
+
+    def _shown(self, prefix, digits) -> dict:
         shown = {}
         for claim_id in self.cleaned_data.get("claim", ()):
-            text = self.data.get(f"shown-{claim_id}")
-            if isinstance(text, str) and text.isascii() and text.isdigit() and len(text) <= 19:
+            text = self.data.get(f"{prefix}{claim_id}")
+            if isinstance(text, str) and text.isascii() and text.isdigit() and len(text) <= digits:
                 shown[claim_id] = int(text)
         return shown
 
@@ -277,6 +293,7 @@ class ReasonForm(forms.Form):
         strip=True,
         widget=forms.Textarea(attrs={"rows": 2}),
     )
+    shown_revision = _shown_revision()
 
     def __init__(self, *args, what="reason", **kwargs):
         super().__init__(*args, **kwargs)
@@ -328,6 +345,7 @@ class ApproveForm(forms.Form):
     shown_status = forms.ChoiceField(required=False, choices=SHOWN_STATUSES, widget=forms.HiddenInput())
     shown_suggested = forms.IntegerField(required=False, min_value=0, max_value=MAX_ISK, widget=forms.HiddenInput())
     shown_limited = forms.IntegerField(required=False, min_value=0, max_value=MAX_ISK, widget=forms.HiddenInput())
+    shown_revision = _shown_revision()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -354,11 +372,15 @@ class ApproveForm(forms.Form):
         """What the service compares with the claim under its lock: the status the page showed and, for a
         button that stands for a stored amount, that amount."""
         mode = self.cleaned_data["mode"]
-        return {
+        expected = {
             "expected_status": self.cleaned_data.get("shown_status") or None,
             "expected_suggested": self.cleaned_data.get("shown_suggested") if mode == self.SUGGESTED else None,
             "expected_limited": self.cleaned_data.get("shown_limited") if mode == self.WITHIN_LIMIT else None,
         }
+        if self.cleaned_data.get("shown_revision") is not None:
+            # Also what the claimant had changed when the page was made.
+            expected["expected_revision"] = self.cleaned_data["shown_revision"]
+        return expected
 
 
 class PaidForm(forms.Form):
@@ -409,6 +431,7 @@ class ReclassifyForm(forms.Form):
     reason = forms.CharField(
         label=_("Reason"), max_length=REASON_LENGTH, strip=True, widget=forms.Textarea(attrs={"rows": 2})
     )
+    shown_revision = _shown_revision()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -432,6 +455,7 @@ class RecategorizeForm(forms.Form):
     reason = forms.CharField(
         label=_("Reason"), max_length=REASON_LENGTH, strip=True, widget=forms.Textarea(attrs={"rows": 2})
     )
+    shown_revision = _shown_revision()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -497,14 +521,73 @@ class ReviewFilterForm(forms.Form):
         label=_("Search"),
         widget=forms.TextInput(attrs={"placeholder": _("Pilot, ship or SRP-123")}),
     )
+    category = forms.ChoiceField(label=_("Category"), required=False, choices=[("", _("Any category"))])
+    link = forms.CharField(
+        label=_("Link"),
+        required=False,
+        max_length=LINK_CODE_LENGTH,
+        strip=True,
+        widget=forms.TextInput(attrs={"placeholder": _("Link code"), "list": "srp-link-codes", "autocomplete": "off"}),
+    )
+    submitted_from = forms.DateField(
+        required=False, label=_("Submitted from"), widget=forms.DateInput(attrs={"type": "date"})
+    )
+    submitted_to = forms.DateField(
+        required=False, label=_("Submitted to"), widget=forms.DateInput(attrs={"type": "date"})
+    )
+    # Not shown as a field: the claim page links to the claims of one member.
+    user = forms.IntegerField(required=False, min_value=1, max_value=MAX_DATABASE_ID, widget=forms.HiddenInput())
 
-    def __init__(self, *args, corporations=(), fcs=(), **kwargs):
+    def __init__(self, *args, corporations=(), fcs=(), categories=(), **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["corporation"].choices = [
             ("", _("Any corporation")),
             *((str(pk), name) for pk, name in corporations),
         ]
         self.fields["fc"].choices = [("", _("Any FC")), *((str(pk), name) for pk, name in fcs)]
+        self.fields["category"].choices = category_choices(categories)
+        _style(self.fields)
+
+
+NO_CATEGORY = "none"
+
+
+def category_choices(categories=()):
+    """The choices of a category filter: any, the categories given as ``(id, label)`` and the claims without one."""
+    return [
+        ("", _("Any category")),
+        *((str(pk), label) for pk, label in categories),
+        (NO_CATEGORY, _("No category")),
+    ]
+
+
+class PayableFilterForm(forms.Form):
+    """The filters of the claims waiting for payment (and of their export): category, link and corporation. Invalid
+    values are ignored by the view."""
+
+    category = forms.ChoiceField(label=_("Category"), required=False, choices=[("", _("Any category"))])
+    link = forms.CharField(
+        label=_("Link"),
+        required=False,
+        max_length=LINK_CODE_LENGTH,
+        strip=True,
+        widget=forms.TextInput(attrs={"placeholder": _("Link code"), "list": "srp-link-codes", "autocomplete": "off"}),
+    )
+    corporation = forms.TypedChoiceField(
+        label=pgettext_lazy("FleetOps", "Corporation"),
+        required=False,
+        coerce=int,
+        empty_value=None,
+        choices=[("", _("Any corporation"))],
+    )
+
+    def __init__(self, *args, corporations=(), categories=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["category"].choices = category_choices(categories)
+        self.fields["corporation"].choices = [
+            ("", _("Any corporation")),
+            *((str(pk), name) for pk, name in corporations),
+        ]
         _style(self.fields)
 
 
@@ -718,3 +801,73 @@ class BanForm(forms.Form):
         if cleaned.get("permanent") and cleaned.get("days"):
             cleaned["days"] = None
         return cleaned
+
+
+_TARGET = re.compile(r"(?:fleet|link|category):[A-Za-z0-9_-]{1,64}", re.ASCII)
+
+
+class TargetField(forms.ChoiceField):
+    """Where a loss belongs, as ``fleet:<code>``, ``link:<code>`` or ``category:<id>``; empty keeps it as it is. Any
+    well-formed value is accepted here, the service decides whether the link or category can be used."""
+
+    def valid_value(self, value):
+        return bool(_TARGET.fullmatch(str(value)))
+
+
+class ClaimEditForm(forms.Form):
+    """What a member can change on a pending claim: the comment, where the loss belongs and the loss itself.
+
+    ``target`` is left out when a reviewer already moved the claim; ``killmail`` and ``loss`` are left out when
+    replacing the loss is switched off (``loss`` also while found losses are not read).
+    """
+
+    comment = forms.CharField(
+        label=pgettext_lazy("FleetOps", "Comment"),
+        required=False,
+        max_length=COMMENT_LENGTH,
+        strip=True,
+        widget=forms.Textarea(attrs={"rows": 3}),
+        help_text=_("Anything the reviewer should know."),
+    )
+    target = TargetField(
+        label=_("Category or link"),
+        required=False,
+        help_text=_("Move the claim to another fleet, a standing link or a category. The claim is calculated again."),
+    )
+    killmail = forms.CharField(
+        label=_("Replace the loss with a killmail link"),
+        required=False,
+        max_length=KILLMAIL_INPUT_LENGTH,
+        strip=True,
+        widget=forms.Textarea(attrs={"rows": 2, "autocomplete": "off"}),
+        help_text=_("Paste the in-game killmail link or a zKillboard link of your other loss."),
+    )
+    loss = forms.IntegerField(
+        label=_("or choose one of your recent losses"),
+        required=False,
+        min_value=1,
+        max_value=MAX_DATABASE_ID,
+    )
+
+    def __init__(self, *args, target_choices=None, loss_choices=None, allow_swap=True, **kwargs):
+        """``target_choices`` are optgroups ``[(group, [(value, label)])]`` (None leaves the field out),
+        ``loss_choices`` ``[(killmail id, label)]`` (None leaves the select out)."""
+        super().__init__(*args, **kwargs)
+        if target_choices is None:
+            del self.fields["target"]
+        else:
+            self.fields["target"].choices = [("", _("Keep as it is")), *target_choices]
+        if not allow_swap:
+            del self.fields["killmail"]
+            del self.fields["loss"]
+        elif loss_choices is None:
+            del self.fields["loss"]
+        else:
+            self.fields["loss"] = forms.TypedChoiceField(
+                label=self.fields["loss"].label,
+                required=False,
+                coerce=int,
+                empty_value=None,
+                choices=[("", _("Keep this loss")), *((str(pk), label) for pk, label in loss_choices)],
+            )
+        _style(self.fields)

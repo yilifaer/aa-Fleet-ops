@@ -1267,3 +1267,65 @@ class SrpCategoryPageTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("default_category", response.context["form"].errors)
         self.assertIsNone(SrpSettings.get_solo().default_category)
+
+
+class MemberEditAndInsuranceSettingsTests(TestCase):
+    """0.3.0b1 (INT-13, REV-9d, REV-10): the settings of member edits, the rejection history and the insurance estimate."""
+
+    def setUp(self):
+        self.admin = f.create_user("srp_admin_phase4", perms=CONFIG_PERMS)
+        self.url = reverse("fleetops:configuration_list", args=["srp"])
+        self.client.force_login(self.admin)
+
+    def test_the_defaults(self):
+        row = SrpSettings.get_solo()
+        self.assertEqual(
+            (row.member_edit_enabled, row.member_swap_loss_enabled, row.show_insurance, row.insurance_level, row.review_history_days),
+            (True, True, True, "platinum", 90),
+        )
+
+    def test_the_page_saves_them_and_audits_the_change(self):
+        response = self.client.post(
+            self.url,
+            settings_post(
+                member_edit_enabled=None,
+                member_swap_loss_enabled=None,
+                show_insurance="on",
+                insurance_level="gold",
+                review_history_days="30",
+            ),
+        )
+
+        self.assertEqual(response.status_code, 302)
+        row = SrpSettings.get_solo()
+        self.assertEqual(
+            (row.member_edit_enabled, row.member_swap_loss_enabled, row.show_insurance, row.insurance_level, row.review_history_days),
+            (False, False, True, "gold", 30),
+        )
+        entry = AuditLog.objects.filter(object_type="SrpSettings").latest("pk")
+        self.assertEqual(entry.new_value["insurance_level"], "gold")
+        self.assertEqual(entry.new_value["review_history_days"], 30)
+        self.assertEqual(entry.old_value["insurance_level"], "platinum")
+
+    def test_zero_days_of_history_means_all_and_a_missing_value_keeps_the_stored_one(self):
+        SrpSettings.objects.filter(pk=1).update(review_history_days=45, insurance_level="silver")
+
+        form = SrpSettingsForm(settings_post(), instance=SrpSettings.get_solo())
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual((form.cleaned_data["review_history_days"], form.cleaned_data["insurance_level"]), (45, "silver"))
+
+        form = SrpSettingsForm(settings_post(review_history_days="0"), instance=SrpSettings.get_solo())
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data["review_history_days"], 0)
+
+    def test_values_out_of_range_are_refused(self):
+        for field, value in (("review_history_days", "3651"), ("review_history_days", "-1"), ("insurance_level", "diamond")):
+            with self.subTest(field=field, value=value):
+                form = SrpSettingsForm(settings_post(**{field: value}), instance=SrpSettings.get_solo())
+                self.assertFalse(form.is_valid())
+                self.assertIn(field, form.errors)
+
+    def test_the_page_has_the_insurance_group_and_the_member_switches(self):
+        page = self.client.get(self.url)
+        for name in ("member_edit_enabled", "member_swap_loss_enabled", "show_insurance", "insurance_level", "review_history_days"):
+            self.assertContains(page, f'name="{name}"')

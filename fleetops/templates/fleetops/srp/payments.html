@@ -10,16 +10,39 @@
   {% if month_filter_active %}{% blocktranslate trimmed with label=month_ref.label query=all_months_query %}Showing the losses of {{ label }}. <a href="?{{ query }}">Show all months</a>{% endblocktranslate %}{% else %}{% translate "Showing the losses of all months. Pick a month above to narrow the lists." %}{% endif %}
 </div>
 
+<form method="get" class="card card-body mb-3 fleetops-srp-filters" id="srp-payable-filters">
+  {% if month_filter_active %}<input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="month" value="{{ month }}">{% endif %}
+  {% for name, value in paid_dates.items %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+  <div class="row g-2 align-items-end">
+    <div class="col-sm-6 col-lg-3"><label class="form-label mb-1" for="{{ payable_form.category.id_for_label }}">{{ payable_form.category.label }}</label>{{ payable_form.category }}</div>
+    <div class="col-sm-6 col-lg-3"><label class="form-label mb-1" for="{{ payable_form.link.id_for_label }}">{{ payable_form.link.label }}</label>{{ payable_form.link }}</div>
+    <div class="col-sm-6 col-lg-3"><label class="form-label mb-1" for="{{ payable_form.corporation.id_for_label }}">{{ payable_form.corporation.label }}</label>{{ payable_form.corporation }}</div>
+    <div class="col-sm-6 col-lg-3 d-flex flex-wrap gap-2">
+      <button type="submit" class="btn btn-primary">{% translate "Filter" context "FleetOps" %}</button>
+      <a class="btn btn-outline-secondary" href="{% url 'fleetops:srp_payments' %}">{% translate "Reset" %}</a>
+    </div>
+  </div>
+  <datalist id="srp-link-codes">{% for code, name in link_hints %}<option value="{{ code }}">{{ name }}</option>{% endfor %}</datalist>
+</form>
+<div class="d-flex flex-wrap gap-2 mb-3" id="srp-payable-export">
+  <span class="small text-muted align-self-center">{% translate "Export the claims to pay with the current filters:" %}</span>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'fleetops:export' 'srp-payable' %}?format=xlsx&amp;group=player{% if export_query %}&amp;{{ export_query }}{% endif %}">{% translate "One row per player" %} (Excel)</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'fleetops:export' 'srp-payable' %}?format=csv&amp;group=player{% if export_query %}&amp;{{ export_query }}{% endif %}">{% translate "One row per player" %} (CSV)</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'fleetops:export' 'srp-payable' %}?format=xlsx{% if export_query %}&amp;{{ export_query }}{% endif %}">{% translate "One row per claim" %} (Excel)</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'fleetops:export' 'srp-payable' %}?format=csv{% if export_query %}&amp;{{ export_query }}{% endif %}">{% translate "One row per claim" %} (CSV)</a>
+</div>
+
 {% blocktranslate trimmed asvar to_pay_claims_text count counter=to_pay_count %}{{ counter }} claim{% plural %}{{ counter }} claims{% endblocktranslate %}
 {% blocktranslate trimmed asvar to_pay_players_text count counter=pay_rows|length %}{{ counter }} player{% plural %}{{ counter }} players{% endblocktranslate %}
 <div class="row g-3 mb-3 fo-srp-stats">
-  <div class="col-6 col-xl-3"><div class="stat-card"><span>{% translate "To pay" %}</span><strong>{{ to_pay_total|isk }}</strong><small class="text-muted">{% blocktranslate trimmed with claims=to_pay_claims_text players=to_pay_players_text %}{{ claims }} for {{ players }}{% endblocktranslate %}</small></div></div>
+  <div class="col-6 col-xl-3"><div class="stat-card"><span>{% translate "To pay" %}{% if payable_filtered %} <small class="text-muted">({% translate "by the current filters" %})</small>{% endif %}</span><strong>{{ to_pay_total|isk }}</strong><small class="text-muted">{% blocktranslate trimmed with claims=to_pay_claims_text players=to_pay_players_text %}{{ claims }} for {{ players }}{% endblocktranslate %}</small></div></div>
   <div class="col-6 col-xl-3"><div class="stat-card"><span>{% translate "Paid in the dates below" %}</span><strong>{{ paid_total|isk }}</strong><small class="text-muted">{% blocktranslate trimmed count counter=paid_count %}{{ counter }} claim{% plural %}{{ counter }} claims{% endblocktranslate %}</small></div></div>
 </div>
 
 {% if pay_rows %}
 <form method="post" action="{% url 'fleetops:srp_payments' %}" class="fleetops-srp-form" data-srp-once id="fleetops-srp-pay-form">
   {% csrf_token %}<input type="hidden" name="next" value="{{ next_url }}">
+  {% for name, value in payable_filters.items %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
   {% for row in pay_rows %}
   <div class="card mb-3" data-srp-group>
     <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
@@ -29,13 +52,14 @@
         <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.main_character_name }}" hidden>{% translate "Copy name" %}</button>
       </div>
       <div class="d-flex align-items-center gap-2">
-        <span class="fo-pay-total">{{ row.total|isk }}</span>
+        <span class="text-end"><span class="fo-pay-total">{{ row.total|isk }}</span>{% if payable_filtered %}<br><small class="text-muted">{% translate "total of this group by the current filters" %}</small>{% endif %}</span>
         <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.total|isk_plain }}" hidden>{% translate "Copy amount" %}</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.main_character_name }}&#9;{{ row.total|isk_plain }}" hidden>{% translate "Copy name and amount" %}</button>
       </div>
     </div>
     <div class="table-responsive">
       <table class="table table-sm align-middle mb-0 fo-table-pin">
-        <thead><tr><th scope="col" class="fleetops-srp-check"></th><th scope="col">{% translate "Claim" %}</th><th scope="col">{% translate "Loss (EVE)" %}</th><th scope="col">{% translate "Ship" %}</th><th scope="col">{% translate "Fleet" %}</th><th scope="col" class="text-end">{% translate "Amount" %}</th><th scope="col"></th></tr></thead>
+        <thead><tr><th scope="col" class="fleetops-srp-check"></th><th scope="col">{% translate "Claim" %}</th><th scope="col">{% translate "Loss (EVE)" %}</th><th scope="col">{% translate "Ship" %}</th><th scope="col">{% translate "Category" %}</th><th scope="col">{% translate "Link" %}</th><th scope="col" class="text-end">{% translate "Amount" %}</th><th scope="col"></th></tr></thead>
         <tbody>
           {% for claim in row.claims %}
           <tr>
@@ -43,7 +67,8 @@
             <td><a href="{% url 'fleetops:srp_claim' claim.uuid %}">{{ claim.reference }}</a></td>
             <td class="text-nowrap">{{ claim.killmail_time|eve_time }}</td>
             <td><span class="fleetops-srp-ship-cell"><img class="fo-render" src="{% ship_render_url claim.ship_type_id 32 %}" width="32" height="32" alt="" loading="lazy"><span>{{ claim.ship_type_name|default:claim.ship_type_id }}</span></span></td>
-            <td>{% if claim.scope == "in_fleet" %}<span class="small">{{ claim.fleet_label|default:_("In fleet") }}</span>{% else %}<span class="text-muted">{% translate "Out of fleet" %}</span>{% endif %}{% with category_name=claim|srp_category_name %}{% if category_name %}<div class="small text-muted">{{ category_name }}</div>{% endif %}{% endwith %}</td>
+            <td>{% if claim.category_id %}{{ claim.category|srp_category_label }}{% else %}<span class="text-muted">&ndash;</span>{% endif %}</td>
+            <td>{% if claim.link_id %}<span class="small">{{ claim.link.name|default:claim.link.code }}</span>{% elif claim.scope == "in_fleet" %}<span class="small">{{ claim.fleet_label|default:_("In fleet") }}</span>{% else %}<span class="text-muted">{% translate "Out of fleet" %}</span>{% endif %}</td>
             <td class="text-end text-nowrap">{{ claim.approved_amount|isk }}</td>
             <td class="text-end"><button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ claim.approved_amount|isk_plain }}" hidden>{% translate "Copy" %}</button></td>
           </tr>
@@ -65,11 +90,36 @@
 <div class="card mb-3"><div class="card-body">{% if month_filter_active %}{% blocktranslate trimmed with label=month_ref.label asvar empty_text %}Nothing waits for payment for the losses of {{ label }}.{% endblocktranslate %}{% else %}{% translate "Nothing waits for payment." as empty_text %}{% endif %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-circle-check" %}</div></div>
 {% endif %}
 
+<div class="card mb-3" id="srp-recent-batches">
+  <div class="card-header"><strong>{% translate "Recent payment batches" %}</strong> <span class="small text-muted">{% translate "last 30 days" %}</span></div>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0 fo-table-pin">
+      <thead><tr><th scope="col">{% translate "Batch" %}</th><th scope="col">{% translate "Paid (EVE)" %}</th><th scope="col">{% translate "Paid by" %}</th><th scope="col" class="text-end">{% translate "Claims" %}</th><th scope="col" class="text-end">{% translate "Players" %}</th><th scope="col" class="text-end">{% translate "Total" %}</th><th scope="col">{% translate "Note" %}</th></tr></thead>
+      <tbody>
+        {% for batch in recent_batches %}
+        <tr>
+          <td><a href="{% url 'fleetops:srp_payment_batch' batch.uuid %}">{{ batch.reference }}</a></td>
+          <td class="text-nowrap">{{ batch.created_at|eve_time }}</td>
+          <td>{{ batch.created_by_name }}</td>
+          <td class="text-end">{{ batch.claim_count }}</td>
+          <td class="text-end">{{ batch.payee_count }}</td>
+          <td class="text-end text-nowrap">{{ batch.total|isk }}</td>
+          <td>{{ batch.note }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-muted">{% translate "No payment batch in the last 30 days." %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <div class="card mb-3">
   <div class="card-header"><strong>{% translate "Paid claims" %}</strong></div>
   <div class="card-body">
     <form method="get" class="row g-2 align-items-end">
       {% if month_filter_active %}<input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="month" value="{{ month }}">{% endif %}
+      {% for name, value in payable_filters.items %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
       <div class="col-sm-auto"><label class="form-label mb-1" for="{{ filter_form.paid_from.id_for_label }}">{{ filter_form.paid_from.label }}</label>{{ filter_form.paid_from }}</div>
       <div class="col-sm-auto"><label class="form-label mb-1" for="{{ filter_form.paid_to.id_for_label }}">{{ filter_form.paid_to.label }}</label>{{ filter_form.paid_to }}</div>
       <div class="col-sm-auto"><button type="submit" class="btn btn-primary">{% translate "Filter" context "FleetOps" %}</button></div>
@@ -78,20 +128,23 @@
   </div>
   <div class="table-responsive">
     <table class="table table-sm align-middle mb-0 fo-table-pin">
-      <thead><tr><th scope="col">{% translate "Paid (EVE)" %}</th><th scope="col">{% translate "Pilot" %}</th><th scope="col">{% translate "Claim" %}</th><th scope="col">{% translate "Ship" %}</th><th scope="col" class="text-end">{% translate "Amount" %}</th><th scope="col">{% translate "Paid by" %}</th><th scope="col">{% translate "Note" %}</th></tr></thead>
+      <thead><tr><th scope="col">{% translate "Paid (EVE)" %}</th><th scope="col">{% translate "Pilot" %}</th><th scope="col">{% translate "Claim" %}</th><th scope="col">{% translate "Ship" %}</th><th scope="col">{% translate "Category" %}</th><th scope="col">{% translate "Link" %}</th><th scope="col" class="text-end">{% translate "Amount" %}</th><th scope="col">{% translate "Batch" %}</th><th scope="col">{% translate "Paid by" %}</th><th scope="col">{% translate "Note" %}</th></tr></thead>
       <tbody>
         {% for claim in paid_claims %}
         <tr>
           <td class="text-nowrap">{{ claim.paid_at|eve_time }}</td>
           <td>{{ claim.main_character_name|default:claim.character_name }}</td>
           <td><a href="{% url 'fleetops:srp_claim' claim.uuid %}">{{ claim.reference }}</a></td>
-          <td>{{ claim.ship_type_name|default:claim.ship_type_id }}{% with category_name=claim|srp_category_name %}{% if category_name %}<div class="small text-muted">{{ category_name }}</div>{% endif %}{% endwith %}</td>
+          <td>{{ claim.ship_type_name|default:claim.ship_type_id }}</td>
+          <td>{% if claim.category_id %}{{ claim.category|srp_category_label }}{% else %}<span class="text-muted">&ndash;</span>{% endif %}</td>
+          <td>{% if claim.link_id %}<span class="small">{{ claim.link.name|default:claim.link.code }}</span>{% else %}<span class="text-muted">&ndash;</span>{% endif %}</td>
           <td class="text-end text-nowrap">{{ claim.approved_amount|isk }}</td>
+          <td class="text-nowrap">{% if claim.payment_batch_id %}<a href="{% url 'fleetops:srp_payment_batch' claim.payment_batch.uuid %}">{{ claim.payment_batch.reference }}</a>{% else %}<span class="text-muted" title="{% translate 'Paid before payment batches existed.' %}">&mdash; {% translate "(before batches)" %}</span>{% endif %}</td>
           <td>{{ claim.paid_by|default:"" }}</td>
           <td>{{ claim.payment_note }}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="7">{% translate "No claim was paid in these dates." as empty_text %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-coins" %}</td></tr>
+        <tr><td colspan="10">{% translate "No claim was paid in these dates." as empty_text %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-coins" %}</td></tr>
         {% endfor %}
       </tbody>
     </table>
