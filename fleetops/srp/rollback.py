@@ -3,8 +3,8 @@
 
 """The checks before going back to an earlier FleetOps version (``migrate fleetops 0023``), read only.
 
-Migration 0035 runs the same checks when going back and stops before anything is changed; its copy is written
-into the migration, because a migration may not import this code. ``RollbackGuardFunctionTests`` in
+Migrations 0036 and 0035 run the same checks when going back and stop before anything is changed; their copies are
+written into the migrations, because a migration may not import this code. ``RollbackGuardFunctionTests`` in
 ``tests/test_migration_srp.py`` keep the two equal. Only rule IDs, link codes and counts are reported: no names, no amounts.
 """
 

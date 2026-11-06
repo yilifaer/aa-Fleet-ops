@@ -46,6 +46,7 @@ review_payments = importlib.import_module("fleetops.migrations.0032_srp_review_p
 import_schema = importlib.import_module("fleetops.migrations.0033_srp_import")
 import_guard = importlib.import_module("fleetops.migrations.0034_srp_import_guard")
 rollback_guard = importlib.import_module("fleetops.migrations.0035_srp_rollback_guard")
+prune_share = importlib.import_module("fleetops.migrations.0036_history_prune_share")
 
 NEW_CODENAMES = ("request_srp", "manage_srp")
 # Permissions of 0.3.0b1 (REV-1): registered with the model options, granted to nobody.
@@ -87,6 +88,7 @@ class MigrationModuleTests(TestCase):
             import_schema,
             import_guard,
             rollback_guard,
+            prune_share,
         ):
             source = inspect.getsource(module)
             with self.subTest(module=module.__name__):
@@ -124,6 +126,7 @@ class MigrationModuleTests(TestCase):
         self.assertEqual(import_schema.Migration.dependencies[0], ("fleetops", "0032_srp_review_payments"))
         self.assertEqual(import_guard.Migration.dependencies, [("fleetops", "0033_srp_import")])
         self.assertEqual(rollback_guard.Migration.dependencies, [("fleetops", "0034_srp_import_guard")])
+        self.assertEqual(prune_share.Migration.dependencies, [("fleetops", "0035_srp_rollback_guard")])
 
     def test_the_migrations_start_with_the_plain_header(self):
         for module in (
@@ -139,6 +142,7 @@ class MigrationModuleTests(TestCase):
             import_schema,
             import_guard,
             rollback_guard,
+            prune_share,
         ):
             with self.subTest(module=module.__name__):
                 self.assertTrue(inspect.getsource(module).startswith("# AA FleetOps 0.3.0b1:"))
@@ -166,6 +170,7 @@ class MigrationModuleTests(TestCase):
             import_schema,
             import_guard,
             rollback_guard,
+            prune_share,
         ):
             source = inspect.getsource(module)
             with self.subTest(module=module.__name__):
@@ -1340,7 +1345,8 @@ class ReviewPaymentsRoundTripTests(TransactionTestCase):
 
 
 class RollbackGuardFunctionTests(TestCase):
-    """The summary guard 0035, the guard 0034 and the read-only command, on the current models (IMP-7, chapter 3.2)."""
+    """The summary guard 0035, its copy in 0036, the guard 0034 and the read-only command, on the current models
+    (IMP-7, chapter 3.2)."""
 
     def setUp(self):
         self.user = f.create_user("guard-pilot", perms=f.SRP_MEMBER_PERMS)
@@ -1364,18 +1370,38 @@ class RollbackGuardFunctionTests(TestCase):
 
         self.assertIn("for imported links run fleetops_import_aasrp --undo", rollback.describe(problem))
 
-    def test_the_guard_is_the_last_migration_and_runs_first_when_going_back(self):
+    def test_the_last_migration_adds_the_share_and_runs_the_guard_first_when_going_back(self):
         executor = MigrationExecutor(connection)
-        self.assertEqual(executor.loader.graph.leaf_nodes("fleetops"), [("fleetops", "0035_srp_rollback_guard")])
+        self.assertEqual(executor.loader.graph.leaf_nodes("fleetops"), [("fleetops", "0036_history_prune_share")])
         # Operations are undone in reverse order: the guard has to come after the column, so it refuses before the
         # column is dropped.
-        add_field, guard = rollback_guard.Migration.operations
+        add_field, guard = prune_share.Migration.operations
         self.assertEqual(type(add_field).__name__, "AddField")
-        self.assertEqual(add_field.name, "history_prune_max_share")
+        self.assertEqual((add_field.model_name, add_field.name), ("fleetopssettings", "history_prune_max_share"))
         self.assertEqual(add_field.field.default, 50)
-        self.assertIs(guard.reverse_code, rollback_guard.refuse_rollback)
+        self.assertIs(guard.reverse_code, prune_share.refuse_rollback)
+        # 0035 was already applied on sites that ran the development branch: it must stay the guard alone.
+        [operation] = rollback_guard.Migration.operations
+        self.assertIs(operation.reverse_code, rollback_guard.refuse_rollback)
         [operation] = import_guard.Migration.operations
         self.assertIs(operation.reverse_code, import_guard.refuse_if_imported)
+
+    def test_the_share_column_of_the_migration_matches_the_model(self):
+        [add_field, _guard] = prune_share.Migration.operations
+        model_field = FleetOpsSettings._meta.get_field("history_prune_max_share")
+
+        self.assertEqual(add_field.field.deconstruct()[1:], model_field.deconstruct()[1:])
+        self.assertEqual([v.limit_value for v in model_field.validators], [1, 99])
+
+    def test_the_guard_of_0036_is_the_same_as_the_guard_of_0035(self):
+        for name in ("_listed", "check_all", "describe", "refuse_rollback"):
+            with self.subTest(function=name):
+                self.assertEqual(
+                    inspect.getsource(getattr(prune_share, name)), inspect.getsource(getattr(rollback_guard, name))
+                )
+        for name in ("AASRP", "MAX_LISTED", "RULES", "LINKS", "CLAIMS"):
+            with self.subTest(constant=name):
+                self.assertEqual(getattr(prune_share, name), getattr(rollback_guard, name))
 
     def test_the_constants_copied_into_the_guards_match_the_app(self):
         from fleetops.models import SrpClaim, SrpFleetLink
@@ -1389,8 +1415,10 @@ class RollbackGuardFunctionTests(TestCase):
 
     def test_a_database_without_the_three_things_passes_both_checks(self):
         self.assertEqual(rollback_guard.check_all(apps), [])
+        self.assertEqual(prune_share.check_all(apps), [])
         self.assertEqual(self.command(), {})
         rollback_guard.refuse_rollback(apps, None)
+        prune_share.refuse_rollback(apps, None)
         import_guard.refuse_if_imported(apps, None)
 
     def make_problems(self):
@@ -1452,6 +1480,7 @@ class RollbackGuardFunctionTests(TestCase):
                 migration = self.codes(rollback_guard.check_all(apps))
                 command = self.command()
 
+                self.assertEqual(self.codes(prune_share.check_all(apps)), migration)
                 self.assertEqual(set(migration), set(command))
                 for code, detail in migration.items():
                     self.assertEqual((detail["count"], detail["listed"]), (command[code].count, command[code].listed))
@@ -1499,13 +1528,14 @@ class RollbackGuardFunctionTests(TestCase):
 
 
 class ImportRoundTripTests(TransactionTestCase):
-    """0033 to 0035 forward, the summary guard when going back, and the way back after the data is removed."""
+    """0033 to 0036 forward, the summary guard when going back, and the way back after the data is removed."""
 
     serialized_rollback = True
     before_import = [("fleetops", "0032_srp_review_payments")]
     after_schema = [("fleetops", "0033_srp_import")]
     after_guard = [("fleetops", "0034_srp_import_guard")]
-    latest = [("fleetops", "0035_srp_rollback_guard")]
+    before_share = [("fleetops", "0035_srp_rollback_guard")]
+    latest = [("fleetops", "0036_history_prune_share")]
     oldest = [("fleetops", "0023_group_members_are_leaders_help")]
 
     def migrate(self, nodes):
@@ -1577,12 +1607,10 @@ class ImportRoundTripTests(TransactionTestCase):
         columns = {c.name for c in connection.introspection.get_table_description(connection.cursor(), "fleetops_srpclaim")}
         self.assertIn("external_id", columns)
         self.assertIn("payment_batch_id", columns)
-        # The settings column of the pruning share is added by the guard's own migration, so it is still there:
-        # a refused rollback must leave the running version able to read its settings.
-        settings_columns = {
-            c.name for c in connection.introspection.get_table_description(connection.cursor(), "fleetops_fleetopssettings")
-        }
-        self.assertIn("history_prune_max_share", settings_columns)
+        # 0036 runs its guard before it drops the pruning share, so the column is still there: a refused rollback
+        # must leave the running version able to read its settings.
+        self.assertIn("history_prune_max_share", self.settings_columns())
+        self.assert_applied(self.latest)
 
         # Fix the three things; now the way back works, and forward again.
         current.get_model("fleetops", "SrpPayoutRule").objects.all().delete()
@@ -1592,6 +1620,67 @@ class ImportRoundTripTests(TransactionTestCase):
         # definition of the claim tables, and MariaDB runs out of row size for the later tests of this module.
         self.assertEqual(rollback_guard.check_all(current), [])
         self.assertEqual(current.get_model("fleetops", "SrpClaim").objects.count(), 1)
+
+    def settings_columns(self):
+        with connection.cursor() as cursor:
+            return {c.name for c in connection.introspection.get_table_description(cursor, "fleetops_fleetopssettings")}
+
+    def assert_applied(self, nodes):
+        executor = MigrationExecutor(connection)
+        for node in nodes:
+            self.assertIn(node, executor.loader.applied_migrations)
+
+    def test_going_back_to_0034_with_guarded_data_is_refused_before_the_share_is_dropped(self):
+        new = self.migrate(self.latest)
+        new.get_model("fleetops", "FleetOpsSettings").objects.update_or_create(pk=1, defaults={"history_prune_max_share": 35})
+        self.claim(new, 1, source="aasrp", external_id="aasrp:1", status="paid")
+
+        with self.assertRaises(IrreversibleError) as caught:
+            self.migrate(self.after_guard)
+
+        self.assertIn("1 claims were imported", str(caught.exception))
+        self.assertIn("history_prune_max_share", self.settings_columns())
+        self.assert_applied(self.latest + self.before_share)
+        current = MigrationExecutor(connection).loader.project_state(self.latest).apps
+        self.assertEqual(current.get_model("fleetops", "FleetOpsSettings").objects.get(pk=1).history_prune_max_share, 35)
+
+    def test_without_guarded_data_going_back_drops_the_share_and_forward_adds_it_again(self):
+        self.migrate(self.latest)
+        self.assertIn("history_prune_max_share", self.settings_columns())
+
+        self.migrate(self.after_guard)
+
+        self.assertNotIn("history_prune_max_share", self.settings_columns())
+        applied = MigrationExecutor(connection).loader.applied_migrations
+        self.assertNotIn(self.latest[0], applied)
+        self.assertNotIn(self.before_share[0], applied)
+
+        new = self.migrate(self.latest)
+        Settings = new.get_model("fleetops", "FleetOpsSettings")
+        Settings.objects.get_or_create(pk=1)
+        self.assertEqual(Settings.objects.get(pk=1).history_prune_max_share, 50)
+
+    def test_a_site_that_already_applied_0035_gets_the_share_from_0036(self):
+        # The development branch had 0035 as the last migration; the next migrate must add the column.
+        self.migrate(self.before_share)
+        self.assertNotIn("history_prune_max_share", self.settings_columns())
+
+        self.migrate(self.latest)
+
+        self.assertIn("history_prune_max_share", self.settings_columns())
+
+    def test_the_plan_back_to_0023_runs_the_guard_of_0036_before_the_share_is_dropped(self):
+        self.migrate(self.latest)
+        executor = MigrationExecutor(connection)
+
+        plan = executor.migration_plan(self.oldest)
+
+        self.assertTrue(all(backwards for _migration, backwards in plan))
+        names = [migration.name for migration, _backwards in plan]
+        self.assertEqual(names[:3], ["0036_history_prune_share", "0035_srp_rollback_guard", "0034_srp_import_guard"])
+        # Going back walks the operations of a migration in reverse: the guard, the last one, runs before the column
+        # is dropped (the refusal tests above show the column is still there).
+        self.assertIs(plan[0][0].operations[-1].reverse_code, prune_share.refuse_rollback)
 
     def test_a_partial_rollback_is_stopped_too(self):
         new = self.migrate(self.latest)

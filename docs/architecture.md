@@ -116,8 +116,8 @@ and an audit entry for each one. The beat starts the value sweep for claims that
 
 **Importing aa-srp.** `srp/legacy_import.py` reads the links, requests and status comments of aa-srp (read only; the
 fields are found with `_meta.get_fields()`), `srp/importer.py` maps them (`fleetops_import_aasrp`) and undoes and
-completes them, and `srp/rollback.py` holds the checks of `fleetops_srp_rollback_check`, which migration `0035` repeats
-in its own copy. An imported claim has the source `aasrp`, the unique external ID `aasrp:<request>`, and a stand-in
+completes them, and `srp/rollback.py` holds the checks of `fleetops_srp_rollback_check`, which migrations `0035` and `0036` repeat
+in their own copies. An imported claim has the source `aasrp`, the unique external ID `aasrp:<request>`, and a stand-in
 killmail with the origin `aasrp` that is never priced; `claims.lock_native` refuses every change to it.
 
 ## Failure model

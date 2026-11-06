@@ -1034,8 +1034,9 @@ through a fleet link at 571m.
 
 ## Going back to FleetOps 0.2.x
 
-Migration `0035` is the guard of the 0.3.0b1 chain (it also adds a settings column; going back runs the guard before that column is dropped) and checks everything that makes going back unsafe before the
-first migration is undone: payout rules that belong to a category, links without a fleet that have claims (standing
+Migrations `0035` and `0036` are the guard of the 0.3.0b1 chain. `0036`, the last migration, adds the pruning share to the
+settings; going back runs its copy of the guard before that column is dropped, and `0035` runs the same checks once more. The
+guard checks everything that makes going back unsafe before the first change is undone: payout rules that belong to a category, links without a fleet that have claims (standing
 links) or that were imported, and claims imported from aa-srp. It stops **any** way back, a partial one included
 (`migrate fleetops 0032` is stopped too). `python manage.py fleetops_srp_rollback_check` runs the same checks, reads only and
 changes nothing; it lists rule IDs and link codes and exits with an error while something is in the way. See the

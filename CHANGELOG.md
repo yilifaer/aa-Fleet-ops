@@ -281,9 +281,14 @@ payer reports, which are for SRP staff only. Killmails stored before 0.3.0b1 sho
 report until `python manage.py fleetops_srp_backfill_killmails` has read them. The code that read the month of the
 summaries now reads a period; nothing is stored differently.
 
-Migration `0035` also adds one column to the FleetOps settings (**Largest share of departed members to prune**, percent, default
+Migration `0036` adds one column to the FleetOps settings (**Largest share of departed members to prune**, percent, default
 50): the share of the users with PAP history that one pruning of departed members may remove. If the daily task logs "Departed
 members were not pruned", check **Member alliance IDs** before using `fleetops_prune_history --force`.
+This does not concern an upgrade from a release. A site that followed the development branch may already have the column,
+because one development build added it in `0035`: there `migrate` stops at `0036` because the column already exists
+(PostgreSQL: "already exists"; MySQL/MariaDB: error 1060 "Duplicate column name"), and nothing is changed. Run
+`python manage.py migrate fleetops 0036 --fake` once, then `python manage.py migrate` as usual. On SQLite `0036` does
+not stop but rebuilds the table and sets the share back to 50; set it again if you had changed it.
 
 ### Rollback notes
 
@@ -341,8 +346,9 @@ Rolling back `0032` drops the payment batches (the claims keep their status, amo
 the batch they were paid in), the insurance prices, the stored attackers, the revision numbers and the five settings.
 Claims, amounts and statuses are not changed. Export the batches first if you need them. To behave like the previous
 version before rolling back, untick **Members can change their pending claims**.
-Rolling back `0033` drops the external ID of the claims. **`0035` is the guard for the whole way back** (it also adds the pruning share to the settings; going back runs the guard first and only
-drops that column when the guard lets the rollback go on). It checks everything that makes going back unsafe, once and before anything is changed, and stops the
+Rolling back `0033` drops the external ID of the claims. **`0035` is the guard for the whole way back**; `0036`, which adds the
+pruning share to the settings and is now the last migration, runs the same checks first and only drops that column when they
+let the rollback go on (then `0035` checks once more). It checks everything that makes going back unsafe, once and before anything is changed, and stops the
 rollback (to `0023` or to any migration of this version, also a partial one such as `0032`) with a list while:
 payout rules belong to a category (the rule IDs are listed), links without a fleet have claims or links were imported
 from aa-srp (the link codes are listed), or claims were imported from aa-srp ("Run fleetops_import_aasrp --undo first").
