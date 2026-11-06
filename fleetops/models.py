@@ -201,6 +201,16 @@ class FleetOpsSettings(models.Model):
             "Empty = every Alliance Auth user with a main character."
         ),
     )
+    history_prune_max_share = models.PositiveSmallIntegerField(
+        _("Largest share of departed members to prune"),
+        default=50,
+        validators=[MinValueValidator(1), MaxValueValidator(99)],
+        help_text=_(
+            "Percent of the users with PAP history that one pruning of departed members may remove. When more users "
+            "would be pruned (usually a wrong Member alliance IDs), nothing of the departed members is deleted and a "
+            "warning is logged. 1 to 99, default 50."
+        ),
+    )
     leaderboard_size = models.PositiveSmallIntegerField(
         _("Leaderboard places"),
         default=20,

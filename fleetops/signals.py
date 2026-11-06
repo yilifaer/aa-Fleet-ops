@@ -3,16 +3,27 @@
 
 """Signal receivers of FleetOps, connected when the app is ready."""
 
+from django.apps import apps
 from django.contrib.auth.models import Group
 from django.db.models.signals import pre_delete
-from django.dispatch import receiver
 
 GROUP_DELETED_ACTION = "group.deleted"
 
 
-# No sender: Alliance Auth deletes groups through its own proxy model of ``auth.Group``, and the signal names
-# the class of the deleted object.
-@receiver(pre_delete, dispatch_uid="fleetops_group_deleted")
+def group_models():
+    """``auth.Group`` and every proxy of it that is installed (Alliance Auth defines one): the signal names the class
+    of the deleted object, so a deletion through a proxy only reaches a receiver connected to that proxy."""
+    return [model for model in apps.get_models() if issubclass(model, Group) and model._meta.concrete_model is Group]
+
+
+def connect_group_receivers():
+    """Connect :func:`group_deleted` to each group model separately. A receiver without a sender would count as a
+    listener of every model and turn off Django's fast delete (one DELETE statement, no rows loaded) for every
+    ``QuerySet.delete()`` of the whole site, those of other apps included."""
+    for model in group_models():
+        pre_delete.connect(group_deleted, sender=model, dispatch_uid=f"fleetops_group_deleted_{model._meta.label}")
+
+
 def group_deleted(sender, instance, **kwargs):
     """Record the deletion of an Alliance Auth group that FleetOps uses, before its rows go with it.
 

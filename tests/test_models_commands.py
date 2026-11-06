@@ -16,6 +16,7 @@ from django.contrib import admin
 from django.contrib.auth.models import AnonymousUser, Group, Permission, User
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
 from django.test import RequestFactory, TestCase
@@ -1118,6 +1119,30 @@ class PruneHistoryCommandTests(TestCase):
         self.assertEqual(AttendanceRecord.objects.count(), 2)
         self.assertEqual(FleetMemberEvent.objects.count(), 2)
 
+    def test_a_refused_pruning_of_departed_members_is_an_error_after_the_retention_ran(self):
+        f.settings(history_alliance_ids=str(f.FOREIGN_ALLIANCE[0]))
+        out, err = StringIO(), StringIO()
+
+        with self.assertLogs("extensions", level="WARNING"):
+            with self.assertRaises(CommandError) as caught:
+                call_command("fleetops_prune_history", stdout=out, stderr=err)
+
+        self.assertIn("Departed members were not pruned", str(caught.exception))
+        self.assertIn("Removed: 1 old PAP records", out.getvalue())
+        self.assertFalse(AttendanceRecord.objects.filter(pk=self.old_record.pk).exists())
+        self.assertTrue(AttendanceRecord.objects.filter(pk=self.recent_record.pk).exists())
+
+    def test_a_refused_dry_run_and_a_forced_run_end_normally(self):
+        f.settings(history_alliance_ids=str(f.FOREIGN_ALLIANCE[0]))
+        out, err = StringIO(), StringIO()
+
+        with self.assertLogs("extensions", level="WARNING"):
+            call_command("fleetops_prune_history", "--dry-run", stdout=out, stderr=err)
+        self.assertIn("Departed members were not pruned", err.getvalue())
+
+        with self.assertLogs("extensions", level="WARNING"):
+            call_command("fleetops_prune_history", "--force", stdout=StringIO(), stderr=StringIO())
+
     def test_departed_members_are_pruned_when_alliance_filter_is_configured(self):
         f.settings(history_alliance_ids=str(f.DEFAULT_ALLIANCE[0]))
         departed = f.create_user(alliance=f.FOREIGN_ALLIANCE)
@@ -1378,6 +1403,7 @@ class AdminTests(TestCase):
             "incentive_minimum_fleets": 3,
             "data_retention_days": 100,
             "history_alliance_ids": "",
+            "history_prune_max_share": 50,
             "srp_auto_create": "on",
             "srp_provider": "auto",
             "multiplier_mode": "fc",

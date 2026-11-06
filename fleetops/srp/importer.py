@@ -799,6 +799,11 @@ def undo(actor, dry_run: bool = False) -> dict:
 # --- Enrich (IMP-8) ------------------------------------------------------------------------------------------
 
 
+# One lookup per slot of the zKillboard provider; a lookup that finds the slot taken waits this many times.
+DEFAULT_ENRICH_RATE = 1.0 / zkillboard.SLOT_SECONDS
+ENRICH_SLOT_WAITS = 5
+
+
 @dataclass
 class EnrichResult:
     done: int = 0
@@ -812,11 +817,20 @@ def placeholders():
     return SrpKillmail.objects.filter(origin=SrpKillmail.Origin.AASRP, killmail_hash="").order_by("pk")
 
 
-def enrich(*, limit: int = 0, rate: float = 1.0, actor=None, sleep=time_module.sleep) -> EnrichResult:
+def _paused_message(found) -> str:
+    minutes = max(1, -(-int(found.retry_after or 0) // 60))
+    return f"zKillboard lookups are paused for about {minutes} minutes; run the command again later."
+
+
+def enrich(
+    *, limit: int = 0, rate: float = DEFAULT_ENRICH_RATE, actor=None, sleep=time_module.sleep
+) -> EnrichResult:
     """Give the stand-in killmails their real killmail: the hash from zKillboard, the killmail from ESI, then
-    ``complete_placeholder``. One lookup at a time, ``rate`` per second at most. A killmail that cannot be read now is
-    left as it is and tried again by the next run, which continues where this one stopped. Raises ``SrpError`` when
-    zKillboard is switched off in the SRP settings."""
+    ``complete_placeholder``. One lookup at a time, ``rate`` per second at most (the default is what FleetOps' own
+    zKillboard slot allows: one lookup per ``SLOT_SECONDS``). A lookup that finds the slot taken waits for it and
+    is tried again; when zKillboard is paused (too many failures, a request to slow down, a block) the run stops
+    at once. A killmail that cannot be read now is left as it is and tried again by the next run, which continues
+    where this one stopped. Raises ``SrpError`` when zKillboard is switched off in the SRP settings."""
     if not SrpSettings.get_solo().zkillboard_enabled:
         raise SrpError("zkill_off", texts.SRP_ENRICH_ZKILL_OFF())
     delay = 1.0 / rate if rate > 0 else 0.0
@@ -830,12 +844,24 @@ def enrich(*, limit: int = 0, rate: float = 1.0, actor=None, sleep=time_module.s
         if not first and delay:
             sleep(delay)
         first = False
-        found = zkillboard.fetch_kill(pk)
+        for attempt in range(ENRICH_SLOT_WAITS + 1):
+            found = zkillboard.fetch_kill(pk)
+            if found.status != "throttled":
+                break
+            if attempt < ENRICH_SLOT_WAITS:
+                # The slot is taken (by this run's previous lookup or by another process); wait until it is free.
+                sleep(max(1, int(found.retry_after or zkillboard.SLOT_SECONDS)))
+        if found.status == "throttled":
+            result.stopped = "zKillboard lookups are busy with other work of FleetOps; run the command again later."
+            break
+        if found.status in ("unavailable", "blocked") and (not found.requested or found.retry_after):
+            # Paused: no request was sent, or the answer just paused the requests. Nothing is tried until it ends.
+            if found.requested:
+                result.failed += 1
+            result.stopped = _paused_message(found)
+            break
         if not (found.ok and found.killmail_hash):
             result.failed += 1
-            if found.status == "throttled":
-                result.stopped = "zKillboard asked to slow down; run the command again later."
-                break
             continue
         try:
             payload = get_killmail(pk, found.killmail_hash)

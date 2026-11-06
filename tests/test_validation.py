@@ -13,8 +13,9 @@ from django.apps import apps
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.template import Context, Template
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -42,7 +43,7 @@ from fleetops.models import (
     OperationAction,
 )
 from fleetops.services.fleet_rules import DEFAULT_BRIDGE_EXCLUDED_GROUP_IDS
-from fleetops.services.history import prune_history, retention_cutoff
+from fleetops.services.history import max_prune_share, prune_history, retention_cutoff
 from fleetops.services.messages import render_operation_messages
 
 from . import factories as f
@@ -286,6 +287,180 @@ class PruneTotalsTests(TestCase):
         self.assertEqual(AttendanceRecord.objects.count(), 1)
 
 
+class PruneGuardTests(TestCase):
+    """The pruning of departed members refuses to run when the setting looks wrong."""
+
+    def setUp(self):
+        f.settings(history_alliance_ids=str(f.DEFAULT_ALLIANCE[0]))
+        self.fc = f.create_user(perms=f.FC_PERMS)
+        self.operation = f.create_operation(
+            self.fc, status=FleetOperation.Status.CLOSED, started_at=timezone.now() - timedelta(days=10)
+        )
+
+    def pilots(self, members, departed):
+        rows = {"members": [], "departed": []}
+        for _ in range(members):
+            rows["members"].append(f.add_attendance(self.operation, f.create_user()))
+        for _ in range(departed):
+            rows["departed"].append(f.add_attendance(self.operation, f.create_user(alliance=f.FOREIGN_ALLIANCE)))
+        return rows
+
+    def count(self):
+        return AttendanceRecord.objects.count()
+
+    def test_alliance_ids_that_match_nobody_refuse_the_pruning(self):
+        self.pilots(2, 1)
+        f.settings(history_alliance_ids="3999999")
+
+        with self.assertLogs("extensions", level="WARNING") as logs:
+            result = prune_history()
+
+        self.assertEqual((result["refused"], result["left_alliance"]), ("no_members", 0))
+        self.assertEqual((result["refused_users"], result["history_users"]), (3, 3))
+        self.assertEqual(self.count(), 3)
+        self.assertIn("none of the Member alliance IDs matches", "\n".join(logs.output))
+
+    def test_too_large_a_share_of_the_users_refuses_the_pruning(self):
+        self.pilots(1, 2)
+
+        with self.assertLogs("extensions", level="WARNING") as logs:
+            result = prune_history()
+
+        self.assertEqual((result["refused"], result["left_alliance"]), ("too_many_users", 0))
+        self.assertEqual((result["refused_users"], result["history_users"], result["refused_share"]), (2, 3, 67))
+        self.assertEqual(self.count(), 3)
+        self.assertIn("Largest share of departed members to prune", "\n".join(logs.output))
+
+    def test_a_refusal_does_not_stop_the_retention(self):
+        rows = self.pilots(1, 2)
+        old = f.create_operation(self.fc, status=FleetOperation.Status.CLOSED, started_at=timezone.now() - timedelta(days=400))
+        old_row = f.add_attendance(old, rows["members"][0].auth_user)
+
+        with self.assertLogs("extensions", level="WARNING"):
+            result = prune_history()
+
+        self.assertEqual((result["refused"], result["old_attendance"]), ("too_many_users", 1))
+        self.assertFalse(AttendanceRecord.objects.filter(pk=old_row.pk).exists())
+        self.assertEqual(self.count(), 3)
+
+    def test_a_dry_run_reports_the_refusal_and_removes_nothing(self):
+        self.pilots(1, 2)
+
+        with self.assertLogs("extensions", level="WARNING"):
+            result = prune_history(dry_run=True)
+
+        self.assertEqual(result["refused"], "too_many_users")
+        self.assertEqual(self.count(), 3)
+
+    def test_force_overrides_the_refusal(self):
+        self.pilots(1, 2)
+
+        with self.assertLogs("extensions", level="WARNING") as logs:
+            result = prune_history(force=True)
+
+        self.assertNotIn("refused", result)
+        self.assertEqual((result["forced"], result["left_alliance"]), (True, 2))
+        self.assertEqual(self.count(), 1)
+        self.assertIn("forced", "\n".join(logs.output))
+
+    def test_force_overrides_the_refusal_of_alliance_ids_that_match_nobody(self):
+        self.pilots(2, 0)
+        f.settings(history_alliance_ids="3999999")
+
+        with self.assertLogs("extensions", level="WARNING"):
+            result = prune_history(force=True)
+
+        self.assertEqual(result["left_alliance"], 2)
+        self.assertEqual(self.count(), 0)
+
+    def test_the_share_is_a_setting_of_the_settings_page(self):
+        self.pilots(1, 2)
+        f.settings(history_prune_max_share=70)
+
+        result = prune_history()
+
+        self.assertNotIn("refused", result)
+        self.assertEqual((result["left_alliance"], self.count()), (2, 1))
+
+    def test_a_lower_share_refuses_what_the_default_allows(self):
+        self.pilots(3, 2)
+        f.settings(history_prune_max_share=30)
+
+        with self.assertLogs("extensions", level="WARNING"):
+            result = prune_history()
+
+        self.assertEqual((result["refused"], result["max_share"], self.count()), ("too_many_users", 30, 5))
+
+    def test_the_refusal_never_shows_the_limit_as_the_share_it_exceeds(self):
+        from fleetops.services.history import refusal_message
+
+        f.create_user()
+        f.settings(history_prune_max_share=50)
+        # 501 of 1000 is more than 50 percent: the message must not read "50%" against "more than the 50%".
+        result = {"refused": "too_many_users", "refused_users": 501, "history_users": 1000, "max_share": 50}
+        import math
+
+        result["refused_share"] = math.ceil(501 * 100 / 1000)
+        self.assertIn("(51%)", refusal_message(result))
+
+    def test_the_default_share_is_50_and_a_stored_value_outside_the_range_falls_back(self):
+        self.assertEqual(max_prune_share(), 50)
+        for value in (0, 100, 101, None):
+            with self.subTest(value=value):
+                settings_obj = FleetOpsSettings.get_solo()
+                settings_obj.history_prune_max_share = value
+                self.assertEqual(max_prune_share(settings_obj), 50)
+
+    def test_the_django_setting_is_gone(self):
+        self.pilots(1, 2)
+
+        with override_settings(FLEETOPS_PRUNE_MAX_SHARE=90), self.assertLogs("extensions", level="WARNING"):
+            result = prune_history()
+
+        self.assertEqual(result["refused"], "too_many_users")
+
+    def test_the_normal_path_prunes_the_departed_members(self):
+        self.pilots(3, 1)
+
+        result = prune_history()
+
+        self.assertNotIn("refused", result)
+        self.assertEqual((result["left_alliance"], self.count()), (1, 3))
+
+    def test_no_history_of_departed_members_is_no_refusal(self):
+        self.pilots(2, 0)
+        f.settings(history_alliance_ids="3999999")
+        AttendanceRecord.objects.all().delete()
+
+        self.assertNotIn("refused", prune_history())
+
+    def test_the_command_says_why_it_refused_and_force_overrides(self):
+        self.pilots(1, 2)
+        out, err = StringIO(), StringIO()
+
+        with self.assertLogs("extensions", level="WARNING"):
+            with self.assertRaises(CommandError) as caught:
+                call_command("fleetops_prune_history", stdout=out, stderr=err)
+
+        self.assertIn("Departed members were not pruned", str(caught.exception))
+        self.assertIn("0 departed-member PAP records", out.getvalue())
+        self.assertEqual(self.count(), 3)
+
+        with self.assertLogs("extensions", level="WARNING"):
+            output = run_command("fleetops_prune_history", "--force")
+
+        self.assertIn("2 departed-member PAP records", output)
+        self.assertEqual(self.count(), 1)
+
+    def test_the_command_keeps_dry_run(self):
+        self.pilots(3, 1)
+
+        output = run_command("fleetops_prune_history", "--dry-run")
+
+        self.assertIn("Would remove", output)
+        self.assertEqual(self.count(), 4)
+
+
 class AllianceIdsValidationTests(TestCase):
     def _clean(self, value):
         obj = FleetOpsSettings.get_solo()
@@ -498,12 +673,29 @@ class OperationEditFormTests(TestCase):
                 self.assertFalse(form.is_valid())
                 self.assertEqual(form.errors["ended_at"], ["End Time must be after Start Time."])
 
-    def test_later_end_and_open_end_are_accepted(self):
+    def test_later_end_is_accepted(self):
         # A fleet record cannot end in the future (FB16.4), so the whole fleet lies in the past.
+        # Changed in 0.3.0b1: an empty end time is no longer accepted on this closed fleet (see the next tests).
         start = timezone.now() - timedelta(hours=4)
-        for ended in (start + timedelta(minutes=1), start + timedelta(hours=2), None):
+        for ended in (start + timedelta(minutes=1), start + timedelta(hours=2)):
             with self.subTest(ended=ended):
                 self.assertTrue(self._form(start, ended).is_valid())
+
+    def test_a_closed_fleet_cannot_lose_its_end_time(self):
+        # Its duration would run on from the start to now and bypass the multiplier tiers and statistics rules.
+        start = timezone.now() - timedelta(hours=4)
+
+        form = self._form(start, None)
+
+        self.assertFalse(form.is_valid())
+        self.assertEqual(form.errors["ended_at"], ["A closed fleet needs an End Time."])
+
+    def test_a_fleet_that_has_not_ended_may_have_no_end_time(self):
+        start = timezone.now() - timedelta(hours=4)
+        FleetOperation.objects.filter(pk=self.operation.pk).update(status=FleetOperation.Status.ACTIVE)
+        self.operation.refresh_from_db()
+
+        self.assertTrue(self._form(start, None).is_valid())
 
     def test_stored_fleet_that_ended_in_its_start_minute_stays_editable(self):
         start = timezone.now().replace(second=10, microsecond=0)

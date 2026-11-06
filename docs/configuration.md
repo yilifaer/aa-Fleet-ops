@@ -113,6 +113,7 @@ Rules behind these settings:
 |---|---|---|
 | Minimum fleet duration | 0 | Fleets shorter than this many minutes are not counted in statistics and incentives unless an FC lead includes them. 0 counts all fleets. Applies to fleets that close after the change. |
 | Member alliance IDs | empty | Alliance IDs, separated by commas or semicolons. When set, only users whose main character is in one of these alliances are members, and the history of departed members can be pruned. Empty means every Alliance Auth user with a main character. |
+| Largest share of departed members to prune | 50 | Percent of the users with PAP history that one pruning of departed members may remove, 1 to 99. When more users would go (usually a wrong **Member alliance IDs**), nothing of the departed members is deleted and a warning is logged; see [History and retention](#history-and-retention). `fleetops_prune_history --force` overrides it; the daily task never does. |
 | Leaderboard places | 20 | Places shown on the leaderboards, 3 to 100. Members tied on the last place are all shown. A viewer outside the shown places sees their own rank. |
 | Leaderboard visibility | Everyone with FleetOps access | **Everyone with FleetOps access**: every user sees the alliance board and the board of their own corporation. **Statistics managers only**: `view_corp_stats` sees the own corporation, `view_all_stats` the alliance and any corporation. Without access the menu entry is hidden and the page answers 403. |
 
@@ -967,10 +968,10 @@ aa-srp setting (total or fitted value).
   killmails nobody claims any more and the imported links, and writes `srp.import_aasrp_undo`. It deletes only these three: native claims, real killmails (also the ones the import reused) and native links are not touched. `--undo --dry-run` counts. The reason of a rejection is `reject_info`, else the last "Reject Reason" comment, else the text of the status comment. `--undo` takes no filters: combined with `--since`, `--until`, `--category-map` or `--batch-size` the command refuses.
   Claims made in FleetOps are not touched; importing again afterwards gives the same result.
 - `--enrich` looks up the real killmail of every stand-in (the hash from zKillboard, then the killmail from ESI) at
-  `--rate` lookups per second (1), at most `--limit` (0 = all); it can be interrupted and run again, and it refuses to run
+  `--rate` lookups per second (0.5, one every two seconds: the pace of FleetOps' own zKillboard slot; a lookup that finds the slot taken waits for it), at most `--limit` (0 = all); it stops with a message while zKillboard is paused (too many failed requests, a request to slow down or a block) and goes on where it stopped when run again; it can be interrupted and run again, and it refuses to run
   while zKillboard is switched off in the SRP settings. It fills in the time, system and attackers of the killmail and
   moves the claim to the real time (which can change its month). It is optional and slow: ten thousand killmails take
-  about three hours.
+  about five and a half hours at the default pace.
 
 **Imported claims cannot be changed.** Nobody can approve, reject, pay, reopen, move, recalculate, withdraw or change an
 imported claim, and an imported link cannot be opened again; the claim page says so, shows the amount as recorded in
@@ -1033,7 +1034,7 @@ through a fleet link at 571m.
 
 ## Going back to FleetOps 0.2.x
 
-Migration `0035` is the last one of the 0.3.0b1 chain and checks everything that makes going back unsafe before the
+Migration `0035` is the guard of the 0.3.0b1 chain (it also adds a settings column; going back runs the guard before that column is dropped) and checks everything that makes going back unsafe before the
 first migration is undone: payout rules that belong to a category, links without a fleet that have claims (standing
 links) or that were imported, and claims imported from aa-srp. It stops **any** way back, a partial one included
 (`migrate fleetops 0032` is stopped too). `python manage.py fleetops_srp_rollback_check` runs the same checks, reads only and
@@ -1045,6 +1046,16 @@ rollback notes of the [changelog](../CHANGELOG.md) for the steps.
 `python manage.py fleetops_prune_history` removes PAP older than **Data retention days**, PAP of members who
 left the alliances in **Member alliance IDs**, old member events and the old texts of pings sent without a fleet
 (their audit entries stay); add `--dry-run` to see the counts first.
+
+**Safety check.** The PAP of departed members is not removed when the setting looks wrong: when none of the **Member
+alliance IDs** matches the main character of any user (a wrong digit), or when the users to prune are more than
+the share set on the FleetOps settings page under **Largest share of departed members to prune** (1 to 99 percent, default 50) of the users with PAP history. The run then
+writes a warning to the log, reports `refused` in the result and the command prints why; the retention of old rows
+still runs, and nothing is deleted from the PAP of departed members. Check the alliance IDs, or run
+`python manage.py fleetops_prune_history --force` when the pruning is meant. `--dry-run` shows the refusal too. When the pruning of departed members was refused, the command prints the counts as
+a warning and exits with an error (status 1) after the retention part has run, so a cron job notices; with `--dry-run`
+it exits normally.
+The daily task never forces.
 The daily beat task `fleetops.tasks.prune_attendance_history` does the same and also deletes SRP killmails
 nobody claimed (their location fields go with them) and the losses the scan found that are no use any more (see
 [SRP loss discovery](#srp-loss-discovery)). SRP claims with their timelines, payment batches, links and categories are the payment record and are never deleted by retention; the insurance prices are one row per ship that is rewritten daily. SRP bans are never deleted by retention: the reason, the end and

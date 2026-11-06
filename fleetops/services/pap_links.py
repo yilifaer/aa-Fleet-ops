@@ -259,6 +259,10 @@ def register_characters(link, user, character_ids):
             continue
         try:
             with transaction.atomic():
+                # The fleet's end may be settling right now (a registration is allowed while it ends). Waiting for
+                # its lock, the registration is written after the settlement and recalculated below, as
+                # create_manual_attendance does; without it the settlement would miss the row for good.
+                operation.status = FleetOperation.objects.select_for_update().get(pk=operation.pk).status
                 PapRegistration.objects.create(
                     operation=operation,
                     link=link,
@@ -279,7 +283,7 @@ def register_characters(link, user, character_ids):
         result.registered.append((character_id, name))
 
     if result.registered:
-        operation.refresh_from_db()
+        # The status as the last registration saw it under the lock; a later change is not needed here.
         # A closed fleet already has its PAP; it is recalculated so the new registrations count.
         if operation.status == Status.CLOSED:
             refresh_after_change(operation, actor=user, reason="PAP link registration")

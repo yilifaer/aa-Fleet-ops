@@ -9,12 +9,14 @@ from decimal import Decimal
 from unittest import mock
 
 from django.contrib.messages import get_messages
+from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
 from fleetops import texts
 from fleetops.models import AuditLog, SrpClaim, SrpClaimEvent, SrpFleetLink, SrpKillmail, SrpSettings
+from fleetops.providers import zkillboard
 from fleetops.providers.esi import FleetESIError
 from fleetops.providers.esi_killmails import KILLMAIL_NOT_FOUND
 from fleetops.srp import claims, importer, killmails, review, summaries
@@ -559,6 +561,13 @@ class EnrichTests(ImportTestCase):
 
         self.assertEqual([call.args[0] for call in sleep.call_args_list], [0.25, 0.25])
 
+    def test_the_default_rate_is_what_the_zkillboard_slot_allows(self):
+        # M-5: one lookup per second collided with the provider's own two-second slot.
+        self.assertEqual(importer.DEFAULT_ENRICH_RATE, 1.0 / importer.zkillboard.SLOT_SECONDS)
+        _result, sleep = self.run_enrich()
+
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [2.0, 2.0])
+
     def test_the_limit_stops_early_and_the_next_run_goes_on(self):
         result, _sleep = self.run_enrich(limit=2)
         self.assertEqual((result.done, result.remaining), (2, 1))
@@ -577,13 +586,96 @@ class EnrichTests(ImportTestCase):
         self.assertEqual((result.done, result.failed, result.remaining), (2, 1, 1))
         self.assertEqual(SrpKillmail.objects.get(pk=self.ids[1]).killmail_hash, "")
 
-    def test_a_missing_hash_counts_as_failed_and_throttling_stops_the_run(self):
+    def test_a_missing_hash_counts_as_failed(self):
         result, _sleep = self.run_enrich(fetch=lambda i: ZkillResult("missing"))
+
         self.assertEqual((result.done, result.failed), (0, 3))
 
-        result, _sleep = self.run_enrich(fetch=lambda i: ZkillResult("throttled"))
-        self.assertEqual((result.done, result.failed), (0, 1))
-        self.assertIn("slow down", result.stopped)
+    def test_a_taken_slot_is_waited_for_and_the_same_killmail_is_tried_again(self):
+        # M-5: "throttled" is FleetOps' own slot, not zKillboard asking to slow down.
+        calls = []
+
+        def fetch(killmail_id):
+            calls.append(killmail_id)
+            if len(calls) in (1, 3):
+                return ZkillResult("throttled", retry_after=2, requested=False)
+            return self.zkill(killmail_id)
+
+        result, sleep = self.run_enrich(fetch=fetch)
+
+        self.assertEqual((result.done, result.failed, result.remaining, result.stopped), (3, 0, 0, ""))
+        self.assertEqual(calls, [self.ids[0], self.ids[0], self.ids[1], self.ids[1], self.ids[2]])
+        self.assertIn(2, [call.args[0] for call in sleep.call_args_list])
+
+    def test_a_slot_that_stays_taken_stops_the_run_without_counting_failures(self):
+        result, sleep = self.run_enrich(fetch=lambda i: ZkillResult("throttled", retry_after=2, requested=False))
+
+        self.assertEqual((result.done, result.failed, result.remaining), (0, 0, 3))
+        self.assertIn("busy with other work", result.stopped)
+        self.assertEqual(sleep.call_count, importer.ENRICH_SLOT_WAITS)
+
+    def test_a_paused_provider_stops_the_run_at_once(self):
+        # M-6: it used to walk all remaining killmails counting each as failed.
+        fetch = mock.Mock(return_value=ZkillResult("unavailable", retry_after=900, requested=False))
+        result, sleep = self.run_enrich(fetch=fetch)
+
+        self.assertEqual(fetch.call_count, 1)
+        self.assertEqual((result.done, result.failed, result.remaining), (0, 0, 3))
+        self.assertIn("paused for about 15 minutes", result.stopped)
+        sleep.assert_not_called()
+
+    def test_a_request_that_pauses_the_provider_stops_the_run(self):
+        fetch = mock.Mock(return_value=ZkillResult("blocked", retry_after=3600))
+        result, _sleep = self.run_enrich(fetch=fetch)
+
+        self.assertEqual(fetch.call_count, 1)
+        self.assertEqual((result.failed, result.remaining), (1, 3))
+        self.assertIn("paused for about 60 minutes", result.stopped)
+
+    def test_a_single_failed_request_is_counted_and_the_run_goes_on(self):
+        result, _sleep = self.run_enrich(fetch=lambda i: ZkillResult("unavailable"))
+
+        self.assertEqual((result.done, result.failed, result.stopped), (0, 3, ""))
+
+    def test_the_real_provider_slot_and_pause_are_respected(self):
+        # The provider itself, with its cache keys and the HTTP call mocked.
+        cache.delete_many([zkillboard.SLOT_KEY, zkillboard.PAUSE_KEY, zkillboard.FAILURES_KEY])
+        self.addCleanup(cache.delete_many, [zkillboard.SLOT_KEY, zkillboard.PAUSE_KEY, zkillboard.FAILURES_KEY])
+
+        def answer(url, **kwargs):
+            killmail_id = int(url.rstrip("/").rsplit("/", 1)[1])
+            response = mock.Mock(status_code=200, headers={})
+            response.json.return_value = [{"killmail_id": killmail_id, "zkb": {"hash": HASH}}]
+            return response
+
+        slept = []
+
+        def sleep(seconds):
+            slept.append(seconds)
+            cache.delete(zkillboard.SLOT_KEY)  # the slot ends while the run waits
+
+        patchers = (
+            mock.patch.object(zkillboard.requests, "get", side_effect=answer),
+            mock.patch.object(importer, "get_killmail", side_effect=lambda i, h: self.payload(i)),
+            mock.patch.object(killmails, "_names", return_value=("Rifter", "Amamake")),
+        )
+        for patcher in patchers:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+        # Another process holds the slot: the run waits for it instead of stopping, and completes all three.
+        cache.add(zkillboard.SLOT_KEY, 1, timeout=zkillboard.SLOT_SECONDS)
+        result = importer.enrich(rate=10, sleep=sleep)
+        self.assertEqual((result.done, result.failed, result.stopped), (3, 0, ""))
+
+        # Paused: nothing is sent, the run stops with a message.
+        SrpKillmail.objects.filter(pk__in=self.ids).update(killmail_hash="")
+        cache.set(zkillboard.PAUSE_KEY, timezone.now().timestamp() + 900, timeout=900)
+        zkillboard.requests.get.reset_mock()
+        result = importer.enrich(rate=10, sleep=sleep)
+        zkillboard.requests.get.assert_not_called()
+        self.assertEqual((result.done, result.failed), (0, 0))
+        self.assertIn("paused", result.stopped)
 
     def test_an_esi_rate_limit_stops_the_run(self):
         result, _sleep = self.run_enrich(read=lambda i, h: (_ for _ in ()).throw(FleetESIError("ESI_LIMITED", "slow down")))

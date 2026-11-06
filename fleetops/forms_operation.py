@@ -323,6 +323,10 @@ class OperationEditForm(forms.ModelForm):
                 self.add_error("ended_at", _("End Time must be after Start Time."))
             elif times_changed and ended - started > self.LONG_FLEET and not data.get("confirm_long_fleet"):
                 self.add_error("confirm_long_fleet", long_fleet_message(ended - started))
+        elif not ended and "ended_at" not in self._errors and self.instance.status == FleetOperation.Status.CLOSED:
+            # Without an end time the duration of a closed fleet would run on from the start to "now", so the
+            # multiplier tiers, the minimum duration and the statistics rules would stop meaning anything.
+            self.add_error("ended_at", _("A closed fleet needs an End Time."))
         check_fleet_times(self, started, ended, stored=stored)
         return data
 

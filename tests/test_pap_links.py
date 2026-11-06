@@ -367,6 +367,36 @@ class RegistrationTests(PapLinkTestCase):
             {self.pilot.pk},
         )
 
+    def test_a_registration_locks_the_fleet_row_like_a_manual_row_does(self):
+        # The fleet's end settles in a transaction that holds this lock; a registration made meanwhile has to wait
+        # for it and be recalculated (the real race is tested on MariaDB in test_pap_concurrency).
+        locking = mock.patch.object(
+            FleetOperation.objects, "select_for_update", wraps=FleetOperation.objects.select_for_update
+        )
+        with locking as lock:
+            result = register_characters(self.link, self.pilot, [self.main.character_id])
+
+        self.assertEqual(len(result.registered), 1)
+        lock.assert_called()
+
+    def test_a_registration_recalculates_when_the_fleet_closed_while_it_waited(self):
+        self.operation.status = Status.ENDING
+        self.operation.save(update_fields=["status"])
+        original = FleetOperation.objects.select_for_update
+
+        def settle_then_lock(*args, **kwargs):
+            # The settlement commits while the registration waits for the lock.
+            FleetOperation.objects.filter(pk=self.operation.pk).update(status=Status.CLOSED)
+            return original(*args, **kwargs)
+
+        with (
+            mock.patch.object(FleetOperation.objects, "select_for_update", side_effect=settle_then_lock),
+            mock.patch("fleetops.services.pap_links.refresh_after_change") as refresh,
+        ):
+            register_characters(self.link, self.pilot, [self.main.character_id])
+
+        refresh.assert_called_once()
+
     def test_links_of_fleets_closed_before_the_upgrade_register_nobody(self):
         legacy = f.create_operation(self.fc, status=Status.CLOSED, pap_rules=FleetOperation.PapRules.LEGACY)
         link = f.pap_link(legacy, require_online=False)

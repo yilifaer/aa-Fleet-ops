@@ -239,10 +239,14 @@ def _write_identity(row, candidate):
 
 
 def _owned_rows(managed):
-    """The managed rows that were credited to a player, by character."""
+    """The managed rows that were credited to a player, by character.
+
+    A row whose player's account was deleted (``auth_user`` emptied) but that holds a main is history
+    too: it stays with the deleted player, so the character does not follow its new owner.
+    """
     owned = {}
     for row in sorted(managed, key=lambda item: (item.source != Source.AUTOMATIC, item.pk)):
-        if row.auth_user_id is not None:
+        if row.auth_user_id is not None or row.main_character_id:
             owned.setdefault(row.character_id, row)
     return owned
 
@@ -253,7 +257,8 @@ def _sync_managed_rows(operation, plan, managed):
     Returns ``(rows, created)``. Identity fields are written when a row is created (or never had a
     player), so a recalculation never moves history to the character's new owner or corporation.
     A character leaves the candidates only when it is no longer tracked or registered in the fleet:
-    ``finalize_pap`` keeps characters with a credited row as candidates of that player.
+    ``finalize_pap`` keeps characters with a credited row as candidates of that player. The rows of a deleted
+    account (``auth_user`` emptied by the database) cannot be candidates, but are kept and returned.
     """
     by_character = {}
     stale = []
@@ -280,7 +285,13 @@ def _sync_managed_rows(operation, plan, managed):
         row.first_seen = state.first_seen if state else registration.registered_at
         row.last_seen = state.last_seen if state else registration.registered_at
         rows.append(row)
-    stale.extend(row.pk for row in by_character.values())
+    for row in by_character.values():
+        if row.auth_user_id is None and (row.main_character_id or row.granted):
+            # A row whose player's Alliance Auth account was deleted: the account is gone, the credit it earned
+            # is history and stays as it is (it keeps following the fleet's multiplier like every other row).
+            rows.append(row)
+        else:
+            stale.append(row.pk)
     if stale:
         AttendanceRecord.objects.filter(pk__in=stale).delete()
     return rows, created

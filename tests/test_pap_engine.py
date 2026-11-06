@@ -485,6 +485,46 @@ class FinalizeTests(EngineTestBase):
         )
         self.assertEqual((summary["granted"], summary["unregistered"]), (1, 0))
 
+    def test_the_pap_of_a_deleted_account_survives_a_recalculation(self):
+        # The account is deleted (clean-up, data request): the rows keep their main and corporation, lose the user,
+        # and a later recalculation must not delete them.
+        self.track(self.main, 30)
+        finalize_pap(self.operation)
+        before = row(self.operation, self.main)
+        self.assertTrue(before.granted)
+
+        self.pilot.delete()
+        summary = finalize_pap(self.operation)
+        set_operation_attendance_multiplier(self.operation, 2, actor=self.fc)
+
+        kept = row(self.operation, self.main)
+        self.assertEqual(
+            (kept.pk, kept.auth_user, kept.main_character_id, kept.granted),
+            (before.pk, None, self.main.character_id, True),
+        )
+        self.assertEqual(kept.attendance_value, 2)
+        self.assertEqual(summary["granted"], 1)
+
+    def test_the_pap_of_a_deleted_account_stays_when_its_character_goes_to_another_player(self):
+        self.track(self.main, 30)
+        finalize_pap(self.operation)
+        before = row(self.operation, self.main)
+        owner = (before.auth_user_id, before.main_character_id, before.corporation_id, before.granted)
+        self.assertIsNotNone(before.auth_user_id)
+
+        self.pilot.delete()
+        buyer = f.create_user(main_name="Buyer Main")
+        f.add_ownership(buyer, self.main)
+        finalize_pap(self.operation)
+
+        kept = row(self.operation, self.main)
+        self.assertEqual(kept.pk, before.pk)
+        self.assertEqual(
+            (kept.auth_user_id, kept.main_character_id, kept.corporation_id, kept.granted),
+            (None, owner[1], owner[2], owner[3]),
+        )
+        self.assertFalse(AttendanceRecord.objects.filter(auth_user=buyer).exists())
+
     def totals(self, operation):
         start = operation.started_at
         return (

@@ -112,9 +112,16 @@ class LeaderboardSettingsTests(TestCase):
         groups = {title: [field.name for field in fields] for title, _text, fields in form.field_groups()}
         self.assertEqual(
             groups["Statistics"],
-            ["minimum_fleet_minutes", "history_alliance_ids", "leaderboard_size", "leaderboard_visibility"],
+            [
+                "minimum_fleet_minutes",
+                "history_alliance_ids",
+                "history_prune_max_share",
+                "leaderboard_size",
+                "leaderboard_visibility",
+            ],
         )
         self.assertNotIn("history_alliance_ids", groups["General"])
+        self.assertNotIn("history_prune_max_share", groups["General"])
 
     def test_settings_form_saves_the_new_fields(self):
         form = FleetOpsSettingsForm(

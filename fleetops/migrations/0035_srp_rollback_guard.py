@@ -11,7 +11,8 @@
 #
 # Migrations must not import FleetOps code: the constants below are copies.
 
-from django.db import migrations
+import django.core.validators
+from django.db import migrations, models
 from django.db.migrations.exceptions import IrreversibleError
 from django.db.models import Count, Q
 
@@ -101,7 +102,19 @@ class Migration(migrations.Migration):
         ("fleetops", "0034_srp_import_guard"),
     ]
 
-    # Nothing to do going forward. Going back runs this first of all, because it is the last migration.
+    # Going forward this adds the pruning share to the settings (percent, default 50) and checks nothing. Going back
+    # undoes the operations in reverse order, so the guard runs first and the column is only dropped when the guard
+    # let the rollback go on.
     operations = [
+        migrations.AddField(
+            model_name="fleetopssettings",
+            name="history_prune_max_share",
+            field=models.PositiveSmallIntegerField(
+                default=50,
+                help_text="Percent of the users with PAP history that one pruning of departed members may remove. When more users would be pruned (usually a wrong Member alliance IDs), nothing of the departed members is deleted and a warning is logged. 1 to 99, default 50.",
+                validators=[django.core.validators.MinValueValidator(1), django.core.validators.MaxValueValidator(99)],
+                verbose_name="Largest share of departed members to prune",
+            ),
+        ),
         migrations.RunPython(migrations.RunPython.noop, refuse_rollback),
     ]

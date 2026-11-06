@@ -194,16 +194,29 @@ def personal(user, year: int, month: int) -> PersonalSrp:
 # --- Members, corporations, FCs ----------------------------------------------------------------------------
 
 
+# The player, else the main character, else the character that lost the ship (an imported claim of a pilot who left
+# Alliance Auth has neither), so each of them is its own row instead of one "Unknown" row. Positive numbers are users,
+# negative ones characters; a main character and a character of the same ID are the same pilot.
+_MEMBER_KEY = Coalesce(
+    F("user_id"), -F("main_character_id"), -F("character_id"), Value(0), output_field=BigIntegerField()
+)
+
+
 def _latest_claim_of_members(claims, keys) -> dict:
     """``{member key: main character and corporation of the newest claim}``: one streamed query, the newest claim
     comes last so that it wins; id and name always come from the same claim."""
     ordered = (
         claims.order_by()
-        .annotate(
-            member_key=Coalesce(F("user_id"), -F("main_character_id"), Value(0), output_field=BigIntegerField())
-        )
+        .annotate(member_key=_MEMBER_KEY)
         .order_by("killmail_time", "pk")
-        .values("member_key", "main_character_id", "main_character_name", "corporation_id", "corporation_name")
+        .values(
+            "member_key",
+            "main_character_id",
+            "main_character_name",
+            "character_name",
+            "corporation_id",
+            "corporation_name",
+        )
     )
     wanted = set(keys)
     return {e["member_key"]: e for e in ordered.iterator(chunk_size=2000) if e["member_key"] in wanted}
@@ -211,16 +224,14 @@ def _latest_claim_of_members(claims, keys) -> dict:
 
 def by_member(start, end, *, corporation_id=None) -> list[SrpMemberRow]:
     """One row per player in the period (all characters of the player are one row, under the main character as
-    claimed), the most approved ISK first. Claims without a player are grouped by their main character.
-    ``corporation_id`` limits the claims to one corporation; the alliance report passes none."""
+    claimed), the most approved ISK first. Claims without a player are grouped by their main character, or by the
+    character that lost the ship. ``corporation_id`` limits the claims to one corporation; the alliance report passes none."""
     claims = period_claims(start, end)
     if corporation_id is not None:
         claims = claims.filter(corporation_id=corporation_id)
     rows = (
         claims.order_by()
-        .annotate(
-            member_key=Coalesce(F("user_id"), -F("main_character_id"), Value(0), output_field=BigIntegerField())
-        )
+        .annotate(member_key=_MEMBER_KEY)
         .values("member_key")
         .annotate(member_user=Max("user_id"), **_aggregates())
     )
@@ -233,7 +244,7 @@ def by_member(start, end, *, corporation_id=None) -> list[SrpMemberRow]:
             SrpMemberRow(
                 user_id=row["member_user"],
                 main_character_id=claim.get("main_character_id"),
-                main_character_name=claim.get("main_character_name") or "",
+                main_character_name=claim.get("main_character_name") or claim.get("character_name") or "",
                 corporation_id=claim.get("corporation_id"),
                 corporation_name=claim.get("corporation_name") or "",
                 totals=_totals(row),

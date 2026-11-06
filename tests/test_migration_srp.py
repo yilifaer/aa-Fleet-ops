@@ -1364,11 +1364,16 @@ class RollbackGuardFunctionTests(TestCase):
 
         self.assertIn("for imported links run fleetops_import_aasrp --undo", rollback.describe(problem))
 
-    def test_the_migration_is_the_last_one_and_the_guard_is_its_only_reverse(self):
+    def test_the_guard_is_the_last_migration_and_runs_first_when_going_back(self):
         executor = MigrationExecutor(connection)
         self.assertEqual(executor.loader.graph.leaf_nodes("fleetops"), [("fleetops", "0035_srp_rollback_guard")])
-        [operation] = rollback_guard.Migration.operations
-        self.assertIs(operation.reverse_code, rollback_guard.refuse_rollback)
+        # Operations are undone in reverse order: the guard has to come after the column, so it refuses before the
+        # column is dropped.
+        add_field, guard = rollback_guard.Migration.operations
+        self.assertEqual(type(add_field).__name__, "AddField")
+        self.assertEqual(add_field.name, "history_prune_max_share")
+        self.assertEqual(add_field.field.default, 50)
+        self.assertIs(guard.reverse_code, rollback_guard.refuse_rollback)
         [operation] = import_guard.Migration.operations
         self.assertIs(operation.reverse_code, import_guard.refuse_if_imported)
 
@@ -1572,6 +1577,12 @@ class ImportRoundTripTests(TransactionTestCase):
         columns = {c.name for c in connection.introspection.get_table_description(connection.cursor(), "fleetops_srpclaim")}
         self.assertIn("external_id", columns)
         self.assertIn("payment_batch_id", columns)
+        # The settings column of the pruning share is added by the guard's own migration, so it is still there:
+        # a refused rollback must leave the running version able to read its settings.
+        settings_columns = {
+            c.name for c in connection.introspection.get_table_description(connection.cursor(), "fleetops_fleetopssettings")
+        }
+        self.assertIn("history_prune_max_share", settings_columns)
 
         # Fix the three things; now the way back works, and forward again.
         current.get_model("fleetops", "SrpPayoutRule").objects.all().delete()

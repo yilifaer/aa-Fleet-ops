@@ -24,7 +24,7 @@ class Command(BaseCommand):
         "rejected claims, pending requests are not imported. Safe to run again: claims are matched by their aa-srp "
         "request number, and claims that were not imported are never touched. Use --dry-run first, and run the real "
         "import in a maintenance window (every batch holds the SRP lock). --undo removes everything the import made; "
-        "--enrich fills in the real killmails of the imported losses (slow, one lookup per second)."
+        "--enrich fills in the real killmails of the imported losses (slow, one lookup every two seconds)."
     )
 
     def add_arguments(self, parser):
@@ -40,7 +40,7 @@ class Command(BaseCommand):
         parser.add_argument("--batch-size", type=int, default=legacy_import.BATCH_SIZE, help="Claims per batch (500).")
         parser.add_argument("--undo", action="store_true", help="Delete everything the import made (combine with --dry-run to count).")
         parser.add_argument("--enrich", action="store_true", help="Look up the real killmails of the imported losses.")
-        parser.add_argument("--rate", type=float, default=1.0, help="With --enrich: lookups per second (1).")
+        parser.add_argument("--rate", type=float, default=importer.DEFAULT_ENRICH_RATE, help="With --enrich: lookups per second (0.5).")
         parser.add_argument("--limit", type=int, default=0, help="With --enrich: stop after this many lookups (0 = no limit).")
 
     # --- helpers -----------------------------------------------------------------------------------------

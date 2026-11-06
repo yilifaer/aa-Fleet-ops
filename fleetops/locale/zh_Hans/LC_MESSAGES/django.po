@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-05 10:54+0000\n"
+"POT-Creation-Date: 2026-11-06 07:26+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -1039,6 +1039,10 @@ msgstr "高于 1 倍的倍率要求舰队时长足够。"
 msgid "End Time must be after Start Time."
 msgstr "结束时间必须晚于开始时间。"
 
+#: forms_operation.py
+msgid "A closed fleet needs an End Time."
+msgstr "已结束的舰队必须有结束时间。"
+
 #: forms_operation.py services/export_datasets.py
 msgid "Budget (ISK)"
 msgstr "预算（ISK）"
@@ -1857,6 +1861,14 @@ msgstr "成员联盟 ID"
 #: models.py
 msgid "Comma-separated alliance IDs. When set, statistics, leaderboards and history only include users whose main character is currently in one of these alliances, and departed members' history can be pruned. Empty = every Alliance Auth user with a main character."
 msgstr "用逗号分隔的联盟 ID。设置后，统计、排行榜和历史只包含大号当前在这些联盟之一的用户，并且可以清理已离开成员的历史。留空表示所有设置了大号的 Alliance Auth 用户。"
+
+#: models.py
+msgid "Largest share of departed members to prune"
+msgstr "清理已离开成员时的最大比例"
+
+#: models.py
+msgid "Percent of the users with PAP history that one pruning of departed members may remove. When more users would be pruned (usually a wrong Member alliance IDs), nothing of the departed members is deleted and a warning is logged. 1 to 99, default 50."
+msgstr "一次清理已离开成员时，最多可以删除多少比例（百分数）的有 PAP 历史的用户。要清理的用户超过这个比例时（通常是成员联盟 ID 填错了），不会删除任何已离开成员的 PAP，并在日志里写一条警告。1 到 99，默认 50。"
 
 #: models.py
 msgid "Leaderboard places"

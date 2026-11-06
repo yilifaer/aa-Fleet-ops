@@ -166,6 +166,18 @@ class SrpTotalsTests(data.SummaryData):
             [summary.requested, summary.approved, summary.paid, summary.outstanding],
         )
 
+    def test_the_members_file_lists_each_character_without_a_player_or_main(self):
+        # M-4: the file used to merge them into one "Unknown" line.
+        SrpClaim.objects.filter(pk__in=[self.b1.pk, self.b2.pk, self.c1.pk, self.c2.pk]).update(
+            user=None, main_character_id=None, main_character_name=""
+        )
+
+        names = [line[0] for line in csv_rows(self.download("srp-members"))[1:-1]]
+
+        self.assertEqual(len(names), len(set(names)))
+        self.assertNotIn("", names)
+        self.assertNotIn("Unknown", names)
+
     def test_the_members_total_is_the_last_row_of_both_files(self):
         members = summaries.by_member(*month_bounds(2026, 3))  # STAT-1: by_member takes a period
         for rows in (csv_rows(self.download("srp-members")), workbook_rows(self.download("srp-members", "xlsx"))):

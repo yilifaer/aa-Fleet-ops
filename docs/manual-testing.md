@@ -292,7 +292,7 @@ right actor.
   with claims, run `fleetops_srp_rollback_check` (it must pass), `migrate fleetops 0023`, install 0.2.0b3 and start it.
   Claims, amounts and statuses are as before; the categories, standing links, batches, bans and found losses are gone.
 - [ ] With imported claims, rules of a category or standing links with claims still in place, `migrate fleetops 0023`
-  stops at `0035` and the database is unchanged.
+  stops at `0035` and the database is unchanged (the guard runs before the pruning share column is dropped).
 
 **Version and database matrix** (CI runs SQLite and MariaDB with the whole suite and the migration tests on PostgreSQL; the PostgreSQL job covers the migrations only, so run the rest of this list on PostgreSQL by hand for a release)
 

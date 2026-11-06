@@ -286,6 +286,24 @@ class MemberTests(SummaryData):
         self.assertIsNone(row.user_id)
         self.assertEqual(row.totals.claims, 2)
 
+    def test_claims_without_a_player_and_a_main_are_one_row_per_character(self):
+        # M-4: imported claims of pilots who left Alliance Auth have neither; they were merged into one "Unknown" row.
+        SrpClaim.objects.filter(pk__in=[self.b1.pk, self.b2.pk, self.c1.pk, self.c2.pk]).update(
+            user=None, main_character_id=None, main_character_name=""
+        )
+
+        rows = summaries.by_member(*month_bounds(2026, 3))
+
+        names = sorted(row.main_character_name for row in rows)
+        self.assertIn("Bob Main", names)
+        self.assertIn("Cara Main", names)
+        self.assertNotIn("", names)
+        bob = next(row for row in rows if row.main_character_name == "Bob Main")
+        cara = next(row for row in rows if row.main_character_name == "Cara Main")
+        self.assertEqual((bob.totals.claims, bob.user_id), (2, None))
+        self.assertEqual((cara.totals.claims, cara.user_id), (2, None))
+        self.assertEqual(len(rows), 3)
+
     def test_the_snapshot_decides_the_corporation(self):
         # Alice moves to the other corporation after her claims: they stay where they were made.
         main = f.main_of(self.alice)

@@ -155,6 +155,7 @@ def settings_payload(**overrides):
         "incentive_minimum_fleets": "3",
         "data_retention_days": "365",
         "history_alliance_ids": "",
+        "history_prune_max_share": "50",
         "srp_auto_create": "on",
         "srp_provider": "auto",
         "leaderboard_size": "20",
@@ -730,6 +731,36 @@ class SettingsFormTests(TestCase):
         self.assertIsNone(entry.old_value["attendance_limit"])
         self.assertEqual(entry.new_value["attendance_limit"], 2)
         self.assertIsNotNone(entry.created_at)
+
+    def test_the_pruning_share_is_saved_and_audited(self):
+        response = self._post(history_prune_max_share="35")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(FleetOpsSettings.get_solo().history_prune_max_share, 35)
+        entry = AuditLog.objects.get(action="configuration.update", object_type="FleetOpsSettings")
+        self.assertEqual(entry.old_value["history_prune_max_share"], 50)
+        self.assertEqual(entry.new_value["history_prune_max_share"], 35)
+
+    def test_the_pruning_share_must_be_1_to_99(self):
+        # 100 would switch the guard off: the users to prune can never be more than all of them.
+        for value in ("0", "100", "101", "-5", "abc"):
+            with self.subTest(value=value):
+                response = self._post(history_prune_max_share=value)
+
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("history_prune_max_share", response.context["form"].errors)
+                self.assertEqual(FleetOpsSettings.get_solo().history_prune_max_share, 50)
+        self.assertFalse(AuditLog.objects.exists())
+
+    def test_a_post_without_the_pruning_share_keeps_the_stored_value(self):
+        FleetOpsSettings.objects.update(history_prune_max_share=80)
+        data = settings_payload()
+        del data["history_prune_max_share"]
+
+        response = self.client.post(self.url, data)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(FleetOpsSettings.get_solo().history_prune_max_share, 80)
 
     def test_minimum_allowed_values_are_accepted(self):
         response = self._post(

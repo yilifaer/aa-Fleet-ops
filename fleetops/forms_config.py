@@ -127,7 +127,7 @@ class FleetOpsSettingsForm(forms.ModelForm):
         (
             _("Statistics"),
             _("Corporation targets and the member minimum are set under Monthly Targets."),
-            ["minimum_fleet_minutes", "history_alliance_ids", "leaderboard_size", "leaderboard_visibility"],
+            ["minimum_fleet_minutes", "history_alliance_ids", "history_prune_max_share", "leaderboard_size", "leaderboard_visibility"],
         ),
         (_("PAP links"), "", ["pap_link_minutes"]),
         (_("Messages"), "", ["motd_warning_length"]),
@@ -187,6 +187,7 @@ class FleetOpsSettingsForm(forms.ModelForm):
             "incentive_minimum_fleets",
             "data_retention_days",
             "history_alliance_ids",
+            "history_prune_max_share",
             "srp_auto_create",
             "srp_provider",
             "fleet_live_refresh_seconds",
@@ -210,6 +211,8 @@ class FleetOpsSettingsForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.warnings = []
         self.fields["srp_provider"].choices = srp_provider_choices(self.instance.srp_provider)
+        # A submission without the share (an older form, a script) keeps the stored one.
+        self.fields["history_prune_max_share"].required = False
         self._set_up_bridge_groups()
         for name, field in self.fields.items():
             if isinstance(field.widget, forms.CheckboxSelectMultiple):
@@ -218,6 +221,10 @@ class FleetOpsSettingsForm(forms.ModelForm):
                 field.widget.attrs["class"] = "form-select"
             elif not isinstance(field.widget, forms.CheckboxInput):
                 field.widget.attrs["class"] = "form-control"
+
+    def clean_history_prune_max_share(self):
+        value = self.cleaned_data.get("history_prune_max_share")
+        return self.instance.history_prune_max_share if value is None else value
 
     def _set_up_bridge_groups(self):
         """Offer the ship groups of the SDE (or the built-in list) and keep every stored ID reachable."""

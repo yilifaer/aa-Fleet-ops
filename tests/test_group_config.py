@@ -8,11 +8,12 @@ import json
 
 from django.contrib.auth.models import Group
 from django.db import connection
+from django.db.models.signals import pre_delete
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
-from fleetops import texts
+from fleetops import signals, texts
 from fleetops.forms_groups import GroupAccessForm, group_cell, group_list_prepare
 from fleetops.models import AuditLog, DiscordWebhook, GroupAccess, StandalonePing
 
@@ -326,3 +327,32 @@ class GroupDeletionTests(GroupConfigFixture):
         self.assertIsNone(entry.old_value["access"])
         self.assertEqual(entry.new_value, {"channels_reopened": [channel.pk]})
         self.assertFalse(StandalonePing.objects.exists())
+
+
+class GroupSignalScopeTests(TestCase):
+    """M-7: the receiver was connected without a sender and turned off Django's fast delete for every model."""
+
+    def test_deleting_rows_of_an_unrelated_model_still_uses_the_fast_delete(self):
+        from django.db import router
+        from django.db.models.deletion import Collector
+
+        collector = Collector(using=router.db_for_write(StandalonePing))
+
+        self.assertFalse(pre_delete.has_listeners(StandalonePing))
+        self.assertTrue(collector.can_fast_delete(StandalonePing.objects.all()))
+
+    def test_the_group_and_the_proxy_of_alliance_auth_have_the_receiver(self):
+        from allianceauth.groupmanagement.models import Group as AuthProxyGroup
+
+        self.assertTrue(pre_delete.has_listeners(Group))
+        self.assertTrue(pre_delete.has_listeners(AuthProxyGroup))
+        self.assertIn(AuthProxyGroup, signals.group_models())
+        self.assertIn(Group, signals.group_models())
+
+    def test_connecting_twice_registers_the_receiver_once(self):
+        signals.connect_group_receivers()
+        signals.connect_group_receivers()
+        uids = [entry[0][0] for entry in pre_delete.receivers if str(entry[0][0]).startswith("fleetops_group_deleted")]
+
+        self.assertEqual(sorted(uids), sorted(set(uids)))
+        self.assertIn("fleetops_group_deleted_auth.Group", uids)

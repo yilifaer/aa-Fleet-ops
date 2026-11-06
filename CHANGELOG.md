@@ -203,6 +203,27 @@ depends on it. Read the upgrade notes and the rollback notes below before you st
 - The stored calculation of a claim (policy snapshot) is version 2 and carries the category. Claims calculated before
   keep their snapshot and are not reported as "calculated with earlier settings" by the upgrade.
 
+### Fixed
+
+- Deleting rows of any other app's model is fast again: the receiver for deleted groups was connected without a model,
+  which turned off Django's single-statement delete for the whole site. It is now connected to `auth.Group` and the
+  proxies of it (Alliance Auth's `Group`) only.
+- The PAP rows of a pilot whose Alliance Auth account was deleted are kept when the PAP of the fleet is recalculated.
+- A PAP link registration made while the fleet's end is being settled waits for the fleet's lock and is recalculated, as
+  a manual PAP row is.
+- A closed fleet can no longer be saved without an End Time (its duration ran on to "now" and bypassed the multiplier
+  tiers and the statistics rules).
+- `fleetops_import_aasrp --enrich`: the default pace is one lookup every two seconds, the pace of the zKillboard
+  slot; a lookup that finds the slot taken waits and tries again instead of stopping, and the run stops with a message
+  while zKillboard is paused instead of counting every remaining killmail as failed.
+- The SRP member report and its export list claims without a player and a main character per character instead of in one
+  "Unknown" row.
+- The pruning of departed members refuses to run when none of the Member alliance IDs matches any user or when more than
+  the share set on the settings page (**Largest share of departed members to prune**, 1 to 99 percent, default 50) of
+  the users with PAP history would be pruned; `fleetops_prune_history --force` overrides it. Retention of old rows is
+  not affected. The command exits with an error (and prints the counts as a warning) when it refused the pruning of
+  departed members, so a cron job notices; `--dry-run` shows the refusal and exits normally.
+
 ### Known items
 
 - The models of FleetOps 0.2.x keep Django's default permissions (add, change, delete, view) in this release. Taking
@@ -260,6 +281,10 @@ payer reports, which are for SRP staff only. Killmails stored before 0.3.0b1 sho
 report until `python manage.py fleetops_srp_backfill_killmails` has read them. The code that read the month of the
 summaries now reads a period; nothing is stored differently.
 
+Migration `0035` also adds one column to the FleetOps settings (**Largest share of departed members to prune**, percent, default
+50): the share of the users with PAP history that one pruning of departed members may remove. If the daily task logs "Departed
+members were not pruned", check **Member alliance IDs** before using `fleetops_prune_history --force`.
+
 ### Rollback notes
 
 **The order that works.** (1) Switch the new functions off (below) if you want to stay on this version a while longer.
@@ -270,6 +295,9 @@ claims outside a fleet; or restore the backup taken before the upgrade). (3) Run
 `python manage.py fleetops_srp_rollback_check` until every line passes. (4) Run `python manage.py migrate fleetops 0023`.
 (5) Only then install the previous package. **Migrations first, package second:** the older package does not know the
 newer migrations and could not undo them.
+
+The fixes listed under Fixed change code only: going back to an earlier build brings the old behaviour back (the PAP of
+deleted accounts is removed again by the next recalculation).
 
 **What the rollback loses:** the categories and the category of every claim, standing links and the new fields of every link,
 payment batches, bans, insurance prices, the attackers and location fields of the killmails, the found losses and their
@@ -313,8 +341,8 @@ Rolling back `0032` drops the payment batches (the claims keep their status, amo
 the batch they were paid in), the insurance prices, the stored attackers, the revision numbers and the five settings.
 Claims, amounts and statuses are not changed. Export the batches first if you need them. To behave like the previous
 version before rolling back, untick **Members can change their pending claims**.
-Rolling back `0033` drops the external ID of the claims. **`0035`, the last migration of this version, is the guard for the
-whole way back.** It checks everything that makes going back unsafe, once and before anything is changed, and stops the
+Rolling back `0033` drops the external ID of the claims. **`0035` is the guard for the whole way back** (it also adds the pruning share to the settings; going back runs the guard first and only
+drops that column when the guard lets the rollback go on). It checks everything that makes going back unsafe, once and before anything is changed, and stops the
 rollback (to `0023` or to any migration of this version, also a partial one such as `0032`) with a list while:
 payout rules belong to a category (the rule IDs are listed), links without a fleet have claims or links were imported
 from aa-srp (the link codes are listed), or claims were imported from aa-srp ("Run fleetops_import_aasrp --undo first").

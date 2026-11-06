@@ -17,3 +17,5 @@ venv/
 tools/ui_check/.work/
 tools/ui_check/.cache/
 tools/ui_check/out/
+
+dump.rdb

@@ -14,10 +14,11 @@ from django.utils import timezone
 
 from fleetops.models import AttendanceRecord, FleetOperation, ReviewStatus
 from fleetops.services import pap as pap_module
-from fleetops.services import roster_import
+from fleetops.services import pap_links, roster_import
 from fleetops.services.approvals import approve_attendance
 from fleetops.services.attendance import create_manual_attendance, set_operation_attendance_multiplier
 from fleetops.services.operations import end_fleet
+from fleetops.services.pap_links import register_characters
 from fleetops.services.roster_import import import_rows
 
 from . import factories as f
@@ -181,6 +182,42 @@ class ChangesDuringTheCloseTests(ConcurrencyTestCase):
         rows = {row.source: row for row in AttendanceRecord.objects.filter(operation=operation)}
         self.assertEqual((rows["automatic"].granted, rows["automatic"].replaced), (False, True))
         self.assertEqual((rows["imported"].granted, rows["imported"].attendance_value), (True, 5))
+
+    def test_a_pap_link_registration_while_the_fleet_closes_gets_its_pap(self):
+        """The end-to-end outcome of the race.
+
+        This test alone does not prove the fix: on InnoDB the foreign-key insert of the registration takes a shared
+        lock on the fleet row and waits for the end transaction even without the ``select_for_update`` of
+        ``register_characters``, so the old code passes here too. What proves the fix are the unit tests
+        ``test_a_registration_locks_the_fleet_row_like_a_manual_row_does`` and
+        ``test_a_registration_recalculates_when_the_fleet_closed_while_it_waited`` in ``test_pap_links``.
+        """
+        operation, end, holding = self.closing_fleet()
+        late = f.create_user(main_name="Late Pilot")
+        late_main = f.main_of(late)
+        link = f.pap_link(operation, require_online=False)
+
+        def register():
+            holding.wait(10)
+            register_characters(link, late, [late_main.character_id])
+
+        patches = (
+            mock.patch.object(pap_links, "_click_token", return_value=object()),
+            mock.patch.object(pap_links, "_best_effort", return_value={}),
+            mock.patch.object(pap_links, "item_type_names", return_value={}),
+            mock.patch.object(pap_links, "solar_system_names", return_value={}),
+        )
+        for patcher in patches:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+        errors = run_together(end, register)
+
+        self.assertEqual(errors, [])
+        operation.refresh_from_db()
+        self.assertEqual(operation.status, Status.CLOSED)
+        granted = AttendanceRecord.objects.get(operation=operation, character_id=late_main.character_id)
+        self.assertEqual((granted.granted, granted.auth_user), (True, late))
 
     def test_an_approval_while_the_fleet_closes_waits_for_it(self):
         operation, end, holding = self.closing_fleet()

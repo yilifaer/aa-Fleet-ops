@@ -157,13 +157,18 @@ class FetchNewKillmailTests(KillmailTestCase):
         self.assertEqual(km.zkill_next_attempt_at, km.killmail_time + timedelta(minutes=6))
 
     def test_a_killmail_one_second_short_of_six_minutes_waits(self):
-        when = timezone.now() - timedelta(minutes=5, seconds=59)
+        # The clock is fixed to a whole second: the killmail time of the payload has second precision, and a clock
+        # that runs on between the payload and the check would make the test depend on the load of the machine.
+        now = timezone.now().replace(microsecond=0)
+        self.patch(timezone, "now", return_value=now)
+        when = now - timedelta(minutes=5, seconds=59)
         self.payload.update(f.esi_killmail_payload(self.killmail_id, victim=self.pilot, time=when))
 
         km = self.fetch()
 
         self.zkill.assert_not_called()
-        self.assertGreater(km.zkill_next_attempt_at, timezone.now())
+        self.assertEqual(km.zkill_next_attempt_at, now + timedelta(seconds=1))
+        self.assertGreater(km.zkill_next_attempt_at, now)
 
     def test_unknown_names_are_looked_up_once_for_the_new_killmail(self):
         self.zkill_answers(ZkillResult("missing"))
