@@ -1,10 +1,13 @@
 name: Release
 
-# Runs when a version tag such as v0.2.0b1 is pushed. The steps for the maintainer are in docs/releasing.md.
+# Runs when a version tag such as v0.2.0b1 is pushed, or when started by hand from the Actions tab
+# ("Run workflow" on the branch to release); then it creates the tag v<version> on that commit itself.
+# The steps for the maintainer are in docs/releasing.md.
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
       prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
@@ -32,14 +36,34 @@ jobs:
       - name: Check that the tag matches the package version
         id: version
         env:
-          TAG: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref_name }}
         run: |
           VERSION=$(python tools/check_dist.py --print-version)
-          if [ "$TAG" != "v$VERSION" ]; then
-            echo "::error::The tag $TAG does not match the package version $VERSION."
-            exit 1
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            TAG="v$VERSION"
+            if [ "$GITHUB_REF" != "refs/heads/dev" ]; then
+              echo "::error::Start the release run on dev, not on $REF."
+              exit 1
+            fi
+            status=0
+            git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null || status=$?
+            if [ "$status" -eq 0 ]; then
+              echo "::error::The tag $TAG exists already. Raise the version, or re-run the run of that tag."
+              exit 1
+            elif [ "$status" -ne 2 ]; then
+              echo "::error::Could not check whether the tag $TAG exists (git ls-remote exit code $status)."
+              exit 1
+            fi
+          else
+            TAG="$REF"
+            if [ "$TAG" != "v$VERSION" ]; then
+              echo "::error::The tag $TAG does not match the package version $VERSION."
+              exit 1
+            fi
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           if echo "$VERSION" | grep -Eq '[0-9](a|b|rc)[0-9]+|\.dev[0-9]+'; then
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           else
@@ -96,11 +120,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ needs.build.outputs.tag }}
           VERSION: ${{ needs.build.outputs.version }}
           PRERELEASE: ${{ needs.build.outputs.prerelease }}
         run: |
-          args=("$TAG" assets/* --repo "$REPOSITORY" --title "AA FleetOps $VERSION" --notes-file release-notes.md --verify-tag)
+          args=("$TAG" assets/* --repo "$REPOSITORY" --title "AA FleetOps $VERSION" --notes-file release-notes.md)
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            # Creates the tag on the commit this run built.
+            args+=(--target "$GITHUB_SHA")
+          else
+            args+=(--verify-tag)
+          fi
           if [ "$PRERELEASE" = "true" ]; then
             args+=(--prerelease)
           fi

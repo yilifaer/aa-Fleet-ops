@@ -66,6 +66,10 @@ Once a stable release exists on PyPI, `pip` skips pre-releases unless asked for 
    git push origin dev v0.3.0b1
    ```
 
+   Without a way to push tags, push `dev` only and start the release run on the **Actions** tab instead: **Release** >
+   **Run workflow** on `dev`. It builds that commit and creates the tag `v` plus `__version__` on it (a lightweight
+   tag); it stops when the tag exists already and runs only on `dev`.
+
 6. The release run creates the GitHub Release (a pre-release for `a`, `b`, `rc` and `.dev` versions) with the wheel,
    the source distribution and `SHA256SUMS.txt`, and the notes from the changelog. Check the page.
 7. Only with PyPI publishing set up: open the release run on the Actions tab and approve the **Publish to PyPI** job.
@@ -75,20 +79,26 @@ Once a stable release exists on PyPI, `pip` skips pre-releases unless asked for 
 
 ## What the release run does
 
-1. **Build and check**: the tag must equal `v` plus `__version__`; the wheel and the source distribution are built;
+1. **Build and check**: the tag must equal `v` plus `__version__` (a run started by hand on `dev` uses that tag and
+   stops when it exists already); the wheel and the source distribution are built;
    `twine check --strict` and `tools/check_dist.py` verify them (the wheel holds every module, template, static file
    and translation catalog, no test code, and metadata that names `aa-fleetops`, the version, `GPL-3.0-only` and the
    licence file; the source distribution holds the licence, both READMEs, the changelog and `pyproject.toml`, and none
    of the tests); `tools/check_translations.py` requires complete, compiled catalogs; `SHA256SUMS.txt` is written;
    `tools/changelog_section.py` extracts the notes and fails when the section is missing, empty, or still says
    "Unreleased".
-2. **GitHub Release**: `gh release create` with the files, the checksums and the notes.
+2. **GitHub Release**: `gh release create` with the files, the checksums and the notes. A run started by hand also creates the tag on the
+   commit it built.
 3. **Publish to PyPI** (only when `PUBLISH_TO_PYPI` is `true`, after approval of the `pypi` environment): uploads the
    wheel and the source distribution through trusted publishing. The checksum file is not uploaded.
 
 If a job fails before the release exists, fix the problem, delete the tag
 (`git push origin :refs/tags/v0.3.0b1` and `git tag -d v0.3.0b1`) and tag again. Never move or delete a tag after a
 GitHub Release or a PyPI upload exists for it; publish the next version instead.
+
+For a run started by hand that failed before the release existed, no tag was created: fix the problem, push `dev` and
+start a new run. **Re-run all jobs** would build the old commit, and once the release exists it stops at the tag
+check; re-run only the failed job instead (for example **Publish to PyPI**).
 
 ## Installing a release
 
