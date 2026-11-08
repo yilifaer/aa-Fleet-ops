@@ -288,13 +288,14 @@ def _update_value(km: SrpKillmail, zkill_ok: bool, zkill_result: ZkillResult | N
         values.esi_estimate(km)
 
 
-def fetch_killmail(ref: KillmailRef, *, zkill_ok: bool) -> SrpKillmail:
+def fetch_killmail(ref: KillmailRef, *, zkill_ok: bool, actor=None) -> SrpKillmail:
     """The stored killmail for a pasted reference.
 
     Uses the stored row when there is one (a given hash must match it), else takes the hash from the
     reference or from zKillboard (``zkill_ok``), reads the killmail from ESI and stores it. The value is
     looked up as far as it can be now: from zKillboard once the killmail is old enough, or as an ESI
-    estimate. Raises ``SrpError``.
+    estimate. Raises ``SrpError``. ``actor`` is the user whose request this is; it is recorded in the audit entry when
+    the killmail of an imported claim is completed.
     """
     km = SrpKillmail.objects.filter(pk=ref.killmail_id).first()
     zkill_result = None
@@ -302,7 +303,7 @@ def fetch_killmail(ref: KillmailRef, *, zkill_ok: bool) -> SrpKillmail:
         # The killmail of an imported claim (IMP-5): a link with a hash completes it once from ESI, a link without one
         # is taken as it is. Neither asks zKillboard for a price.
         if ref.killmail_hash:
-            km = _complete_from_esi(km, ref.killmail_hash.lower())
+            km = _complete_from_esi(km, ref.killmail_hash.lower(), actor)
         return km
     if km is None:
         killmail_hash = ref.killmail_hash
@@ -324,7 +325,7 @@ def fetch_killmail(ref: KillmailRef, *, zkill_ok: bool) -> SrpKillmail:
     return km
 
 
-def _complete_from_esi(km: SrpKillmail, killmail_hash: str) -> SrpKillmail:
+def _complete_from_esi(km: SrpKillmail, killmail_hash: str, actor=None) -> SrpKillmail:
     """Complete the placeholder of an imported claim with the killmail ESI returns for ``killmail_hash``.
 
     A hash ESI does not know, or a killmail with another ID, is answered like any wrong hash (``not_found``).
@@ -342,7 +343,7 @@ def _complete_from_esi(km: SrpKillmail, killmail_hash: str) -> SrpKillmail:
         raise SrpError("esi_unavailable", message) from exc
     if killmail_fields(payload)["killmail_id"] != km.killmail_id:
         raise SrpError("not_found", KILLMAIL_NOT_FOUND)
-    return complete_placeholder(km, payload, killmail_hash)
+    return complete_placeholder(km, payload, killmail_hash, actor=actor)
 
 
 def complete_placeholder(km: SrpKillmail, payload: dict, killmail_hash: str, *, actor=None) -> SrpKillmail:

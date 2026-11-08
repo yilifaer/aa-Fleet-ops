@@ -1,11 +1,11 @@
-{% load i18n fleetops_srp fleetops_messages %}{# The forms of a claim for SRP staff. Context: claim, actions, forms, reason_actions, link_candidates, note_form, self_review_blocked, self_payment_blocked, own_approval_blocked, is_reviewer, pay_to. #}
+{% load i18n fleetops_srp fleetops_messages %}{# The forms of a claim for SRP staff. Context: claim, actions, forms, reason_actions, link_candidates, note_form, self_review_blocked, self_payment_blocked, own_approval_blocked, is_reviewer, is_imported, pay_to. #}
 {% if self_review_blocked %}
 <div class="alert alert-secondary">{% translate "This is your own claim. Another reviewer has to decide on it. You can still add a note or check the fleet presence." %}</div>
 {% endif %}
 {% if self_payment_blocked and claim.status == "approved" or self_payment_blocked and claim.status == "paid" %}
 <div class="alert alert-secondary">{% translate "This is your own claim. Another payer has to mark it paid or undo the payment." %}</div>
 {% elif own_approval_blocked and claim.status == "approved" %}
-<div class="alert alert-secondary">{% translate "You approved this claim. A different payer has to mark it paid." %}</div>
+<div class="alert alert-secondary">{% translate "You approved this claim or changed its amount. A different payer has to mark it paid." %}</div>
 {% endif %}
 
 {% if "approve" in actions %}
@@ -153,7 +153,7 @@
 </form>
 {% endif %}
 
-{% if is_reviewer %}
+{% if is_reviewer and not is_imported %}
 <form method="post" action="{% url 'fleetops:srp_claim_action' claim.uuid 'recheck' %}" class="fleetops-srp-form mb-4" data-srp-once>
   {% csrf_token %}
   <h3 class="h6">{% translate "Fleet presence" %}</h3>

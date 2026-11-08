@@ -264,7 +264,7 @@ class ExportViewTests(TestCase):
         self.assertEqual((csv.status_code, xlsx.status_code), (200, 200))
         self.assertEqual(csv["Content-Type"], "text/csv; charset=utf-8")
         self.assertIn("attachment", csv["Content-Disposition"])
-        self.assertTrue(xlsx.content.startswith(b"PK"))
+        self.assertTrue(f.streamed_body(xlsx).startswith(b"PK"))
 
     def test_formats_are_csv_and_xlsx_only(self):
         lead = f.create_user("lead", perms=f.FC_LEAD_PERMS)

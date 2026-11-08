@@ -48,6 +48,7 @@ import_guard = importlib.import_module("fleetops.migrations.0034_srp_import_guar
 rollback_guard = importlib.import_module("fleetops.migrations.0035_srp_rollback_guard")
 prune_share = importlib.import_module("fleetops.migrations.0036_history_prune_share")
 loss_index = importlib.import_module("fleetops.migrations.0037_srp_loss_killmail_index")
+approver_help = importlib.import_module("fleetops.migrations.0038_srp_approver_help")
 
 NEW_CODENAMES = ("request_srp", "manage_srp")
 # Permissions of 0.3.0b1 (REV-1): registered with the model options, granted to nobody.
@@ -91,6 +92,7 @@ class MigrationModuleTests(TestCase):
             rollback_guard,
             prune_share,
             loss_index,
+            approver_help,
         ):
             source = inspect.getsource(module)
             with self.subTest(module=module.__name__):
@@ -130,6 +132,7 @@ class MigrationModuleTests(TestCase):
         self.assertEqual(rollback_guard.Migration.dependencies, [("fleetops", "0034_srp_import_guard")])
         self.assertEqual(prune_share.Migration.dependencies, [("fleetops", "0035_srp_rollback_guard")])
         self.assertEqual(loss_index.Migration.dependencies, [("fleetops", "0036_history_prune_share")])
+        self.assertEqual(approver_help.Migration.dependencies, [("fleetops", "0037_srp_loss_killmail_index")])
 
     def test_the_migrations_start_with_the_plain_header(self):
         for module in (
@@ -147,6 +150,7 @@ class MigrationModuleTests(TestCase):
             rollback_guard,
             prune_share,
             loss_index,
+            approver_help,
         ):
             with self.subTest(module=module.__name__):
                 self.assertTrue(inspect.getsource(module).startswith("# AA FleetOps 0.3.0b1:"))
@@ -176,6 +180,7 @@ class MigrationModuleTests(TestCase):
             rollback_guard,
             prune_share,
             loss_index,
+            approver_help,
         ):
             source = inspect.getsource(module)
             with self.subTest(module=module.__name__):
@@ -1377,8 +1382,8 @@ class RollbackGuardFunctionTests(TestCase):
 
     def test_the_last_migration_adds_the_share_and_runs_the_guard_first_when_going_back(self):
         executor = MigrationExecutor(connection)
-        # Changed for 0037: 0036 is no longer the leaf; the leaf is the schema-only index migration after it.
-        self.assertEqual(executor.loader.graph.leaf_nodes("fleetops"), [("fleetops", "0037_srp_loss_killmail_index")])
+        # Changed for 0038: 0036 is no longer the leaf; the leaf is the help-text-only migration after the index one.
+        self.assertEqual(executor.loader.graph.leaf_nodes("fleetops"), [("fleetops", "0038_srp_approver_help")])
         # Operations are undone in reverse order: the guard has to come after the column, so it refuses before the
         # column is dropped.
         add_field, guard = prune_share.Migration.operations
@@ -1689,6 +1694,21 @@ class ImportRoundTripTests(TransactionTestCase):
         [operation] = loss_index.Migration.operations
         self.assertEqual(type(operation).__name__, "AddIndex")
         self.assertEqual(operation.index.fields, ["killmail_id", "kind"])
+
+    def test_0038_changes_only_the_help_text_and_goes_back_without_a_guard(self):
+        # L-14: an AlterField of a boolean's help text; no column change, nothing to refuse when going back.
+        [operation] = approver_help.Migration.operations
+        self.assertEqual(type(operation).__name__, "AlterField")
+        self.assertEqual(operation.name, "require_different_payer")
+        self.assertIn("changed its approved amount", operation.field.help_text)
+        before = self.migrate([("fleetops", "0037_srp_loss_killmail_index")])
+        before.get_model("fleetops", "SrpSettings").objects.update_or_create(pk=1, defaults={"require_different_payer": True})
+
+        after = self.migrate([("fleetops", "0038_srp_approver_help")])
+        self.assertTrue(after.get_model("fleetops", "SrpSettings").objects.get(pk=1).require_different_payer)
+
+        back = self.migrate([("fleetops", "0037_srp_loss_killmail_index")])
+        self.assertTrue(back.get_model("fleetops", "SrpSettings").objects.get(pk=1).require_different_payer)
 
     def test_a_site_that_already_applied_0035_gets_the_share_from_0036(self):
         # The development branch had 0035 as the last migration; the next migrate must add the column.

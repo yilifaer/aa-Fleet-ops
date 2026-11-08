@@ -3518,8 +3518,8 @@ msgid "The approver of a claim may not pay it"
 msgstr "批准申请的人不能付款"
 
 #: models.py
-msgid "Four-eyes rule: the person who approved a claim cannot mark it paid. Undoing a payment is not affected."
-msgstr "四眼规则：批准某条申请的人不能把它标记为已付款。撤销付款不受影响。"
+msgid "Four-eyes rule: the person who approved a claim, and anyone who changed its approved amount, cannot mark it paid. Undoing a payment is not affected."
+msgstr "四眼规则：批准某条申请的人，以及修改过其批准金额的人，都不能把它标记为已付款。撤销付款不受影响。"
 
 #: models.py
 msgid "SDE ship group IDs whose losses are refused when a claim is checked. Empty = none."
@@ -9698,8 +9698,8 @@ msgid "This is your own claim. Another payer has to mark it paid or undo the pay
 msgstr "这是你自己的申请，必须由另一位付款人标记已付款或撤销付款。"
 
 #: templates/fleetops/srp/_decision_forms.html
-msgid "You approved this claim. A different payer has to mark it paid."
-msgstr "这条申请是你批准的，必须由另一位付款人标记已付款。"
+msgid "You approved this claim or changed its amount. A different payer has to mark it paid."
+msgstr "这条申请是你批准或修改过金额的，必须由另一位付款人标记已付款。"
 
 #: templates/fleetops/srp/_decision_forms.html
 msgid "Change the amount"
@@ -10810,16 +10810,16 @@ msgid "Copy name and amount"
 msgstr "复制名字和金额"
 
 #: templates/fleetops/srp/payments.html
-msgid "You approved this claim: a different payer has to pay it."
-msgstr "这条申请是你批准的：必须由另一位付款人支付。"
+msgid "You approved this claim or changed its amount: a different payer has to pay it."
+msgstr "这条申请是你批准或修改过金额的：必须由另一位付款人支付。"
 
 #: templates/fleetops/srp/payments.html
 msgid "Your own claim: another payer has to pay it."
 msgstr "你自己的申请：必须由另一位付款人支付。"
 
 #: templates/fleetops/srp/payments.html
-msgid "approved by you"
-msgstr "你批准的"
+msgid "approved or changed by you"
+msgstr "你批准或修改过金额的"
 
 #: templates/fleetops/srp/payments.html
 msgid "Selected"
@@ -13368,12 +13368,12 @@ msgid "Your own claims are paid by another payer."
 msgstr "你自己的申请由另一位付款人支付。"
 
 #: texts.py
-msgid "A different payer has to pay a claim you approved."
-msgstr "你批准的申请必须由另一位付款人支付。"
+msgid "A different payer has to pay a claim you approved or changed the amount of."
+msgstr "你批准或修改过金额的申请必须由另一位付款人支付。"
 
 #: texts.py
-msgid "You approved this claim; a different payer has to pay it."
-msgstr "这条申请是你批准的；必须由另一位付款人支付。"
+msgid "You approved this claim or changed its amount; a different payer has to pay it."
+msgstr "这条申请是你批准或修改过金额的；必须由另一位付款人支付。"
 
 #: texts.py
 #, python-format
@@ -15120,8 +15120,8 @@ msgid "All time"
 msgstr "全部时间"
 
 #: views_srp_review.py
-msgid "you approved it; a different payer has to pay."
-msgstr "你批准的；必须由另一位付款人支付。"
+msgid "you approved it or changed its amount; a different payer has to pay."
+msgstr "你批准或修改过金额的；必须由另一位付款人支付。"
 
 #: views_srp_review.py
 msgid "your own claim; another payer has to pay."

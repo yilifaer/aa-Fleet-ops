@@ -240,6 +240,19 @@ depends on it. Read the upgrade notes and the rollback notes below before you st
   zKillboard queue a moment earlier.
 - **Recalculate** on the review queue handles up to 50 pending claims while you wait; with more, the recalculation runs
   in the background (one at a time) and the page tells you, so the request cannot run into the time limit of the web server.
+- When a member pastes the in-game link of a loss that was imported from aa-srp, the audit entry of the completion now names
+  that member instead of leaving the actor empty.
+- A daily link is no longer made and closed again in the same minute: when the upkeep runs after the closing time of the
+  day (for example after the worker was down), no link is made for that day.
+- **The approver of a claim may not pay it** now also keeps a reviewer who changed the approved amount from paying the claim:
+  neither the person who approved it nor anyone who changed its amount can mark it paid; the payer who did neither can.
+  Claims imported from aa-srp and claims without a recorded approval are checked against the person of the last decision only.
+- The page of a claim imported from aa-srp no longer offers **Check fleet presence again** (the server refused it).
+- Importing from aa-srp again keeps updating the request that was imported for a killmail when aa-srp has a newer request of
+  the same kind for it, instead of skipping both.
+- Excel downloads are sent while they are written instead of being built in memory first, like the CSV downloads.
+- `fleetops_srp_import_payouts` without `--apply` now looks up the ship names too (read only), so a type ID that is no
+  EVE item type is reported before you apply, and the output names the ships whose name could not be looked up.
 
 ### Known items
 
@@ -298,7 +311,8 @@ payer reports, which are for SRP staff only. Killmails stored before 0.3.0b1 sho
 report until `python manage.py fleetops_srp_backfill_killmails` has read them. The code that read the month of the
 summaries now reads a period; nothing is stored differently.
 
-Migration `0037` adds one index to the found losses (SRP loss table) and changes no data; on a large table it takes
+Migration `0038` only changes the help text of **The approver of a claim may not pay it** (no column, no data); the rule
+now applies to the approver and to everyone who changed the approved amount. Migration `0037` adds one index to the found losses (SRP loss table) and changes no data; on a large table it takes
 a moment. Migration `0036` adds one column to the FleetOps settings (**Largest share of departed members to prune**, percent, default
 50): the share of the users with PAP history that one pruning of departed members may remove. If the daily task logs "Departed
 members were not pruned", check **Member alliance IDs** before using `fleetops_prune_history --force`.
@@ -320,7 +334,7 @@ claims outside a fleet; or restore the backup taken before the upgrade). (3) Run
 newer migrations and could not undo them.
 
 The fixes listed under Fixed change code only: going back to an earlier build brings the old behaviour back (the PAP of
-deleted accounts is removed again by the next recalculation).
+deleted accounts is removed again by the next recalculation; the approver rule looks at the last decider only).
 
 **What the rollback loses:** the categories and the category of every claim, standing links and the new fields of every link,
 payment batches, bans, insurance prices, the attackers and location fields of the killmails, the found losses and their
@@ -364,7 +378,7 @@ Rolling back `0032` drops the payment batches (the claims keep their status, amo
 the batch they were paid in), the insurance prices, the stored attackers, the revision numbers and the five settings.
 Claims, amounts and statuses are not changed. Export the batches first if you need them. To behave like the previous
 version before rolling back, untick **Members can change their pending claims**.
-Rolling back `0037` drops the index it added; nothing else changes. Rolling back `0033` drops the external ID of the claims. **`0035` is the guard for the whole way back**; `0036`, which adds the
+Rolling back `0038` restores the old help text and changes nothing else. Rolling back `0037` drops the index it added; nothing else changes. Rolling back `0033` drops the external ID of the claims. **`0035` is the guard for the whole way back**; `0036`, which adds the
 pruning share to the settings, runs the same checks first and only drops that column when they
 let the rollback go on (then `0035` checks once more). It checks everything that makes going back unsafe, once and before anything is changed, and stops the
 rollback (to `0023` or to any migration of this version, also a partial one such as `0032`) with a list while:

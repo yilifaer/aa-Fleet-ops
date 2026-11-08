@@ -2085,7 +2085,7 @@ class SrpSettings(models.Model):
         _("The approver of a claim may not pay it"),
         default=False,
         help_text=_(
-            "Four-eyes rule: the person who approved a claim cannot mark it paid. Undoing a payment is not affected."
+            "Four-eyes rule: the person who approved a claim, and anyone who changed its approved amount, cannot mark it paid. Undoing a payment is not affected."
         ),
     )
     blocked_ship_group_ids = models.CharField(

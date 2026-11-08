@@ -269,13 +269,22 @@ def collect(source, options: Options, report: Report) -> tuple[list[Item], dict[
             order.append(request.killmail_id)
         candidates[request.killmail_id].append(item)
 
+    # A request that FleetOps imported before stays the one of its killmail among requests of the same kind, so a later
+    # run keeps updating it instead of dropping it as a duplicate of a newer request (which the claim would then skip).
+    contested = [item.request.pk for group in candidates.values() if len(group) > 1 for item in group]
+    imported = set(
+        SrpClaim.objects.filter(
+            source=SrpClaim.Source.AASRP, external_id__in=[f"{PREFIX}{pk}" for pk in contested]
+        ).values_list("external_id", flat=True)
+    )
     items = []
     for killmail_id in order:
         group = candidates[killmail_id]
-        # Approved before rejected, then the newest, then the highest number.
+        # Approved before rejected, then the one imported already, then the newest, then the highest number.
         group.sort(
             key=lambda item: (
                 RANK[item.request.status],
+                f"{PREFIX}{item.request.pk}" in imported,
                 item.request.post_time or datetime.min.replace(tzinfo=dt_timezone.utc),
                 item.request.pk,
             ),

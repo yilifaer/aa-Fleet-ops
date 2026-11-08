@@ -81,7 +81,7 @@ def csv_rows(response):
 
 def workbook_rows(response, part="xl/worksheets/sheet1.xml"):
     """Rows of a worksheet as lists of cell texts (empty cells as ``""``), by column letter position."""
-    archive = zipfile.ZipFile(io.BytesIO(response.content))
+    archive = zipfile.ZipFile(io.BytesIO(f.streamed_body(response)))
     root = ElementTree.fromstring(archive.read(part))
     rows = []
     for row in root.find("m:sheetData", MAIN_NS):
@@ -870,7 +870,7 @@ class AttendanceDatasetTests(DatasetTestCase):
         self.assertNotIn("=HYPERLINK(\"http://example.invalid\")", names)
 
         xlsx_response = export_for_request(request_for(viewer, scope="alliance"), "attendance", "xlsx")
-        archive = zipfile.ZipFile(io.BytesIO(xlsx_response.content))
+        archive = zipfile.ZipFile(io.BytesIO(b"".join(xlsx_response.streaming_content)))
         sheet = archive.read("xl/worksheets/sheet1.xml").decode()
         self.assertNotIn("<f>", sheet)
         self.assertIn("=HYPERLINK(", sheet)
@@ -1033,7 +1033,7 @@ class DownloadTests(DatasetTestCase):
         self.assertEqual(response["Content-Type"], exports.XLSX_CONTENT_TYPE)
         self.assertEqual(response["Cache-Control"], "private, no-store")
         self.assertEqual(response["Content-Disposition"], 'attachment; filename="fleetops-attendance-me-all.xlsx"')
-        self.assertTrue(zipfile.is_zipfile(io.BytesIO(response.content)))
+        self.assertTrue(zipfile.is_zipfile(io.BytesIO(b"".join(response.streaming_content))))
 
     def test_file_names_are_ascii_whatever_the_names_are(self):
         manager = f.member("manager", perms=f.CORP_MANAGEMENT_PERMS, corporation=(2_000_099, "测试 Corp [甲]"))

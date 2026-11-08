@@ -16,7 +16,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from fleetops.models import AuditLog, SrpClaim, SrpSettings
+from fleetops.models import AuditLog, SrpClaim, SrpClaimEvent, SrpSettings
 from fleetops.srp import access, links, review
 from fleetops.srp.types import SrpError
 from fleetops.texts import translate_stored
@@ -363,14 +363,69 @@ class SelfProcessingServiceTests(ServiceBase):
         # A approves, A cannot pay.
         result = review.mark_paid([claim], actor=self.reviewer_payer)
         self.assertEqual(result.done, [])
-        self.assertEqual(result.skipped, [(claim, "You approved this claim; a different payer has to pay it.")])
+        self.assertEqual(result.skipped, [(claim, "You approved this claim or changed its amount; a different payer has to pay it.")])
         with self.assertRaises(SrpError) as caught:
             review._mark_paid(claim, self.reviewer_payer, "")
         self.assertEqual(caught.exception.code, "own_approval_pay")
-        self.assertEqual(translate_stored(caught.exception.message), "A different payer has to pay a claim you approved.")
+        self.assertEqual(translate_stored(caught.exception.message), "A different payer has to pay a claim you approved or changed the amount of.")
         self.assertEqual(SrpClaim.objects.get(pk=claim.pk).status, Status.APPROVED)
         # B pays.
         self.assertEqual(review.mark_paid([claim], actor=self.payer).done, [claim])
+
+    def test_the_four_eyes_rule_holds_for_the_approver_and_for_whoever_changed_the_amount(self):
+        # L-14: A approves, B changes the amount; neither of them may pay it, C may. Before, the rule only looked at
+        # the last decider, so A was free to pay after B's change.
+        f.srp_settings(require_different_payer=True, allow_self_payment=True)
+        a, b, c = self.reviewer_payer, self.manager, self.payer
+        claim = self.pending()
+        review.approve_claim(claim, actor=a, amount=claim.suggested_amount)
+        claim = SrpClaim.objects.get(pk=claim.pk)
+        review.approve_claim(claim, actor=b, amount=claim.suggested_amount - 1, reason="Fit differs")
+        claim = SrpClaim.objects.get(pk=claim.pk)
+        self.assertEqual(claim.decided_by_id, b.pk)
+
+        for payer in (a, b):
+            with self.subTest(payer=payer.username):
+                self.assertEqual(access.payment_block(payer, claim), access.OWN_APPROVAL_PAY)
+                self.assertFalse(access.can_pay(payer, claim))
+                self.assertEqual(review.mark_paid([claim], actor=payer).done, [])
+                self.assertEqual(self.code_of(lambda: review._mark_paid(claim, payer, "")), "own_approval_pay")
+        self.assertEqual(SrpClaim.objects.get(pk=claim.pk).status, Status.APPROVED)
+        # The count of the claims to pay (navigation) leaves the claim out for A and B, not for C.
+        self.assertEqual([access.srp_nav(user)["to_pay_count"] for user in (a, b, c)], [0, 0, 1])
+
+        self.assertEqual(access.payment_block(c, claim), "")
+        self.assertEqual(len(review.mark_paid([claim], actor=c).done), 1)
+        self.assertEqual(SrpClaim.objects.get(pk=claim.pk).status, Status.PAID)
+
+    def test_the_last_decider_alone_counts_only_for_a_claim_without_approval_events(self):
+        # A claim approved on an earlier version has its approval events too, so its old approver is blocked as well;
+        # only a claim without any (for example an imported one) falls back to the user of its last decision.
+        f.srp_settings(require_different_payer=True, allow_self_payment=True)
+        a, b = self.reviewer_payer, self.manager
+        with_events = f.srp_claim(self.pilot, status=Status.APPROVED, decided_by=b)
+        SrpClaimEvent.objects.create(claim=with_events, action=SrpClaimEvent.Action.APPROVE, actor=a)
+        without_events = f.srp_claim(self.pilot, status=Status.APPROVED, decided_by=b)
+
+        self.assertEqual(access.approver_ids(with_events), {a.pk, b.pk})
+        self.assertEqual(access.approver_ids(without_events), {b.pk})
+        self.assertEqual(access.payment_block(a, with_events), access.OWN_APPROVAL_PAY)
+        self.assertEqual(access.payment_block(a, without_events), "")
+
+    def test_the_four_eyes_rule_for_a_list_asks_the_history_once(self):
+        f.srp_settings(require_different_payer=True)
+        claims = []
+        for _index in range(4):
+            claim = self.pending()
+            review.approve_claim(claim, actor=self.reviewer_payer, amount=claim.suggested_amount)
+            claims.append(SrpClaim.objects.get(pk=claim.pk))
+        access.prefetch_approvers(claims)
+
+        srp = SrpSettings.get_solo()
+        with self.assertNumQueries(0):
+            blocks = [access.payment_block(self.reviewer_payer, claim, settings_obj=srp) for claim in claims]
+
+        self.assertEqual(blocks, [access.OWN_APPROVAL_PAY] * 4)
 
     def test_the_four_eyes_rule_does_not_touch_the_undo(self):
         f.srp_settings(require_different_payer=True)
@@ -405,7 +460,7 @@ class SelfProcessingServiceTests(ServiceBase):
             sorted(
                 [
                     (own.pk, "Your own claims are paid by another payer."),
-                    (mine_to_approve.pk, "You approved this claim; a different payer has to pay it."),
+                    (mine_to_approve.pk, "You approved this claim or changed its amount; a different payer has to pay it."),
                 ]
             ),
         )
@@ -600,7 +655,7 @@ class PaymentPagesTests(RolePagesBase):
         self.assertNotContains(response, f'name="claim" value="{mine.uuid}"')
         self.assertContains(response, f'name="claim" value="{free.uuid}"')
         self.assertContains(response, "Your own claim: another payer has to pay it.")
-        self.assertContains(response, "You approved this claim: a different payer has to pay it.")
+        self.assertContains(response, "You approved this claim or changed its amount: a different payer has to pay it.")
 
     def test_a_bulk_payment_names_the_reason_it_skipped_a_claim(self):
         SrpSettings.objects.filter(pk=1).update(require_different_payer=True)
@@ -616,7 +671,7 @@ class PaymentPagesTests(RolePagesBase):
         text = " ".join(messages_of(response))
         self.assertIn("1 claim marked paid", text)
         self.assertIn("your own claim; another payer has to pay.", text)
-        self.assertIn("you approved it; a different payer has to pay.", text)
+        self.assertIn("you approved it or changed its amount; a different payer has to pay.", text)
         for claim, status in ((own, Status.APPROVED), (mine, Status.APPROVED), (free, Status.PAID)):
             claim.refresh_from_db()
             self.assertEqual(claim.status, status)
@@ -712,7 +767,7 @@ class ClaimPageTests(RolePagesBase):
 
         page = self.page(self.both, claim)
 
-        self.assertContains(page, "You approved this claim. A different payer has to mark it paid.")
+        self.assertContains(page, "You approved this claim or changed its amount. A different payer has to mark it paid.")
         self.assertFalse(self.has(page, claim, "paid"))
         self.assertTrue(self.has(page, claim, "revoke"))
 

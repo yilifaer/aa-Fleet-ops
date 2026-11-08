@@ -321,7 +321,7 @@ class ExportForRequestTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response["Content-Type"].endswith("spreadsheetml.sheet"))
         self.assertIn(".xlsx", response["Content-Disposition"])
-        self.assertTrue(response.content.startswith(b"PK"))
+        self.assertTrue(b"".join(response.streaming_content).startswith(b"PK"))
 
     def test_unknown_dataset_and_format(self):
         with self.assertRaises(Http404):

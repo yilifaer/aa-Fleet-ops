@@ -486,7 +486,7 @@ history; it never moves ISK.
 | Notify members | on | Send an Alliance Auth notification when a claim is approved, changed, paid, rejected, revoked or reopened. |
 | SRP reviewers may decide on their own claims | off | Normally another reviewer decides on a reviewer's own claims. Allow this for small alliances. |
 | SRP payers may mark their own claims paid | off | Normally another payer pays a payer's own claims. Allow this for small alliances. Before 0.3.0b1 the setting above also covered payments; the upgrade copies it here, so a site that allowed one keeps allowing the other. |
-| The approver of a claim may not pay it | off | Four-eyes rule: the person who approved a claim cannot mark it paid, another payer has to. Undoing a payment is not bound by it. |
+| The approver of a claim may not pay it | off | Four-eyes rule: neither the person who approved a claim nor anyone who changed its approved amount can mark it paid, another payer has to (claims imported from aa-srp, and claims without recorded approval events, count only their last decider). Undoing a payment is not bound by it. |
 | Complete SRP links automatically | off | A closed [SRP link](#srp-links) is marked completed as soon as none of its claims waits for review or payment. A completed link whose claim becomes unsettled again (payment undone, claim reopened or submitted again) goes back to closed whatever this says. |
 | Members can change their pending claims | on | A member can change the comment, the category or link and the loss of a claim while it is pending. See [Changing a pending claim](#changing-a-pending-claim). Off removes the button and refuses the request. |
 | Members can replace the loss of a pending claim | on | Only in force while the switch above is on. Off leaves members the comment and the category or link. |
@@ -642,7 +642,7 @@ To enable FleetOps SRP:
   such claims and says so. The review page shows when the claimant changed a claim.
 - A decision is made on the claim the reviewer looked at: when the suggested amount changed while the page was
   open, the approval is refused with the old and new amount.
-- Reviewers cannot decide on their own claims unless "SRP reviewers may decide on their own claims" allows it, and payers cannot mark their own claims paid unless "SRP payers may mark their own claims paid" allows it. With "The approver of a claim may not pay it" on, the approver cannot mark the claim paid either.
+- Reviewers cannot decide on their own claims unless "SRP reviewers may decide on their own claims" allows it, and payers cannot mark their own claims paid unless "SRP payers may mark their own claims paid" allows it. With "The approver of a claim may not pay it" on, neither the approver nor a reviewer who changed the approved amount can mark the claim paid either.
 - Summaries (**Summary**, **Corporation**, **My fleets**) are by EVE month of the loss and exclude withdrawn
   claims. The files are `srp-claims`, `srp-members`, `srp-corporations` and `srp-fcs`. The alliance summary also shows
   "This month by category" and links to the reports.
@@ -992,7 +992,9 @@ a `type_id` column, a column with the amounts (`--column`, default `amount`) and
 (`--name-column`, default `name`; without it the ship is looked up). Rows without an amount, or with 0, are skipped; a
 rule for the same ship, scope (`--scope`, default `any`) and category is updated, others are created, each with its audit
 entry `configuration.create` or `configuration.update` ("Imported from" and the name of the file). Bad rows are listed
-with their line number and skipped. Without `--apply` nothing is written and the command only counts.
+with their line number and skipped. Without `--apply` nothing is written and the command only counts; it still looks up the ship names (read only, from the
+Eve SDE app or ESI), so a `type_id` that is no EVE item type is listed as a bad row before you apply, and the ships whose name could
+not be looked up (ESI not reachable) are named in the output.
 
 ## Example: an alliance that moves from aa-srp
 
@@ -1038,7 +1040,7 @@ through a fleet link at 571m.
 
 Migrations `0035` and `0036` are the guard of the 0.3.0b1 chain. `0036` adds the pruning share to the
 settings; going back runs its copy of the guard before that column is dropped, and `0035` runs the same checks once more.
-`0037`, the last migration, only adds an index and is undone first (the index is dropped, nothing else changes). The
+`0038`, the last migration, only changes a help text and `0037` only adds an index; they are undone first (the help text comes back, the index is dropped, nothing else changes). The
 guard checks everything that makes going back unsafe before the first change is undone: payout rules that belong to a category, links without a fleet that have claims (standing
 links) or that were imported, and claims imported from aa-srp. It stops **any** way back, a partial one included
 (`migrate fleetops 0032` is stopped too). `python manage.py fleetops_srp_rollback_check` runs the same checks, reads only and

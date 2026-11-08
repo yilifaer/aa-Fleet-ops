@@ -154,7 +154,7 @@ class NoTargetExportsTests(UnassessedFixture):
             return self.client.get(reverse("fleetops:export", args=[dataset]), {"year": 2026, "month": 3, "format": fmt, **params})
 
     def about(self, response):
-        archive = zipfile.ZipFile(io.BytesIO(response.content))
+        archive = zipfile.ZipFile(io.BytesIO(f.streamed_body(response)))
         root = ElementTree.fromstring(archive.read("xl/worksheets/sheet2.xml"))
         main = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
         rows = []

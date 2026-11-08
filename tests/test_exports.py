@@ -9,7 +9,7 @@ from decimal import Decimal
 from unittest import mock
 from xml.etree import ElementTree
 
-from django.http import HttpResponse, StreamingHttpResponse
+from django.http import StreamingHttpResponse
 from django.test import SimpleTestCase
 from django.utils.translation import gettext_lazy
 
@@ -53,7 +53,7 @@ def csv_rows(response):
 
 
 def open_workbook(response):
-    return zipfile.ZipFile(io.BytesIO(response.content))
+    return zipfile.ZipFile(io.BytesIO(b"".join(response.streaming_content)))
 
 
 def sheet_cells(archive, part="xl/worksheets/sheet1.xml"):
@@ -293,12 +293,25 @@ class XlsxExportTests(SimpleTestCase):
     def test_response_headers(self):
         response = self.export([])
 
-        self.assertIsInstance(response, HttpResponse)
-        self.assertNotIsInstance(response, StreamingHttpResponse)
+        # Changed for L-17: the workbook is streamed like the CSV, no longer built in memory first.
+        self.assertIsInstance(response, StreamingHttpResponse)
         self.assertEqual(response["Content-Type"], exports.XLSX_CONTENT_TYPE)
         self.assertEqual(exports.XLSX_CONTENT_TYPE, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         self.assertEqual(response["Content-Disposition"], 'attachment; filename="fleetops-members-2026-10.xlsx"')
         self.assertEqual(response["Cache-Control"], "private, no-store")
+
+    def test_a_large_workbook_is_sent_in_pieces_and_is_still_one_valid_file(self):
+        # L-17 (structural): the pieces leave while the sheet is written; none of them is the whole file.
+        rows = [[f"Pilot {index}", index, index] for index in range(6000)]
+        response = self.export(rows)
+
+        pieces = list(response.streaming_content)
+
+        self.assertGreater(len(pieces), 3)
+        self.assertLess(max(len(piece) for piece in pieces), sum(len(piece) for piece in pieces) // 2)
+        archive = zipfile.ZipFile(io.BytesIO(b"".join(pieces)))
+        self.assertIsNone(archive.testzip())
+        self.assertEqual(archive.read("xl/worksheets/sheet1.xml").count(b"<row "), 6001)
 
     def test_archive_contains_the_required_parts(self):
         archive = open_workbook(self.export([["Alice", 1, 1]]))
@@ -585,7 +598,7 @@ class ExportResponseTests(SimpleTestCase):
         self.assertIn('filename="fleetops-members-2026-10.csv"', csv_export["Content-Disposition"])
         self.assertEqual(xlsx_export["Content-Type"], exports.XLSX_CONTENT_TYPE)
         self.assertIn('filename="fleetops-members-2026-10.xlsx"', xlsx_export["Content-Disposition"])
-        self.assertTrue(zipfile.is_zipfile(io.BytesIO(xlsx_export.content)))
+        self.assertTrue(zipfile.is_zipfile(io.BytesIO(b"".join(xlsx_export.streaming_content))))
 
     def test_unknown_format_is_rejected(self):
         with self.assertRaisesMessage(ValueError, "Unsupported export format 'pdf'"):

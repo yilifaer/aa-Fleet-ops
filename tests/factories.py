@@ -945,3 +945,11 @@ def notification_badge_queries(user) -> int:
     with CaptureQueriesContext(connection) as queries:
         user_unread_notification_count(request_user)
     return len(queries)
+
+
+def streamed_body(response) -> bytes:
+    """The bytes of a streamed download. A streamed response can be read once; the bytes are kept on it, so a test may
+    read the same download several times."""
+    if not hasattr(response, "_streamed_body"):
+        response._streamed_body = b"".join(response.streaming_content)
+    return response._streamed_body

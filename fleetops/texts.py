@@ -1164,8 +1164,8 @@ SRP_OWN_CLAIM = StoredText(gettext_noop("Another reviewer has to decide on your 
 SRP_OWN_CLAIM_SKIPPED = StoredText(gettext_noop("Your own claims are decided by another reviewer."))
 SRP_OWN_CLAIM_PAY = StoredText(gettext_noop("Another payer has to pay your own claim."))
 SRP_OWN_CLAIM_PAY_SKIPPED = StoredText(gettext_noop("Your own claims are paid by another payer."))
-SRP_OWN_APPROVAL_PAY = StoredText(gettext_noop("A different payer has to pay a claim you approved."))
-SRP_OWN_APPROVAL_PAY_SKIPPED = StoredText(gettext_noop("You approved this claim; a different payer has to pay it."))
+SRP_OWN_APPROVAL_PAY = StoredText(gettext_noop("A different payer has to pay a claim you approved or changed the amount of."))
+SRP_OWN_APPROVAL_PAY_SKIPPED = StoredText(gettext_noop("You approved this claim or changed its amount; a different payer has to pay it."))
 SRP_AMOUNT_RANGE = StoredText(gettext_noop("Enter an amount between 1 and %(max)s ISK."))
 SRP_STATUS_CHANGED = StoredText(
     gettext_noop("This claim is %(now)s now; it was %(was)s on your page. Check it and decide again."),

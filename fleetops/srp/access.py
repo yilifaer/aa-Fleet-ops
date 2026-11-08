@@ -16,9 +16,9 @@ by ID is their own summary. A missing permission is the FleetOps 403 page with i
 
 from __future__ import annotations
 
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 
-from fleetops.models import SrpClaim, SrpFleetLink, SrpSettings
+from fleetops.models import SrpClaim, SrpClaimEvent, SrpFleetLink, SrpSettings
 from fleetops.services import group_access
 from fleetops.services.stats_access import VIEW_ALL_STATS, VIEW_CORP_STATS, own_corporation
 
@@ -93,19 +93,56 @@ OWN_CLAIM_PAY = "own_claim_pay"
 OWN_APPROVAL_PAY = "own_approval_pay"
 
 
+# The steps of a claim's history that make someone an approver: they set the amount that is paid.
+APPROVER_ACTIONS = (SrpClaimEvent.Action.APPROVE, SrpClaimEvent.Action.AMOUNT_CHANGE)
+
+
+def approver_ids(claim) -> set[int]:
+    """The users who approved ``claim`` or changed its amount (from its history), and the user of its last decision.
+    ``prefetch_approvers`` fills it for a list of claims in one query."""
+    known = getattr(claim, "_approver_ids", None)
+    if known is not None:
+        return known
+    ids = set(
+        SrpClaimEvent.objects.filter(claim_id=claim.pk, action__in=APPROVER_ACTIONS, actor__isnull=False).values_list(
+            "actor_id", flat=True
+        )
+    )
+    if claim.decided_by_id is not None:
+        ids.add(claim.decided_by_id)
+    return ids
+
+
+def prefetch_approvers(claims) -> None:
+    """Load ``approver_ids`` of many claims with one query, so a list does not ask once per claim."""
+    claims = [claim for claim in claims if claim.pk is not None]
+    found: dict[int, set[int]] = {claim.pk: set() for claim in claims}
+    if found:
+        rows = SrpClaimEvent.objects.filter(
+            claim_id__in=list(found), action__in=APPROVER_ACTIONS, actor__isnull=False
+        ).values_list("claim_id", "actor_id")
+        for claim_id, actor_id in rows:
+            found[claim_id].add(actor_id)
+    for claim in claims:
+        ids = found[claim.pk]
+        if claim.decided_by_id is not None:
+            ids.add(claim.decided_by_id)
+        claim._approver_ids = ids
+
+
 def payment_block(user, claim, *, settings_obj=None, approver_rule=True) -> str:
     """Why ``user`` may not pay ``claim``, as a code (``""`` when they may).
 
     Needs ``pay_srp`` (or ``manage_srp``). A payer's own claim is paid by another payer unless
-    ``allow_self_payment`` is on. With ``require_different_payer`` the approver of the claim may not pay it;
-    ``approver_rule=False`` leaves that rule out (undoing a payment is not bound by it).
+    ``allow_self_payment`` is on. With ``require_different_payer`` neither the approver of the claim nor anyone who
+    changed its amount may pay it; ``approver_rule=False`` leaves that rule out (undoing a payment is not bound by it).
     """
     if not is_payer(user):
         return NOT_A_PAYER
     srp = settings_obj or SrpSettings.get_solo()
     if claim.user_id is not None and claim.user_id == user.pk and not srp.allow_self_payment:
         return OWN_CLAIM_PAY
-    if approver_rule and srp.require_different_payer and claim.decided_by_id is not None and claim.decided_by_id == user.pk:
+    if approver_rule and srp.require_different_payer and user.pk in approver_ids(claim):
         return OWN_APPROVAL_PAY
     return ""
 
@@ -296,7 +333,8 @@ def srp_nav(user) -> dict:
         if not srp_settings.allow_self_payment:
             to_pay = to_pay.exclude(user=user)
         if srp_settings.require_different_payer:
-            to_pay = to_pay.exclude(decided_by=user)
+            by_user = SrpClaimEvent.objects.filter(claim=OuterRef("pk"), actor=user, action__in=APPROVER_ACTIONS)
+            to_pay = to_pay.exclude(Q(decided_by=user) | Exists(by_user))
         to_pay_count = to_pay.count()
     request = wants_request and srp_settings.enabled
     return {

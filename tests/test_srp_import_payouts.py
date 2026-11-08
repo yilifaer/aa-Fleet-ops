@@ -61,7 +61,45 @@ class PayoutImportTests(TestCase):
         self.assertIn("5 rules would be created, 0 would be updated, 0 unchanged, 2 without an amount, 0 rows with a problem.", out)
         self.assertIn("Dry run", out)
         self.assertEqual((SrpPayoutRule.objects.count(), AuditLog.objects.count()), (0, 0))
+        # Changed for the dry run lookup: every row here has a name in the file, so nobody is asked (a dry run used to
+        # never look anything up; see the two tests below for rows without a name).
         self.lookup.assert_not_called()
+
+    def test_the_help_does_not_promise_a_ship_check_the_lookup_does_not_make(self):
+        from fleetops.management.commands.fleetops_srp_import_payouts import Command
+
+        self.assertNotIn("no ship", Command.help)
+        self.assertIn("no EVE item type", Command.help)
+
+    def test_a_dry_run_looks_up_ships_without_a_name_and_reports_what_is_no_ship(self):
+        from django.core.exceptions import ValidationError
+
+        def lookup(text):
+            if text == "1001":
+                raise ValidationError("Not a ship.")
+            if text == "1002":
+                return ShipLookup(1002, "", "The name could not be looked up.")
+            return ShipLookup(int(text), f"Looked up {text}")
+
+        self.lookup.side_effect = lookup
+        path = self.write([("1000", "", "", "5000000"), ("1001", "", "", "5000000"), ("1002", "", "", "5000000")])
+
+        out, err = self.run_command(path)
+
+        self.assertEqual(self.lookup.call_count, 3)
+        self.assertIn("2 rules would be created", out)
+        self.assertIn("1 rows with a problem", out)
+        self.assertIn("Line 3: skipped (Not a ship.)", err)
+        self.assertIn("Ship names that could not be looked up (1;", err)
+        self.assertIn("1002", err)
+        self.assertIn("would be made without a name", err)
+        self.assertEqual((SrpPayoutRule.objects.count(), AuditLog.objects.count()), (0, 0))
+
+        # The writing run finds the same problems.
+        _out, err = self.run_command(path, "--apply")
+        self.assertIn("Line 3: skipped (Not a ship.)", err)
+        self.assertIn("were made without a name", err)
+        self.assertEqual(sorted(SrpPayoutRule.objects.values_list("ship_type_id", flat=True)), [1000, 1002])
 
     def test_apply_creates_the_rules_and_one_audit_entry_each(self):
         path = self.write(self.rows(4))

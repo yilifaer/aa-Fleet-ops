@@ -654,6 +654,23 @@ class CommandTests(ImportTestCase):
         self.assertEqual(report.update, 1)
         self.assertEqual(self.run_import().unchanged, 1)
 
+    def test_a_request_imported_before_stays_the_one_of_its_killmail_among_equals(self):
+        # L-16: a newer approved request of the same killmail used to take the place of the imported one in the list,
+        # while the claim skipped it as a duplicate: neither was processed and later changes never arrived.
+        km = 91_000_003
+        first = self.approved(killmail_id=km, payout=100_000_000)
+        self.run_import()
+        self.assertEqual(self.only_claim().external_id, f"aasrp:{first.pk}")
+        self.approved(killmail_id=km, post_time=FLEET_TIME + timedelta(days=3))
+        first.payout_amount = 60_000_000
+
+        report = self.run_import()
+
+        claim = self.only_claim()
+        self.assertEqual((claim.external_id, claim.approved_amount), (f"aasrp:{first.pk}", 60_000_000))
+        self.assertEqual((report.update, report.skipped["duplicate"]), (1, 1))
+        self.assertEqual(self.run_import().unchanged, 1)
+
     def test_a_request_approved_later_replaces_the_rejected_one_of_the_same_killmail(self):
         km = 91_000_002
         self.approved(status="Rejected", payout=0, killmail_id=km, reject_info="no")

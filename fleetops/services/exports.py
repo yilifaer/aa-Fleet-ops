@@ -18,11 +18,10 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from decimal import Decimal
-from io import BytesIO
 from xml.sax.saxutils import escape
 from zipfile import ZIP_DEFLATED, ZipFile
 
-from django.http import HttpResponse, StreamingHttpResponse
+from django.http import StreamingHttpResponse
 from django.utils.http import content_disposition_header
 from django.utils.text import slugify
 from django.utils.translation import gettext, pgettext
@@ -110,8 +109,10 @@ def csv_response(table: Table, filename: str) -> StreamingHttpResponse:
     return _as_download(response, filename, "csv")
 
 
-def xlsx_response(table: Table, filename: str) -> HttpResponse:
-    response = HttpResponse(build_xlsx(table), content_type=XLSX_CONTENT_TYPE)
+def xlsx_response(table: Table, filename: str) -> StreamingHttpResponse:
+    """The workbook, streamed like the CSV: the zip is written to the response piece by piece, so a large export never
+    sits in memory as a whole."""
+    response = StreamingHttpResponse(_xlsx_chunks(table), content_type=XLSX_CONTENT_TYPE)
     return _as_download(response, filename, "xlsx")
 
 
@@ -290,13 +291,33 @@ _RESERVED_SHEET_NAMES = {"about", "history"}
 _ABOUT_WIDTHS = (28, 80)
 
 
-def build_xlsx(table: Table) -> bytes:
+class _Sink:
+    """What the zip file is written to: it keeps the bytes until the generator hands them on. It cannot seek, so the zip
+    writer uses data descriptors and never goes back."""
+
+    def __init__(self):
+        self._parts = []
+
+    def write(self, data):
+        self._parts.append(bytes(data))
+        return len(data)
+
+    def flush(self):
+        pass
+
+    def take(self) -> bytes:
+        data = b"".join(self._parts)
+        self._parts = []
+        return data
+
+
+def _xlsx_chunks(table: Table) -> Iterator[bytes]:
     data_sheet = sheet_name(table.name)
     about_sheet = about_sheet_name()
     if data_sheet.casefold() in _RESERVED_SHEET_NAMES | {about_sheet.casefold()}:
         data_sheet = f"{data_sheet} data"
-    buffer = BytesIO()
-    with ZipFile(buffer, "w", ZIP_DEFLATED) as archive:
+    sink = _Sink()
+    with ZipFile(sink, "w", ZIP_DEFLATED) as archive:
         archive.writestr("[Content_Types].xml", _CONTENT_TYPES)
         archive.writestr("_rels/.rels", _ROOT_RELS)
         archive.writestr("xl/workbook.xml", _workbook_xml(data_sheet, about_sheet))
@@ -305,8 +326,16 @@ def build_xlsx(table: Table) -> bytes:
         with archive.open("xl/worksheets/sheet1.xml", "w", force_zip64=True) as stream:
             for chunk in _data_sheet_chunks(table):
                 stream.write(chunk.encode("utf-8"))
+                data = sink.take()
+                if data:
+                    yield data
         archive.writestr("xl/worksheets/sheet2.xml", "".join(_about_sheet_chunks(table, data_sheet)))
-    return buffer.getvalue()
+    yield sink.take()
+
+
+def build_xlsx(table: Table) -> bytes:
+    """The whole workbook as bytes (the download streams it with ``xlsx_response``)."""
+    return b"".join(_xlsx_chunks(table))
 
 
 def sheet_name(name) -> str:

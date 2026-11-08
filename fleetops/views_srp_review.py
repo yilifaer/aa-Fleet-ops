@@ -159,13 +159,15 @@ def split_by_review_right(user, claims, settings_obj, kind="review"):
     """The claims ``user`` may decide on (``kind="review"``) or pay (``kind="pay"``), and the skip entries of the
     others (their own, or in a payment the ones the user approved)."""
     allowed, skipped = [], []
+    if kind == "pay" and settings_obj.require_different_payer:
+        access.prefetch_approvers(claims)
     for claim in claims:
         if kind == "pay":
             block = access.payment_block(user, claim, settings_obj=settings_obj)
             if not block:
                 allowed.append(claim)
             elif block == access.OWN_APPROVAL_PAY:
-                skipped.append((claim, _("you approved it; a different payer has to pay.")))
+                skipped.append((claim, _("you approved it or changed its amount; a different payer has to pay.")))
             else:
                 skipped.append((claim, _("your own claim; another payer has to pay.")))
         elif access.can_review(user, claim, settings_obj=settings_obj):
@@ -729,6 +731,8 @@ def payments(request):
         .select_related("user__profile__main_character", "category", "link")
         .order_by("killmail_time", "pk")
     )
+    if settings_obj.require_different_payer:
+        access.prefetch_approvers(to_pay)
     for claim in to_pay:
         claim.pay_block = access.payment_block(request.user, claim, settings_obj=settings_obj)
         claim.payable = not claim.pay_block

@@ -53,7 +53,7 @@ class FooterWriterTests(SimpleTestCase):
 
     def test_the_workbook_writes_the_footer_in_bold_after_the_rows(self):
         response = xlsx_response(table([["A", 1]], [["Total", 1], ["Count", 1]]), "totals")
-        root = ElementTree.fromstring(zipfile.ZipFile(io.BytesIO(response.content)).read("xl/worksheets/sheet1.xml"))
+        root = ElementTree.fromstring(zipfile.ZipFile(io.BytesIO(f.streamed_body(response))).read("xl/worksheets/sheet1.xml"))
         rows = root.find(f"{{{MAIN}}}sheetData")
 
         self.assertEqual([row.get("r") for row in rows], ["1", "2", "3", "4"])
@@ -65,12 +65,14 @@ class FooterWriterTests(SimpleTestCase):
         with mock.patch.object(exports, "MAX_EXPORT_ROWS", 1):
             response = xlsx_response(table([["A", 1], ["B", 2]], [["Total", 3]]), "totals")
             note = exports.truncation_note()
+            # Changed for L-17: the workbook is written while the response is read, so it is read inside the patch.
+            rows = workbook_rows(response)
 
-        self.assertEqual(workbook_rows(response), [["Name", "Amount"], ["A", "1"], [note], ["Total", "3"]])
+        self.assertEqual(rows, [["Name", "Amount"], ["A", "1"], [note], ["Total", "3"]])
 
     def test_a_footer_cell_that_is_empty_is_still_a_cell(self):
         response = xlsx_response(table([], [["Total", None]]), "totals")
-        raw = zipfile.ZipFile(io.BytesIO(response.content)).read("xl/worksheets/sheet1.xml").decode()
+        raw = zipfile.ZipFile(io.BytesIO(f.streamed_body(response))).read("xl/worksheets/sheet1.xml").decode()
 
         self.assertIn('<row r="2"><c r="A2" s="1" t="inlineStr">', raw)
         self.assertIn('<c r="B2" s="1"/></row>', raw)

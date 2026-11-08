@@ -372,7 +372,7 @@ FleetOps 有自己的舰船补损计划（SRP）。启用之前它是关闭的�
 | 通知成员（Notify members） | 开 | 申请被通过、修改、付款、拒绝、撤销或重新打开时，发送 Alliance Auth 通知。 |
 | SRP 审核人可以处理自己的申请（SRP reviewers may decide on their own claims） | 关 | 通常由另一位审核人处理审核人自己的申请。小联盟可以允许这样做。 |
 | SRP 付款人可以把自己的申请标记为已付款（SRP payers may mark their own claims paid） | 关 | 通常由另一位付款人支付付款人自己的申请。小联盟可以允许这样做。0.3.0b1 之前上一项设置也管付款；升级会把它复制到这里，所以原来允许的站点两项都保持允许。 |
-| 批准申请的人不能付款（The approver of a claim may not pay it） | 关 | 四眼规则：批准某条申请的人不能把它标记为已付款，必须由另一位付款人来付。撤销付款不受它限制。 |
+| 批准申请的人不能付款（The approver of a claim may not pay it） | 关 | 四眼规则：批准某条申请的人，以及修改过其批准金额的人，都不能把它标记为已付款，必须由另一位付款人来付（从 aa-srp 导入的申请，以及没有批准记录的申请，只按最后一次决定的人判断）。撤销付款不受它限制。 |
 | 自动完成 SRP 链接（Complete SRP links automatically） | 关 | 已关闭的 [SRP 链接](#srp-链接) 一旦没有申请在等待审核或付款，就被标记为已完成。已完成的链接上如果有申请重新变为未结（撤销付款、重新打开申请、重新提交），不管这项设置如何，链接都会自动退回已关闭。 |
 | 成员可以修改待审核的申请（Members can change their pending claims） | 开 | 申请还在待审核时，成员可以修改备注、类别或链接、以及损失。见 [修改待审核的申请](#修改待审核的申请)。关闭后按钮消失，请求也会被拒绝。 |
 | 成员可以替换待审核申请的损失（Members can replace the loss of a pending claim） | 开 | 仅在上一项开启时生效。关闭后成员只能改备注和类别或链接。 |
@@ -580,7 +580,7 @@ SRP 设置页的 **不赔付**（Not covered）一组会在检查申请时拒绝
 
 ### 导入赔付表
 
-`python manage.py fleetops_srp_import_payouts PATH --category KEY --column "金额列"` 从 CSV 文件读取赔付规则：需要 `type_id` 列、金额所在的列（`--column`，默认 `amount`），可选的英文船名列（`--name-column`，默认 `name`；没有时会查询船名）。金额为空或 0 的行跳过；同一艘船、范围（`--scope`，默认 `any`）和类别已有规则时更新金额，否则新建，每条都写审计 `configuration.create` 或 `configuration.update`（理由为“Imported from”加文件名）。有问题的行会列出行号并跳过。不加 `--apply` 时不写入，只统计数量。
+`python manage.py fleetops_srp_import_payouts PATH --category KEY --column "金额列"` 从 CSV 文件读取赔付规则：需要 `type_id` 列、金额所在的列（`--column`，默认 `amount`），可选的英文船名列（`--name-column`，默认 `name`；没有时会查询船名）。金额为空或 0 的行跳过；同一艘船、范围（`--scope`，默认 `any`）和类别已有规则时更新金额，否则新建，每条都写审计 `configuration.create` 或 `configuration.update`（理由为“Imported from”加文件名）。有问题的行会列出行号并跳过。不加 `--apply` 时不写入，只统计数量；但仍会（只读地）通过 Eve SDE 应用或 ESI 查询船名，因此不是 EVE 物品类型的 `type_id` 会在应用之前就作为有问题的行列出，查不到名字的船（例如 ESI 连不上）也会在输出中点名。
 
 ## 示例：从 aa-srp 迁移的联盟
 
@@ -621,7 +621,7 @@ SRP 设置页的 **不赔付**（Not covered）一组会在检查申请时拒绝
 
 ## 回退到 FleetOps 0.2.x
 
-迁移 `0035` 和 `0036` 是 0.3.0b1 迁移链的回退守卫。`0036` 增加清理比例这个设置字段；回退时先运行它带的守卫副本，守卫放行后才删除该字段，之后 `0035` 再做一次同样的检查。最后一个迁移 `0037` 只增加一个索引，回退时最先撤销（删除索引，其他不变）。守卫在撤销任何改动之前先一次检查所有会让回退不安全的情况：属于某个类别的赔付规则、有申请的无舰队链接（常驻链接）或导入的链接、以及从 aa-srp 导入的申请。它会拦住**任何**回退，部分回退也一样（`migrate fleetops 0032` 同样被拦住）。`python manage.py fleetops_srp_rollback_check` 运行同样的检查，只读，不改任何数据；它只列出规则 ID 和链接代码，有问题时以错误退出。步骤见[更新日志](../../CHANGELOG.md)（英文）里的回滚说明。
+迁移 `0035` 和 `0036` 是 0.3.0b1 迁移链的回退守卫。`0036` 增加清理比例这个设置字段；回退时先运行它带的守卫副本，守卫放行后才删除该字段，之后 `0035` 再做一次同样的检查。最后一个迁移 `0038` 只改一段帮助文字，`0037` 只增加一个索引，回退时最先撤销（帮助文字恢复，索引删除，其他不变）。守卫在撤销任何改动之前先一次检查所有会让回退不安全的情况：属于某个类别的赔付规则、有申请的无舰队链接（常驻链接）或导入的链接、以及从 aa-srp 导入的申请。它会拦住**任何**回退，部分回退也一样（`migrate fleetops 0032` 同样被拦住）。`python manage.py fleetops_srp_rollback_check` 运行同样的检查，只读，不改任何数据；它只列出规则 ID 和链接代码，有问题时以错误退出。步骤见[更新日志](../../CHANGELOG.md)（英文）里的回滚说明。
 
 ## 历史记录与保留
 

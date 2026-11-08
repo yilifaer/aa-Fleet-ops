@@ -659,7 +659,7 @@ def prepare_claim_for_ref(
 def _prepare(user, reference, *, link, category, source) -> ClaimPreview:
     srp = SrpSettings.get_solo()
     now = timezone.now()
-    km = killmails.fetch_killmail(reference, zkill_ok=srp.zkillboard_enabled)
+    km = killmails.fetch_killmail(reference, zkill_ok=srp.zkillboard_enabled, actor=user)
     scope = Scope.IN_FLEET if link is not None and link.kind == link.Kind.FLEET else Scope.OUT_OF_FLEET
     preview = ClaimPreview(killmail=km, scope=scope, link=link, user=user, source=source)
 
@@ -1255,7 +1255,7 @@ def edit_claim(
         if not settings_now.member_swap_loss_enabled:
             raise SrpError("swap_off", texts.SRP_EDIT_SWAP_OFF())
         # The network read comes before the lock; the quota lock never waits for ESI.
-        km_new = killmails.fetch_killmail(new_ref, zkill_ok=settings_now.zkillboard_enabled)
+        km_new = killmails.fetch_killmail(new_ref, zkill_ok=settings_now.zkillboard_enabled, actor=actor)
     now = timezone.now()
 
     with quota.quota_lock() as srp:

@@ -322,8 +322,8 @@ def maintain_standing_links(now=None) -> tuple[int, int]:
     """The daily upkeep of the standing links; returns ``(links created, links closed)``.
 
     While SRP is enabled, every active category with ``auto_create_daily`` that has no standing link for today (EVE
-    date) gets one (the system makes it: no actor, ``auto_created``); past days are never filled in. Then every open
-    standing link whose ``auto_close_at`` has passed is closed (audited as ``srp.link_close`` without an actor).
+    date) gets one (the system makes it: no actor, ``auto_created``); past days are never filled in, and no link is made
+    once today's closing time has passed. Then every open standing link whose ``auto_close_at`` has passed is closed (audited as ``srp.link_close`` without an actor).
     Closing only stops new claims; claims that exist go on to review and payment. Safe to run twice and from two
     workers at once: the daily key allows one link per category and day.
     """
@@ -334,13 +334,20 @@ def maintain_standing_links(now=None) -> tuple[int, int]:
         for category in SrpCategory.objects.filter(is_active=True, auto_create_daily=True).order_by("sort_order", "pk"):
             if _has_standing_link(category, today):
                 continue
+            close_at = auto_close_time(category, today)
+            if close_at is not None and close_at <= now:
+                # The closing time of today has passed already (the upkeep ran late): a link made now would be closed
+                # again in the same run, so none is made. Reviewers can still make one by hand.
+                # Debug level: the upkeep runs every ten minutes and this repeats for the rest of the day.
+                logger.debug("SRP category %s: no daily link made, its closing time for today has passed.", category.pk)
+                continue
             key = daily_key(category, today)
             link = create_standing_link(
                 actor=None,
                 category=category,
                 link_date=today,
                 doctrine_text=category.default_doctrine_text,
-                auto_close_at=auto_close_time(category, today),
+                auto_close_at=close_at,
                 daily=True,
                 auto_created=True,
             )

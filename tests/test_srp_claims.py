@@ -152,12 +152,13 @@ class PrepareClaimTests(ClaimBase):
         self.prepare(km)
         reference = self.fetch.call_args.args[0]
         self.assertEqual((reference.killmail_id, reference.killmail_hash), (km.killmail_id, km.killmail_hash))
-        self.assertEqual(self.fetch.call_args.kwargs, {"zkill_ok": True})
+        # Changed for L-1: the claimant is passed on too (recorded when a stand-in killmail is completed).
+        self.assertEqual(self.fetch.call_args.kwargs, {"zkill_ok": True, "actor": self.user})
 
     def test_zkillboard_switch_is_passed_on(self):
         self.settings(zkillboard_enabled=False, value_source="esi_estimate")
         self.prepare(self.killmail())
-        self.assertEqual(self.fetch.call_args.kwargs, {"zkill_ok": False})
+        self.assertEqual(self.fetch.call_args.kwargs, {"zkill_ok": False, "actor": self.user})
 
     def test_unreadable_text_is_an_error(self):
         with self.assertRaises(SrpError) as caught:

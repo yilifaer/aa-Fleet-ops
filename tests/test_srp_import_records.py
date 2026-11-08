@@ -106,6 +106,8 @@ class StandInTests(PlaceholderTestCase):
         entry = AuditLog.objects.get(action="srp.import_enrich")
         self.assertEqual((entry.object_type, entry.object_id), ("SrpKillmail", str(self.killmail_id)))
         self.assertNotIn(HASH, str(entry.new_value))
+        # L-1: the member who pasted the link is recorded as the actor of the completion.
+        self.assertEqual(entry.actor, self.pilot)
 
     def test_a_wrong_hash_is_not_found(self):
         error = FleetESIError("KILLMAIL_NOT_FOUND", KILLMAIL_NOT_FOUND, 404)
@@ -329,7 +331,9 @@ class ImportedPageTests(PlaceholderTestCase):
         self.assertIn("Amount as recorded in aa-srp", html)
         self.assertIn('id="srp-imported-amounts"', html)
         self.assertNotIn("Fleet presence:", html)
-        for action in ("approve", "reject", "revoke", "paid", "unpaid", "reopen", "reclassify", "recategorize", "recalculate"):
+        # Changed for L-15: "recheck" was missing from the list; the imported page showed that button although the
+        # server refuses it.
+        for action in ("approve", "reject", "revoke", "paid", "unpaid", "reopen", "reclassify", "recategorize", "recalculate", "recheck"):
             self.assertNotIn(reverse("fleetops:srp_claim_action", args=[self.claim.uuid, action]), html)
         self.assertNotIn("With insurance", html)
 

@@ -456,6 +456,22 @@ class MaintainTests(TestCase):
         link = self.standing(category).get()
         self.assertEqual(link.link_date, utc(2026, 11, 5).date())
 
+    def test_no_link_is_made_after_its_closing_time_has_passed(self):
+        # L-13: with a 12 hour closing time the first upkeep of the day at 14:30 used to make the link and close it
+        # in the same run; now it makes none (and a run before the closing time still makes one).
+        category = self.category(auto_close_after_hours=12)
+
+        self.assertEqual(links.maintain_standing_links(utc(2026, 11, 4, 14, 30)), (0, 0))
+        self.assertFalse(self.standing(category).exists())
+        self.assertFalse(AuditLog.objects.filter(action="srp.link_close").exists())
+
+        # The skip repeats with every upkeep run of the day, so it is not logged at info level.
+        with self.assertNoLogs(links.logger, level="INFO"):
+            links.maintain_standing_links(utc(2026, 11, 4, 14, 40))
+
+        self.assertEqual(links.maintain_standing_links(utc(2026, 11, 4, 11, 59)), (1, 0))
+        self.assertTrue(self.standing(category).get().is_open)
+
     def test_the_eve_date_is_the_utc_date(self):
         category = self.category()
         links.maintain_standing_links(utc(2026, 11, 4, 23, 59))
