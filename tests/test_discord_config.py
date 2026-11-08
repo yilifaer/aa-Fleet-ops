@@ -482,7 +482,7 @@ class PingChannelConfigurationTests(TestCase):
 
 
 class PingChannelGroupTests(TestCase):
-    """Which groups' leaders may use a channel, and whether alliance FCs still may (owner decision 5-7)."""
+    """Which groups' leaders may use a channel, and whether alliance FCs still may."""
 
     def setUp(self):
         self.admin = f.create_user(perms=CONFIG_PERMS)

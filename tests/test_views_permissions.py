@@ -773,7 +773,7 @@ class PermissionMatrixTests(SrpViewTestCase):
                  {"category": "none", "link": "abc", "corporation": "nonsense"}, payers),
             Case("srp_link_close", "post", r("fleetops:srp_link_close", args=[self.srp_link.code]), None,
                  staff_redirects),
-            # LINK (INT-9, decision 22): opening a link lets members submit again, so it is for reviewers; closing
+            # LINK (INT-9): opening a link lets members submit again, so it is for reviewers; closing
             # (above) stays open to every SRP role. Before this phase the row expected staff_redirects.
             Case("srp_link_open", "post", r("fleetops:srp_link_open", args=[self.srp_closed_link.code]), None,
                  by_srp_role(SRP_STAFF, granted=REDIRECT, srp_payer=DENIED)),

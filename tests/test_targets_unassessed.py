@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
 # SPDX-License-Identifier: GPL-3.0-only
 
-"""Months without an applicable monthly target are not assessed (owner decision 5-5), and the notes of the
+"""Months without an applicable monthly target are not assessed, and the notes of the
 statistics pages: FB11.2 (no target), FB11.3 (registered after the month), FB11.4 (two decimals of FC points).
 """
 

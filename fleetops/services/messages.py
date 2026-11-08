@@ -53,7 +53,7 @@ def _sender(operation, actor) -> str:
 
 def _fleet_times(scheduled_at) -> dict:
     if scheduled_at is None:
-        # FleetOps's own words in a ping or MOTD are plain English (owner decision 5-10).
+        # FleetOps's own words in a ping or MOTD are plain English.
         return {
             "fleet_time_eve": "",
             "fleet_time_unix": "",

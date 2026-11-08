@@ -8,7 +8,7 @@ Usage: python tools/check_docs.py [--root PATH]
 
 Checked: the Markdown files in the repository root, ``docs/`` and ``.github/``. Relative links must point to a
 file or folder that exists, and ``#anchor`` parts must match a heading of the target file. Absolute links into
-this repository (``https://github.com/yilifaer/aa-fleetops/blob/dev/...``, ``.../tree/dev/...``) are checked
+this repository (``https://github.com/yilifaer/aa-Fleet-ops/blob/dev/...``, ``.../tree/dev/...``) are checked
 the same way against the working tree. Links to other sites are not followed.
 """
 
@@ -20,7 +20,7 @@ from pathlib import Path
 from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parent.parent
-REPOSITORY = "https://github.com/yilifaer/aa-fleetops"
+REPOSITORY = "https://github.com/yilifaer/aa-Fleet-ops"
 SKIPPED_DIRECTORIES = {".git", ".venv", "venv", "node_modules", "build", "dist"}
 
 INLINE_LINK = re.compile(r"!?\[(?:[^\[\]]|\[[^\]]*\])*\]\(\s*<?([^)\s>]+)>?(?:\s+(?:\"[^\"]*\"|'[^']*'))?\s*\)")

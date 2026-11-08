@@ -7,7 +7,7 @@
 
 英文版为准；本文是 [README.md](README.md) 的中文版本。
 
-状态：测试版。当前的预发布版本是 0.3.0b1（0.2.0b1 是未发布的测试版本）；每次升级之前请阅读 [CHANGELOG](CHANGELOG.md)（英文）。
+状态：测试版。当前的预发布版本是 0.3.0b1；每次升级之前请阅读 [CHANGELOG](CHANGELOG.md)（英文）。
 
 ## 功能
 
@@ -99,14 +99,14 @@ FleetOps 使用 django-esi 的 OpenAPI 客户端，ESI 兼容日期为 `2025-11-
 ```bash
 source /path/to/venv/bin/activate
 
-# from PyPI (0.3.0b1 is a pre-release, so name the version)
-pip install --no-deps aa-fleetops==0.3.0b1
-
-# or from the wheel of a GitHub Release
-pip install --no-deps https://github.com/yilifaer/aa-fleetops/releases/download/v0.3.0b1/aa_fleetops-0.3.0b1-py3-none-any.whl
+# from the wheel of the GitHub Release
+pip install --no-deps https://github.com/yilifaer/aa-Fleet-ops/releases/download/v0.3.0b1/aa_fleetops-0.3.0b1-py3-none-any.whl
 
 # or from Git
-pip install --no-deps "git+https://github.com/yilifaer/aa-fleetops.git@v0.3.0b1"
+pip install --no-deps "git+https://github.com/yilifaer/aa-Fleet-ops.git@v0.3.0b1"
+
+# or from PyPI, only once the version is published on PyPI (0.3.0b1 is a pre-release, so name the version)
+pip install --no-deps aa-fleetops==0.3.0b1
 ```
 
 如果站点上还没有依赖，去掉 `--no-deps`。额外依赖 `aa-fleetops[fittings]` 和 `aa-fleetops[sde]` 会安装可选的 `fittings` 与 `django-eveonline-sde`。
@@ -160,9 +160,9 @@ python manage.py fleetops_seed          # default templates, multipliers, specia
 `fleetops_seed --demo` 还会为测试站点创建三个示例舰队类型。按你的部署方式重启 Web 进程、Celery Worker 和 Celery Beat。FleetOps 的日志写入 Alliance Auth 的扩展日志
 （`extensions.log`）。
 
-最后运行 `python manage.py check`。FleetOps 会就下面几项给出警告（只是警告，不是错误，不会让站点停止运行）：缺少 beat 条目、`SITE_URL` 为空、`APPS_WITH_PUBLIC_VIEWS` 里没有 `"fleetops"`、开启了 `ATOMIC_REQUESTS`、安装了 aa-charlink 但 `INSTALLED_APPS` 里没有字面写成 `"fleetops"` 的条目（`fleetops.W001` 到 `fleetops.W006`，详见[配置](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/zh-CN/configuration.md)）。不需要某一项的站点可以用 `SILENCED_SYSTEM_CHECKS = ["fleetops.W004"]` 之类的写法屏蔽它。`ATOMIC_REQUESTS` 必须保持关闭（Alliance Auth 的默认值）：FleetOps 为 SRP 额度和舰队结束锁定数据行，这要求每个请求不在同一个事务里运行。
+最后运行 `python manage.py check`。FleetOps 会就下面几项给出警告（只是警告，不是错误，不会让站点停止运行）：缺少 beat 条目、`SITE_URL` 为空、`APPS_WITH_PUBLIC_VIEWS` 里没有 `"fleetops"`、开启了 `ATOMIC_REQUESTS`、安装了 aa-charlink 但 `INSTALLED_APPS` 里没有字面写成 `"fleetops"` 的条目（`fleetops.W001` 到 `fleetops.W006`，详见[配置](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/docs/zh-CN/configuration.md)）。不需要某一项的站点可以用 `SILENCED_SYSTEM_CHECKS = ["fleetops.W004"]` 之类的写法屏蔽它。`ATOMIC_REQUESTS` 必须保持关闭（Alliance Auth 的默认值）：FleetOps 为 SRP 额度和舰队结束锁定数据行，这要求每个请求不在同一个事务里运行。
 
-**Docker。** 把 `aa-fleetops==0.3.0b1` 加到 Web、Worker 和 Beat 服务共用的镜像的依赖里，重新构建镜像，加上上面的 `local.py` 内容。然后在 Web 容器里打开一个 shell，
+**Docker。** 把 `aa-fleetops @ https://github.com/yilifaer/aa-Fleet-ops/releases/download/v0.3.0b1/aa_fleetops-0.3.0b1-py3-none-any.whl` 这一行（只有该版本发布到 PyPI 之后才能用 `aa-fleetops==0.3.0b1`）加到 Web、Worker 和 Beat 服务共用的镜像的依赖里，重新构建镜像，加上上面的 `local.py` 内容。然后在 Web 容器里打开一个 shell，
 用 Alliance Auth 镜像自带的 `auth` 简写运行命令：
 
 ```bash
@@ -226,18 +226,18 @@ PAP 登记链接用飞行员自己的令牌读取他在哪里、开什么船、�
 
 1. 备份数据库。
 2. **升级到 0.3.0b1 之前**，先在 EVE 开发者网站上，给本站 `ESI_SSO_CLIENT_ID` 对应的 EVE 应用加上权限范围 `esi-killmails.read_killmails.v1`。不加的话，损失读取的 SSO 登录会报 invalid scope，成员无法为自己的角色授权（其余功能照常）。
-3. 把新版本安装到虚拟环境里（`pip install --no-deps aa-fleetops==<version>`）。
+3. 用该版本 GitHub Release 的 wheel 把新版本安装到虚拟环境里（`pip install --no-deps <wheel 地址>`；只有该版本已发布到 PyPI 时才能用 `aa-fleetops==<version>`）。
 4. 阅读该版本在 [CHANGELOG](CHANGELOG.md)（英文）里的升级说明。
 5. 运行 `python manage.py migrate fleetops` 和 `python manage.py collectstatic --noinput`。
 6. 重启 Web 进程、Celery Worker 和 Celery Beat。
 
-**从 0.3.0b1 回退到 0.2.x。** 先回退迁移（`python manage.py migrate fleetops 0023`），再安装旧版本的包。回退之前先运行 `python manage.py fleetops_srp_rollback_check`：它列出会挡住回退的东西（属于某个类别的赔付规则、有申请的常驻链接、导入的历史），不改任何数据。步骤和回退会丢失的数据见 [CHANGELOG](CHANGELOG.md)（英文）。
+**从 0.3.0b1 回退到 0.2.x。** 先回退迁移（0.2.0b3 构建用 `python manage.py migrate fleetops 0023`，0.2.0b2 构建用 `python manage.py migrate fleetops 0021`），再装回旧代码。这两个构建都没有正式发布，请重新安装本站之前用的 wheel 或提交。回退之前先运行 `python manage.py fleetops_srp_rollback_check`：它列出会挡住回退的东西（属于某个类别的赔付规则、有申请的常驻链接、导入的历史），不改任何数据。步骤和回退会丢失的数据见 [CHANGELOG](CHANGELOG.md)（英文）。
 
 ## 卸载
 
 卸载 FleetOps 会删除它的数据，所以先备份数据库，并导出想保留的内容（SRP 页面有 CSV 和 Excel 导出）。请按下面的顺序操作；删除数据表时应用必须还装着。
 
-1. 从 `local.py` 里删掉两条 `CELERYBEAT_SCHEDULE["fleetops_..."]`（FleetOps 不在数据库里创建任何调度记录），并重启 Celery Beat，这样就不会再有任务被排给这个应用。在第 4 步之前，`manage.py check` 会就此给出 `fleetops.W001` 和 `fleetops.W002` 警告；请忽略，不要把这两条加回去。
+1. 从 `local.py` 里删掉两条 `CELERYBEAT_SCHEDULE["fleetops_..."]`（FleetOps 自己不创建调度记录，但 Celery Beat 会把 `local.py` 里的条目存进数据库，且不会自动删除）。然后在 Django 管理后台的 **Periodic Tasks** 里删除或停用 `fleetops_track_active_fleets` 和 `fleetops_prune_history` 两个周期任务，并重启 Celery Beat，这样就不会再有任务被排给这个应用。在第 4 步之前，`manage.py check` 会就此给出 `fleetops.W001` 和 `fleetops.W002` 警告；请忽略，不要把这两条加回去。
 2. 可选：运行 `python manage.py fleetops_srp_rollback_check`。它只读，列出会挡住第 3 步的东西（属于某个类别的赔付规则、有申请的链接、从 aa-srp 导入的申请）；先按 [CHANGELOG](CHANGELOG.md)（英文）的说明处理掉。
 3. 运行 `python manage.py migrate fleetops zero`。这会删除 FleetOps 的所有数据表和表里的全部数据。在 MariaDB 和 MySQL 上，迁移中途失败是无法回滚的，所以请保留备份。
 4. 从 `INSTALLED_APPS` 里删掉 `"fleetops"`，并从 `local.py` 里删掉 `APPS_WITH_PUBLIC_VIEWS += ["fleetops"]` 这一行。
@@ -284,7 +284,7 @@ FleetOps 跟随 Alliance Auth 的语言菜单，网页提供英文和简体中�
 
 ## 帮助与参与
 
-问题请到 [Discussions](https://github.com/yilifaer/aa-fleetops/discussions) 提问。通过 [Issues](https://github.com/yilifaer/aa-fleetops/issues/new/choose)
+问题请到 [Discussions](https://github.com/yilifaer/aa-Fleet-ops/discussions) 提问。通过 [Issues](https://github.com/yilifaer/aa-Fleet-ops/issues/new/choose)
 报告 Bug、提出功能需求和提交翻译修正。安全问题请按 [SECURITY.md](SECURITY.md) 私下报告。开发环境、测试和编码规则见 [CONTRIBUTING.md](CONTRIBUTING.md)（英文）。
 
 ## 许可证

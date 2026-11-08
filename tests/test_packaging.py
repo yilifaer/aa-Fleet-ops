@@ -20,7 +20,7 @@ except ImportError:  # Python 3.10
 PACKAGE_DIR = Path(fleetops.__file__).resolve().parent
 ROOT = PACKAGE_DIR.parent
 PYPROJECT = ROOT / "pyproject.toml"
-REPOSITORY = "https://github.com/yilifaer/aa-fleetops"
+REPOSITORY = "https://github.com/yilifaer/aa-Fleet-ops"
 AUTHOR = "yilifaer and AA FleetOps contributors"
 # SHA-256 of the GNU General Public License version 3 as the Free Software Foundation publishes it.
 GPL3_SHA256 = "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"

@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Use this form for problems you can describe and reproduce. Questions about installing or configuring
-        FleetOps belong in [Discussions](https://github.com/yilifaer/aa-fleetops/discussions).
+        FleetOps belong in [Discussions](https://github.com/yilifaer/aa-Fleet-ops/discussions).
 
         Remove ESI tokens, Discord webhook URLs and database passwords from everything you post here.
   - type: input

@@ -632,7 +632,7 @@ class TrackedTimeEditTests(TestCase):
         response = self.edit(self.lead, operation, ended_at=self.start + timedelta(minutes=60))
 
         operation.refresh_from_db()
-        # No new review for an FC lead; the multiplier is lowered like for everybody (owner decision 1c-3).
+        # No new review for an FC lead; the multiplier is lowered like for everybody.
         self.assertEqual((operation.attendance_multiplier, operation.review_status), (1, APPROVED))
         self.assertIn(
             "PAP multiplier lowered to 1x: the new times do not allow more. "

@@ -3,9 +3,9 @@
 AA FleetOps is free software for Alliance Auth sites, and contributions are welcome: bug reports, ideas,
 translations, documentation and code.
 
-- Found a problem? Open an [issue](https://github.com/yilifaer/aa-fleetops/issues/new/choose) with the bug form.
+- Found a problem? Open an [issue](https://github.com/yilifaer/aa-Fleet-ops/issues/new/choose) with the bug form.
 - Have a question about installing or using FleetOps? Ask in
-  [Discussions](https://github.com/yilifaer/aa-fleetops/discussions).
+  [Discussions](https://github.com/yilifaer/aa-Fleet-ops/discussions).
 - Want to fix a wording or add a language? Use the translation form, or read
   [docs/translations.md](docs/translations.md) and send a pull request.
 - Found a security problem? Follow [SECURITY.md](SECURITY.md); do not open a public issue.

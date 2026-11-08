@@ -326,7 +326,7 @@ class InactiveTests(MembersTestCase):
 
 
 class NoTargetTests(MembersTestCase):
-    """A month without an applicable target is not assessed (owner decision 5-5)."""
+    """A month without an applicable target is not assessed."""
 
     def setUp(self):
         super().setUp()

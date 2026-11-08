@@ -3,5 +3,5 @@
 
 __title__ = "AA FleetOps"
 __version__ = "0.3.0b1"
-__url__ = "https://github.com/yilifaer/aa-fleetops"
+__url__ = "https://github.com/yilifaer/aa-Fleet-ops"
 __author__ = "yilifaer and AA FleetOps contributors"

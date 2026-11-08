@@ -1394,7 +1394,7 @@ PING_REQUEST_USED = StoredText(gettext_noop("This form was already sent. Reload 
 AUDIT_GROUP_DELETED = StoredText(gettext_noop("The Alliance Auth group was deleted."))
 # --- end lane F ---
 
-# --- 0.2.0b2 PAP characters per player of one fleet (owner decision 5-13) ---
+# --- 0.2.0b2 PAP characters per player of one fleet ---
 PAP_LIMIT_ABOVE_SETTING = StoredText(
     gettext_noop(
         "PAP characters per player can be at most %(max)s here; "

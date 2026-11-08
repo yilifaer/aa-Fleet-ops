@@ -7,9 +7,9 @@ latest release.
 
 ## Reporting a vulnerability
 
-Report a vulnerability privately. Open the [Security tab](https://github.com/yilifaer/aa-fleetops/security)
+Report a vulnerability privately. Open the [Security tab](https://github.com/yilifaer/aa-Fleet-ops/security)
 of the repository and choose **Report a vulnerability**, or use
-[this link](https://github.com/yilifaer/aa-fleetops/security/advisories/new). Do not open a public issue or
+[this link](https://github.com/yilifaer/aa-Fleet-ops/security/advisories/new). Do not open a public issue or
 discussion for it.
 
 Please include:

@@ -628,7 +628,7 @@ class SecurityDisplayTests(SrpPagesTestCase):
 
     def setUp(self):
         super().setUp()
-        # Changed in 0.3.0b1 (REV-9, decision 26): the security status is shown to SRP staff only, so these pages are
+        # Changed in 0.3.0b1 (REV-9): the security status is shown to SRP staff only, so these pages are
         # read as a manager. The claimant keeps seeing the system name (test_srp_review_info checks both sides).
         self.client = self.client_for(self.manager)
 

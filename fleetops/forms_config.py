@@ -455,8 +455,8 @@ class GroupChoiceField(forms.ModelMultipleChoiceField):
 class DiscordWebhookForm(forms.ModelForm):
     """A ping channel. The webhook URL carries its token, so it can be replaced but is never shown again.
 
-    The groups whose leaders may use the channel and whether alliance FCs may use it too are set here only
-    (owner decision 5-7); Django admin leaves both fields out, so the form only touches them when present.
+    The groups whose leaders may use the channel and whether alliance FCs may use it too are set here only;
+    Django admin leaves both fields out, so the form only touches them when present.
     """
 
     webhook_url = forms.CharField(
@@ -518,7 +518,7 @@ class DiscordWebhookForm(forms.ModelForm):
         if "allowed_groups" in self.fields and "fcs_allowed" in self.fields:
             groups = cleaned.get("allowed_groups")
             if not groups:
-                # A channel without a group is an alliance channel (owner decision 5-7); the switch only matters
+                # A channel without a group is an alliance channel; the switch only matters
                 # while the channel has a group.
                 cleaned["fcs_allowed"] = True
             elif cleaned.get("fcs_allowed"):

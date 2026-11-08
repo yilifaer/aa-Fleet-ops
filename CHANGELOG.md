@@ -1,481 +1,226 @@
 # Changelog
 
-## [0.3.0b1] - Unreleased
+## [0.3.0b1] - 2026-11-08
 
-The SRP rework: categories, separate review and payment permissions, standing links, automatic loss discovery, the
-rules for what is not covered, bans, changes by the claimant, payment batches, reports for any period and the import of
-the aa-srp history. Install it like the previous pre-release (`pip install --no-deps aa-fleetops==0.3.0b1`).
+The SRP rework: categories, separate review and payment permissions, standing links, automatic loss discovery, rules
+for what is not covered, bans, changes by the claimant, payment batches, reports for any period and the import of the
+aa-srp history. This release also contains everything of the 0.2.0b2 and 0.2.0b3 sections of the
+[CHANGELOG](https://github.com/yilifaer/aa-Fleet-ops/blob/v0.3.0b1/CHANGELOG.md), which were never released
+separately. Install it from the wheel of this GitHub Release
+(`pip install --no-deps https://github.com/yilifaer/aa-Fleet-ops/releases/download/v0.3.0b1/aa_fleetops-0.3.0b1-py3-none-any.whl`);
+`pip install --no-deps aa-fleetops==0.3.0b1` works only once the version is published on PyPI.
 
 **Before you upgrade:** add the scope `esi-killmails.read_killmails.v1` to the EVE application of your site (the one
 that belongs to `ESI_SSO_CLIENT_ID` on the EVE developer website), then upgrade the package. Without the scope the SSO
-login of the loss reading fails with "invalid scope" and members cannot authorize their characters; nothing else
-depends on it. Read the upgrade notes and the rollback notes below before you start.
+login of the loss reading fails with "invalid scope". Read the upgrade notes and the rollback notes below first.
 
 ### Added
 
-- **SRP categories.** A new page, **Administration** > **FleetOps SRP** > **SRP Categories**, manages kinds of claims
-  (fleet losses, solo PVP, a standing doctrine, ...). Each category can have its own payout percentage, its own
-  per-loss cap (or none), its own payout table entries, and a personal and a corporation monthly cap. A claim has at
-  most one category: a claim through a fleet link gets the built-in **Fleet** category (or the category its fleet
-  type is mapped to), a claim outside a fleet gets the category a reviewer or the settings give it. A claim without
-  a category is calculated as before. FleetOps creates only the **Fleet** category; the documents show an example set
-  of categories.
-- **Payout table by category.** A payout rule can belong to a category. At the same level of specificity, a rule of the
-  claim's category beats a general rule; the same ship, doctrine and scope can have one rule per category. A rule of
-  one category never applies to another.
-- **Category limits.** The monthly limits of a category count only the claims of that category, and are checked
-  together with the general limits (the most restrictive wins). They are named "monthly category personal limit" and
-  "monthly category corporation limit" on the claim, in the audit log and in the reason of an automatic rejection.
-- **Change the category.** A reviewer can move a pending claim to another category, or to none. The claim is calculated
-  again, the reason is required, and the change is shown in the claim's timeline and audited as `srp.claim_recategorize`.
-  Moving a claim between fleet and out of fleet also sets its category (the fleet's category, or the default category,
-  or the one the reviewer names).
-- **Default category** and **Members must choose a category for losses outside a fleet** in the SRP settings.
-- **Category choice for members.** The form for a loss outside a fleet has a **Category** list (only the active
-  categories members can choose; the default category is preselected, and the list is required while the setting above
-  is on). Without such a category the form is unchanged. The category is shown on the check page, the claim, the
-  member's table, the review queue and the payment page, and "My SRP" lists the personal monthly limit of each category
-  that has one. A category switched off between the check and the submission gives a clear error.
-- **Old settings.** The notice "N pending claims were calculated with earlier SRP settings" also appears on the category
-  pages and notices a changed category as well.
-- **Separate permissions for reviewing and paying.** `fleetops.review_srp` ("Can review SRP claims") and
-  `fleetops.pay_srp` ("Can pay SRP claims") are new. A reviewer approves, changes, rejects, revokes, reopens, moves and
-  recalculates claims and sees the review queue; a payer sees the payments page, marks claims paid and undoes
-  payments. Both can add internal notes, open and close fleet SRP links and read every SRP summary, claim and
-  internal note. `fleetops.manage_srp` stays and means both together, so nobody who holds it notices a difference. The
-  menu shows **Review** to reviewers and **Payments** (with the number of approved claims the person can still pay) to
-  payers, and the buttons of a claim page follow the role. Nothing is granted to any group, state or user by the
-  upgrade; give the permissions to the groups you want.
-- **Self-processing settings.** **SRP payers may mark their own claims paid** and **The approver of a claim may not
-  pay it** (a four-eyes rule; undoing a payment is not bound by it) are new, both off by default. When claims are
-  paid in bulk, the claims left out are listed with the reason (your own claim, or approved by you).
-- **Standing SRP links.** A link without a fleet, with a name, a category and an EVE date (for example "Home defense
-  2026-11-05"), a doctrine text, a link to the after-action report and an optional time at which it closes. Members
-  open it like the link of a fleet; a claim through it is a claim outside a fleet, in the link's category, and counts
-  in no FC statistics. Only reviewers make and change standing links. A category now also has the name template of its
-  links (`{category}` and `{date}`), a default doctrine text and the hours after which its links close (empty = never).
-- **SRP Links page** (menu **SRP** > **SRP Links**, for reviewers and payers). Lists the links of fleets and the standing
-  links with their state (open, closed, completed), the number of claims waiting for review and for payment and the
-  total paid; filters by state, kind, category and date, 50 per page. Several links can be closed or completed at once
-  (reviewers can also open them again), each link on its own: the ones that cannot be done are listed with the reason.
-  `?codes=` on the address ticks the links it names. Reviewers make standing links (**New standing link**) and change
-  the doctrine text and the report of any link.
-- **Completing a link.** A closed link whose claims are all settled (paid, rejected or withdrawn) can be marked
-  completed, from the list or from the card on the fleet page. A link with a claim waiting for review or for payment can
-  never be completed, and there is no way to force it; closing a link is not limited. Opening a completed link again
-  removes the completion. If a payment is undone, or a claim is reopened or submitted again on a completed link, the link
-  goes back to closed by itself. The setting **Complete SRP links automatically** (off by default) completes a closed link
-  as soon as nothing on it waits any more. All of this is audited (`srp.link_create`, `srp.link_update`,
-  `srp.link_open`, `srp.link_close`, `srp.link_complete`, `srp.link_uncomplete`).
-- **Standing links as an entry point.** **My SRP** has a card with the open standing links. A member who picks a
-  category for a loss without a link is put under the open standing link of that category for the EVE day of the loss;
-  without one the claim only records the category (the new setting **A category claim needs no standing link** is on by
-  default; off requires the link). A claim through a standing link is not held back by **Out-of-fleet losses** being
-  off, and a claim under a standing link can be submitted again after the link was closed. A loss of another EVE day
-  than the link's date carries the warning "outside link date" (batch approval skips it; it stays when the fleet
-  presence is checked again).
-- **Daily standing links.** A category can **make a standing link every day** and close its links after a number of
-  hours (empty = never; 48 closes a link at the end of the next day). The upkeep runs inside the existing task
-  `schedule_active_fleet_tracking` (at most every ten minutes); it makes today's link only, once per category and day,
-  and closes the links whose time has passed (`srp.link_close` without an actor). Both are off by default. **No new
-  beat entry is needed**, and FleetOps creates no periodic task.
-- **Not covered.** New group in the SRP settings: ship groups, ships and kinds of space (high, low and null security,
-  wormhole, abyssal, Pochven) whose losses are refused when a claim is checked, a switch that lets a payout table entry
-  for the ship lift the ship block (on) and one that lets wartime losses in high security through (off). A button
-  **Fill in the recommended list** (mining, industrial and exploration ship groups, five frigates, high security) shows
-  the lists in the form without saving them. Members read the lists on My SRP and on the SRP page of a link.
-  **Nothing is blocked after an install or an upgrade until an administrator saves a list.**
-- **Where a loss happened.** A killmail now stores its ship group, the security status, the constellation and the region of
-  its solar system, looked up when it is stored: from django-eveonline-sde when it is installed, otherwise from the public
-  ESI reads for systems, constellations and types (no token; kept as long as ESI's `Expires` says, and for 7 days
-  afterwards; a failed lookup for one hour). A lookup that fails leaves the fields empty and never stops a killmail from
-  being stored. A value that is empty blocks nothing and adds no warning.
-- **SRP bans.** **SRP** > **SRP Bans** (reviewers): a member can be banned from checking and submitting claims (also
-  from submitting a withdrawn claim again) for a number of days or permanently; the member sees the reason, staff also see
-  an internal note that is never written to the audit log. The ban can reject the member's pending claims in the same
-  step (reason required). The ban belongs to the account, ends by itself and can be lifted at once. Withdrawing a pending claim stays possible. New
-  settings: default and longest length, and **Ban members who keep submitting over their monthly cap until the end of the
-  month** (off by default). Audited as `srp.ban_create` and `srp.ban_lift`.
+- **SRP categories** (**Administration** > **FleetOps SRP** > **SRP Categories**): kinds of claims such as fleet losses,
+  solo PVP or a standing doctrine, each with its own payout percentage, per-loss cap, payout table entries and monthly
+  personal and corporation caps (counted for that category and checked together with the general limits). A claim has at
+  most one category. FleetOps creates only the built-in **Fleet** category; the documents show an example set. A payout
+  rule can belong to a category and then beats a general rule of the same specificity. Reviewers can move a pending claim
+  to another category (reason required, audited as `srp.claim_recategorize`). Settings: **Default category** and
+  **Members must choose a category for losses outside a fleet**; members get a **Category** list on the form for a loss
+  outside a fleet.
+- **Separate permissions for reviewing and paying.** `fleetops.review_srp` and `fleetops.pay_srp` are new;
+  `fleetops.manage_srp` stays and means both. The menu shows **Review** and **Payments** to the matching role. Nothing is
+  granted to any group or user by the upgrade. New settings **SRP payers may mark their own claims paid** and **The
+  approver of a claim may not pay it** (a four-eyes rule that also covers anyone who changed the approved amount), both
+  off by default.
+- **Standing SRP links**: links without a fleet, with a name, a category, an EVE date, a doctrine text, a report link and
+  an optional closing time. A claim through one is a claim outside a fleet in the link's category and counts in no FC
+  statistics. Categories can make a standing link every day and close their links after a number of hours (both off by
+  default; the upkeep runs inside the existing task `schedule_active_fleet_tracking`, no beat entry is added). **My SRP**
+  lists the open standing links; the setting **A category claim needs no standing link** (on) decides whether a claim
+  needs one.
+- **SRP Links page** (**SRP** > **SRP Links**, for reviewers and payers): fleet links and standing links with state,
+  waiting claims and totals, filters, and closing, completing and opening of several links at once. A closed link whose
+  claims are all settled can be completed (also automatically with **Complete SRP links automatically**, off by default).
+  Audited as `srp.link_create`, `srp.link_update`, `srp.link_open`, `srp.link_close`, `srp.link_complete` and
+  `srp.link_uncomplete`.
+- **Not covered**: ship groups, ships and kinds of space (high, low and null security, wormhole, abyssal, Pochven) whose
+  losses are refused when a claim is checked, with a **Fill in the recommended list** button. **Nothing is blocked after
+  an install or an upgrade until an administrator saves a list.** A killmail now stores its ship group, security status,
+  constellation and region, looked up from django-eveonline-sde when it is installed, otherwise from public ESI reads
+  (no token, cached as ESI's `Expires` says).
+- **SRP bans** (**SRP** > **SRP Bans**, for reviewers): a member can be banned from checking and submitting claims for a
+  number of days or permanently; the reason is visible to the member, the internal note to staff only. Optional automatic
+  ban for members who keep submitting over their monthly cap (off by default). Audited as `srp.ban_create` and
+  `srp.ban_lift`.
 - **Automatic loss discovery** (off by default). With **Find losses automatically** on, FleetOps reads the recent
-  killmails of each member's characters from ESI (`esi-killmails.read_killmails.v1`, the member's own token) and lists
-  the member's losses on **My SRP** under **My recent losses**: ship, character, system, EVE time, days left, the fleet
-  FleetOps matched (in fleet, near, or registered for PAP) and why a loss is not covered. **Claim** opens the usual check
-  with the fleet preselected, or an open standing link or a category; **Ignore** hides a loss from the member's own list.
-  A claim made this way has the source "Found automatically" (the claim event keeps it); pasting a link stays possible
-  and is called **Claim with a link**. Members authorize loss reading per character on a **Loss reading** card
-  (and, with aa-charlink, in one go: the new import **FleetOps SRP loss reading**, shown only while the feature is on).
-  A scan runs inside the existing beat task (at most every five minutes, within a time and ESI budget; **no new beat
-  entry** and no periodic task created in code), reads each authorized character about every 60 minutes (setting, 15 to
-  1440), backs off on errors and on ESI's limits, and a member can refresh once every five minutes. New settings group
-  **Loss discovery**: **Find losses automatically**, **Minutes between two reads of a character** and **Members must
-  authorize loss reading for all their characters** (off). The last one stops a member with a character that did not
-  authorize from checking or submitting any claim; it is ignored while the feature is off. Audited:
-  `srp.loss_ignore`, `srp.loss_unignore`. The new tables hold no claim data and are read only in Django admin.
-
-- **Members change a pending claim.** While a claim is pending the claimant can **Change claim**: the comment, the
-  category or link (another open fleet, a standing link or a category) and the loss (a pasted link or one of the recent
-  losses). The change is previewed first and calculated like a new claim; the claim number stays, the old killmail is free
-  again, and a change that would reject the claim on the spot (automatic rejection, nothing left under a limit) is
-  refused. A banned member can only withdraw; after a reviewer moved the claim only the comment and the loss can be
-  changed. Settings **Members can change their pending claims** and **Members can replace the loss of a pending claim**
-  (both on). Audited as `srp.claim_member_edit`; the timeline shows "Changed by the claimant". Reviewers' decisions,
-  moves and the bulk approval carry the number of changes the page showed and are refused when the claimant changed the
-  claim since.
-- **Review queue filters.** Category (and "No category"), link code, submission dates (EVE days) and member; kept with the
-  month filter. The table shows the category and link and a **Banned** badge.
-- **Payments by category and link.** Filters for the claims to pay (category, link, corporation) that also decide the group
-  totals and the copy buttons; the paid list shows category, link and batch; **Copy name and amount** copies the name, a
-  tab and the plain number.
-- **Payment batches.** Every payment makes a batch (`PAY-<n>`) with the number of claims, players, the total and the note,
-  a page for it (payers only), a list of the recent ones, one audit entry `srp.payment_batch` and the batch in each claim's
-  payment event. Payments made before the upgrade have no batch.
-- **Export of the claims to pay.** The dataset `srp-payable` (payers only), one row per claim or per player, with the
-  filters of the payments page and a total; `srp-claims` gets a **Payment batch** column at the end (staff only).
-- **Review information.** SRP staff see on a claim the attackers (summary from IDs, names from the cache; a task looks
-  them up after the killmail was stored), the monthly limits as they are now and the history of the claimant's rejections
-  (`Days of rejection history shown to reviewers`, 90). The command `fleetops_srp_backfill_killmails` fills in the
-  attackers and the location of killmails stored before. Members do not see this information.
-- **Insurance estimate.** "Compensation + insurance payout = total" for the chosen level (platinum by default) on claims and
-  on the check page, from the public ESI insurance prices (read once a day, kept in `SrpInsurancePrice`). Settings **Show
-  the insurance estimate** (on) and **Insurance level shown**. It is a hint only and changes no amount.
-
-- **SRP reports and periods.** A new page, **SRP** > **Reports**, shows any period instead of one month: choose a report
-  and a preset (this month, last month, last 3, 6 or 12 months, this year, all time) or two EVE dates (both days
-  included, and dates you enter win over a preset; at most 1100 days; the default is the last six months). It has summary cards, a searchable table (50 rows
-  per page) with the total line and Excel and CSV buttons. Reports: trend by month (empty months as zeros, optionally
-  split by category), categories, ships, members (all characters of a player under the main), corporations, regions,
-  FCs (with the fleet types they led), reviewers and payers (SRP staff only; automatic rejections and imported claims
-  without a reviewer are their own rows), rejections, payments and personal limits (month by member: used, cap,
-  remaining, over the limit, waived). Every table shows the average payout. The alliance summary has a **This month by
-  category** card and a link to the reports. The year lists of the SRP pages reach back to the oldest claim, so imported
-  years can be chosen.
-- **SRP exports.** All SRP files take a period (`from=` and `to=`, `preset=` or `year=` and `month=`). Every file is
-  named `...-YYYY-MM-DD_YYYY-MM-DD` after its first and last day, a whole calendar month included; the About sheet
-  says "Period (EVE time)". New files: `srp-trend`, `srp-categories`, `srp-ships`, `srp-regions`, `srp-reviewers`,
-  `srp-payers` (these two for SRP staff only), `srp-rejections`, `srp-payments` and `srp-limits`, with the total in the
-  last line. `srp-claims` has four more columns at the end, **Category**, **Link**, **Source** and **Security status**
-  (SRP staff only), and the filter `category=<key>`; `srp-members`, `srp-corporations` and `srp-fcs` have more columns at
-  the end. No existing column moved.
-- **Import of the aa-srp history.** `python manage.py fleetops_import_aasrp` copies the links and requests of aa-srp
-  (read only) into FleetOps: approved requests become paid claims, rejected ones rejected claims, pending ones are
-  not imported (the report counts them and a real run warns). Imported claims are matched by their aa-srp request number,
-  so the command can run again; claims made in FleetOps are never touched. Links become closed links without a fleet (or
-  standing links of a category with `--category-map`), the killmail of each loss becomes a stand-in that keeps the loss
-  from being claimed again, and the time of the loss is the time of the link until `--enrich` fetches the real one.
-  `--dry-run` prints the report (by month and status, with the skip reasons), `--since`/`--until`, `--actor` and
-  `--batch-size` are options, and `--undo` removes everything the import made. The statistics and reports include the
-  imported claims. Imported claims are records: they cannot be approved, rejected, paid, reopened, moved, recalculated,
-  withdrawn or changed (only an internal note can be added), the page shows the amount as recorded in aa-srp, and an
-  imported link cannot be opened again. A run holds the SRP lock batch by batch: run it in a maintenance window. See
-  [Importing the history of aa-srp](docs/configuration.md#importing-the-history-of-aa-srp).
-- **Import of a payout table.** `python manage.py fleetops_srp_import_payouts PATH --category KEY --column NAME`
-  (dry run unless `--apply`) makes the payout rules of one category from a CSV file, audited like any configuration
-  change.
-- **Rollback check.** `python manage.py fleetops_srp_rollback_check` shows whether `migrate fleetops 0023` would be
+  killmails of each member's authorized characters from ESI (`esi-killmails.read_killmails.v1`, the member's own token)
+  and lists the losses on **My SRP** under **My recent losses** with the matched fleet and the reason a loss is not
+  covered. The scan runs inside the existing beat task within a time and request budget and respects ESI's limits. A
+  **Loss reading** card (and the aa-charlink import **FleetOps SRP loss reading**) lets members authorize characters.
+  New settings group **Loss discovery**. Audited as `srp.loss_ignore` and `srp.loss_unignore`.
+- **Members change a pending claim**: comment, category or link and the loss, previewed and calculated like a new claim
+  (settings **Members can change their pending claims** and **Members can replace the loss of a pending claim**, both
+  on; audited as `srp.claim_member_edit`). Decisions of reviewers carry the revision the page showed and are refused when
+  the claimant changed the claim since.
+- **Review and payment pages**: more filters (category, link, dates, member, corporation), a **Banned** badge, and for
+  SRP staff the attackers of a killmail, the monthly limits as they are now and the claimant's recent rejections
+  (**Days of rejection history shown to reviewers**, default 90). The command `fleetops_srp_backfill_killmails` fills in
+  attackers and locations of killmails stored earlier.
+- **Payment batches**: every payment makes a batch (`PAY-<n>`) with a page, a list of recent batches and the audit entry
+  `srp.payment_batch`. New export `srp-payable` (claims to pay) and a **Payment batch** column in `srp-claims`.
+- **Insurance estimate** on claims and on the check page, from the public ESI insurance prices (read once a day); a hint
+  only. Settings **Show the insurance estimate** (on) and **Insurance level shown**.
+- **SRP reports and periods**: **SRP** > **Reports** shows any period (presets or two EVE dates, at most 1100 days) with
+  summary cards, searchable tables and Excel and CSV downloads: trend, categories, ships, members, corporations, regions,
+  FCs, reviewers, payers, rejections, payments and personal limits. All SRP exports take a period and are named after
+  its first and last day; new files `srp-trend`, `srp-categories`, `srp-ships`, `srp-regions`, `srp-reviewers`,
+  `srp-payers`, `srp-rejections`, `srp-payments` and `srp-limits`. Existing columns did not move; some files gained
+  columns at the end.
+- **Import of the aa-srp history**: `python manage.py fleetops_import_aasrp` copies the links and requests of aa-srp
+  (read only) into FleetOps: approved requests become paid claims, rejected ones rejected claims, pending ones are not
+  imported. It can run again, has `--dry-run`, `--since`, `--until`, `--category-map`, `--enrich` and `--undo`, and holds
+  the SRP lock batch by batch, so run it in a maintenance window. Imported claims are records and cannot be decided,
+  paid or changed. See [Importing the history of aa-srp](docs/configuration.md#importing-the-history-of-aa-srp).
+- **Payout table import**: `python manage.py fleetops_srp_import_payouts PATH --category KEY --column NAME` (dry run
+  unless `--apply`).
+- **Rollback check**: `python manage.py fleetops_srp_rollback_check` shows whether `migrate fleetops 0023` would be
   stopped (see the rollback notes); it changes nothing.
+- **Checks and documents**: `python manage.py check` warns (never stops the site) about a missing beat entry, an empty
+  `SITE_URL`, a missing `"fleetops"` in `APPS_WITH_PUBLIC_VIEWS`, `ATOMIC_REQUESTS` on, and aa-charlink without the
+  literal `"fleetops"` entry (`fleetops.W001` to `fleetops.W006`; silence with `SILENCED_SYSTEM_CHECKS`). The README and
+  the configuration reference have **Uninstalling** and **Data and privacy** sections.
 
 ### Changed
 
-- **A fitting link pasted from the game no longer breaks the fleet messages.** A custom doctrine name copied from the
-  game (a fitting link with its tags, about 600 characters) used to be cut off silently by the input box at 255
-  characters, which left an open tag that swallowed the Comms, Logi, Boost and SRP lines of the MOTD and showed the
-  markup in the Discord ping. Every custom doctrine field (start and scheduled fleet, the fleet records, Send Ping, the
-  PAP link and the payout rule) now keeps only the plain name, accepts a paste of up to 4000 characters, and reports a
-  clear error when the name is still longer than 255 characters instead of cutting it. In the MOTD and the ping, the
-  doctrine, form-up place, group and additional message are shown as plain text as well, so a fleet saved with a cut-off
-  link is shown correctly too. Mentions of everyone or here in these fields still do not notify anybody. The fitting link
-  itself is not stored or clickable.
-- **A loss inside a tracked fleet is no longer paid as a loss outside a fleet by accident.** When a member checks a
-  loss from **My SRP** as a loss outside a fleet, but fleet tracking shows that the character was in (or within the
-  polling grace of) a fleet whose SRP link is open, the check is now made with that fleet's link, so the fleet rules
-  apply (for example no cap for a loss outside a fleet). The page says which fleet it is and offers **Submit as a loss
-  outside a fleet anyway**, which needs a reason that the reviewers see on the claim. A loss that only has a PAP
-  registration, a loss whose fleet link is closed, and a loss the member may not claim through that link are not
-  switched. This is a change of behaviour: earlier builds only showed a hint. A new setting, **Losses inside a tracked
-  fleet** (**SRP Settings**), has three choices: switch to the fleet link automatically (the default for new and
-  upgraded sites), block the submit and ask for the fleet link, or only suggest it. **Administrators can set it back to
-  "Only suggest the fleet link" to keep the old behaviour.** A link that closes between the check and the submit gives a
-  claim outside a fleet with the warning "The SRP link of the fleet was closed before this claim was submitted". The way out **Submit as a loss outside a fleet anyway** is offered only when the loss passes the outside-fleet checks, and a check made before the setting was changed to "block" is refused at submit.
-- **The security status of a system is shown to SRP staff only** on a claim (members keep seeing the system name and, on
-  the check page, the reason a loss is not covered).
-- **"SRP managers may decide on their own claims" is now "SRP reviewers may decide on their own claims"** and only
-  covers decisions. Marking a claim paid and undoing a payment follow **SRP payers may mark their own claims paid**.
-  Because the old setting covered both, the upgrade copies it into the new one: a site that allowed its managers to
-  decide and pay their own claims keeps doing so, and every new site starts with both off.
-- **Opening an SRP link again is for reviewers.** A payer can still close a link and complete it, but no longer open
-  it again (opening lets members submit through it). The link card on the fleet page offers **Open SRP link** to
-  reviewers only.
-- Only reviewers edit links. The FC of a fleet cannot change the doctrine text or the report of the fleet's link.
-  Changing the category or the date of the link of the day ends its role as the link of the day, so the day's link of
-  the original category can be made again; claims already made keep their category.
-- A link no longer needs a fleet in the database; the SRP link pages, the claim page and the fleet card show the name,
-  the category and the date of a standing link where they show the fleet of a fleet link.
-- Pages and messages say reviewer or payer where they said SRP manager. Internal notes and the names of the people who
-  acted on a claim are visible to every SRP role.
-- **The default value source is now the zKillboard total value** (it includes cargo; aa-srp pays the total value).
-  Existing sites that saved their SRP settings once, or have claims, keep their choice. Only a site that never saved
-  its SRP settings and has no claim is switched, by the upgrade.
-- **The claim deadline** is checked as before but no longer makes pending claims "calculated with earlier settings"
-  when it changes. Its default stays 0 (no deadline) and an upgrade keeps the value a site had. The deadline is shown to
-  members on My SRP and on the SRP page of a link.
-- Checking a claim looks at the ban, the not-covered lists and, for a claim under a link, the link, in this order. The
-  capsule rule moved to the new **Not covered** group of the settings page; it behaves as before.
-- The stored calculation of a claim (policy snapshot) is version 2 and carries the category. Claims calculated before
-  keep their snapshot and are not reported as "calculated with earlier settings" by the upgrade.
+- **A loss inside a tracked fleet is no longer paid as a loss outside a fleet by accident.** When a member checks a loss
+  as a loss outside a fleet but fleet tracking shows the character was in a fleet whose SRP link is open, the check now
+  uses that fleet's link. The member can still **Submit as a loss outside a fleet anyway** with a reason the reviewers
+  see. The new setting **Losses inside a tracked fleet** has three choices: switch automatically (the default), block
+  the submit, or only suggest the fleet link (the behaviour of earlier builds).
+- **"SRP managers may decide on their own claims" is now "SRP reviewers may decide on their own claims"** and covers
+  decisions only; paying follows **SRP payers may mark their own claims paid**. The upgrade copies the old value into the
+  new setting, so a site that allowed both keeps doing so.
+- Opening an SRP link again, editing links (doctrine text, report, category, date) and making standing links are for
+  reviewers; a payer can still close and complete a link. Pages say reviewer or payer where they said SRP manager.
+- The security status of a system is shown to SRP staff only.
+- **The default value source is now the zKillboard total value** (it includes cargo; aa-srp pays the total value). Only a
+  site that never saved its SRP settings and has no claim is switched, by the upgrade.
+- The claim deadline no longer makes pending claims "calculated with earlier settings" when it changes; an upgrade keeps
+  the value a site had.
+- Custom doctrine names (fleets, pings, PAP links, payout rules) keep only the plain name, accept a pasted fitting link
+  of up to 4000 characters and report an error instead of cutting a name longer than 255 characters. The MOTD and the
+  ping show doctrine, form-up place, group and additional message as plain text, so a pasted fitting link can no longer
+  break the Comms, Logi, Boost and SRP lines.
+- The pruning of departed members refuses to run when no Member alliance ID matches any user, or when it would remove
+  more than **Largest share of departed members to prune** (default 50 percent) of the users with PAP history;
+  `fleetops_prune_history --force` overrides it, and the command exits with an error when it refused.
+- Log lines of the standalone pings and Send Ping go to the extension log of Alliance Auth like the rest of FleetOps.
+- The Django admin shows the audit log, PAP rows, fleet member records, role assignments, incentive periods and monthly
+  FC statistics read-only.
+- The models of FleetOps 0.2.x keep Django's default permissions (add, change, delete, view) in this release; taking them
+  away is planned for a later release. Do not give them to groups.
 
 ### Fixed
 
-- Deleting rows of any other app's model is fast again: the receiver for deleted groups was connected without a model,
-  which turned off Django's single-statement delete for the whole site. It is now connected to `auth.Group` and the
-  proxies of it (Alliance Auth's `Group`) only.
-- The PAP rows of a pilot whose Alliance Auth account was deleted are kept when the PAP of the fleet is recalculated.
-- A PAP link registration made while the fleet's end is being settled waits for the fleet's lock and is recalculated, as
-  a manual PAP row is.
-- A closed fleet can no longer be saved without an End Time (its duration ran on to "now" and bypassed the multiplier
-  tiers and the statistics rules).
-- `fleetops_import_aasrp --enrich`: the default pace is one lookup every two seconds, the pace of the zKillboard
-  slot; a lookup that finds the slot taken waits and tries again instead of stopping, and the run stops with a message
-  while zKillboard is paused instead of counting every remaining killmail as failed.
-- The SRP member report and its export list claims without a player and a main character per character instead of in one
-  "Unknown" row.
-- The pruning of departed members refuses to run when none of the Member alliance IDs matches any user or when more than
-  the share set on the settings page (**Largest share of departed members to prune**, 1 to 99 percent, default 50) of
-  the users with PAP history would be pruned; `fleetops_prune_history --force` overrides it. Retention of old rows is
-  not affected. The command exits with an error (and prints the counts as a warning) when it refused the pruning of
-  departed members, so a cron job notices; `--dry-run` shows the refusal and exits normally.
-- The SRP member report no longer reads every claim of the period just to show each member's latest corporation: the
-  database returns one row per member. Opening My SRP no longer reads the claims of the month twice, and the review and
-  payment filter lists read one row per corporation and FC instead of one per claim.
-- Looking up a found loss by its killmail (ignore, restore, claim, preview) uses a new index.
-- A manual ban and the automatic ban for an exhausted monthly limit can no longer both be created for the same member at
-  the same moment.
-- Automatic loss reading: the ship and system names of a character's new losses are looked up in one request that counts
-  against the run's request budget; after ESI asked for a pause (or the run is out of requests) no further lookups are
-  made, and the losses that still lack their names and place are read again in the next run instead of being stored
-  without them; the estimated time of a claim imported from aa-srp no longer marks the older killmails of the same
-  character as too old to claim; a loss that happened in the time of the latest fleet is found even when the member has
-  PAP in more than three open manual fleets; pressing **Read my characters now** while the general scan runs is no longer
-  dropped (the characters are read first in the next run and the task tries again for five minutes).
-- The value sweep no longer writes an old state over a killmail that a member's claim preview has put back into the
-  zKillboard queue a moment earlier.
-- **Recalculate** on the review queue handles up to 50 pending claims while you wait; with more, the recalculation runs
-  in the background (one at a time) and the page tells you, so the request cannot run into the time limit of the web server.
-- When a member pastes the in-game link of a loss that was imported from aa-srp, the audit entry of the completion now names
-  that member instead of leaving the actor empty.
-- A daily link is no longer made and closed again in the same minute: when the upkeep runs after the closing time of the
-  day (for example after the worker was down), no link is made for that day.
-- **The approver of a claim may not pay it** now also keeps a reviewer who changed the approved amount from paying the claim:
-  neither the person who approved it nor anyone who changed its amount can mark it paid; the payer who did neither can.
-  Claims imported from aa-srp and claims without a recorded approval are checked against the person of the last decision only.
-- The page of a claim imported from aa-srp no longer offers **Check fleet presence again** (the server refused it).
-- Importing from aa-srp again keeps updating the request that was imported for a killmail when aa-srp has a newer request of
-  the same kind for it, instead of skipping both.
-- Excel downloads are sent while they are written instead of being built in memory first, like the CSV downloads.
-- `fleetops_srp_import_payouts` without `--apply` now looks up the ship names too (read only), so a type ID that is no
-  EVE item type is reported before you apply, and the output names the ships whose name could not be looked up.
-- The fleet list asks once per page, instead of once per fleet, which fleets the viewer holds a role with FC credit in.
-- A fleet read that is due while another read of the same fleet is still running is tried again a few seconds later
-  instead of being dropped, so a renamed squad shows up without waiting for the next tracking poll.
-- A fleet that ended on its own because it could no longer be read now ends at the time it was last read, not when the
-  last of the polls that counted it as missing gave up. The duration, the multiplier tiers and the statistics rules
-  no longer run minutes (with long intervals, tens of minutes) too long.
-- A manual PAP replacement no longer counts next to a merge for the same character: once a merge brings the tracked PAP
-  back, the replacement has nothing left to replace.
-- The incentive page lists only the fleets that are waiting for a multiplier and count in the statistics; rejected and
-  excluded fleets no longer appear there.
-- Registering through a PAP link writes the registration first. Where the pilot is and what they fly are read in the
-  background, and a request that has spent about 20 seconds on ESI stops and lists the characters it did not reach, so a
-  slow ESI no longer ends in a gateway error with nothing registered.
-- The fleet page reads the PAP multiplier tiers once instead of five or six times.
-- The list of ship function rules on the Administration pages reads each rule's function with the rule instead of one
-  query per rule.
-- The Django admin shows the audit log, PAP rows, fleet member records, role assignments, incentive periods and monthly FC
-  statistics read-only: they can no longer be added, changed or deleted there (rows that belong to a fleet still go
-  when a user with the delete permissions of the fleet and its rows, normally a superuser, deletes the fleet).
-- A payout rule must name a ship: a type ID or name of any other item (a mineral, a module) is refused, and when neither
-  the SDE nor ESI can say, the rule is saved with a warning. Without the SDE this reads `GET /universe/groups/{id}`
-  from ESI once when the rule is saved.
-- Looking up the names of a pasted roster or a manual PAP entry in Alliance Auth uses the index of the name column first
-  and falls back to a case-insensitive search only for the names it did not find.
-- `python manage.py check` (and the start of the server) now warns, without ever stopping the site, when the Celery beat
-  entry of fleet tracking or the daily entry is missing, `SITE_URL` is empty, `"fleetops"` is not in
-  `APPS_WITH_PUBLIC_VIEWS`, `ATOMIC_REQUESTS` is on for the default database, or aa-charlink is installed while
-  `INSTALLED_APPS` does not contain the literal entry `"fleetops"`. The warnings are named `fleetops.W001` to
-  `fleetops.W006` and can be silenced with `SILENCED_SYSTEM_CHECKS`.
-- Log lines of the standalone pings and the Send Ping page now go to the extension log of Alliance Auth
-  (`extensions.log`) like those of the rest of FleetOps.
-- Code nothing used was removed: a few unused helper functions and constants and some unused imports. No setting,
-  page or data changes.
-
-### Documentation
-
-- The README and the configuration reference have an **Uninstalling** section (the order of the steps, `migrate
-  fleetops zero`, the beat entries and `local.py` lines, what stays), a **Data and privacy** section (what FleetOps
-  stores, how long, how to delete it) and a warning that the daily task `fleetops_prune_history` deletes old rows
-  according to the retention settings. English and Simplified Chinese.
-- The README says to finish the installation with `python manage.py check`, that `ATOMIC_REQUESTS` must stay off,
-  that the Django model permissions of FleetOps should not be given to groups, and lists every host FleetOps and the
-  browsers of its users connect to. The configuration reference lists the check warnings and says that a password in
-  a voice link's path or query is not recognised.
-
-### Known items
-
-- The models of FleetOps 0.2.x keep Django's default permissions (add, change, delete, view) in this release. Taking
-  them away is planned for a later release.
+- Deleting rows of other apps' models is fast again: the receiver for deleted groups is connected to `auth.Group` only.
+- PAP: rows of a pilot whose account was deleted are kept on recalculation; a registration made while the fleet's end is
+  settled is recalculated; a manual replacement no longer counts next to a merge for the same character; registering
+  through a PAP link writes the registration first and reads location and ship in the background.
+- A closed fleet cannot be saved without an End Time; a fleet that ended because it could no longer be read ends at the
+  time it was last read; a fleet read that is due while another one runs is tried again a few seconds later. The
+  incentive page no longer lists rejected and excluded fleets.
+- SRP: a manual ban and the automatic ban cannot both be created at once; the value sweep no longer overwrites a
+  killmail a preview has put back into the zKillboard queue; **Recalculate** handles up to 50 claims while you wait and
+  more in the background; a daily link is no longer made and closed again in the same minute; the SRP member report no
+  longer shows claims without a player in one "Unknown" row; a payout rule must name a ship; claims imported from aa-srp
+  no longer offer **Check fleet presence again**; importing again updates an imported request when aa-srp has a newer one.
+- Loss discovery: names and places of new losses are read in one counted request, no lookups are made after ESI asked for
+  a pause, and losses without names are read again in the next run; **Read my characters now** is no longer dropped while
+  the general scan runs.
+- `fleetops_import_aasrp --enrich` keeps the zKillboard pace, waits when the slot is taken and stops with a message while
+  zKillboard is paused. `fleetops_srp_import_payouts` without `--apply` also checks the ship names.
+- Faster pages: SRP member report, My SRP, review and payment filters, the fleet list, the fleet page, the ship function
+  rules and name lookups of pasted rosters; downloads in Excel format are streamed like CSV; one new index for found
+  losses.
 
 ### Upgrade notes
 
-The plain-text change to custom doctrine names and to the messages needs no migration and no setting; fleets that
-are already stored are cleaned when their messages are rendered, the stored text stays as it is, also when such a payout rule or fleet
-is saved again without a change to its doctrine name. Only the game's own tags are removed; text such as `<ABCD>` or
-a Discord timestamp stays.
+1. Add the scope `esi-killmails.read_killmails.v1` to the EVE application of the site (see above).
+2. Back up the database and install the release with `--no-deps`.
+3. Run `python manage.py migrate fleetops`. It applies the migrations `0022` to `0039` to a site on 0.2.0b2 (a site
+   on an older build reads the 0.2.0b2 notes in the
+   [CHANGELOG](https://github.com/yilifaer/aa-Fleet-ops/blob/v0.3.0b1/CHANGELOG.md) too).
+4. Run `python manage.py collectstatic --noinput`, then restart the web process, the Celery worker and Celery beat (the
+   worker has to know the new tasks). No beat entry is added; keep `fleetops_track_active_fleets` and the daily entry.
+5. Run `python manage.py check` once: the warnings name the lines of `local.py` that are missing.
 
-Restart the Celery worker as well: PAP link registrations now queue a small background task (`fill_registration_details`)
-that the worker has to know. Nothing else is needed for the fixes of the last list; they add no migration.
-After the upgrade run `python manage.py check` once: the new warnings tell you which lines of `local.py` are missing. They do not change anything and need no rollback step.
+What the migrations do to existing data:
 
-First add the scope `esi-killmails.read_killmails.v1` to the EVE application of the site on the EVE developer website
-(see above). Then back up the database, install the release with `--no-deps`, run `python manage.py migrate fleetops`,
-run `python manage.py collectstatic --noinput` (the SRP pages bring changed JavaScript: `fleetops.js` and `srp.js`) and
-restart the web process, the Celery worker and Celery beat. Migration `0024` adds the category table and columns and
-replaces the unique constraint of the payout table by one that includes the category. Migration `0025` creates the
-**Fleet** category, puts the claims made through a fleet link into it, and switches the value source of a site that
-never saved its SRP settings. Nothing else changes: amounts, statuses and limits of existing claims stay as they are,
-and the number of claims "calculated with earlier settings" is 0 after the upgrade. Migration `0026` registers the two
-new permissions (`review_srp`, `pay_srp`; Alliance Auth creates them when `migrate` finishes) and adds the two
-settings; migration `0027` copies **SRP reviewers may decide on their own claims** into **SRP payers may mark their
-own claims paid**. Nothing is granted to anybody: add `fleetops.review_srp` and `fleetops.pay_srp` to the groups of
-the people who should only review or only pay. Migration `0028` makes the fleet of an SRP link optional and adds the
-fields of a standing link, the name template, doctrine text and closing hours of a category and the two settings;
-migration `0029` only checks on the way back. Every existing link stays a fleet link and behaves as before.
-Migration `0030` adds the block lists and their switches and the ban settings to the SRP settings, the location fields
-and the origin to the SRP killmails, and the table of SRP bans. It fills in nothing: the block lists are empty (nothing is
-refused), killmails stored before keep empty location fields (they are looked up once, the next time somebody checks a
-claim for them, and never block anything while they are empty) and nobody is banned. The migration makes no request and
-grants no permission. The ban pages use the permissions of reviewers (`manage_srp` or `review_srp`), which the upgrade
-does not give to anybody. Keep the beat entry `fleetops_track_active_fleets` that the installation notes already name:
-the daily standing links and their closing run inside it. To use the block lists, open **SRP Settings**, press **Fill
-in the recommended list** (or tick your own), check it and save.
-Migration `0031` adds the tables of the found losses and of the scan schedule, the source of a claim (every existing
-claim is "pasted link") and the three settings of the loss discovery; it fills in nothing and the feature stays **off**.
-To use it, add the scope `esi-killmails.read_killmails.v1` to the EVE developer application of the site first, then
-open **SRP Settings**, group **Loss discovery**, switch **Find losses automatically** on and ask your members to
-authorize their characters (CharLink does it for all characters at once). The scan task runs inside the existing beat
-entry `fleetops_track_active_fleets`; restart the Celery worker and beat so that the new tasks are known. Characters that
-changed hands keep working for the new owner only.
-Migration `0032` adds the revision number of a claim, the payment batch table and a claim's batch, the table of insurance
-prices, the attackers and damage of a killmail and the five settings (members may change and swap, insurance estimate and
-level, rejection history days). It fills in nothing: old payments have no batch, old killmails no attackers (the review
-page then shows their number only; run `python manage.py fleetops_srp_backfill_killmails` to fill them in) and the insurance
-prices arrive with the first daily read. Members can change their pending claims and the insurance estimate is shown right
-after the upgrade; untick **Members can change their pending claims** or **Show the insurance estimate** to keep the old
-behaviour. Restart the Celery worker so the two new tasks are known. The public ESI insurance prices need no new scope.
-
-Migration `0033` adds the external ID of a claim (empty for every existing claim), the payout basis *Amount as recorded
-in aa-srp* and the claim event *Imported from aa-srp*; `0034` and `0035` change nothing going forward. Nothing is
-imported by the upgrade: run `fleetops_import_aasrp --dry-run` yourself, in the time you choose, when you move from
-aa-srp (the command needs aa-srp installed and decide on every pending request there first; pending requests are not imported).
-For the real run, choose a maintenance window: every batch holds the SRP lock, so SRP submissions and reviews of the whole
-site wait while it runs. Make sure the EVE application has the new scope first.
-
-The reports and the new files of the SRP rework (period selection, `srp-trend` and the others) need no migration, no
-setting and no permission: everyone who could open the SRP summaries can open the reports, except the reviewer and
-payer reports, which are for SRP staff only. Killmails stored before 0.3.0b1 show the region "Unknown" in the region
-report until `python manage.py fleetops_srp_backfill_killmails` has read them. The code that read the month of the
-summaries now reads a period; nothing is stored differently.
-
-Migration `0039` adds the setting **Losses inside a tracked fleet** with the value "Switch to the fleet link
-automatically" for every site and changes no data. Claims that exist are not touched. Set the setting to "Only suggest
-the fleet link" in **SRP Settings** if members should keep entering such losses outside a fleet.
-Migration `0038` only changes the help text of **The approver of a claim may not pay it** (no column, no data); the rule
-now applies to the approver and to everyone who changed the approved amount. Migration `0037` adds one index to the found losses (SRP loss table) and changes no data; on a large table it takes
-a moment. Migration `0036` adds one column to the FleetOps settings (**Largest share of departed members to prune**, percent, default
-50): the share of the users with PAP history that one pruning of departed members may remove. If the daily task logs "Departed
-members were not pruned", check **Member alliance IDs** before using `fleetops_prune_history --force`.
-This does not concern an upgrade from a release. A site that followed the development branch may already have the column,
-because one development build added it in `0035`: there `migrate` stops at `0036` because the column already exists
-(PostgreSQL: "already exists"; MySQL/MariaDB: error 1060 "Duplicate column name"), and nothing is changed. Run
-`python manage.py migrate fleetops 0036 --fake` once, then `python manage.py migrate` as usual. On SQLite `0036` does
-not stop but rebuilds the table and sets the share back to 50; set it again if you had changed it.
+- Nothing is granted to any group, state or user. Add `fleetops.review_srp` and `fleetops.pay_srp` to the groups of
+  people who should only review or only pay; `manage_srp` keeps meaning both.
+- Existing claims keep their amounts, statuses and limits. Claims made through a fleet link get the **Fleet** category.
+  Every existing link stays a fleet link. Old payments have no batch; old killmails have no attackers or location until
+  `fleetops_srp_backfill_killmails` has read them (the region report shows "Unknown" until then).
+- The block lists of **Not covered** are empty, nobody is banned and the loss discovery is off. To use them, open **SRP
+  Settings**, press **Fill in the recommended list** and save, and switch **Find losses automatically** on.
+- **Members can change their pending claims** and **Show the insurance estimate** are on after the upgrade; untick them
+  to keep the old behaviour.
+- **Changed default:** the setting **Losses inside a tracked fleet** is "Switch to the fleet link automatically" for
+  every site. Set it to "Only suggest the fleet link" if members should keep entering such losses outside a fleet.
+- **Daily pruning:** the daily task `fleetops_prune_history` deletes old rows according to the retention settings, and
+  now refuses to prune departed members when it would remove more than the share set in the settings. If the task logs
+  "Departed members were not pruned", check **Member alliance IDs** before using `--force`.
+- Nothing is imported from aa-srp by the upgrade. Run `fleetops_import_aasrp --dry-run` yourself and decide on every
+  pending request in aa-srp first.
+- A site that ran a development build of this release may already have the column added by migration `0036`; then
+  `migrate` stops with "already exists" (PostgreSQL) or error 1060 "Duplicate column name" (MySQL/MariaDB). Run
+  `python manage.py migrate fleetops 0036 --fake` once, then `python manage.py migrate`.
 
 ### Rollback notes
 
-**The order that works.** (1) Switch the new functions off (below) if you want to stay on this version a while longer.
-(2) To go back to 0.2.x: export what you need (categories, standing links, bans, batches, reports), run
+**The order that works.** (1) To stay on this version a little longer, switch the new functions off (below). (2) To go
+back to 0.2.x: export what you need (categories, standing links, bans, batches, reports), run
 `python manage.py fleetops_import_aasrp --undo` if the aa-srp history was imported, delete or generalise the payout rules
-of a category and deal with the standing links that have claims (delete the link: its claims stay, without a link, as
-claims outside a fleet; or restore the backup taken before the upgrade). (3) Run
-`python manage.py fleetops_srp_rollback_check` until every line passes. (4) Run `python manage.py migrate fleetops 0023`.
-(5) Only then install the previous package. **Migrations first, package second:** the older package does not know the
-newer migrations and could not undo them.
+of a category, and deal with the standing links that have claims (delete the link: its claims stay, without a link, as
+claims outside a fleet; or restore the backup taken before the upgrade). (3) Run `python manage.py fleetops_srp_rollback_check`
+until every line passes. (4) Run `python manage.py migrate fleetops 0023` if you go back to the 0.2.0b3 build (commit `66a1eb8`), or
+`python manage.py migrate fleetops 0021` if you go back to the 0.2.0b2 build (commit `01adbc7`; `0022` and `0023`
+belong to 0.2.0b3, and leaving them in place keeps the column `members_are_leaders`, which the 0.2.0b2 code does not
+know). (5) Only then put the old code back. 0.2.0b2 and 0.2.0b3 were never released, so there is no package for them:
+reinstall the wheel or the commit that the site used before, or install from a Git tag that you set on that commit.
+**Migrations first, package second:** the older package does not know the newer migrations and cannot undo them.
 
-The cleaning of doctrine names and message texts changes code only: going back leaves the names saved in plain text as
-they are and the old version shows rich text in the messages again.
+The rollback is refused, and the database is left as it is, while:
 
-The fixes listed under Fixed change code only: going back to an earlier build brings the old behaviour back (the PAP of
-deleted accounts is removed again by the next recalculation; the approver rule looks at the last decider only).
+- a payout rule belongs to a category (the rule IDs are listed; delete them or make them general first),
+- a link without a fleet has claims, or a link came from aa-srp (the codes are listed). Delete those links in the Django
+  shell (their claims stay, without a link, as claims outside a fleet; imported links lose their import data):
+  `python manage.py shell -c "from django.apps import apps; apps.get_model('fleetops', 'SrpFleetLink').objects.filter(code__in=['code-1', 'code-2']).delete()"`
+  with the codes from the message, or restore the backup,
+- claims were imported from aa-srp (run `fleetops_import_aasrp --undo` first; the imported history is lost by the undo).
 
-**What the rollback loses:** the categories and the category of every claim, standing links and the new fields of every link,
-payment batches, bans, insurance prices, the attackers and location fields of the killmails, the found losses and their
-scan state, the revision numbers of claims and the new settings. Claims, amounts, statuses and payments stay. The permission
-rows `review_srp` and `pay_srp` and the killmail-scope tokens members authorized stay in the database; they do no harm.
+Migration `0035` is the guard for the whole way back (`0036` runs the same checks first); the check command makes the
+same checks and only reads.
+
+**What the rollback loses:** the categories and the category of every claim, standing links and the new fields of every
+link (the doctrine text, the report link, the completion, the category and the others, also on fleet links), payment
+batches, bans with their reasons and notes, insurance prices, attackers and location fields of killmails, the found
+losses and their scan state, the source and revision number of claims, the external IDs of claims, and the new settings.
+Claims, amounts, statuses and payments stay. The value source is not changed back. The permission rows `review_srp` and
+`pay_srp` and the tokens members authorized stay in the database, harmless; remove the two permissions from your groups
+before rolling back, because the older version does not know them and its pages need `manage_srp`. Self-payment changes too: after the rollback `manage_srp` holders may pay their own
+claims whenever **SRP managers may decide on their own claims** (the old name of **SRP reviewers may decide on their
+own claims**) is on, whatever **SRP payers may mark their own claims paid** said; switch the first one off before rolling
+back if they must not. The reports and the
+new files store nothing: the previous package removes the report page and the new files, and the older files lose the
+columns added at their end. Code-only changes (names in plain text, fixes) simply behave as the older code does.
 
 **To behave like 0.2.x without rolling back:** untick **Find losses automatically**, **Make a standing link every day**,
 **Members can change their pending claims** and **Show the insurance estimate**, clear the block lists of **Not covered**,
-and set **Value source** back to *zKillboard fitted value* if the upgrade switched it (migration `0025` does for a site
-that never saved its SRP settings). Keep using `manage_srp`: it still means review and pay together; `review_srp` and
-`pay_srp` are only needed for split roles.
+set **Losses inside a tracked fleet** to "Only suggest the fleet link", and set **Value source** back to *zKillboard
+fitted value* if the upgrade switched it. Keep using `manage_srp`: it still means review and pay together.
 
-Roll back the migrations first (`python manage.py migrate fleetops 0023`), then install the previous package.
-The rollback is refused, and the database is left as it is, while any payout rule belongs to a category: without the
-category column such a rule would apply to every claim and could pay too much. The message lists the rule IDs only.
-Delete those rules or make them general (**All categories**) first. The categories themselves, the category of each
-claim and the category settings are lost by the rollback; export what you need before. Claims, amounts and statuses
-stay. The value source is not changed back. Rolling back `0026` and `0027` removes the two new settings; the older
-version again lets `manage_srp` holders pay their own claims exactly when **may decide on their own claims** is on.
-Migration `0029` also refuses to go back while a link without a fleet has claims (a standing link that members used) or
-came from another SRP app; the message lists the codes of those links only. Nothing in the product deletes a link, so either restore the backup, or delete those links in the
-Django shell (their claims stay, without a link, as claims outside a fleet; imported links lose their import data):
-`python manage.py shell -c "from django.apps import apps; apps.get_model('fleetops', 'SrpFleetLink').objects.filter(code__in=['code-1', 'code-2']).delete()"`
-with the codes from the message. The rollback also removes the doctrine text, the report link, the completion, the
-category and the other new fields of every link, links of a fleet included; export them first if you need them. Standing links without claims are deleted by the
-rollback; the fleet of a link is required again. The permission rows `review_srp` and `pay_srp` stay in the database, harmless, and nobody holds them unless you gave
-them out; remove them from your groups before rolling back, because the older version does not know them and its
-pages need `manage_srp`.
-Rolling back `0030` drops the block lists and their switches, the ban settings, the location fields of the SRP
-killmails and the table of SRP bans: the bans, with the reasons and internal notes, are lost (export them first if you
-need them), and a ban that was in force no longer stops anybody. Claims are not changed. Before rolling back, switch
-the functions off: untick **Make a standing link every day** and clear the block lists, which is enough to behave like the
-previous version.
-Rolling back `0031` drops the tables of the found losses and of the scan schedule (they are read from ESI again if the
-feature is switched on later), the source of every claim ("found automatically" claims become indistinguishable from pasted
-ones) and the three loss discovery settings. Claims, amounts and statuses are not changed. To behave like the previous
-version before rolling back, switch **Find losses automatically** off: the page, the scan and the CharLink item go
-away, and **Members must authorize loss reading ...** stops blocking at once. The tokens members authorized stay in
-Alliance Auth, harmless.
-Rolling back `0032` drops the payment batches (the claims keep their status, amount, payer and payment date, and lose only
-the batch they were paid in), the insurance prices, the stored attackers, the revision numbers and the five settings.
-Claims, amounts and statuses are not changed. Export the batches first if you need them. To behave like the previous
-version before rolling back, untick **Members can change their pending claims**.
-Rolling back `0039` drops the setting **Losses inside a tracked fleet**; claims already made keep their scope and link. `0039` runs the rollback guard before it drops the column, so a way back below `0035` is refused first. Rolling back `0038` restores the old help text and changes nothing else. Rolling back `0037` drops the index it added; nothing else changes. Rolling back `0033` drops the external ID of the claims. **`0035` is the guard for the whole way back**; `0036`, which adds the
-pruning share to the settings, runs the same checks first and only drops that column when they
-let the rollback go on (then `0035` checks once more). It checks everything that makes going back unsafe, once and before anything is changed, and stops the
-rollback (to `0023` or to any migration of this version, also a partial one such as `0032`) with a list while:
-payout rules belong to a category (the rule IDs are listed), links without a fleet have claims or links were imported
-from aa-srp (the link codes are listed), or claims were imported from aa-srp ("Run fleetops_import_aasrp --undo first").
-Run `python manage.py fleetops_srp_rollback_check` first: it makes the same checks, only reads, and prints what is in the
-way. The steps are: `fleetops_import_aasrp --undo`, delete or generalise the rules and delete the links it lists, run the
-check until everything passes, then `python manage.py migrate fleetops 0023`, then install the previous package.
-`0034` and the older guards (`0025`, `0029`) remain a second line of defence. The imported history is lost by the
-undo; export the reports you need first, or restore the backup instead.
-The reports and the period selection of the SRP files store nothing and have no migration: installing the previous
-package removes the report page and the new files, and bookmarks to them stop working. The older files lose the columns
-added at their end.
-
-## [0.2.0b3] - Unreleased
+## [0.2.0b3] - not released separately; included in 0.3.0b1
 
 A small addition for alliances that keep two Alliance Auth groups per small group and record no group leaders.
-Install it like the previous pre-release (`pip install --no-deps aa-fleetops==0.2.0b3`).
+Included in 0.3.0b1; install that release.
 
 ### Added
 
@@ -498,14 +243,13 @@ restart the web process, the Celery worker and Celery beat. Migration `0022` add
 leaves it off, so nothing changes until an administrator turns it on. If you come from 0.2.0b1 or earlier, read
 the notes of 0.2.0b2 below as well.
 
-## [0.2.0b2] - Unreleased
+## [0.2.0b2] - not released separately; included in 0.3.0b1
 
 The second pre-release. The 0.2.0b1 build was a test build that was never published, so this section covers
 everything since 0.1.0a5: pre pings and a new ping and MOTD, PAP rules that are applied when a fleet closes, a Fleet
 tab to manage the fleet from the web page, monthly statistics with exports, FC points, FleetOps SRP, group pings
 and group fleets, English and Simplified Chinese pages, a refined interface in every Alliance Auth theme, and new
-documentation. Install it with the version named (`pip install --no-deps aa-fleetops==0.2.0b2`); once a stable
-release exists, pip skips pre-releases unless you name the version or pass `--pre`.
+documentation. Included in 0.3.0b1; install that release.
 
 ### Changes since the 0.2.0b1 test build
 
@@ -660,7 +404,7 @@ The migration gives `request_srp` to every group, state and user that holds `fle
 of the upgrade; give it by hand to groups that get `basic_access` later. `manage_srp` goes to nobody, because it
 decides on money: add it to your SRP managers (and `view_all_fleets` if they should open fleets from claims). FC
 leads need `fleetops.manage_fleets` to approve manual records. The recommended groups are in
-[the permissions reference](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/permissions.md).
+[the permissions reference](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/docs/permissions.md).
 
 **Keep Celery running.** End Fleet finishes in a Celery task. The minute beat also completes ends whose task
 was lost, cancels starts that were interrupted and fills in SRP loss values. Kicks of more than 10 members,

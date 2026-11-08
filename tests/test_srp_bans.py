@@ -398,7 +398,7 @@ class BannedClaimTests(BanBase):
 
 
 class AutoBanTests(BanBase):
-    """Decision 24 (3): a member whose personal limit is used up and who still submits is banned to the end of the month."""
+    """A member whose personal limit is used up and who still submits is banned to the end of the month."""
 
     def setUp(self):
         super().setUp()

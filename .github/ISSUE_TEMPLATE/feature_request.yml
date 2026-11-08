@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Describe the problem first; the solution can follow. Questions about how FleetOps works belong in
-        [Discussions](https://github.com/yilifaer/aa-fleetops/discussions).
+        [Discussions](https://github.com/yilifaer/aa-Fleet-ops/discussions).
   - type: textarea
     id: problem
     attributes:

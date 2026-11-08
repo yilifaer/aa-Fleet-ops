@@ -29,7 +29,7 @@ def group_deleted(sender, instance, **kwargs):
 
     The group's access row and its places in the ping channels are deleted by the database with the group;
     fleets and pings keep the group's name. A ping channel whose only group was this one is an alliance channel
-    again (owner decision 5-7), so its switch "Alliance FCs can use this channel" is turned back on to match;
+    again, so its switch "Alliance FCs can use this channel" is turned back on to match;
     a channel that keeps another group keeps its switch. The audit entry has no actor: the deletion happened in
     Alliance Auth. It runs in the transaction of the deletion, so it is kept only when the group is gone.
     """

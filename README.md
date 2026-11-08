@@ -4,9 +4,9 @@ Fleet operations for [Alliance Auth](https://gitlab.com/allianceauth/allianceaut
 Discord, sets the MOTD and starts tracking from one page. FleetOps then follows the fleet, grants PAP when it
 closes, and feeds the statistics, FC points and SRP of the alliance.
 
-English | [简体中文](https://github.com/yilifaer/aa-fleetops/blob/dev/README.zh-CN.md)
+English | [简体中文](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/README.zh-CN.md)
 
-Status: beta. The current pre-release is 0.3.0b1 (0.2.0b1 was a test build that was not published); read the CHANGELOG before every upgrade.
+Status: beta. The current pre-release is 0.3.0b1; read the CHANGELOG before every upgrade.
 
 ## Features
 
@@ -138,14 +138,14 @@ the versions of Alliance Auth and django-esi.
 ```bash
 source /path/to/venv/bin/activate
 
-# from PyPI (0.3.0b1 is a pre-release, so name the version)
-pip install --no-deps aa-fleetops==0.3.0b1
-
-# or from the wheel of a GitHub Release
-pip install --no-deps https://github.com/yilifaer/aa-fleetops/releases/download/v0.3.0b1/aa_fleetops-0.3.0b1-py3-none-any.whl
+# from the wheel of the GitHub Release
+pip install --no-deps https://github.com/yilifaer/aa-Fleet-ops/releases/download/v0.3.0b1/aa_fleetops-0.3.0b1-py3-none-any.whl
 
 # or from Git
-pip install --no-deps "git+https://github.com/yilifaer/aa-fleetops.git@v0.3.0b1"
+pip install --no-deps "git+https://github.com/yilifaer/aa-Fleet-ops.git@v0.3.0b1"
+
+# or from PyPI, only once the version is published on PyPI (0.3.0b1 is a pre-release, so name the version)
+pip install --no-deps aa-fleetops==0.3.0b1
 ```
 
 On a site without the dependencies, leave out `--no-deps`. The extras `aa-fleetops[fittings]` and
@@ -217,11 +217,11 @@ Finally run `python manage.py check`. FleetOps adds warnings (never errors, and 
 missing beat entry, an empty `SITE_URL`, a missing `"fleetops"` in `APPS_WITH_PUBLIC_VIEWS`, `ATOMIC_REQUESTS`
 turned on, and aa-charlink installed while `INSTALLED_APPS` does not list `"fleetops"` literally
 (`fleetops.W001` to `fleetops.W006`, see
-[Configuration](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/configuration.md)). A site that does not want
+[Configuration](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/docs/configuration.md)). A site that does not want
 one of them can silence it with `SILENCED_SYSTEM_CHECKS = ["fleetops.W004"]`. `ATOMIC_REQUESTS` must stay off (the Alliance Auth default): FleetOps
 locks rows for the SRP limits and for the end of a fleet, which needs each request to run outside one transaction.
 
-**Docker.** Add `aa-fleetops==0.3.0b1` to the requirements of the image that your web, worker and beat services
+**Docker.** Add the line `aa-fleetops @ https://github.com/yilifaer/aa-Fleet-ops/releases/download/v0.3.0b1/aa_fleetops-0.3.0b1-py3-none-any.whl` (or `aa-fleetops==0.3.0b1`, only once that version is published on PyPI) to the requirements of the image that your web, worker and beat services
 share, rebuild it and add the `local.py` lines above. Then open a shell in the web container and run the commands
 there with the `auth` shortcut of the Alliance Auth image:
 
@@ -251,12 +251,12 @@ without the last one, loss discovery cannot be authorized and everything else wo
 
 ## First steps
 
-1. Create the groups of [permissions](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/permissions.md) in Alliance Auth.
+1. Create the groups of [permissions](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/docs/permissions.md) in Alliance Auth.
    At least `fleetops.basic_access`, `fleetops.start_fleet` and `fleetops.manage_own_fleet` for an FC, and
    `fleetops.manage_configuration` for the administrators.
 2. Open **Administration** (`/fleetops/configuration/`): add fleet types, comms presets, Logi and Boost
    channels, and a ping channel with the Discord webhook. See the
-   [configuration reference](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/configuration.md).
+   [configuration reference](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/docs/configuration.md).
 3. Open **Start Fleet** and choose **Authorize / Refresh Fleet ESI**.
 4. Create an EVE fleet, make the FC character the fleet boss, fill the form and choose **SEND PING & START
    FLEET**. The fleet page shows the result of every step.
@@ -275,7 +275,7 @@ Without a ping channel, Start Fleet offers the ping for copying.
 | SRP reviewer (decides only) | `basic_access`, `review_srp`, `view_all_fleets` |
 | SRP payer (pays only) | `basic_access`, `pay_srp`, `view_all_fleets` |
 
-Every permission and every row-level rule is in [docs/permissions.md](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/permissions.md).
+Every permission and every row-level rule is in [docs/permissions.md](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/docs/permissions.md).
 Do not give groups the add, change, delete or view permissions that Django lists for the FleetOps models: they
 only matter in the Django admin, which FleetOps does not need for any setting.
 
@@ -289,7 +289,7 @@ only matter in the Django admin, which FleetOps does not need for any setting.
 | Alliance Auth Discord service | Reading the server's roles for mentions |
 | aa-charlink | The FleetOps scopes on the CharLink page |
 
-FleetOps works without all of them. See [docs/integrations.md](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/integrations.md).
+FleetOps works without all of them. See [docs/integrations.md](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/docs/integrations.md).
 
 ## Upgrading
 
@@ -297,28 +297,31 @@ FleetOps works without all of them. See [docs/integrations.md](https://github.co
 2. **Before the upgrade to 0.3.0b1**, add the scope `esi-killmails.read_killmails.v1` to the EVE application that belongs to
    your `ESI_SSO_CLIENT_ID` on the EVE developer website. Without it the SSO login of the loss reading ends with an
    "invalid scope" error and members cannot authorize their characters (everything else keeps working).
-3. Install the new release into the virtual environment (`pip install --no-deps aa-fleetops==<version>`).
-4. Read the upgrade notes of the release in the [CHANGELOG](https://github.com/yilifaer/aa-fleetops/blob/dev/CHANGELOG.md).
+3. Install the new release into the virtual environment from the wheel of its GitHub Release (`pip install --no-deps <wheel URL>`; `aa-fleetops==<version>` works only once that version is on PyPI).
+4. Read the upgrade notes of the release in the [CHANGELOG](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/CHANGELOG.md).
 5. Run `python manage.py migrate fleetops` and `python manage.py collectstatic --noinput`.
 6. Restart the web process, the Celery worker and Celery beat.
 
-**Going back from 0.3.0b1 to 0.2.x.** Roll the migrations back first (`python manage.py migrate fleetops 0023`), then
-install the previous package. Run `python manage.py fleetops_srp_rollback_check` before: it lists what stops the
+**Going back from 0.3.0b1 to 0.2.x.** Roll the migrations back first (`python manage.py migrate fleetops 0023` for the
+0.2.0b3 build, `python manage.py migrate fleetops 0021` for the 0.2.0b2 build), then put the old code back. Neither build
+was released, so reinstall the wheel or the commit that the site used before. Run `python manage.py fleetops_srp_rollback_check` before: it lists what stops the
 rollback (payout rules of a category, standing links with claims, imported history) and changes nothing. The
-[CHANGELOG](https://github.com/yilifaer/aa-fleetops/blob/dev/CHANGELOG.md) has the steps and the list of what the rollback loses.
+[CHANGELOG](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/CHANGELOG.md) has the steps and the list of what the rollback loses.
 
 ## Uninstalling
 
 Removing FleetOps deletes its data, so back up the database first and export what you want to keep (the SRP pages
 have CSV and Excel exports). Do the steps in this order; the app has to be installed while its tables are removed.
 
-1. Remove the two `CELERYBEAT_SCHEDULE["fleetops_..."]` entries from `local.py` (FleetOps creates no schedule rows in
-   the database) and restart Celery beat, so no task is queued for the app any more.
+1. Remove the two `CELERYBEAT_SCHEDULE["fleetops_..."]` entries from `local.py` (FleetOps itself creates no schedule
+   rows, but Celery beat stores the entries of `local.py` in the database and never removes them). Then delete or disable
+   the periodic tasks `fleetops_track_active_fleets` and `fleetops_prune_history` in the Django admin under **Periodic
+   Tasks**, and restart Celery beat, so no task is queued for the app any more.
    `manage.py check` then warns `fleetops.W001` and `fleetops.W002` until step 4; ignore them, do not add the
    entries back.
 2. Optional: run `python manage.py fleetops_srp_rollback_check`. It only reads and lists what would stop step 3
    (payout rules of a category, links with claims, claims imported from aa-srp); fix those first, as the
-   [CHANGELOG](https://github.com/yilifaer/aa-fleetops/blob/dev/CHANGELOG.md) explains.
+   [CHANGELOG](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/CHANGELOG.md) explains.
 3. Run `python manage.py migrate fleetops zero`. This drops every FleetOps table and all the data in them. On MariaDB
    and MySQL a migration that fails halfway cannot be rolled back, so keep the backup.
 4. Remove `"fleetops"` from `INSTALLED_APPS` and the `APPS_WITH_PUBLIC_VIEWS += ["fleetops"]` line from `local.py`.
@@ -369,36 +372,36 @@ note that this changes the history that FleetOps statistics and reports are buil
 FleetOps follows the language menu of Alliance Auth. English and Simplified Chinese are available for the web
 pages. Discord pings and in-game MOTDs are always English, whatever the site language: FleetOps's own words in
 them are never translated, and text that administrators write in a template is sent as written. To improve a
-translation or add a language, see [docs/translations.md](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/translations.md).
+translation or add a language, see [docs/translations.md](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/docs/translations.md).
 
 ## Documentation
 
 | Document | For |
 |---|---|
-| [Configuration reference](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/configuration.md) | Administrators: every Administration page and setting, the PAP and statistics rules, SRP |
-| [Message templates](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/message-templates.md) | Administrators: Ping and MOTD variables and the built-in templates |
-| [Permissions](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/permissions.md) | Administrators: permissions and recommended groups |
-| [Integrations](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/integrations.md) | Administrators: optional apps |
-| [SRP providers](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/srp-providers.md) | Developers: SRP link providers |
-| [Architecture](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/architecture.md) | Developers: code layout and flows |
-| [Translations](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/translations.md) | Translators |
-| [Manual testing](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/manual-testing.md) | Maintainers: release checklist |
-| [Releasing](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/releasing.md) | Maintainers: release process |
+| [Configuration reference](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/docs/configuration.md) | Administrators: every Administration page and setting, the PAP and statistics rules, SRP |
+| [Message templates](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/docs/message-templates.md) | Administrators: Ping and MOTD variables and the built-in templates |
+| [Permissions](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/docs/permissions.md) | Administrators: permissions and recommended groups |
+| [Integrations](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/docs/integrations.md) | Administrators: optional apps |
+| [SRP providers](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/docs/srp-providers.md) | Developers: SRP link providers |
+| [Architecture](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/docs/architecture.md) | Developers: code layout and flows |
+| [Translations](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/docs/translations.md) | Translators |
+| [Manual testing](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/docs/manual-testing.md) | Maintainers: release checklist |
+| [Releasing](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/docs/releasing.md) | Maintainers: release process |
 
 The configuration reference, permissions, message templates and integrations also exist in Simplified Chinese
-in [docs/zh-CN](https://github.com/yilifaer/aa-fleetops/tree/dev/docs/zh-CN).
+in [docs/zh-CN](https://github.com/yilifaer/aa-Fleet-ops/tree/dev/docs/zh-CN).
 
 ## Help and contributing
 
-Ask questions in [Discussions](https://github.com/yilifaer/aa-fleetops/discussions). Report bugs, request
-features and send translation fixes through [Issues](https://github.com/yilifaer/aa-fleetops/issues/new/choose).
+Ask questions in [Discussions](https://github.com/yilifaer/aa-Fleet-ops/discussions). Report bugs, request
+features and send translation fixes through [Issues](https://github.com/yilifaer/aa-Fleet-ops/issues/new/choose).
 Report security problems privately, as described in
-[SECURITY.md](https://github.com/yilifaer/aa-fleetops/blob/dev/SECURITY.md). Development setup, tests and
-coding rules are in [CONTRIBUTING.md](https://github.com/yilifaer/aa-fleetops/blob/dev/CONTRIBUTING.md).
+[SECURITY.md](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/SECURITY.md). Development setup, tests and
+coding rules are in [CONTRIBUTING.md](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/CONTRIBUTING.md).
 
 ## License
 
 AA FleetOps is free software: you can redistribute it and modify it under the terms of the GNU General Public
-License version 3. See [LICENSE](https://github.com/yilifaer/aa-fleetops/blob/dev/LICENSE).
+License version 3. See [LICENSE](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/LICENSE).
 
 Copyright (C) 2026 yilifaer and AA FleetOps contributors.

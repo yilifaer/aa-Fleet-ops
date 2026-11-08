@@ -954,7 +954,7 @@ class RecalculateNoticeTests(TestCase):
 
 class LinkToggleTests(RolePagesBase):
     def test_every_srp_role_closes_a_link_and_reviewers_open_it(self):
-        # LINK (INT-9, decision 22): closing is open to every SRP role; opening a link again lets members submit
+        # LINK (INT-9): closing is open to every SRP role; opening a link again lets members submit
         # through it, so a payer may not. Before this phase every role could open it as well.
         for user in (self.reviewer, self.payer, self.manager):
             with self.subTest(user=user.username):

@@ -310,7 +310,7 @@ class AuthorizeViewTests(AuthBase):
         self.assertIn("Loss reading is authorized. Your recent losses will appear shortly.", self.messages(response))
 
     def test_a_character_of_somebody_else_is_refused_and_not_read(self):
-        # Alliance Auth moves a character to whoever logs in as it (decision 29), so this state cannot come from a
+        # Alliance Auth moves a character to whoever logs in as it, so this state cannot come from a
         # real login; it is built directly: a token of this member for a character that is owned by another member.
         client = self.login()
         foreign = f.main_of(self.other)

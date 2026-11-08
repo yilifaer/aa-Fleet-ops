@@ -168,7 +168,7 @@ def alliance_channels(user):
     """Active channels for alliance pings: every one for FC leads; for FCs those without a group or with
     "Alliance FCs can use this channel"; none for anybody else.
 
-    A channel without any group is an alliance channel whatever its stored switch says (owner decision 5-7).
+    A channel without any group is an alliance channel whatever its stored switch says.
     """
     active = DiscordWebhook.objects.filter(is_active=True)
     if _has(user, MANAGE_FLEETS):

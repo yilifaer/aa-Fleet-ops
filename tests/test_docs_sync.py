@@ -136,7 +136,7 @@ class LayoutTests(SimpleTestCase):
     def test_the_readme_works_on_pypi(self):
         text = read(ROOT / "README.md")
 
-        self.assertIn("https://github.com/yilifaer/aa-fleetops/blob/dev/README.zh-CN.md", text)
+        self.assertIn("https://github.com/yilifaer/aa-Fleet-ops/blob/dev/README.zh-CN.md", text)
         relative = [
             target
             for target in re.findall(r"\]\(([^)\s]+)\)", text)
@@ -370,7 +370,7 @@ class InstallDocsTests(SimpleTestCase):
 
         self.assertIn("GNU General Public License version 3", text)
         self.assertIn("yilifaer and AA FleetOps contributors", text)
-        self.assertEqual(fleetops.__url__, "https://github.com/yilifaer/aa-fleetops")
+        self.assertEqual(fleetops.__url__, "https://github.com/yilifaer/aa-Fleet-ops")
 
 
 class DefaultsInDocsTests(SimpleTestCase):

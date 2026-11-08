@@ -22,6 +22,7 @@ from .test_docs_sync import load_tool
 
 ROOT = Path(fleetops.__file__).resolve().parent.parent
 VERSION = "0.2.0b1"
+RELEASED_VERSIONS = ("0.3.0b1", "0.2.0b3", "0.2.0b2")
 
 CHANGELOG = """# Changelog
 
@@ -167,7 +168,7 @@ class CheckDocsTests(TemporaryTree):
         self.assertEqual(self.problems(), [])
 
     def test_absolute_links_into_the_repository_are_checked_against_the_tree(self):
-        base = "https://github.com/yilifaer/aa-fleetops"
+        base = "https://github.com/yilifaer/aa-Fleet-ops"
         self.write("README.md", f"# Title\n\n[ok]({base}/blob/dev/docs/a.md#part) [bad]({base}/blob/dev/docs/b.md)\n")
         self.write("docs/a.md", "# A\n\n## Part\n")
 
@@ -177,7 +178,7 @@ class CheckDocsTests(TemporaryTree):
         self.assertIn("docs/b.md", found[0])
 
     def test_pages_of_the_repository_that_are_not_files_are_left_alone(self):
-        base = "https://github.com/yilifaer/aa-fleetops"
+        base = "https://github.com/yilifaer/aa-Fleet-ops"
         self.write("README.md", f"# Title\n\n[i]({base}/issues) [d]({base}/discussions) [r]({base}/releases/latest)\n")
 
         self.assertEqual(self.problems(), [])
@@ -513,3 +514,131 @@ class CheckTranslationsTests(TemporaryTree):
         (empty / "fleetops").mkdir()
         if shutil.which("msgattrib"):
             self.assertEqual(run(self.tool, "--no-update", "--root", str(empty))[0], 2)
+
+
+class ReleasePreparationTests(SimpleTestCase):
+    """The texts of the repository match the release of 0.3.0b1 (repository address, dated changelog, releasing guide)."""
+
+    def tracked(self):
+        out = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True)
+        if out.returncode != 0:  # a run from an installed package or a source archive has no repository
+            self.skipTest("not a Git checkout")
+        return [ROOT / name for name in out.stdout.splitlines() if (ROOT / name).is_file()]
+
+    def test_no_file_uses_the_old_repository_address(self):
+        old = "github.com/yilifaer/" + "aa-fleetops"  # split so that this file does not match itself
+        found = []
+        for path in self.tracked():
+            if path.suffix in {".png", ".mo", ".ico", ".woff", ".woff2", ".gif", ".jpg"}:
+                continue
+            if old in path.read_text(encoding="utf-8", errors="ignore"):
+                found.append(path.name)
+        self.assertEqual(found, [])
+
+    def test_the_distribution_name_stays_aa_fleetops(self):
+        self.assertIn("pip install --no-deps aa-fleetops==", (ROOT / "README.md").read_text(encoding="utf-8"))
+        self.assertIn("aa_fleetops-", (ROOT / "README.md").read_text(encoding="utf-8"))
+
+    def test_the_releasing_guide_has_no_rename_step_and_names_the_pypi_variable(self):
+        text = (ROOT / "docs" / "releasing.md").read_text(encoding="utf-8")
+
+        self.assertNotIn("Rename the repository", text)
+        self.assertNotIn("set-url", text)
+        self.assertIn("PUBLISH_TO_PYPI", text)
+        self.assertIn("pre-release", text)
+        self.assertIn("date -u +%F", text)
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+        self.assertIn("vars.PUBLISH_TO_PYPI == 'true'", workflow)
+        self.assertIn("--prerelease", workflow)
+
+    def test_the_version_section_of_the_changelog_is_dated_and_printed(self):
+        import re
+
+        text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        heading = re.search(rf"(?m)^## \[{re.escape(fleetops.__version__)}\] - (.+)$", text)
+        self.assertIsNotNone(heading)
+        if heading.group(1) == "Unreleased" and fleetops.__version__ not in RELEASED_VERSIONS:
+            # the development cycle after a release: the top section may say Unreleased until the release is cut
+            return
+        self.assertRegex(heading.group(1), r"^\d{4}-\d{2}-\d{2}$")
+        code, out, _err = run(load_tool("changelog_section"), fleetops.__version__)
+        self.assertEqual(code, 0)
+        self.assertIn("### Upgrade notes", out)
+        self.assertIn("### Rollback notes", out)
+
+    def test_sections_that_were_never_tagged_do_not_say_unreleased(self):
+        import re
+
+        text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        for version in RELEASED_VERSIONS:
+            heading = re.search(rf"(?m)^## \[{re.escape(version)}\].*$", text)
+            self.assertIsNotNone(heading, version)
+            self.assertNotIn("Unreleased", heading.group(0))
+        self.assertIn("## [0.2.0b2] - not released separately; included in 0.3.0b1", text)
+        code, out, _err = run(load_tool("changelog_section"), "0.2.0b3")
+        self.assertEqual(code, 0)
+
+    def test_the_install_lines_do_not_depend_on_pypi_alone(self):
+        wheel = "https://github.com/yilifaer/aa-Fleet-ops/releases/download/v0.3.0b1/aa_fleetops-0.3.0b1-py3-none-any.whl"
+        pypi = "pip install --no-deps aa-fleetops==0.3.0b1"
+        for name in ("README.md", "README.zh-CN.md"):
+            text = (ROOT / name).read_text(encoding="utf-8")
+            self.assertIn(wheel, text, name)
+            self.assertLess(text.index(wheel), text.index(pypi), name)
+            self.assertIn("only once the version is published on PyPI", text, name)
+            self.assertIn(f"aa-fleetops @ {wheel}", text, name)
+            self.assertNotIn("(`pip install --no-deps aa-fleetops==<version>`)", text, name)
+        notes = run(load_tool("changelog_section"), "0.3.0b1")[1]
+        self.assertLess(notes.index(wheel), notes.index(pypi))
+        self.assertIn("works only once the version is published on PyPI", notes)
+
+    def test_the_release_notes_link_to_the_changelog_instead_of_saying_below(self):
+        notes = run(load_tool("changelog_section"), "0.3.0b1")[1]
+        self.assertIn("https://github.com/yilifaer/aa-Fleet-ops/blob/v0.3.0b1/CHANGELOG.md", notes)
+        self.assertNotIn("sections below", notes)
+        self.assertNotIn("0.2.0b2 notes too", notes)
+
+    def test_sections_of_unreleased_builds_give_no_install_command(self):
+        text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        for version in ("0.2.0b3", "0.2.0b2"):
+            self.assertNotIn(f"aa-fleetops=={version}", text)
+
+    def test_the_rollback_notes_name_a_target_for_each_build_and_the_self_payment_change(self):
+        notes = run(load_tool("changelog_section"), "0.3.0b1")[1]
+        self.assertIn("migrate fleetops 0021", notes)
+        self.assertIn("migrate fleetops 0023", notes)
+        self.assertIn("never released", notes)
+        self.assertIn("may pay their own", notes)
+        for name in ("README.md", "README.zh-CN.md", "docs/configuration.md", "docs/zh-CN/configuration.md", "docs/manual-testing.md"):
+            self.assertIn("migrate fleetops 0021", (ROOT / name).read_text(encoding="utf-8"), name)
+
+    def test_the_uninstall_steps_remove_the_stored_beat_rows(self):
+        for name in ("README.md", "README.zh-CN.md"):
+            text = (ROOT / name).read_text(encoding="utf-8")
+            self.assertIn("Periodic", text, name)
+            self.assertIn("fleetops_track_active_fleets", text, name)
+            self.assertIn("fleetops_prune_history", text, name)
+            self.assertNotIn("creates no schedule rows in\n   the database)", text, name)
+            self.assertNotIn("不在数据库里创建任何调度记录", text, name)
+
+    def test_the_markdown_files_hold_no_working_material(self):
+        import re
+
+        pattern = re.compile(r"\b(?:INT|MSG|FB)-?\d+\b|\b[MLH]-\d+\b|[Pp]hase \d+[a-f]?\b|\bdecision \d+\b")
+        found = []
+        for path in self.tracked():
+            if path.suffix == ".md":
+                found += [f"{path.name}: {m}" for m in pattern.findall(path.read_text(encoding="utf-8"))]
+        self.assertEqual(found, [])
+
+    def test_the_python_files_hold_no_decision_references(self):
+        import re
+
+        pattern = re.compile(r"(?i)\b(?:owner )?decisions? \d|\b\d[a-c]-\d+\b")
+        found = []
+        for path in self.tracked():
+            if path.suffix == ".py" and path.name != "test_release_tools.py":
+                for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                    if pattern.search(line):
+                        found.append(f"{path.name}:{number}")
+        self.assertEqual(found, [])

@@ -4,7 +4,7 @@
 """Text that is sent out is always English; text for the person at the screen follows their language.
 
 Pings, MOTDs and cancellation notices are read by a whole fleet, so neither whoever clicks nor the language of the
-site changes them (owner decision 5-10). The warnings next to the preview are for the person who looks at it. The
+site changes them. The warnings next to the preview are for the person who looks at it. The
 tests replace the catalogs with small fake ones, so they do not depend on the translations that ship.
 """
 

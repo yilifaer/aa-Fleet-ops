@@ -112,7 +112,7 @@ class PeriodParsingTests(SimpleTestCase):
         self.assertFalse(result.cut)
 
     def test_all_is_cut_to_the_longest_period(self):
-        # Decision 35: "all" older than 1100 days is cut, and the period says so.
+        # "all" older than 1100 days is cut, and the period says so.
         result = parse_period({"preset": "all"}, earliest=datetime(2020, 1, 1, tzinfo=UTC), now=NOW)
 
         self.assertTrue(result.cut)
@@ -131,7 +131,7 @@ class PeriodParsingTests(SimpleTestCase):
         self.assertEqual(period(year="2026", month="13").kind, periods.KIND_DEFAULT)
 
     def test_typed_dates_win_over_a_preset(self):
-        # Decision 36: the more specific input wins, whatever order the parameters came in.
+        # The more specific input wins, whatever order the parameters came in.
         result = period(preset="last_month", **{"from": "2026-01-01", "to": "2026-01-02"})
 
         self.assertEqual(result.start, datetime(2026, 1, 1, tzinfo=UTC))
@@ -146,7 +146,7 @@ class PeriodParsingTests(SimpleTestCase):
             period(preset="forever", **{"from": "2026-01-01", "to": "2026-01-02"})
 
     def test_file_labels(self):
-        # Decision 35: every period names its first and last day, a whole calendar month included.
+        # Every period names its first and last day, a whole calendar month included.
         self.assertEqual(period(**{"from": "2026-03-01", "to": "2026-03-31"}).file_label, "2026-03-01_2026-03-31")
         self.assertEqual(period(**{"from": "2026-02-01", "to": "2026-02-28"}).file_label, "2026-02-01_2026-02-28")
         self.assertEqual(period(**{"from": "2026-03-02", "to": "2026-03-31"}).file_label, "2026-03-02_2026-03-31")
@@ -447,7 +447,7 @@ class ReportPageTests(ReportData):
 
     def get(self, user, **params):
         self.client.force_login(user)
-        # A preset replaces the default dates (typed dates would win over it, decision 36).
+        # A preset replaces the default dates (typed dates would win over it).
         dates = {"from": "", "to": ""} if "preset" in params else MARCH
         return self.client.get(self.url, {**dates, **params})
 
@@ -657,7 +657,7 @@ class ReportFileTests(ReportData):
         self.assertEqual(table.footer[0][claims], 8)
 
     def test_categories_used_and_remaining_for_one_calendar_month(self):
-        # Decision 36: Used is always there; Remaining of a category-wide cap only for exactly one calendar month.
+        # Used is always there; Remaining of a category-wide cap only for exactly one calendar month.
         category = f.srp_category("Roams", corporation_monthly_cap=50 * M)
         user = f.create_user("rep_used", perms=f.SRP_MEMBER_PERMS)
         f.srp_claim(user, time=at(20), category=category, status=Status.APPROVED, amount=12 * M)

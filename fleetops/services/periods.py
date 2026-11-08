@@ -276,7 +276,7 @@ class Period:
 
     @property
     def file_label(self) -> str:
-        """``YYYY-MM-DD_YYYY-MM-DD`` for every period, a whole calendar month included (decision 35)."""
+        """``YYYY-MM-DD_YYYY-MM-DD`` for every period, a whole calendar month included."""
         return f"{self.first_day.isoformat()}_{self.last_day.isoformat()}"
 
     @property
@@ -349,7 +349,7 @@ def _day(params, name) -> date | None:
 def parse_period(params, *, default: str = "last_6", earliest: datetime | None = None, now: datetime | None = None) -> Period:
     """The period a report or export covers, from the query parameters.
 
-    Order: ``from`` and ``to`` (EVE dates, both days included; typed dates win over a preset, decision 36), then
+    Order: ``from`` and ``to`` (EVE dates, both days included; typed dates win over a preset), then
     ``preset`` (``this_month``, ``last_month``, ``last_3``, ``last_6``, ``last_12``, ``this_year`` or
     ``all``; it is also used when only one of the two dates came), then the old ``year`` and ``month``
     (a month; an unreadable pair is ignored like on the month pages), else ``default`` (a preset name).

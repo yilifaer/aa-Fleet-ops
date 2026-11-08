@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
 # SPDX-License-Identifier: GPL-3.0-only
 
-"""Special roles with FC credit wait for the approval of the fleet (owner decision 5-2)."""
+"""Special roles with FC credit wait for the approval of the fleet."""
 
 from datetime import timedelta
 

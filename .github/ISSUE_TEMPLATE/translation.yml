@@ -8,7 +8,7 @@ body:
       value: |
         Use this form for a wrong or unclear translation, a text that is not translated, or to offer a new language.
         How to add or update a language is described in
-        [docs/translations.md](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/translations.md).
+        [docs/translations.md](https://github.com/yilifaer/aa-Fleet-ops/blob/dev/docs/translations.md).
   - type: input
     id: language
     attributes:

@@ -1068,7 +1068,7 @@ guard checks everything that makes going back unsafe before the first change is 
 links) or that were imported, and claims imported from aa-srp. It stops **any** way back, a partial one included
 (`migrate fleetops 0032` is stopped too). `python manage.py fleetops_srp_rollback_check` runs the same checks, reads only and
 changes nothing; it lists rule IDs and link codes and exits with an error while something is in the way. See the
-rollback notes of the [changelog](../CHANGELOG.md) for the steps.
+rollback notes of the [changelog](../CHANGELOG.md) for the steps. The target depends on the build you go back to: `migrate fleetops 0023` for 0.2.0b3, `migrate fleetops 0021` for 0.2.0b2 (`0022` and `0023` belong to 0.2.0b3; the 0035 guard covers both ways). Neither build was released, so put the old code back from the wheel or the commit that the site used before.
 
 ## History and retention
 

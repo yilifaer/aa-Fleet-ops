@@ -880,7 +880,7 @@ def _srp_claim_lines(claims, *, show_reviewers: bool = False) -> Iterator[list]:
             _display_name(claim.paid_by) if show_reviewers and claim.paid_by_id else "",
             srp_display.presence_text(claim.fleet_check, claim.fleet_check_params) if claim.fleet_check else "",
             "; ".join(warning.text for warning in warnings_from_json(claim.warnings)),
-            # Appended at the end (decision 26). Like the names of the deciders, only staff see the batch.
+            # Appended at the end of the file. Like the names of the deciders, only staff see the batch.
             claim.payment_batch.reference if show_reviewers and claim.payment_batch_id else "",
             # Appended at the end as well, so that downstream sheets that read by column number keep working. The
             # security status is part of the staff block of the claim page, so only staff get it here.
@@ -1121,7 +1121,7 @@ def build_srp_corporations(request, scope):
         Column("cap", gettext("Monthly cap (ISK)"), "int"),
         Column("used", gettext("Used of the cap (ISK)"), "int"),
         Column("remaining", gettext("Remaining (ISK)"), "int"),
-        # Appended at the end (decision 26).
+        # Appended at the end of the file.
         Column("members", gettext("People"), "int"),
         Column("average", gettext("Average payout (ISK)"), "int"),
     ]
