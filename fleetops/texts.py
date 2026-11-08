@@ -991,6 +991,9 @@ PAPLINK_LEGACY_FLEET = StoredText(
     )
 )
 PAPLINK_NOT_ONLINE = StoredText(gettext_noop("Not logged in to the game; this PAP link needs the character online."))
+PAPLINK_TOO_SLOW = StoredText(
+    gettext_noop("EVE did not answer fast enough for this character; register it again in a moment.")
+)
 PAPLINK_TOO_MANY = StoredText(
     gettext_noop("At most %(limit)s characters are registered at once; register this one again.")
 )

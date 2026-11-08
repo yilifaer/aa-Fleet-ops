@@ -520,12 +520,69 @@ class SrpClaimEventAdmin(SrpReadOnlyAdmin):
     list_filter = ("action", "internal")
 
 
-admin.site.register(OperationAction)
-admin.site.register(OperationActionAttempt)
-admin.site.register(OperationRoleAssignment)
-admin.site.register(FleetMemberState)
-admin.site.register(FleetMemberEvent)
-admin.site.register(AttendanceRecord)
-admin.site.register(IncentivePeriod)
-admin.site.register(MonthlyFCStatistic)
-admin.site.register(AuditLog)
+class FleetRowsAdmin(ReadOnlyAdmin):
+    """Rows that belong to a fleet: nothing is added or changed here, and none is deleted on its own.
+
+    Deleting a fleet deletes its rows with it, so Django asks this admin for permission then; that stays possible.
+    """
+
+    def has_delete_permission(self, request, obj=None):
+        match = getattr(request, "resolver_match", None)
+        if match is None or not match.view_name:
+            return False
+        own = f"admin:{self.opts.app_label}_{self.opts.model_name}_"
+        # The permission of the model is still required when the rows go with their fleet.
+        return super().has_delete_permission(request, obj) and not match.view_name.startswith(own)
+
+
+@admin.register(OperationAction)
+class OperationActionAdmin(FleetRowsAdmin):
+    list_display = ("operation", "action", "status", "attempts")
+
+
+@admin.register(OperationActionAttempt)
+class OperationActionAttemptAdmin(FleetRowsAdmin):
+    pass
+
+
+@admin.register(OperationRoleAssignment)
+class OperationRoleAssignmentAdmin(FleetRowsAdmin):
+    """Role assignments change on the fleet page, where they are audited."""
+
+
+@admin.register(FleetMemberState)
+class FleetMemberStateAdmin(FleetRowsAdmin):
+    """What the tracking read from ESI; never edited by hand."""
+
+
+@admin.register(FleetMemberEvent)
+class FleetMemberEventAdmin(FleetRowsAdmin):
+    pass
+
+
+@admin.register(AttendanceRecord)
+class AttendanceRecordAdmin(FleetRowsAdmin):
+    """PAP rows change through the audited fleet and PAP pages, never in the admin."""
+
+    list_display = ("character_name", "operation", "attendance_value", "granted", "review_status", "source")
+    list_filter = ("granted", "review_status", "source")
+    search_fields = ("character_name", "main_character_name")
+
+
+@admin.register(IncentivePeriod)
+class IncentivePeriodAdmin(RecordAdmin):
+    """Incentive periods are rebuilt and finalised on the incentive pages, where it is audited."""
+
+
+@admin.register(MonthlyFCStatistic)
+class MonthlyFCStatisticAdmin(RecordAdmin):
+    """Written by the statistics rebuild only."""
+
+
+@admin.register(AuditLog)
+class AuditLogAdmin(RecordAdmin):
+    """The audit log is append-only: it is never edited or deleted from the admin."""
+
+    list_display = ("created_at", "actor", "action", "object_type", "object_id")
+    list_filter = ("action", "object_type")
+    search_fields = ("action", "object_id", "reason")

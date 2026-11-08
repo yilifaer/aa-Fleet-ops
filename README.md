@@ -173,6 +173,13 @@ CELERYBEAT_SCHEDULE["fleetops_prune_history"] = {
 }
 ```
 
+**Warning: the daily task deletes data.** `fleetops_prune_history` (`fleetops.tasks.prune_attendance_history`) removes
+PAP history, member events and the texts of pings sent without a fleet (not PAP link registrations, which stay with their fleet) that are older than **Data retention days**
+(at least 365), and, when **Member alliance IDs** is set, the PAP of players whose main is not in one of those
+alliances. Check both settings before the first run, and run `python manage.py fleetops_prune_history --dry-run` to
+see what would go. A built-in safety check refuses the departed-member part when the setting looks wrong, but it
+cannot know your intention; keep database backups. See [Data and privacy](#data-and-privacy).
+
 The one-minute task decides which running fleets are due for a read; the interval itself is a setting. The
 same task finishes fleets whose End Fleet task was lost, cancels starts that were interrupted, and starts the
 SRP value sweep, so keep it running. If aa-charlink is installed, `"fleetops"` must be written literally in
@@ -289,6 +296,58 @@ FleetOps works without all of them. See [docs/integrations.md](https://github.co
 install the previous package. Run `python manage.py fleetops_srp_rollback_check` before: it lists what stops the
 rollback (payout rules of a category, standing links with claims, imported history) and changes nothing. The
 [CHANGELOG](https://github.com/yilifaer/aa-fleetops/blob/dev/CHANGELOG.md) has the steps and the list of what the rollback loses.
+
+## Uninstalling
+
+Removing FleetOps deletes its data, so back up the database first and export what you want to keep (the SRP pages
+have CSV and Excel exports). Do the steps in this order; the app has to be installed while its tables are removed.
+
+1. Remove the two `CELERYBEAT_SCHEDULE["fleetops_..."]` entries from `local.py` (FleetOps creates no schedule rows in
+   the database) and restart Celery beat, so no task is queued for the app any more.
+2. Optional: run `python manage.py fleetops_srp_rollback_check`. It only reads and lists what would stop step 3
+   (payout rules of a category, links with claims, claims imported from aa-srp); fix those first, as the
+   [CHANGELOG](https://github.com/yilifaer/aa-fleetops/blob/dev/CHANGELOG.md) explains.
+3. Run `python manage.py migrate fleetops zero`. This drops every FleetOps table and all the data in them. On MariaDB
+   and MySQL a migration that fails halfway cannot be rolled back, so keep the backup.
+4. Remove `"fleetops"` from `INSTALLED_APPS` and the `APPS_WITH_PUBLIC_VIEWS += ["fleetops"]` line from `local.py`.
+5. Run `pip uninstall aa-fleetops`, then restart the web process, the Celery worker and Celery beat.
+
+**What stays.** Django keeps the content types and permission rows of the app (`app_label` `fleetops`), and groups
+keep the assignment of those permissions; they do nothing without the app and you can delete them in the Django
+admin or the Django shell, filtering by `app_label="fleetops"`. Do not run `remove_stale_contenttypes
+--include-stale-apps`, which touches other apps too. Alliance Auth's own data stays untouched: users, groups, characters
+and the ESI tokens that django-esi holds (FleetOps stores none of its own). Cached values (keys starting with
+`fleetops:`) expire by themselves. Discord messages already sent and the EVE SSO application scopes are not
+changed; remove the scopes you no longer need from the EVE application yourself.
+
+## Data and privacy
+
+FleetOps is a tool for your organization; you decide what to keep. It stores, in the database of Alliance Auth:
+
+| Data | What it holds | Kept |
+|---|---|---|
+| Fleets and members | For each fleet: the FC, its type, times, doctrine and the Discord/ESI results. For each pilot seen in the fleet: character, corporation, alliance, ship, solar system, role and time in fleet, also for people without an Alliance Auth account | Fleets and member states stay. Member events are removed after **Data retention days** (see below) |
+| PAP | The PAP rows per character with the main character and player they belong to, corrections | Removed after **Data retention days**, and for departed members when **Member alliance IDs** is set. PAP link registrations (character, ship, solar system, online state) are not part of this: they stay until their fleet is deleted |
+| SRP | Claims with the killmail data (victim, ship, system, attackers' names), amounts, the timeline of decisions, payment batches, bans, found losses | Claims, timelines, payments and bans are the payment record and are never removed by the retention; killmails nobody claimed are removed after 7 days, and so are found losses that are no use any more |
+| Audit log | Who changed what and when (settings, reviews, payments, PAP corrections); no tokens, no webhook addresses | Never removed by FleetOps |
+| Settings | Discord webhook addresses, stored in plain text in the database like other Alliance Auth secrets, SRP and fleet settings | Until you delete them |
+| Name caches | Character, corporation and alliance names and affiliations looked up from ESI | Until the next lookup; never removed |
+| ESI tokens | Not stored by FleetOps. It reads the tokens django-esi holds for the user and never writes them to a log, the audit log, a page or an export | Managed by Alliance Auth |
+
+Data goes to Discord (the pings you send), to zKillboard and ESI (killmail ids and character ids for SRP, only when
+SRP is on), and nowhere else. Retention is set as **Data retention days** on the FleetOps settings page of
+**Administration** (365 to 36500). The daily task described above applies it; `python manage.py
+fleetops_prune_history --dry-run` shows the effect first.
+
+**Deleting data on request.** FleetOps has no per-person export or erase button. The Django admin shows PAP rows
+(`AttendanceRecord`), member rows (`FleetMemberState`, `FleetMemberEvent`) and SRP claims read-only; only
+`PapRegistration` can be deleted there. Delete the rows of one person in the Django shell, for example
+`AttendanceRecord.objects.filter(character_id=...).delete()`, and the same by character ID for `PapRegistration`,
+`FleetMemberState` and `FleetMemberEvent`; SRP claims by the player. SRP bans are deleted with the user in Alliance
+Auth; PAP and SRP rows stay as history without the link to an account. A user who started or led a fleet, or who has
+FC statistics, cannot be deleted while those records exist (the database protects them). Records of the audit log and
+of paid SRP claims are accounting records: delete them only if your rules and the law of your country require it, and
+note that this changes the history that FleetOps statistics and reports are built from.
 
 ## Translations
 

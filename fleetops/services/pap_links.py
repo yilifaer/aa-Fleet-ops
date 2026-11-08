@@ -9,6 +9,7 @@ finalized, whatever its time in fleet; the per-player character limit still appl
 """
 
 import secrets
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -19,6 +20,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.utils.translation import gettext
 from esi.models import Token
+from kombu.exceptions import OperationalError as QueueError
 
 from fleetops.constants import CLICK_SCOPES
 from fleetops import texts
@@ -50,6 +52,9 @@ LINK_STATUSES = (Status.ACTIVE, Status.ENDING, Status.CLOSED)
 CREATE_STATUSES = (Status.ACTIVE, Status.CLOSED)
 # Characters registered by one form submission at most.
 MAX_CHARACTERS_PER_REGISTRATION = 20
+# A registration stops asking ESI after this many seconds (the web server gives up long after); the characters left
+# are listed as not registered and can be sent again.
+REGISTRATION_BUDGET_SECONDS = 20
 MIN_LINK_MINUTES = 1
 MAX_LINK_MINUTES = 1440
 
@@ -62,6 +67,7 @@ ALREADY_REGISTERED = texts.PAPLINK_ALREADY_REGISTERED()
 LINK_CLOSED = texts.PAPLINK_CLOSED()
 LEGACY_FLEET = texts.PAPLINK_LEGACY_FLEET()
 NOT_ONLINE = texts.PAPLINK_NOT_ONLINE()
+TOO_SLOW = texts.PAPLINK_TOO_SLOW()
 TOO_MANY = texts.PAPLINK_TOO_MANY(limit=MAX_CHARACTERS_PER_REGISTRATION)
 
 # Steps of an ESI fleet start that a PAP-link fleet has no use for.
@@ -214,7 +220,8 @@ def register_characters(link, user, character_ids):
     for character_id in ids[MAX_CHARACTERS_PER_REGISTRATION:]:
         result.rejected.append((character_id, owned.get(character_id) or _unknown_name(character_id), TOO_MANY))
 
-    pending = []
+    started = time.monotonic()
+    created = []
     for character_id in ids[:MAX_CHARACTERS_PER_REGISTRATION]:
         name = owned.get(character_id)
         if name is None:
@@ -225,6 +232,10 @@ def register_characters(link, user, character_ids):
             continue
         if PapRegistration.objects.filter(operation=operation, character_id=character_id).exists():
             result.rejected.append((character_id, name, ALREADY_REGISTERED))
+            continue
+        if time.monotonic() - started > REGISTRATION_BUDGET_SECONDS:
+            # A slow ESI must not hold the request until the web server gives up: what is left can be sent again.
+            result.rejected.append((character_id, name, TOO_SLOW))
             continue
         try:
             token = _click_token(user, character_id)
@@ -246,14 +257,6 @@ def register_characters(link, user, character_ids):
             if not online:
                 result.rejected.append((character_id, name, NOT_ONLINE))
                 continue
-        location = _best_effort(character_location, token)
-        ship = _best_effort(character_ship, token)
-        # (character_id, name, online, solar_system_id, ship_type_id)
-        pending.append((character_id, name, online, location.get("solar_system_id"), ship.get("ship_type_id")))
-
-    ship_names = item_type_names({row[4] for row in pending if row[4]})
-    system_names = solar_system_names({row[3] for row in pending if row[3]})
-    for character_id, name, online, system_id, ship_id in pending:
         if not link_is_valid(link):
             result.rejected.append((character_id, name, LINK_CLOSED))
             continue
@@ -263,16 +266,12 @@ def register_characters(link, user, character_ids):
                 # its lock, the registration is written after the settlement and recalculated below, as
                 # create_manual_attendance does; without it the settlement would miss the row for good.
                 operation.status = FleetOperation.objects.select_for_update().get(pk=operation.pk).status
-                PapRegistration.objects.create(
+                registration = PapRegistration.objects.create(
                     operation=operation,
                     link=link,
                     character_id=character_id,
                     character_name=name,
                     auth_user=user,
-                    ship_type_id=ship_id,
-                    ship_type_name=ship_names.get(ship_id, "") if ship_id else "",
-                    solar_system_id=system_id,
-                    solar_system_name=system_names.get(system_id, "") if system_id else "",
                     online=online,
                     registered_at=timezone.now(),
                 )
@@ -280,6 +279,7 @@ def register_characters(link, user, character_ids):
             # Registered meanwhile, e.g. by a second click.
             result.rejected.append((character_id, name, ALREADY_REGISTERED))
             continue
+        created.append(registration.pk)
         result.registered.append((character_id, name))
 
     if result.registered:
@@ -300,7 +300,54 @@ def register_characters(link, user, character_ids):
             ],
         },
     )
+    if created:
+        transaction.on_commit(lambda: _queue_details(created, user))
     return result
+
+
+def _queue_details(registration_ids, user):
+    """Fill in where the pilots are and what they fly in the background; the registration itself is done."""
+    # Imported here: the tasks import the fleet services.
+    from fleetops.tasks import fill_registration_details
+
+    try:
+        fill_registration_details.delay(registration_ids, user.pk)
+    except QueueError as exc:
+        # Only the display details are lost; the PAP does not depend on them.
+        log_failure(logger, "Queueing the PAP registration details", exc)
+
+
+def fill_details(registration_ids, user):
+    """Record the location and ship of registrations just made, as far as ESI tells them.
+
+    These details are shown on the fleet page only, so every failure leaves them blank.
+    """
+    rows = list(
+        PapRegistration.objects.filter(
+            pk__in=registration_ids, auth_user=user, ship_type_id__isnull=True, solar_system_id__isnull=True
+        )
+    )
+    details = []
+    for row in rows:
+        try:
+            token = _click_token(user, row.character_id)
+        except Exception as exc:
+            log_failure(logger, "PAP registration details", exc)
+            continue
+        if token is None:
+            continue
+        location = _best_effort(character_location, token)
+        ship = _best_effort(character_ship, token)
+        details.append((row, location.get("solar_system_id"), ship.get("ship_type_id")))
+    ship_names = item_type_names({ship for _row, _system, ship in details if ship})
+    system_names = solar_system_names({system for _row, system, _ship in details if system})
+    for row, system_id, ship_id in details:
+        PapRegistration.objects.filter(pk=row.pk).update(
+            ship_type_id=ship_id,
+            ship_type_name=ship_names.get(ship_id, "") if ship_id else "",
+            solar_system_id=system_id,
+            solar_system_name=system_names.get(system_id, "") if system_id else "",
+        )
 
 
 def start_link_only_fleet(user, cleaned_data):

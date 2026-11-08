@@ -13,6 +13,7 @@ from fleetops.calculations import calculate_payouts
 from fleetops.models import FleetOperation, FleetOpsSettings, FleetType, IncentivePeriod, MonthlyFCStatistic
 from fleetops.services import group_access
 from fleetops.services.audit import audit
+from fleetops.services.counting import counted_operation_q
 from fleetops.services.errors import log_failure
 from fleetops.services.history import current_member_user_ids
 from fleetops.services.periods import year_month_of
@@ -60,9 +61,10 @@ def pending_multiplier_operations(period: IncentivePeriod):
         FleetOperation.objects.filter(
             started_at__gte=start,
             started_at__lt=end,
-            status=FleetOperation.Status.CLOSED,
             multiplier_pending=True,
         )
+        # Rejected and excluded fleets keep the flag, but their multiplier changes no result.
+        .filter(counted_operation_q())
         .select_related("fleet_type", "fc_user")
         .order_by("started_at", "pk")
     )

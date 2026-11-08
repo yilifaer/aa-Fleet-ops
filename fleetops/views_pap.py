@@ -26,6 +26,7 @@ from fleetops.services.multipliers import (
     multiplier_list_text,
     needs_choice,
     tiers,
+    tiers_read_once,
     unmet_requirements_text,
 )
 from fleetops.services.pap import compute_pap, finalize_pap, live_pap_status
@@ -84,6 +85,11 @@ def _preview(request, operation, show_all):
 
 def pap_context(request, operation):
     """What the fleet page's PAP parts need."""
+    with tiers_read_once():
+        return _pap_context(request, operation)
+
+
+def _pap_context(request, operation):
     user = request.user
     settings = FleetOpsSettings.get_solo()
     can_manage = _can_manage_operation(user, operation)

@@ -38,6 +38,7 @@ from fleetops.models import (
     validate_discord_webhook_url,
 )
 from fleetops.providers import esi as esi_provider
+from fleetops.providers import esi_universe
 from fleetops.providers.doctrines import get_doctrines
 from fleetops.providers.esi import FleetESIError
 from fleetops.providers.srp import get_registered_srp_providers
@@ -922,6 +923,8 @@ NO_SHIP_FOUND = _("No ship called “%(name)s” was found. Use its exact Englis
 SHIP_LOOKUP_FAILED = _("ESI could not look up the ship right now. Enter the ship type ID instead.")
 SHIP_NAME_MISSING = _("The ship name could not be looked up, so the rule was saved with the ship type ID only.")
 NOT_A_TYPE = _("This ID is not an item type.")
+NOT_A_SHIP = _("This item type is not a ship.")
+SHIP_UNCHECKED = _("Whether this item type is a ship could not be checked, so the rule was saved as entered.")
 INVENTORY_TYPE = "inventory_type"
 
 
@@ -931,6 +934,27 @@ def _esi_type_name(type_id: int) -> str:
     if category and category != INVENTORY_TYPE and name:
         raise ValidationError(NOT_A_TYPE, code="invalid")
     return name if category == INVENTORY_TYPE else ""
+
+
+def ship_check(type_id: int) -> str:
+    """"" for a ship type; the warning when it could not be checked. Raises ValidationError for anything else.
+
+    The SDE answers when it is installed and knows the type; otherwise ESI is asked for the group of the type and
+    the category of the group.
+    """
+    info = sde_service.ship_type_details([type_id]).get(type_id)
+    category_id = info.category_id if info is not None else None
+    if category_id is None:
+        try:
+            group_id = esi_universe.get_type(type_id).get("group_id")
+            category_id = esi_universe.get_group(group_id).get("category_id") if group_id else None
+        except FleetESIError:
+            return SHIP_UNCHECKED
+    if category_id is None:
+        return SHIP_UNCHECKED
+    if int(category_id) != sde_service.SHIP_CATEGORY_ID:
+        raise ValidationError(NOT_A_SHIP, code="invalid")
+    return ""
 
 
 def _esi_type_by_name(name: str):
@@ -964,14 +988,15 @@ def lookup_ship(text) -> ShipLookup:
                 return ShipLookup(type_id, "", SHIP_NAME_MISSING)
             if not name:
                 raise ValidationError(NOT_A_TYPE, code="invalid")
-        return ShipLookup(type_id, name)
+        return ShipLookup(type_id, name, ship_check(type_id))
     if sde_service.sde_installed():
         found = sde_service.find_item_type(text)
     else:
         found = _esi_type_by_name(text)
     if not found:
         raise ValidationError(NO_SHIP_FOUND % {"name": text}, code="not_found")
-    return ShipLookup(int(found[0]), found[1])
+    # The SDE only finds ships by name; ESI finds any item type.
+    return ShipLookup(int(found[0]), found[1], "" if sde_service.sde_installed() else ship_check(int(found[0])))
 
 
 CUSTOM_DOCTRINE = "custom"

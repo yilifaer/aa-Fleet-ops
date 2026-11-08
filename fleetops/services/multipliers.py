@@ -7,6 +7,8 @@ A fleet qualifies for a tier when it ran strictly longer than the tier's thresho
 90-minute tier needs 90 min 01 s. 1x needs no tier and is always allowed.
 """
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import timedelta
 
 from django.utils import timezone
@@ -17,9 +19,32 @@ from fleetops.models import FleetOperation, FleetOpsSettings, MultiplierTier
 Source = FleetOperation.MultiplierSource
 
 
+_tier_snapshot = ContextVar("fleetops_multiplier_tiers", default=None)
+
+
 def tiers():
-    """The configured tiers, lowest threshold first."""
+    """The configured tiers, lowest threshold first (the snapshot of ``tiers_read_once`` while one is active)."""
+    snapshot = _tier_snapshot.get()
+    if snapshot is not None:
+        return list(snapshot)
     return list(MultiplierTier.objects.order_by("threshold_minutes"))
+
+
+@contextmanager
+def tiers_read_once():
+    """Read the tiers from the database once for everything done inside the block.
+
+    A page asks for the tiers many times; they are two or three rows. Nothing outlives the block, so a change
+    of the tiers shows on the next request.
+    """
+    if _tier_snapshot.get() is not None:
+        yield
+        return
+    token = _tier_snapshot.set(tuple(MultiplierTier.objects.order_by("threshold_minutes")))
+    try:
+        yield
+    finally:
+        _tier_snapshot.reset(token)
 
 
 def allowed_multipliers(duration):

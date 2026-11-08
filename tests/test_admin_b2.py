@@ -556,7 +556,8 @@ class ListAndFormLookTests(TestCase):
         self.assertContains(response, 'name="allowed_groups"')
         self.assertContains(response, 'name="fcs_allowed"')
 
-    def test_the_page_level_error_of_a_form_is_one_readable_callout(self):
+    @mock.patch.object(forms_config, "ship_check", return_value="")  # 0.3.0b1 (L-27): about the callout, not the ship
+    def test_the_page_level_error_of_a_form_is_one_readable_callout(self, _ship_check):
         f.payout_rule(587, 1_000_000)
         with mock.patch.object(forms_config.sde_service, "item_type_names", return_value={587: "Rifter"}):
             response = self.client.post(

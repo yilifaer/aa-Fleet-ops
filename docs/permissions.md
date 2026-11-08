@@ -346,3 +346,11 @@ audited as `approval.*`, `attendance.multiplier`, `fleet.stats_mode`, `pap_link.
 The SRP categories are configured on the FleetOps **Administration** > **SRP Categories** page with
 `fleetops.manage_configuration`. The model has no Django permissions of its own (`default_permissions = ()`), so in the
 Django admin only a superuser sees it; nobody else needs it.
+
+## Records in the Django admin
+
+The audit log, PAP rows, fleet member records, role assignments, incentive periods and monthly FC statistics are shown
+in the Django admin for reading only: they cannot be added, changed or deleted there, so nothing that is counted or
+audited changes without a trace. Rows that belong to a fleet (PAP rows, member records, role assignments, actions) are
+deleted together with the fleet when a user who holds the delete permissions of the fleet and of these rows (normally a superuser) deletes the fleet, and in no other way. The audit log and the
+incentive and statistics records cannot be deleted in the admin at all.

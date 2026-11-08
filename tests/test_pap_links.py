@@ -341,7 +341,8 @@ class CreateAndRevokeTests(PapLinkTestCase):
 
 class RegistrationTests(PapLinkTestCase):
     def test_registering_records_ship_system_and_online_state(self):
-        response = self.post_register(self.main)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.post_register(self.main)
 
         self.assertRedirects(response, self.register_url())
         registration = PapRegistration.objects.get(operation=self.operation, character_id=self.main.character_id)
@@ -435,7 +436,8 @@ class RegistrationTests(PapLinkTestCase):
             self.esi.answers[(route, self.main.character_id)] = http_error(500)
 
         with self.assertLogs(esi_provider.logger, "WARNING"):
-            result = register_characters(link, self.pilot, [self.main.character_id])
+            with self.captureOnCommitCallbacks(execute=True):
+                result = register_characters(link, self.pilot, [self.main.character_id])
 
         self.assertEqual(result.rejected, [])
         registration = PapRegistration.objects.get(character_id=self.main.character_id)

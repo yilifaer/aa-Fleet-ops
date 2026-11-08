@@ -48,6 +48,8 @@ FleetOps 只需要 Alliance Auth 和 django-esi。下面所有内容都是可选
 
 FleetOps SRP 还会读取另外三个公开接口，只在没有安装 django-eveonline-sde 时才用（有 SDE 时先问 SDE，此时不发任何请求）：`GET /universe/systems/{id}`（舰船被击毁的星系的安全等级和星座）、`GET /universe/constellations/{id}`（它的星域）和 `GET /universe/types/{id}`（舰船类型的组）。它们在 KM 入库时运行，不需要 scope 也不需要 token，由 django-esi 按 ESI 的 `Expires` 缓存，FleetOps 再保留 7 天（失败保留一小时）。ESI 没有回应时，KM 照常入库，不会因此拒绝任何申请。没有 SDE 时这个查询在第一个读取该 KM 的网页请求里运行（最多这三次带缓存的读取）；建议安装 django-eveonline-sde 以避免这一点。
 
+赔付规则的表单会检查船型确实是舰船。django-eveonline-sde 不认识这个类型时，管理员保存规则的那一刻会读取一次 `GET /universe/types/{id}` 和 `GET /universe/groups/{id}`（组所属的类别）；不需要 scope 和 token，由 django-esi 按 ESI 的 `Expires` 缓存。ESI 没有回应时，规则会保存并给出警告。
+
 FleetOps SRP 还会读取公开的保险价格（`GET /insurance/prices`，不需要 scope 和 token，用英文请求），用来在 SRP 金额旁显示保险估算。读取由现有的每分钟 Beat 任务派发，最多每天一次，且只在 SRP 启用并且 **显示保险估算** 开启时进行；django-esi 按 ESI 的 `Expires` 保留答案，FleetOps 把价格整体替换后存起来。读取失败则保留旧价格，一小时后重试。KM 的攻击者来自本来就要读取的同一个 KM 答案：检查申请时不增加任何请求；他们的名字由 KM 入库后的后台任务查询。
 
 ## SRP 应用

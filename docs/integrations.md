@@ -69,6 +69,11 @@ ESI's `Expires` says and kept for 7 days by FleetOps (a failure for one hour). W
 is stored without them and nothing is refused because of it. Without the SDE this lookup runs in the first web request that
 reads the killmail (at most these three cached reads); installing django-eveonline-sde is recommended and avoids it.
 
+The form of a payout rule checks that the ship type is a ship. When django-eveonline-sde does not know the type, it
+reads `GET /universe/types/{id}` and `GET /universe/groups/{id}` (the category of the group) once, when an administrator
+saves the rule; no scope and no token, cached by django-esi as ESI's `Expires` says. If ESI does not answer, the rule is
+saved with a warning.
+
 FleetOps SRP also reads the public insurance prices (`GET /insurance/prices`, no scope, no token, asked for in English) to
 show an insurance estimate next to SRP amounts. The read is queued from the existing minute beat task at most once a day
 and only while SRP is enabled and **Show the insurance estimate** is on; django-esi keeps the answer as long as ESI's

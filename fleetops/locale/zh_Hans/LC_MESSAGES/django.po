@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-08 06:41+0000\n"
+"POT-Creation-Date: 2026-11-08 11:20+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -574,6 +574,14 @@ msgstr "无法查询舰船名称，因此规则只保存了船型 ID。"
 #: forms_config.py
 msgid "This ID is not an item type."
 msgstr "此 ID 不是物品类型。"
+
+#: forms_config.py
+msgid "This item type is not a ship."
+msgstr "此物品类型不是舰船。"
+
+#: forms_config.py
+msgid "Whether this item type is a ship could not be checked, so the rule was saved as entered."
+msgstr "无法确认此物品类型是否为舰船，规则已按输入保存。"
 
 #: forms_config.py
 msgid "Enter a valid ship type ID."
@@ -12924,6 +12932,10 @@ msgstr "在 PAP 按在队时长发放之前就已结束的舰队不能使用 PAP
 #: texts.py
 msgid "Not logged in to the game; this PAP link needs the character online."
 msgstr "没有登录游戏；此 PAP 登记链接要求角色在线。"
+
+#: texts.py
+msgid "EVE did not answer fast enough for this character; register it again in a moment."
+msgstr "EVE 对该角色的回应太慢，请稍后再次登记。"
 
 #: texts.py
 #, python-format

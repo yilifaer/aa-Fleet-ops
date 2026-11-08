@@ -243,6 +243,8 @@ CONFIG_SECTIONS = {
         ),
         "model": ShipFunctionRule,
         "form": ShipFunctionRuleForm,
+        # The first column shows the function of each rule.
+        "queryset": lambda queryset: queryset.select_related("function"),
         "columns": [
             (gettext_lazy("Function"), "function"),
             (gettext_lazy("Kind"), "kind"),

@@ -80,6 +80,7 @@ UNIVERSE_OPERATIONS = (
     "GetUniverseSystemsSystemId",
     "GetUniverseConstellationsConstellationId",
     "GetUniverseTypesTypeId",
+    "GetUniverseGroupsGroupId",
 )
 
 esi = ESIClientProvider(

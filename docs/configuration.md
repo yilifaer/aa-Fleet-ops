@@ -125,6 +125,12 @@ See [Statistics rules](#statistics-rules) for how the figures are counted.
 |---|---|---|
 | PAP link validity | 30 | Minutes a new PAP link stays open unless the FC picks another time. 1 to 1440. |
 
+A registration is written as soon as the pilot's ownership, token and (when the link requires it) online status are
+checked. Where the pilot is and what they fly are read afterwards in the background and show on the fleet page a moment
+later; if ESI does not answer they stay blank and the PAP is not affected. A request that has spent about 20 seconds on
+ESI stops: the characters not yet registered are listed with the reason "EVE did not answer fast enough" and can be
+submitted again.
+
 ### Fleet tab
 
 | Setting | Default | Meaning |
@@ -900,7 +906,8 @@ logs the name of the operation, the class of the exception and the HTTP status.
 
 ## SRP Payout Table
 
-Fixed amounts. A rule names a ship type (ID or exact English name), a doctrine (a Fittings doctrine or a custom
+Fixed amounts. A rule names a ship type (ID or exact English name; it has to be a ship, so a mineral or a module is
+refused, and when neither the SDE nor ESI can say whether it is a ship, the rule is saved with a warning), a doctrine (a Fittings doctrine or a custom
 name), or both, and applies to losses in a fleet, outside a fleet, or both (**Scope**). A rule can belong to a
 [category](#srp-categories) (**Category**); with **All categories** it applies to every claim, with a category only
 to claims of that category. The most specific active rule wins: doctrine and ship, then doctrine (any ship), then
@@ -1048,6 +1055,12 @@ changes nothing; it lists rule IDs and link codes and exits with an error while 
 rollback notes of the [changelog](../CHANGELOG.md) for the steps.
 
 ## History and retention
+
+**Warning: the daily task deletes data.** The beat entry `fleetops_prune_history` (the task
+`fleetops.tasks.prune_attendance_history`) permanently removes the rows described below. Set **Data retention days** and
+**Member alliance IDs** deliberately, run `python manage.py fleetops_prune_history --dry-run` after every change of
+either, and keep database backups. The README section [Data and privacy](../README.md#data-and-privacy) lists everything
+FleetOps stores and what is never removed.
 
 `python manage.py fleetops_prune_history` removes PAP older than **Data retention days**, PAP of members who
 left the alliances in **Member alliance IDs**, old member events and the old texts of pings sent without a fleet

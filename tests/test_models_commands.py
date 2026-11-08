@@ -95,6 +95,17 @@ READ_ONLY_ADMIN_MODELS = (
     # 0.3.0b1 (REV-5, REV-10): payment batches and insurance prices are written by the pages and the task only.
     SrpPaymentBatch,
     SrpInsurancePrice,
+    # 0.3.0b1 (L-26): the audit log and the records of PAP, members, roles, incentives and statistics are never
+    # added or changed in the admin.
+    AuditLog,
+    AttendanceRecord,
+    OperationAction,
+    OperationActionAttempt,
+    OperationRoleAssignment,
+    FleetMemberState,
+    FleetMemberEvent,
+    IncentivePeriod,
+    MonthlyFCStatistic,
 )
 
 ALL_PERMISSIONS = [

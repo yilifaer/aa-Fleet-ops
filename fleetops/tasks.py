@@ -10,11 +10,12 @@ from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.db.models import Q
 from django.utils import timezone
+from kombu.exceptions import OperationalError as QueueError
 
 from fleetops import texts
 from fleetops.models import FleetOperation, FleetOpsSettings, SrpSettings
 from fleetops.providers.esi import FleetESIError
-from fleetops.services import fleet_jobs
+from fleetops.services import fleet_jobs, pap_links
 from fleetops.services.audit import audit
 from fleetops.services.errors import log_failure, report_failure
 from fleetops.services.fleet_access import FleetManageError
@@ -50,6 +51,9 @@ END_LOCK_TIMEOUT = 4 * 60
 # Kick batches queued by earlier versions retry this long while the fleet runs another job.
 KICK_LOCK_TIMEOUT = 10 * 60
 KICK_RETRY_SECONDS = 30
+# A fleet read that finds another read of the same fleet running tries again after this many seconds.
+REFRESH_BUSY_RETRY_SECONDS = 3
+REFRESH_BUSY_RETRIES = 12
 # One SRP value sweep at a time; a worker killed during a sweep leaves the lock behind until it expires.
 SRP_VALUES_LOCK_KEY = "fleetops:srp:values"
 SRP_VALUES_LOCK_TIMEOUT = 10 * 60
@@ -335,7 +339,7 @@ def kick_members(self, operation_id, character_ids, actor_id, purpose, context=N
 
 
 @shared_task
-def refresh_fleet_structure(operation_id, not_before=None):
+def refresh_fleet_structure(operation_id, not_before=None, attempt=0):
     """Read an active fleet from ESI past the response cache, after a change or for a watched Fleet tab.
 
     ``not_before`` (a Unix timestamp) is when the read was due: a fleet read since then, for example
@@ -343,6 +347,19 @@ def refresh_fleet_structure(operation_id, not_before=None):
     """
     lock_key = refresh_task_lock_key(operation_id)
     if not cache.add(lock_key, "1", timeout=REFRESH_TASK_LOCK_SECONDS):
+        # A read that was due at ``not_before`` must not be lost because another read still runs: the running read
+        # may have started before the change, so this one is tried again shortly (it ends as "fresh" if the other
+        # read was late enough). The retries together outlast the lock, which expires on its own.
+        if not_before is not None and attempt < REFRESH_BUSY_RETRIES:
+            try:
+                refresh_fleet_structure.apply_async(
+                    (operation_id,),
+                    {"not_before": not_before, "attempt": attempt + 1},
+                    countdown=REFRESH_BUSY_RETRY_SECONDS,
+                )
+                return "requeued"
+            except QueueError as exc:
+                log_failure(logger, "Queueing a fleet refresh again", exc)
         return "already-running"
     try:
         operation = FleetOperation.objects.select_related("fc_user").filter(pk=operation_id).first()
@@ -357,6 +374,16 @@ def refresh_fleet_structure(operation_id, not_before=None):
         return "refreshed" if ok else "failed"
     finally:
         cache.delete(lock_key)
+
+
+@shared_task
+def fill_registration_details(registration_ids, user_id):
+    """Record the location and ship of PAP link registrations (shown on the fleet page only)."""
+    user = get_user_model().objects.filter(pk=user_id).first()
+    if user is None:
+        return "missing"
+    pap_links.fill_details(registration_ids, user)
+    return "filled"
 
 
 @shared_task(autoretry_for=(), max_retries=0)

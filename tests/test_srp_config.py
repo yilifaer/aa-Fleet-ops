@@ -287,6 +287,13 @@ class SrpSettingsPageTests(TestCase):
 
 
 class LookupShipTests(TestCase):
+    def setUp(self):
+        # 0.3.0b1: a rule's ship must be a ship (ship_check). These tests are about the lookup itself, so the
+        # check answers "a ship" here; it is tested on its own in tests/test_low_items.py.
+        patcher = mock.patch.object(forms_config, "ship_check", return_value="")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_empty_means_no_ship(self):
         self.assertEqual(lookup_ship("  "), forms_config.ShipLookup(0, ""))
         self.assertEqual(lookup_ship(None), forms_config.ShipLookup(0, ""))
@@ -398,6 +405,11 @@ class LookupShipTests(TestCase):
 
 class PayoutTableTests(TestCase):
     def setUp(self):
+        # 0.3.0b1: a rule's ship must be a ship (ship_check). These tests are about the lookup itself, so the
+        # check answers "a ship" here; it is tested on its own in tests/test_low_items.py.
+        patcher = mock.patch.object(forms_config, "ship_check", return_value="")
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.admin = f.create_user("rules_admin", perms=CONFIG_PERMS)
         self.client.force_login(self.admin)
         self.add_url = reverse("fleetops:configuration_add", args=["srp-rules"])
@@ -912,6 +924,11 @@ class SrpCategoryPageTests(TestCase):
     """CAT-8: the category pages, the category of a payout rule and the category settings."""
 
     def setUp(self):
+        # 0.3.0b1: a rule's ship must be a ship (ship_check). These tests are about the lookup itself, so the
+        # check answers "a ship" here; it is tested on its own in tests/test_low_items.py.
+        patcher = mock.patch.object(forms_config, "ship_check", return_value="")
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.admin = f.create_user("category_admin", perms=CONFIG_PERMS)
         self.client.force_login(self.admin)
         self.list_url = reverse("fleetops:configuration_list", args=["srp-categories"])

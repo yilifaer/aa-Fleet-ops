@@ -253,6 +253,37 @@ depends on it. Read the upgrade notes and the rollback notes below before you st
 - Excel downloads are sent while they are written instead of being built in memory first, like the CSV downloads.
 - `fleetops_srp_import_payouts` without `--apply` now looks up the ship names too (read only), so a type ID that is no
   EVE item type is reported before you apply, and the output names the ships whose name could not be looked up.
+- The fleet list asks once per page, instead of once per fleet, which fleets the viewer holds a role with FC credit in.
+- A fleet read that is due while another read of the same fleet is still running is tried again a few seconds later
+  instead of being dropped, so a renamed squad shows up without waiting for the next tracking poll.
+- A fleet that ended on its own because it could no longer be read now ends at the time it was last read, not when the
+  last of the polls that counted it as missing gave up. The duration, the multiplier tiers and the statistics rules
+  no longer run minutes (with long intervals, tens of minutes) too long.
+- A manual PAP replacement no longer counts next to a merge for the same character: once a merge brings the tracked PAP
+  back, the replacement has nothing left to replace.
+- The incentive page lists only the fleets that are waiting for a multiplier and count in the statistics; rejected and
+  excluded fleets no longer appear there.
+- Registering through a PAP link writes the registration first. Where the pilot is and what they fly are read in the
+  background, and a request that has spent about 20 seconds on ESI stops and lists the characters it did not reach, so a
+  slow ESI no longer ends in a gateway error with nothing registered.
+- The fleet page reads the PAP multiplier tiers once instead of five or six times.
+- The list of ship function rules on the Administration pages reads each rule's function with the rule instead of one
+  query per rule.
+- The Django admin shows the audit log, PAP rows, fleet member records, role assignments, incentive periods and monthly FC
+  statistics read-only: they can no longer be added, changed or deleted there (rows that belong to a fleet still go
+  when a user with the delete permissions of the fleet and its rows, normally a superuser, deletes the fleet).
+- A payout rule must name a ship: a type ID or name of any other item (a mineral, a module) is refused, and when neither
+  the SDE nor ESI can say, the rule is saved with a warning. Without the SDE this reads `GET /universe/groups/{id}`
+  from ESI once when the rule is saved.
+- Looking up the names of a pasted roster or a manual PAP entry in Alliance Auth uses the index of the name column first
+  and falls back to a case-insensitive search only for the names it did not find.
+
+### Documentation
+
+- The README and the configuration reference have an **Uninstalling** section (the order of the steps, `migrate
+  fleetops zero`, the beat entries and `local.py` lines, what stays), a **Data and privacy** section (what FleetOps
+  stores, how long, how to delete it) and a warning that the daily task `fleetops_prune_history` deletes old rows
+  according to the retention settings. English and Simplified Chinese.
 
 ### Known items
 
@@ -260,6 +291,9 @@ depends on it. Read the upgrade notes and the rollback notes below before you st
   them away is planned for a later release.
 
 ### Upgrade notes
+
+Restart the Celery worker as well: PAP link registrations now queue a small background task (`fill_registration_details`)
+that the worker has to know. Nothing else is needed for the fixes of the last list; they add no migration.
 
 First add the scope `esi-killmails.read_killmails.v1` to the EVE application of the site on the EVE developer website
 (see above). Then back up the database, install the release with `--no-deps`, run `python manage.py migrate fleetops`,

@@ -196,7 +196,25 @@ def _can_view_all_fleets(user):
 def _is_credited_fc(user, operation):
     if operation.fc_user_id == user.pk:
         return True
+    # The fleet list reads the credited fleets of the page once (``_mark_credited_fleets``).
+    known = getattr(operation, "_credited_for", None)
+    if known is not None and known[0] == user.pk:
+        return known[1]
     return operation.role_assignments.filter(auth_user=user, grants_fc_credit=True).exists()
+
+
+def _mark_credited_fleets(user, operations):
+    """Tell the fleets of one page whether ``user`` holds a role with FC credit in them, with a single query."""
+    if not operations or not user.has_perm("fleetops.manage_own_fleet"):
+        return
+    # A list of ids: MariaDB does not accept the LIMIT of a sliced page inside an IN subquery.
+    credited = set(
+        OperationRoleAssignment.objects.filter(
+            operation_id__in=[operation.pk for operation in operations], auth_user=user, grants_fc_credit=True
+        ).values_list("operation_id", flat=True)
+    )
+    for operation in operations:
+        operation._credited_for = (user.pk, operation.pk in credited)
 
 
 def _can_manage_operation(user, operation):
@@ -782,7 +800,9 @@ def fleet_operations_view(request):
 
     page = Paginator(qs, 50).get_page(request.GET.get("page"))
     settings = FleetOpsSettings.get_solo()
-    for operation in page.object_list:
+    operations = list(page.object_list)
+    _mark_credited_fleets(request.user, operations)
+    for operation in operations:
         operation.can_edit = _can_manage_operation(request.user, operation)
         operation.is_pre_ping = is_pre_ping_record(operation)
         operation.count_reason = "" if operation.is_pre_ping else operation_count_reason(operation, settings)

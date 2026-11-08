@@ -801,6 +801,9 @@ def _fleet_spec():
             "/universe/types/{type_id}": {
                 "get": public_read("GetUniverseTypesTypeId", "Universe", [("type_id", integer)], "UniverseType"),
             },
+            "/universe/groups/{group_id}": {
+                "get": public_read("GetUniverseGroupsGroupId", "Universe", [("group_id", integer)], "UniverseGroup"),
+            },
         },
         "components": {
             "schemas": {
@@ -980,6 +983,16 @@ def _fleet_spec():
                         "type_id": integer,
                     },
                     "required": ["group_id", "name", "published", "type_id"],
+                },
+                "UniverseGroup": {
+                    "type": "object",
+                    "properties": {
+                        "category_id": integer,
+                        "group_id": integer,
+                        "name": {"type": "string"},
+                        "published": {"type": "boolean"},
+                    },
+                    "required": ["category_id", "group_id", "name", "published"],
                 },
                 "InsurancePrices": {
                     "type": "array",
@@ -1777,7 +1790,13 @@ class DjangoEsiOperationTests(TestCase):
 
         self.assertEqual(
             esi_provider.UNIVERSE_OPERATIONS,
-            ("GetUniverseSystemsSystemId", "GetUniverseConstellationsConstellationId", "GetUniverseTypesTypeId"),
+            (
+                "GetUniverseSystemsSystemId",
+                "GetUniverseConstellationsConstellationId",
+                "GetUniverseTypesTypeId",
+                # 0.3.0b1: the category of a type's group tells whether a payout rule names a ship.
+                "GetUniverseGroupsGroupId",
+            ),
         )
         self.assertLessEqual(set(esi_provider.UNIVERSE_OPERATIONS), set(operations))
         self.assertEqual(esi_universe.UNIVERSE_OPERATIONS, esi_provider.UNIVERSE_OPERATIONS)
@@ -1795,18 +1814,24 @@ class DjangoEsiOperationTests(TestCase):
             200,
             {"group_id": 25, "name": "Rifter", "published": True, "type_id": 587},
         )
+        self.server.routes[("GET", "/universe/groups/25")] = (
+            200,
+            {"category_id": 6, "group_id": 25, "name": "Frigate", "published": True},
+        )
 
         system = esi_universe.get_system(30000142)
         constellation = esi_universe.get_constellation(20000020)
         ship = esi_universe.get_type(587)
+        group = esi_universe.get_group(25)
 
+        self.assertEqual(group["category_id"], 6)
         self.assertEqual((system["security_status"], system["constellation_id"]), (0.9459, 20000020))
         self.assertEqual(constellation["region_id"], 10000002)
         self.assertEqual(ship["group_id"], 25)
         # No token: the requests carry no authorisation.
         self.assertEqual(
             [request[1] for request in self.server.requests],
-            ["/universe/systems/30000142", "/universe/constellations/20000020", "/universe/types/587"],
+            ["/universe/systems/30000142", "/universe/constellations/20000020", "/universe/types/587", "/universe/groups/25"],
         )
 
     def test_a_universe_read_respects_the_expiry_of_the_answer(self):

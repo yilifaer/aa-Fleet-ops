@@ -47,6 +47,11 @@ def get_constellation(constellation_id: int) -> dict:
     )
 
 
+def get_group(group_id: int) -> dict:
+    """``GET /universe/groups/{group_id}`` as a plain dict (``category_id``, ``name``, ...)."""
+    return _read_plain(esi_provider.esi.client.Universe.GetUniverseGroupsGroupId(group_id=int(group_id)))
+
+
 def get_type(type_id: int) -> dict:
     """``GET /universe/types/{type_id}`` as a plain dict (``group_id``, ``name``, ...)."""
     return _read_plain(esi_provider.esi.client.Universe.GetUniverseTypesTypeId(type_id=int(type_id)))

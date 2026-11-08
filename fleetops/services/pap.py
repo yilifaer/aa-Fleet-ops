@@ -323,6 +323,11 @@ def _apply_corrections(operation, managed, user_rows):
     managed_characters = {row.character_id for row in managed}
     for row in user_rows:
         row.granted = manual_row_granted(row.review_status, row.correction, row.character_id in managed_characters)
+        merged_into_tracked = row.character_id in merged and row.character_id in managed_characters
+        if row.granted and row.correction == Correction.REPLACE and merged_into_tracked:
+            # A merge brings the tracked PAP back, so the replacement has nothing left to replace; counting it
+            # too would pay the character for two corrections that contradict each other.
+            row.granted = False
 
 
 def _summary(managed, user_rows, unregistered):

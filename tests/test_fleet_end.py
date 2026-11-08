@@ -475,8 +475,11 @@ class EndStateCleanupTests(EndTestBase):
         self.assertFalse(FleetMemberState.objects.filter(operation=operation, is_active=True).exists())
 
     def test_closed_fleet_page_has_no_active_fleet_warning(self):
+        # 0.3.0b1 (L-20): an automatic end counts to the last successful read. The read was 2 hours ago here, which
+        # left the fleet (started 200 minutes ago) too short for a multiplier choice; 10 minutes ago keeps the
+        # fleet long enough for it, and a closed fleet is never "stale" whatever the age of that read.
         FleetOperation.objects.filter(pk=self.operation.pk).update(
-            last_esi_update=timezone.now() - timedelta(hours=2)
+            last_esi_update=timezone.now() - timedelta(minutes=10)
         )
         self.esi.members[FLEET_ID] = http_error(404)
         self.esi.character_fleets.clear()

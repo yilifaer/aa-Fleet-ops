@@ -162,9 +162,14 @@ def resolve_names(names: list[str]) -> dict[str, Resolved]:
         return result
 
     known = defaultdict(list)
-    lowered = {name.lower() for name in wanted.values()}
-    for character in EveCharacter.objects.annotate(lname=Lower("character_name")).filter(lname__in=lowered):
+    # The exact spelling first: that query uses the index of the name column (and is case-insensitive on MariaDB).
+    # Only the names it did not find are looked up ignoring case, which has to read the whole table.
+    for character in EveCharacter.objects.filter(character_name__in=set(wanted.values())):
         known[character.character_name.casefold()].append(character)
+    unmatched = {name.lower() for key, name in wanted.items() if key not in known}
+    if unmatched:
+        for character in EveCharacter.objects.annotate(lname=Lower("character_name")).filter(lname__in=unmatched):
+            known[character.character_name.casefold()].append(character)
     owned = _ownerships(character__in=[character for group in known.values() for character in group])
     for key, characters in known.items():
         if key not in wanted:

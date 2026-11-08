@@ -133,6 +133,8 @@ CELERYBEAT_SCHEDULE["fleetops_prune_history"] = {
 }
 ```
 
+**警告：每日任务会删除数据。** `fleetops_prune_history`（`fleetops.tasks.prune_attendance_history`）会删除早于**数据保留天数**（至少 365 天）的 PAP 历史、成员事件和不带舰队的 Ping 文本（PAP 链接登记不在其中，它们随舰队保留）；设置了**成员联盟 ID** 时，还会删除主角色不在这些联盟里的玩家的 PAP。第一次运行之前请检查这两个设置，并运行 `python manage.py fleetops_prune_history --dry-run` 看会删掉什么。内置的安全检查会在设置明显有误时拒绝"已离开成员"这一部分，但它不知道你的本意，请保留数据库备份。见[数据与隐私](#数据与隐私)。
+
 每分钟运行的任务只负责判断哪些进行中的舰队到了该读取的时间，读取间隔本身是一个设置。同一个任务还会收尾那些"结束舰队"任务丢失的舰队、取消被中断的开队，并启动 SRP 价值扫描，
 所以请保持它一直运行。如果安装了 aa-charlink，`INSTALLED_APPS` 里必须原样写出 `"fleetops"`。
 
@@ -226,6 +228,36 @@ PAP 登记链接用飞行员自己的令牌读取他在哪里、开什么船、�
 6. 重启 Web 进程、Celery Worker 和 Celery Beat。
 
 **从 0.3.0b1 回退到 0.2.x。** 先回退迁移（`python manage.py migrate fleetops 0023`），再安装旧版本的包。回退之前先运行 `python manage.py fleetops_srp_rollback_check`：它列出会挡住回退的东西（属于某个类别的赔付规则、有申请的常驻链接、导入的历史），不改任何数据。步骤和回退会丢失的数据见 [CHANGELOG](CHANGELOG.md)（英文）。
+
+## 卸载
+
+卸载 FleetOps 会删除它的数据，所以先备份数据库，并导出想保留的内容（SRP 页面有 CSV 和 Excel 导出）。请按下面的顺序操作；删除数据表时应用必须还装着。
+
+1. 从 `local.py` 里删掉两条 `CELERYBEAT_SCHEDULE["fleetops_..."]`（FleetOps 不在数据库里创建任何调度记录），并重启 Celery Beat，这样就不会再有任务被排给这个应用。
+2. 可选：运行 `python manage.py fleetops_srp_rollback_check`。它只读，列出会挡住第 3 步的东西（属于某个类别的赔付规则、有申请的链接、从 aa-srp 导入的申请）；先按 [CHANGELOG](CHANGELOG.md)（英文）的说明处理掉。
+3. 运行 `python manage.py migrate fleetops zero`。这会删除 FleetOps 的所有数据表和表里的全部数据。在 MariaDB 和 MySQL 上，迁移中途失败是无法回滚的，所以请保留备份。
+4. 从 `INSTALLED_APPS` 里删掉 `"fleetops"`，并从 `local.py` 里删掉 `APPS_WITH_PUBLIC_VIEWS += ["fleetops"]` 这一行。
+5. 运行 `pip uninstall aa-fleetops`，然后重启 Web 进程、Celery Worker 和 Celery Beat。
+
+**会留下什么。** Django 会保留该应用的 content type 和权限记录（`app_label` 为 `fleetops`），用户组里这些权限的分配也会保留；没有这个应用它们不起任何作用，可以在 Django 管理后台或 Django shell 里按 `app_label="fleetops"` 筛选后删除。不要运行 `remove_stale_contenttypes --include-stale-apps`，它也会动其他应用。Alliance Auth 自己的数据不受影响：用户、用户组、角色，以及 django-esi 保存的 ESI token（FleetOps 自己不保存任何 token）。缓存（以 `fleetops:` 开头的键）会自行过期。已经发出的 Discord 消息和 EVE SSO 应用上的权限范围都不会改变；不再需要的权限范围请自己到 EVE 应用上去掉。
+
+## 数据与隐私
+
+FleetOps 是你们组织自己的工具，保留什么由你决定。它把下面这些数据存在 Alliance Auth 的数据库里：
+
+| 数据 | 内容 | 保留 |
+|---|---|---|
+| 舰队与成员 | 每支舰队：FC、类型、时间、配置和 Discord/ESI 的结果。舰队里出现过的每位飞行员：角色、军团、联盟、舰船、星系、职位和在队时长，没有 Alliance Auth 账号的人也一样 | 舰队和成员状态一直保留。成员事件在**数据保留天数**之后删除（见下） |
+| PAP | 按角色记录的 PAP，附带所属的主角色和玩家、修正记录 | 在**数据保留天数**之后删除；设置了**成员联盟 ID** 时，已离开成员的也会删除。PAP 链接登记（角色、飞船、星系、在线状态）不在此列：它们保留到所属舰队被删除 |
+| SRP | 申请及其 KM 数据（受害者、舰船、星系、攻击者名字）、金额、决定的时间线、付款批次、封禁、发现的损失 | 申请、时间线、付款和封禁是付款记录，保留策略从不删除它们；没人申请的 KM 7 天后删除，已经没用的发现损失也会删除 |
+| 审计日志 | 谁在什么时候改了什么（设置、审核、付款、PAP 修正）；不含 token、不含 webhook 地址 | FleetOps 从不删除 |
+| 设置 | Discord webhook 地址（和 Alliance Auth 里其他密钥一样，以明文存在数据库中）、SRP 和舰队设置 | 直到你删除 |
+| 名称缓存 | 从 ESI 查到的角色、军团、联盟名称和归属 | 直到下次查询；从不删除 |
+| ESI token | FleetOps 不保存。它读取 django-esi 为用户保存的 token，从不把它写进日志、审计日志、页面或导出文件 | 由 Alliance Auth 管理 |
+
+数据只会发往 Discord（你发出的 Ping）、zKillboard 和 ESI（SRP 用到的 KM ID 和角色 ID，仅在启用 SRP 时），不会发往其他地方。保留期限在**管理**里的 FleetOps 设置页设置，名为**数据保留天数**（365 到 36500）。上面说的每日任务会执行它；`python manage.py fleetops_prune_history --dry-run` 可以先看效果。
+
+**按请求删除数据。** FleetOps 没有按个人导出或删除的按钮。Django 管理后台里 PAP 记录（`AttendanceRecord`）、成员记录（`FleetMemberState`、`FleetMemberEvent`）和 SRP 申请都是只读的，只有 `PapRegistration` 可以在那里删除。某个人的记录请在 Django shell 里删除，例如 `AttendanceRecord.objects.filter(character_id=...).delete()`，`PapRegistration`、`FleetMemberState`、`FleetMemberEvent` 同样按角色 ID 处理；SRP 申请按玩家处理。SRP 封禁会随 Alliance Auth 里的用户一起删除；PAP 和 SRP 记录会作为历史保留，只是不再关联账号。发起或带过舰队、或有 FC 统计的用户，在这些记录还存在时不能被删除（数据库保护这些记录）。审计日志和已付款的 SRP 申请是账目记录：只有在你们的规定和所在国家的法律要求时才删除，并注意这会改变 FleetOps 统计和报表所依据的历史。
 
 ## 翻译
 

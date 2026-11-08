@@ -777,7 +777,12 @@ def end_fleet(operation, actor=None, automatic=False, attendance_multiplier=None
         operation.end_detail = detail
         update_fields = ["status", "end_reason", "end_detail", "updated_at"]
         if operation.end_requested_at is None:
-            operation.end_requested_at = timezone.now()
+            now = timezone.now()
+            if automatic and operation.last_esi_update and operation.last_esi_update < now:
+                # The fleet was gone before the polls that counted it as missing: it ended when it was last
+                # read, not when the last of those polls gave up.
+                now = max(operation.last_esi_update, operation.started_at or operation.last_esi_update)
+            operation.end_requested_at = now
             operation.end_requested_by = actor
             update_fields += ["end_requested_at", "end_requested_by"]
         operation.save(update_fields=update_fields)
