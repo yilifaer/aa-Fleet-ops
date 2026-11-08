@@ -15,20 +15,49 @@
 </div>
 {% endif %}
 
-{% if preview.suggested_link %}
+{% if preview.switched %}
+<div class="alert alert-info" id="srp-switched-note">
+  {% blocktranslate trimmed with fleet_type=preview.link.operation.fleet_type fc=preview.link.fc_main_character_name|default:preview.link.operation.fc_character_name %}This loss happened in <strong>{{ fleet_type }}</strong> (FC {{ fc }}), so it is calculated with the SRP link of that fleet.{% endblocktranslate %}
+  {% if preview.forced_token %}
+  <details class="mt-2" id="srp-out-of-fleet-anyway">
+    <summary>{% translate "Submit as a loss outside a fleet anyway" %}</summary>
+    <form method="post" action="{% url 'fleetops:srp_submit' %}" class="mt-2" data-srp-once>
+      {% csrf_token %}
+      <input type="hidden" name="token" value="{{ preview.forced_token }}">
+      <div class="mb-2">
+        <label class="form-label" for="id_out_of_fleet_reason">{% translate "Why outside the fleet?" %}</label>
+        <textarea name="out_of_fleet_reason" id="id_out_of_fleet_reason" class="form-control" rows="2" maxlength="1000" required></textarea>
+        <div class="form-text">{% translate "The reviewer sees this reason." %}</div>
+      </div>
+      <button type="submit" class="btn btn-sm btn-outline-secondary">{% translate "Submit outside the fleet" %}</button>
+    </form>
+  </details>
+  {% elif preview.forced_blocker %}
+  <p class="small text-muted mb-0 mt-2" id="srp-out-of-fleet-refused">{% blocktranslate trimmed with reason=preview.forced_blocker %}It cannot be submitted as a loss outside a fleet instead: {{ reason }}{% endblocktranslate %}</p>
+  {% endif %}
+</div>
+{% elif preview.suggested_link %}
 <div class="alert alert-info">
+  {% if preview.match_action == "block" %}
+  {% blocktranslate trimmed with fleet_type=preview.suggested_link.operation.fleet_type fc=preview.suggested_link.fc_main_character_name|default:preview.suggested_link.operation.fc_character_name %}This loss happened in <strong>{{ fleet_type }}</strong> (FC {{ fc }}). It has to be submitted with the SRP link of that fleet.{% endblocktranslate %}
+  {% else %}
   {% blocktranslate trimmed with fleet_type=preview.suggested_link.operation.fleet_type fc=preview.suggested_link.fc_main_character_name|default:preview.suggested_link.operation.fc_character_name %}This loss happened in <strong>{{ fleet_type }}</strong> (FC {{ fc }}). Submit it as a fleet loss?{% endblocktranslate %}
+  {% endif %}
   {% if loss %}
   <form method="post" action="{% url 'fleetops:srp_loss_check' loss.killmail_id %}" class="d-inline ms-2">
     {% csrf_token %}<input type="hidden" name="target" value="fleet:{{ preview.suggested_link.code }}">
-    <button type="submit" class="btn btn-sm btn-primary">{% translate "Check it as a fleet loss" %}</button>
+    <button type="submit" class="btn btn-sm btn-primary">{% if preview.match_action == "block" %}{% blocktranslate trimmed with fleet_type=preview.suggested_link.operation.fleet_type %}Submit with the link of {{ fleet_type }}{% endblocktranslate %}{% else %}{% translate "Check it as a fleet loss" %}{% endif %}</button>
   </form>
   {% else %}
   <form method="post" action="{% url 'fleetops:srp_link' preview.suggested_link.code %}" class="d-inline ms-2">
     {% csrf_token %}<input type="hidden" name="killmail" value="{{ input_text }}">
-    <button type="submit" class="btn btn-sm btn-primary">{% translate "Check it as a fleet loss" %}</button>
+    <button type="submit" class="btn btn-sm btn-primary">{% if preview.match_action == "block" %}{% blocktranslate trimmed with fleet_type=preview.suggested_link.operation.fleet_type %}Submit with the link of {{ fleet_type }}{% endblocktranslate %}{% else %}{% translate "Check it as a fleet loss" %}{% endif %}</button>
   </form>
   {% endif %}
+</div>
+{% elif preview.closed_link %}
+<div class="alert alert-info" id="srp-closed-fleet-note">
+  {% blocktranslate trimmed with fleet_type=preview.closed_link.operation.fleet_type %}This loss happened in <strong>{{ fleet_type }}</strong>, but the SRP link of that fleet is closed. It is checked as a loss outside a fleet.{% endblocktranslate %}
 </div>
 {% endif %}
 

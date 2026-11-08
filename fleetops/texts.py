@@ -1230,6 +1230,9 @@ SRP_LINK_AUTO_UNCOMPLETED = StoredText(gettext_noop("A claim of the link is wait
 SRP_LINK_NO_DAILY_CATEGORY = StoredText(gettext_noop("Choose a category for the link."))
 SRP_LINK_AUTO_CLOSED = StoredText(gettext_noop("Closed automatically at the time set for the link."))
 SRP_NO_LINK_FOR_DAY = StoredText(gettext_noop("This category has no open SRP link for the day of the loss."))
+SRP_USE_FLEET_LINK = StoredText(
+    gettext_noop("This loss happened in %(fleet)s. Submit it with the SRP link of that fleet, not as a loss outside a fleet.")
+)
 
 # SRP member edits and the revision check of the review (INT-13).
 SRP_MEMBER_EDIT_OFF = StoredText(gettext_noop("Members cannot change their claims."))

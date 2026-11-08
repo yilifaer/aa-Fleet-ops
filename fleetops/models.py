@@ -1943,6 +1943,11 @@ class SrpSettings(models.Model):
         REVIEW = "review", _("Send to review with a warning")
         REJECT = "reject", _("Reject automatically")
 
+    class InFleetMatchAction(models.TextChoices):
+        AUTO = "auto", _("Switch to the fleet link automatically")
+        BLOCK = "block", _("Block it and ask for the fleet link")
+        SUGGEST = "suggest", _("Only suggest the fleet link")
+
     enabled = models.BooleanField(
         verbose_name=pgettext_lazy("FleetOps", "Enabled"),
         default=False,
@@ -2058,6 +2063,15 @@ class SrpSettings(models.Model):
         help_text=_(
             "A member who chooses a category on a day without an open standing link of that category can still "
             "submit; the claim only records the category. Switch off to require the link."
+        ),
+    )
+    in_fleet_match_action = models.CharField(
+        verbose_name=_("Losses inside a tracked fleet"),
+        max_length=10,
+        choices=InFleetMatchAction.choices,
+        default=InFleetMatchAction.AUTO,
+        help_text=_(
+            "What happens when a member checks a loss as a loss outside a fleet but the character was in (or near) a tracked fleet that has an open SRP link. Switch: the loss is calculated through the fleet link and with the fleet rules; the member can still submit it as an out-of-fleet loss, with a reason. Block: the member must use the fleet link. Suggest: only a hint is shown and the loss stays outside a fleet."
         ),
     )
     auto_complete_links = models.BooleanField(

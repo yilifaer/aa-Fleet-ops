@@ -292,7 +292,8 @@ right actor.
   with claims, run `fleetops_srp_rollback_check` (it must pass), `migrate fleetops 0023`, install 0.2.0b3 and start it.
   Claims, amounts and statuses are as before; the categories, standing links, batches, bans and found losses are gone.
 - [ ] With imported claims, rules of a category or standing links with claims still in place, `migrate fleetops 0023`
-  stops at `0036`; only the help text of `0038` and the index of `0037` are undone before it stops (its guard runs before the pruning share column is dropped).
+  stops at `0039` (its guard runs before the **Losses inside a tracked fleet** column is dropped), so nothing is undone; without the stop, the help text of `0038` and the index of `0037` would be undone next, and `0036` runs its guard before the pruning share column is dropped.
+- [ ] A loss of a pilot who was in a tracked fleet, checked from My SRP as a loss outside a fleet: with the default setting the check shows the fleet and the fleet amount; **Submit as a loss outside a fleet anyway** needs a reason and the claim page shows it; with **Block** the check has no submit button and offers the link of the fleet; with **Only suggest** it only asks "Submit it as a fleet loss?". Close the fleet link after the check and submit: the claim is made outside a fleet with the closed-link warning.
 
 **Version and database matrix** (CI runs SQLite and MariaDB with the whole suite and the migration tests on PostgreSQL; the PostgreSQL job covers the migrations only, so run the rest of this list on PostgreSQL by hand for a release)
 

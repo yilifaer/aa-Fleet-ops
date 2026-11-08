@@ -176,6 +176,17 @@ depends on it. Read the upgrade notes and the rollback notes below before you st
 
 ### Changed
 
+- **A loss inside a tracked fleet is no longer paid as a loss outside a fleet by accident.** When a member checks a
+  loss from **My SRP** as a loss outside a fleet, but fleet tracking shows that the character was in (or within the
+  polling grace of) a fleet whose SRP link is open, the check is now made with that fleet's link, so the fleet rules
+  apply (for example no cap for a loss outside a fleet). The page says which fleet it is and offers **Submit as a loss
+  outside a fleet anyway**, which needs a reason that the reviewers see on the claim. A loss that only has a PAP
+  registration, a loss whose fleet link is closed, and a loss the member may not claim through that link are not
+  switched. This is a change of behaviour: earlier builds only showed a hint. A new setting, **Losses inside a tracked
+  fleet** (**SRP Settings**), has three choices: switch to the fleet link automatically (the default for new and
+  upgraded sites), block the submit and ask for the fleet link, or only suggest it. **Administrators can set it back to
+  "Only suggest the fleet link" to keep the old behaviour.** A link that closes between the check and the submit gives a
+  claim outside a fleet with the warning "The SRP link of the fleet was closed before this claim was submitted". The way out **Submit as a loss outside a fleet anyway** is offered only when the loss passes the outside-fleet checks, and a check made before the setting was changed to "block" is refused at submit.
 - **The security status of a system is shown to SRP staff only** on a claim (members keep seeing the system name and, on
   the check page, the reason a loss is not covered).
 - **"SRP managers may decide on their own claims" is now "SRP reviewers may decide on their own claims"** and only
@@ -359,6 +370,9 @@ payer reports, which are for SRP staff only. Killmails stored before 0.3.0b1 sho
 report until `python manage.py fleetops_srp_backfill_killmails` has read them. The code that read the month of the
 summaries now reads a period; nothing is stored differently.
 
+Migration `0039` adds the setting **Losses inside a tracked fleet** with the value "Switch to the fleet link
+automatically" for every site and changes no data. Claims that exist are not touched. Set the setting to "Only suggest
+the fleet link" in **SRP Settings** if members should keep entering such losses outside a fleet.
 Migration `0038` only changes the help text of **The approver of a claim may not pay it** (no column, no data); the rule
 now applies to the approver and to everyone who changed the approved amount. Migration `0037` adds one index to the found losses (SRP loss table) and changes no data; on a large table it takes
 a moment. Migration `0036` adds one column to the FleetOps settings (**Largest share of departed members to prune**, percent, default
@@ -426,7 +440,7 @@ Rolling back `0032` drops the payment batches (the claims keep their status, amo
 the batch they were paid in), the insurance prices, the stored attackers, the revision numbers and the five settings.
 Claims, amounts and statuses are not changed. Export the batches first if you need them. To behave like the previous
 version before rolling back, untick **Members can change their pending claims**.
-Rolling back `0038` restores the old help text and changes nothing else. Rolling back `0037` drops the index it added; nothing else changes. Rolling back `0033` drops the external ID of the claims. **`0035` is the guard for the whole way back**; `0036`, which adds the
+Rolling back `0039` drops the setting **Losses inside a tracked fleet**; claims already made keep their scope and link. `0039` runs the rollback guard before it drops the column, so a way back below `0035` is refused first. Rolling back `0038` restores the old help text and changes nothing else. Rolling back `0037` drops the index it added; nothing else changes. Rolling back `0033` drops the external ID of the claims. **`0035` is the guard for the whole way back**; `0036`, which adds the
 pruning share to the settings, runs the same checks first and only drops that column when they
 let the rollback go on (then `0035` checks once more). It checks everything that makes going back unsafe, once and before anything is changed, and stops the
 rollback (to `0023` or to any migration of this version, also a partial one such as `0032`) with a list while:

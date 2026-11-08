@@ -49,6 +49,7 @@ rollback_guard = importlib.import_module("fleetops.migrations.0035_srp_rollback_
 prune_share = importlib.import_module("fleetops.migrations.0036_history_prune_share")
 loss_index = importlib.import_module("fleetops.migrations.0037_srp_loss_killmail_index")
 approver_help = importlib.import_module("fleetops.migrations.0038_srp_approver_help")
+match_action = importlib.import_module("fleetops.migrations.0039_srp_in_fleet_match_action")
 
 NEW_CODENAMES = ("request_srp", "manage_srp")
 # Permissions of 0.3.0b1 (REV-1): registered with the model options, granted to nobody.
@@ -93,6 +94,7 @@ class MigrationModuleTests(TestCase):
             prune_share,
             loss_index,
             approver_help,
+            match_action,
         ):
             source = inspect.getsource(module)
             with self.subTest(module=module.__name__):
@@ -133,6 +135,7 @@ class MigrationModuleTests(TestCase):
         self.assertEqual(prune_share.Migration.dependencies, [("fleetops", "0035_srp_rollback_guard")])
         self.assertEqual(loss_index.Migration.dependencies, [("fleetops", "0036_history_prune_share")])
         self.assertEqual(approver_help.Migration.dependencies, [("fleetops", "0037_srp_loss_killmail_index")])
+        self.assertEqual(match_action.Migration.dependencies, [("fleetops", "0038_srp_approver_help")])
 
     def test_the_migrations_start_with_the_plain_header(self):
         for module in (
@@ -151,6 +154,7 @@ class MigrationModuleTests(TestCase):
             prune_share,
             loss_index,
             approver_help,
+            match_action,
         ):
             with self.subTest(module=module.__name__):
                 self.assertTrue(inspect.getsource(module).startswith("# AA FleetOps 0.3.0b1:"))
@@ -181,6 +185,7 @@ class MigrationModuleTests(TestCase):
             prune_share,
             loss_index,
             approver_help,
+            match_action,
         ):
             source = inspect.getsource(module)
             with self.subTest(module=module.__name__):
@@ -1382,8 +1387,8 @@ class RollbackGuardFunctionTests(TestCase):
 
     def test_the_last_migration_adds_the_share_and_runs_the_guard_first_when_going_back(self):
         executor = MigrationExecutor(connection)
-        # Changed for 0038: 0036 is no longer the leaf; the leaf is the help-text-only migration after the index one.
-        self.assertEqual(executor.loader.graph.leaf_nodes("fleetops"), [("fleetops", "0038_srp_approver_help")])
+        # Changed for 0039: 0036 is no longer the leaf; the leaf is the migration of the in-fleet match action.
+        self.assertEqual(executor.loader.graph.leaf_nodes("fleetops"), [("fleetops", "0039_srp_in_fleet_match_action")])
         # Operations are undone in reverse order: the guard has to come after the column, so it refuses before the
         # column is dropped.
         add_field, guard = prune_share.Migration.operations
@@ -1413,6 +1418,30 @@ class RollbackGuardFunctionTests(TestCase):
         for name in ("AASRP", "MAX_LISTED", "RULES", "LINKS", "CLAIMS"):
             with self.subTest(constant=name):
                 self.assertEqual(getattr(prune_share, name), getattr(rollback_guard, name))
+
+    def test_the_guard_of_0039_is_the_same_as_the_guard_of_0035(self):
+        for name in ("_listed", "check_all", "describe", "refuse_rollback"):
+            with self.subTest(function=name):
+                self.assertEqual(
+                    inspect.getsource(getattr(match_action, name)), inspect.getsource(getattr(rollback_guard, name))
+                )
+        for name in ("AASRP", "MAX_LISTED", "RULES", "LINKS", "CLAIMS"):
+            with self.subTest(constant=name):
+                self.assertEqual(getattr(match_action, name), getattr(rollback_guard, name))
+
+    def test_the_guard_of_0039_comes_after_the_column_so_going_back_refuses_first(self):
+        add_field, guard = match_action.Migration.operations
+        self.assertEqual(type(add_field).__name__, "AddField")
+        self.assertEqual((add_field.model_name, add_field.name), ("srpsettings", "in_fleet_match_action"))
+        self.assertIs(guard.reverse_code, match_action.refuse_rollback)
+
+    def test_the_column_of_0039_matches_the_model(self):
+        [add_field, _guard] = match_action.Migration.operations
+        model_field = SrpSettings._meta.get_field("in_fleet_match_action")
+
+        self.assertEqual(add_field.field.deconstruct()[1:], model_field.deconstruct()[1:])
+        self.assertEqual(add_field.field.default, "auto")
+        self.assertEqual([value for value, _label in add_field.field.choices], ["auto", "block", "suggest"])
 
     def test_the_constants_copied_into_the_guards_match_the_app(self):
         from fleetops.models import SrpClaim, SrpFleetLink
@@ -1709,6 +1738,45 @@ class ImportRoundTripTests(TransactionTestCase):
 
         back = self.migrate([("fleetops", "0037_srp_loss_killmail_index")])
         self.assertTrue(back.get_model("fleetops", "SrpSettings").objects.get(pk=1).require_different_payer)
+
+    def test_0039_adds_the_match_action_with_auto_and_going_back_drops_it(self):
+        # INT-14: schema only; new and upgraded sites get "auto" without any data being read or changed.
+        before = self.migrate([("fleetops", "0038_srp_approver_help")])
+        before.get_model("fleetops", "SrpSettings").objects.update_or_create(pk=1, defaults={"percentage": 70})
+        self.assertNotIn("in_fleet_match_action", self.srp_settings_columns())
+
+        after = self.migrate([("fleetops", "0039_srp_in_fleet_match_action")])
+        row = after.get_model("fleetops", "SrpSettings").objects.get(pk=1)
+        self.assertEqual((row.in_fleet_match_action, row.percentage), ("auto", 70))
+
+        back = self.migrate([("fleetops", "0038_srp_approver_help")])
+        self.assertNotIn("in_fleet_match_action", self.srp_settings_columns())
+        self.assertEqual(back.get_model("fleetops", "SrpSettings").objects.get(pk=1).percentage, 70)
+
+    def srp_settings_columns(self):
+        with connection.cursor() as cursor:
+            return {c.name for c in connection.introspection.get_table_description(cursor, "fleetops_srpsettings")}
+
+    def test_going_back_below_0035_is_refused_before_the_match_action_is_dropped(self):
+        new = self.migrate([("fleetops", "0039_srp_in_fleet_match_action")])
+        self.claim(new, 1, source="aasrp", external_id="aasrp:1", status="paid")
+
+        with self.assertRaises(IrreversibleError) as caught:
+            self.migrate(self.after_guard)
+
+        self.assertIn("1 claims were imported", str(caught.exception))
+        self.assertIn("in_fleet_match_action", self.srp_settings_columns())
+        self.assert_applied([("fleetops", "0039_srp_in_fleet_match_action")])
+
+    def test_the_plan_back_to_0023_starts_with_0039_and_its_guard(self):
+        self.migrate([("fleetops", "0039_srp_in_fleet_match_action")])
+        executor = MigrationExecutor(connection)
+
+        plan = executor.migration_plan(self.oldest)
+
+        names = [migration.name for migration, _backwards in plan]
+        self.assertEqual(names[:2], ["0039_srp_in_fleet_match_action", "0038_srp_approver_help"])
+        self.assertIs(plan[0][0].operations[-1].reverse_code, match_action.refuse_rollback)
 
     def test_a_site_that_already_applied_0035_gets_the_share_from_0036(self):
         # The development branch had 0035 as the last migration; the next migrate must add the column.

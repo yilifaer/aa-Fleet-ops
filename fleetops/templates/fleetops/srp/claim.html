@@ -190,6 +190,8 @@
           {% if event.amount is not None %}&middot; {{ event.amount|isk }}{% endif %}
         </div>
         {% if event.reason %}<div>{{ event.reason|stored_text|linebreaksbr }}</div>{% endif %}
+        {% if event.data.forced_out_of_fleet %}<div class="small">{% blocktranslate trimmed with reason=event.data.forced_reason %}Submitted as a loss outside a fleet although it happened in a tracked fleet. Reason: {{ reason }}{% endblocktranslate %}</div>{% endif %}
+        {% if event.data.auto_in_fleet %}<div class="small text-muted">{% translate "Entered outside a fleet; submitted with the SRP link of the fleet the loss happened in." %}</div>{% endif %}
       </li>
       {% empty %}
       <li class="text-muted">{% translate "Nothing has happened to this claim yet." %}</li>

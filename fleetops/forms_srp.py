@@ -257,6 +257,15 @@ class SubmitClaimForm(forms.Form):
         widget=forms.Textarea(attrs={"rows": 2}),
         help_text=_("Optional. Anything the reviewer should know."),
     )
+    # Only the "submit as a loss outside a fleet anyway" button of a loss that lies in a tracked fleet asks for it.
+    out_of_fleet_reason = forms.CharField(
+        label=_("Why outside the fleet?"),
+        required=False,
+        max_length=COMMENT_LENGTH,
+        strip=True,
+        widget=forms.Textarea(attrs={"rows": 2}),
+        help_text=_("The reviewer sees this reason."),
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

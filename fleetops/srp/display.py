@@ -254,6 +254,9 @@ WARNING_TEXTS = {
     "external_claim": _text_external_claim,
     "outside_link_date": _text_outside_link_date,
     "ship_mismatch": _text_ship_mismatch,
+    "fleet_link_closed": lambda params: gettext(
+        "The SRP link of the fleet was closed before this claim was submitted, so it was submitted as a loss outside a fleet."
+    ),
 }
 
 NOTE_TEXTS = {

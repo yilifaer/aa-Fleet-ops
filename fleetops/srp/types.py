@@ -514,6 +514,12 @@ class ClaimPreview:
     ``blockers`` are texts for the member; with any blocker the claim cannot be submitted. ``token`` is the
     signed reference the submit step needs. ``suggested_link`` is the fleet link whose fleet contains an
     out-of-fleet loss. ``source`` is how the loss came to the member's notice (``paste`` or ``discovered``).
+
+    A loss entered outside a fleet that lies inside a tracked fleet (setting ``in_fleet_match_action``): with
+    ``auto`` ``link`` and ``scope`` are those of the fleet, ``switched`` is true, ``match_code`` is how the fleet
+    was found (``in_fleet`` or ``near``) and ``forced_token`` is the token of the same loss outside a fleet (it
+    needs a reason when it is submitted; ``forced_blocker`` is why that way out is not offered). With ``block`` ``suggested_link`` is the fleet link the member must use.
+    ``closed_link`` is the closed link of the fleet the loss lies in (the loss stays outside a fleet).
     """
 
     killmail: Any
@@ -530,6 +536,12 @@ class ClaimPreview:
     calculation: Calculation | None = None
     existing_claim: Any = None
     suggested_link: Any = None
+    switched: bool = False
+    match_code: str = ""
+    match_action: str = ""
+    forced_token: str = ""
+    forced_blocker: str = ""
+    closed_link: Any = None
     token: str = ""
     source: str = "paste"
 

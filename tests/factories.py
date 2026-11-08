@@ -598,6 +598,10 @@ def srp_settings(**values) -> SrpSettings:
     """The SRP settings, enabled unless ``enabled=False`` is passed; other fields are set as given."""
     obj = SrpSettings.get_solo()
     values.setdefault("enabled", True)
+    # Changed for the in-fleet match action (default "auto" in the app): the older tests check losses outside a fleet
+    # of pilots who are in a tracked fleet and expect the hint of 0.3.0b1 ("suggest"). The tests of the switch ask for
+    # "auto" or "block" themselves; one test checks that the app default is "auto".
+    values.setdefault("in_fleet_match_action", "suggest")
     for key, value in values.items():
         setattr(obj, key, value)
     obj.save()

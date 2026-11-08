@@ -626,6 +626,7 @@ class SrpSettingsForm(forms.ModelForm):
                 "default_category",
                 "out_of_fleet_category_required",
                 "category_claims_without_link",
+                "in_fleet_match_action",
             ],
         ),
         (
@@ -743,6 +744,7 @@ class SrpSettingsForm(forms.ModelForm):
             "default_category",
             "out_of_fleet_category_required",
             "category_claims_without_link",
+            "in_fleet_match_action",
             "claim_deadline_days",
             "blocked_ship_type_ids",
             "payout_rule_lifts_ship_block",
@@ -784,7 +786,7 @@ class SrpSettingsForm(forms.ModelForm):
             )
         self.fields["default_category"].label_from_instance = category_label
         # A submission without the ban lengths (a script, an older form) keeps the stored ones.
-        for name in ("ban_default_days", "ban_max_days", "loss_discovery_interval_minutes", "review_history_days", "insurance_level"):
+        for name in ("ban_default_days", "ban_max_days", "loss_discovery_interval_minutes", "review_history_days", "insurance_level", "in_fleet_match_action"):
             self.fields[name].required = False
         self.warnings = []
         self._set_up_blocks()
@@ -854,6 +856,10 @@ class SrpSettingsForm(forms.ModelForm):
         # 0 means "all rejections"; only a missing value keeps the stored one.
         value = self.cleaned_data.get("review_history_days")
         return self.instance.review_history_days if value is None else value
+
+    def clean_in_fleet_match_action(self):
+        # A submission without the field (a script, an older form) keeps the stored choice.
+        return self.cleaned_data.get("in_fleet_match_action") or self.instance.in_fleet_match_action
 
     def clean_insurance_level(self):
         return self.cleaned_data.get("insurance_level") or self.instance.insurance_level

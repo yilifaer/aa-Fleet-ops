@@ -234,6 +234,8 @@ def preview_response(request, preview, *, link=None, input_text="", settings_obj
     estimate = None
     if preview.calculation is not None:
         estimate = insurance.estimate(preview.killmail.ship_type_id, preview.calculation.suggested, settings_obj)
+    # A loss that was switched to its fleet is shown like a loss entered through that fleet's page.
+    shown = link if link is not None else (preview.link if preview.switched else None)
     return srp_render(
         request,
         "fleetops/srp/preview.html",
@@ -242,7 +244,7 @@ def preview_response(request, preview, *, link=None, input_text="", settings_obj
             "preview": preview,
             "link": link,
             "loss": loss,
-            "operation": link.operation if link is not None else None,
+            "operation": shown.operation if shown is not None else None,
             "input_text": input_text,
             "submit_form": SubmitClaimForm(initial={"token": preview.token}),
         },
@@ -321,7 +323,12 @@ def srp_submit(request):
         messages.error(request, _("That claim could not be read. Check the loss again and submit it."))
         return redirect("fleetops:srp_home")
     try:
-        claim = claims.submit_claim(request.user, form.cleaned_data["token"], comment=form.cleaned_data["comment"])
+        claim = claims.submit_claim(
+            request.user,
+            form.cleaned_data["token"],
+            comment=form.cleaned_data["comment"],
+            out_of_fleet_reason=form.cleaned_data["out_of_fleet_reason"],
+        )
     except SrpDuplicateError as exc:
         messages.error(request, translate_stored(exc.message))
         if exc.claim is not None and exc.claim.user_id == request.user.pk:

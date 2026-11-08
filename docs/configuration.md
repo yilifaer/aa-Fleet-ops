@@ -479,6 +479,7 @@ history; it never moves ISK.
 |---|---|---|
 | Enabled | off | Members can submit claims, and fleets get FleetOps SRP links. |
 | Out-of-fleet losses | on | Allow claims for losses outside fleets. Off limits claims to the SRP links of fleets. |
+| Losses inside a tracked fleet | Switch to the fleet link automatically | What happens when a member checks a loss as a loss outside a fleet (from My SRP) but the character was in, or within the polling grace of, a fleet that FleetOps tracked, and the SRP link of that fleet is open. **Switch to the fleet link automatically** calculates the loss with that link and the fleet rules (the member sees which fleet, and can choose **Submit as a loss outside a fleet anyway** with a reason that the reviewer sees). **Block it and ask for the fleet link** shows the check without a submit button and offers **Submit with the link of** the fleet. **Only suggest the fleet link** shows a hint and keeps the loss outside a fleet. Only a loss that fleet tracking places in the fleet switches: a PAP registration alone does not, a closed link does not (the loss stays outside a fleet and the check says the link is closed), and a member who may not claim through that link is not switched. A link that closes between the check and the submit gives an outside-fleet claim with the warning "The SRP link of the fleet was closed before this claim was submitted"; that claim follows the rules of a loss outside a fleet (with out-of-fleet claims switched off it is refused as such; a required category that was not chosen is left empty). **Submit as a loss outside a fleet anyway** is offered only when the loss passes the outside-fleet checks, otherwise the page says why. A check made before the setting was changed to **Block** is refused at submit when the loss lies in an open tracked fleet. 0.2.x and the first 0.3.0b1 builds behaved like **Only suggest**; set it back to get that behaviour. |
 | Claim deadline (days) | 0 | Losses older than this cannot be submitted (checked when a loss is submitted, submitted again or moved to another loss). 0 means no deadline, and a site that upgrades keeps the value it had. Members are told the number of days on My SRP and on the SRP pages of links. Reopening a claim is not checked against the deadline. Changing the deadline does not make pending claims "calculated with earlier settings". |
 | Use zKillboard | on | Use zKillboard for killmail hashes and values. Off means only in-game links work, and **Value source** must be the ESI estimate. |
 | Value source | zKillboard total value | zKillboard total value (includes cargo; this is what aa-srp pays), zKillboard fitted value (ship, modules, drones, implants; no cargo), or the ESI market estimate. The estimate is also the fallback when zKillboard has no value. The value only matters for ships that are not in the payout table. Sites that never saved their SRP settings and have no claim get the total value when they upgrade to 0.3.0b1; a site that saved its settings once keeps its choice. |
@@ -588,6 +589,11 @@ To enable FleetOps SRP:
   claimed in aa-srp or Alliance Auth SRP. Blockers (an SRP ban, a loss of somebody else, a capsule without a rule, a
   closed link, a loss older than the deadline, a ship group, ship or kind of space that is [not covered](#fleetops-srp))
   are shown without a submit button.
+- A loss entered outside a fleet that fleet tracking places in a running fleet with an open SRP link is handled by
+  **Losses inside a tracked fleet**: by default it is checked and submitted with that fleet's link, so the in-fleet
+  rules apply (no out-of-fleet cap). The claim's history says it was switched, or shows the reason the member gave for
+  submitting it outside the fleet anyway. A member must be allowed to claim through that link like a member who
+  pasted the loss on the link's page (the same checks apply). A loss claimed through a standing link is never switched.
 - A claim through a [standing link](#srp-links) is not held back by **Out-of-fleet losses** being off, in any of its
   steps: checking, submitting, submitting again after withdrawing, even when the link was closed meanwhile.
   A withdrawn claim without a link is still refused when that switch is off.
@@ -1034,6 +1040,7 @@ on the pages named; nothing in FleetOps sets them for you.
 | | A payout table entry for the ship lifts the ship block | on |
 | | Wartime losses in high security are covered | off (such a loss is refused like any other) |
 | | A category claim needs no standing link | on |
+| | Losses inside a tracked fleet | Switch to the fleet link automatically (the default) |
 | | Ban default and longest length | 7 and 365 days (permanent bans are chosen per ban) |
 | | Ban members who keep submitting over their monthly cap | off (without monthly caps it would never trigger) |
 | | Find losses automatically | on (the scope is in the EVE application) |
@@ -1056,7 +1063,7 @@ through a fleet link at 571m.
 
 Migrations `0035` and `0036` are the guard of the 0.3.0b1 chain. `0036` adds the pruning share to the
 settings; going back runs its copy of the guard before that column is dropped, and `0035` runs the same checks once more.
-`0038`, the last migration, only changes a help text and `0037` only adds an index; they are undone first (the help text comes back, the index is dropped, nothing else changes). The
+`0039`, the last migration, adds the setting **Losses inside a tracked fleet** and also runs the guard before it drops that column (so a way back below `0035` is refused before anything is dropped); `0038` only changes a help text and `0037` only adds an index; they are undone next (the help text comes back, the index is dropped, nothing else changes). The
 guard checks everything that makes going back unsafe before the first change is undone: payout rules that belong to a category, links without a fleet that have claims (standing
 links) or that were imported, and claims imported from aa-srp. It stops **any** way back, a partial one included
 (`migrate fleetops 0032` is stopped too). `python manage.py fleetops_srp_rollback_check` runs the same checks, reads only and

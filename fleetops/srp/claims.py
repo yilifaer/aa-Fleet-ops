@@ -656,6 +656,59 @@ def prepare_claim_for_ref(
     return _prepare(user, ref, link=link, category=category, source=source)
 
 
+@dataclass(slots=True)
+class _Checks:
+    """What a loss is checked as: the scope, the fleet, the resolved category, the link in the end and the blockers."""
+
+    scope: str
+    operation: object
+    category: object
+    link: object
+    blockers: list
+
+
+def _checks(user, km, srp, now, *, link, chosen, missing_alts) -> _Checks:
+    """Scope, category, link and blockers of a loss checked through ``link`` (None = outside a fleet)."""
+    scope = Scope.IN_FLEET if link is not None and link.kind == link.Kind.FLEET else Scope.OUT_OF_FLEET
+    operation = link.operation if link is not None else None
+    # The category first: its payout rules decide, for example, whether a capsule is covered. A category that is
+    # required but not chosen stops the check with a message instead of becoming a blocker.
+    resolved = categories.resolve_category(scope=scope, link=link, operation=operation, chosen=chosen, settings_obj=srp)
+    # A category without a link: the standing link of that category for the day of the loss, if there is one.
+    link, no_link = standing_target(scope=scope, link=link, category=resolved, killmail_time=km.killmail_time, srp=srp)
+    blockers = rules.eligibility(
+        km=km,
+        user=user,
+        scope=scope,
+        link=link,
+        settings_obj=srp,
+        now=now,
+        category=resolved,
+        via_standing_link=is_standing(link),
+        missing_alts=missing_alts,
+    )
+    if no_link:
+        blockers.append(no_link)
+    return _Checks(scope, operation, resolved, link, blockers)
+
+
+def _fleet_match(km):
+    """``(match_link, match_code, closed_link)`` for a loss entered outside a fleet: the open fleet link of the fleet
+    the character was in (or near) when it lost the ship, or else the closed link of such a fleet.
+
+    A registration alone (``registered``) is no match: it does not show that the character was in the fleet.
+    """
+    found, code = presence.find_loss_match(km.victim_character_id, km.killmail_time, include_registered=False)
+    if found is not None and code in (display.IN_FLEET, display.NEAR):
+        return found, code, None
+    closed, closed_code = presence.find_loss_match(
+        km.victim_character_id, km.killmail_time, include_registered=False, open_only=False
+    )
+    if closed is not None and not closed.is_open and closed_code in (display.IN_FLEET, display.NEAR):
+        return None, "", closed
+    return None, "", None
+
+
 def _prepare(user, reference, *, link, category, source) -> ClaimPreview:
     srp = SrpSettings.get_solo()
     now = timezone.now()
@@ -669,38 +722,55 @@ def _prepare(user, reference, *, link, category, source) -> ClaimPreview:
         preview.blockers = [duplicate_message(user, existing)]
         return preview
 
-    operation = link.operation if link is not None else None
-    # The category first: its payout rules decide, for example, whether a capsule is covered. A category that is
-    # required but not chosen stops the check with a message instead of becoming a blocker.
-    resolved = categories.resolve_category(
-        scope=scope, link=link, operation=operation, chosen=category, settings_obj=srp
+    missing_alts = discovery.unauthorized_characters(user, srp)
+    identity = claim_identity(user, km)
+    owned = identity is not None and identity.main_character_id is not None
+    entered_outside = link is None
+    mode = srp.in_fleet_match_action
+    MatchAction = SrpSettings.InFleetMatchAction
+    match_link, match_code, closed_link = None, "", None
+    if srp.enabled and owned and entered_outside and mode != MatchAction.SUGGEST:
+        match_link, match_code, closed_link = _fleet_match(km)
+
+    checked = None
+    blocked_by_fleet_link = False
+    if match_link is not None:
+        # The member must be allowed to claim through that link (open, and the usual checks of a fleet loss, as
+        # for a loss entered through the link); a fleet link the member cannot use changes nothing.
+        candidate = _checks(user, km, srp, now, link=match_link, chosen=category, missing_alts=missing_alts)
+        if candidate.blockers:
+            match_link = None
+        elif mode == MatchAction.AUTO:
+            checked = candidate
+            preview.switched = True
+            preview.match_code = match_code
+        else:
+            blocked_by_fleet_link = True
+    if checked is None:
+        try:
+            checked = _checks(user, km, srp, now, link=link, chosen=category, missing_alts=missing_alts)
+        except SrpError as exc:
+            if not (blocked_by_fleet_link and exc.code == "category_required"):
+                raise
+            # The member has to use the fleet link: that instruction comes before a category for the wrong scope.
+            checked = _Checks(Scope.OUT_OF_FLEET, None, None, link, [])
+    scope, operation, resolved, link, blockers = (
+        checked.scope, checked.operation, checked.category, checked.link, checked.blockers
     )
-    preview.category = resolved
-    # A category without a link: the standing link of that category for the day of the loss, if there is one.
-    link, no_link = standing_target(
-        scope=scope, link=link, category=resolved, killmail_time=km.killmail_time, srp=srp
-    )
-    preview.link = link
-    preview.blockers = rules.eligibility(
-        km=km,
-        user=user,
-        scope=scope,
-        link=link,
-        settings_obj=srp,
-        now=now,
-        category=resolved,
-        via_standing_link=is_standing(link),
-        missing_alts=discovery.unauthorized_characters(user, srp),
-    )
-    if no_link:
-        preview.blockers.append(no_link)
-    preview.identity = claim_identity(user, km)
-    identity = preview.identity
-    if identity is None or identity.main_character_id is None:
+    preview.scope, preview.category, preview.link, preview.blockers = scope, resolved, link, blockers
+    if preview.switched or blocked_by_fleet_link or closed_link is not None:
+        preview.match_action = mode
+    preview.closed_link = closed_link
+    if blocked_by_fleet_link:
+        preview.suggested_link = match_link
+        preview.blockers.append(texts.SRP_USE_FLEET_LINK(fleet=fleet_label(match_link.operation)))
+    preview.identity = identity
+    if not owned:
         return preview
 
     preview.presence = loss_presence(scope, link, km)
-    if scope == Scope.OUT_OF_FLEET and srp.enabled:
+    if scope == Scope.OUT_OF_FLEET and srp.enabled and (mode == MatchAction.SUGGEST or not entered_outside):
+        # Only a hint: the setting is "suggest", or the member chose a standing link (which is never switched).
         preview.suggested_link = presence.find_fleet_for_loss(km.victim_character_id, km.killmail_time)
     evaluation_args = {
         "km": km,
@@ -728,16 +798,34 @@ def _prepare(user, reference, *, link, category, source) -> ClaimPreview:
     ]
     preview.eligible = not preview.blockers
     if preview.eligible:
-        preview.token = signing.dumps(
-            {
-                "km": km.pk,
-                "link": link.code if link is not None else None,
-                "u": user.pk,
-                "cat": category.pk if category is not None and scope == Scope.OUT_OF_FLEET and not is_standing(link) else None,
-                "src": source,
-            },
-            salt=PREVIEW_SALT,
+        keeps_category = category is not None and (
+            preview.switched or (scope == Scope.OUT_OF_FLEET and not is_standing(link))
         )
+        payload = {
+            "km": km.pk,
+            "link": link.code if link is not None else None,
+            "u": user.pk,
+            "cat": category.pk if keeps_category else None,
+            "src": source,
+        }
+        if preview.switched:
+            # The final link is in the token; submitting checks again that it is still open.
+            payload["auto"] = match_code
+            if srp.out_of_fleet_enabled:
+                # The way out of the switch: the same loss outside a fleet, which needs a reason when it is submitted.
+                # Offered only when that path passes its own checks (category, rules, caps, deadline).
+                try:
+                    outside = _checks(user, km, srp, now, link=None, chosen=category, missing_alts=missing_alts)
+                    refusal = outside.blockers[0] if outside.blockers else ""
+                except SrpError as exc:
+                    refusal = exc.message
+                if refusal:
+                    preview.forced_blocker = refusal
+                else:
+                    preview.forced_token = signing.dumps(
+                        {**payload, "link": None, "auto": "", "forced": True}, salt=PREVIEW_SALT
+                    )
+        preview.token = signing.dumps(payload, salt=PREVIEW_SALT)
     return preview
 
 
@@ -769,26 +857,38 @@ def _duplicate(user, km) -> SrpDuplicateError | None:
     return SrpDuplicateError(duplicate_message(user, existing), claim=existing)
 
 
-def submit_claim(user, token: str, *, comment: str = "") -> SrpClaim:
+def submit_claim(user, token: str, *, comment: str = "", out_of_fleet_reason: str = "") -> SrpClaim:
     """Create the claim for a preview token (signed, one hour, same user): checks again under the quota lock,
     applies the over-limit rules and writes the claim event and the audit entry. Raises ``SrpError``.
+
+    A token of a loss that was switched to its fleet (``in_fleet_match_action`` ``auto``) names the fleet link: when
+    that link was closed since the check, the claim is submitted outside a fleet with the warning
+    ``fleet_link_closed``; a category that is required outside a fleet but was not chosen is left empty then. The
+    other rules of a loss outside a fleet still apply to that fallback (for example with out-of-fleet claims
+    switched off it is refused as such). The token of "outside a fleet anyway" needs ``out_of_fleet_reason``; the
+    claim event keeps it. A token without a link is checked again against ``in_fleet_match_action`` ``block``.
 
     A killmail that is claimed already (also by a submission that ran at the same time) raises
     ``SrpDuplicateError`` with the existing claim.
     """
     data = _read_token(user, token)
     comment = _clean_comment(comment)
+    forced = data.get("forced") is True
+    forced_reason = clean_reason(out_of_fleet_reason, required=True) if forced else ""
+    auto_code = data.get("auto") if data.get("auto") in (display.IN_FLEET, display.NEAR) else ""
     try:
         km = SrpKillmail.objects.get(pk=data.get("km"))
     except (SrpKillmail.DoesNotExist, TypeError, ValueError):
         raise SrpError("expired", EXPIRED_TEXT) from None
     link = None
+    fell_back = False
     if data.get("link"):
         link = SrpFleetLink.objects.select_related("operation__fleet_type", "fc_user").filter(code=data["link"]).first()
         if link is None:
             raise SrpError("expired", EXPIRED_TEXT)
     scope = Scope.IN_FLEET if link is not None and link.kind == link.Kind.FLEET else Scope.OUT_OF_FLEET
-    chosen = _chosen_category(data.get("cat")) if scope == Scope.OUT_OF_FLEET else None
+    # A category in the token of a switched loss is kept for the case that the fleet link closed meanwhile.
+    chosen = _chosen_category(data.get("cat")) if scope == Scope.OUT_OF_FLEET or auto_code else None
     # Tokens of earlier versions carry no source: those claims were pasted.
     source = data.get("src") if data.get("src") in (SrpClaim.Source.PASTE, SrpClaim.Source.DISCOVERED) else SrpClaim.Source.PASTE
     now = timezone.now()
@@ -814,10 +914,36 @@ def submit_claim(user, token: str, *, comment: str = "") -> SrpClaim:
                 link.refresh_from_db(fields=["is_open"])
             except SrpFleetLink.DoesNotExist:
                 raise SrpError("expired", EXPIRED_TEXT) from None
+        if auto_code and link is not None and not link.is_open:
+            # The link of the fleet was closed after the check: the loss goes in outside a fleet, never as an error.
+            link, scope, auto_code, fell_back = None, Scope.OUT_OF_FLEET, "", True
+            presence_result = loss_presence(scope, link, km)
+            external = [*external, ClaimWarning("fleet_link_closed", display.LEVEL_WARNING, {})]
+        if (
+            link is None
+            and not auto_code
+            and not fell_back
+            and srp.enabled
+            and srp.in_fleet_match_action == SrpSettings.InFleetMatchAction.BLOCK
+        ):
+            # The setting may have changed to "block" since the check: the loss must not go in outside its fleet.
+            match_link = _fleet_match(km)[0]
+            if match_link is not None:
+                try:
+                    candidate = _checks(user, km, srp, now, link=match_link, chosen=chosen, missing_alts=missing_alts)
+                except SrpError:
+                    candidate = None
+                if candidate is not None and not candidate.blockers:
+                    raise SrpError("not_eligible", texts.SRP_USE_FLEET_LINK(fleet=fleet_label(match_link.operation)))
         operation = link.operation if link is not None else None
-        category = categories.resolve_category(
-            scope=scope, link=link, operation=operation, chosen=chosen, settings_obj=srp
-        )
+        try:
+            category = categories.resolve_category(
+                scope=scope, link=link, operation=operation, chosen=chosen, settings_obj=srp
+            )
+        except SrpError as exc:
+            if not (fell_back and exc.code == "category_required"):
+                raise
+            category = None
         # A category without a link: the standing link of the day of the loss as it is now.
         token_link = link
         link, no_link = standing_target(
@@ -912,6 +1038,8 @@ def submit_claim(user, token: str, *, comment: str = "") -> SrpClaim:
                 "source": source,
                 **({"auto_reject": rejection} if rejection else {}),
                 **({"auto_banned": True} if auto_ban is not None else {}),
+                **({"auto_in_fleet": True, "match": auto_code} if auto_code else {}),
+                **({"forced_out_of_fleet": True, "forced_reason": forced_reason} if forced else {}),
             },
             new={
                 "status": claim.status,

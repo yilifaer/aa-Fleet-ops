@@ -576,7 +576,10 @@ class SubmitTests(SrpPagesTestCase):
         response = self.post(comment="Lost it to a gate camp")
 
         self.assertRedirects(response, route("srp_claim", claim.uuid), fetch_redirect_response=False)
-        self.submit.assert_called_once_with(self.member, "signed-token", comment="Lost it to a gate camp")
+        # Changed for the in-fleet match action: the view also passes the reason of the "outside a fleet anyway" button.
+        self.submit.assert_called_once_with(
+            self.member, "signed-token", comment="Lost it to a gate camp", out_of_fleet_reason=""
+        )
         self.assertIn(f"{claim.reference} submitted. A reviewer will decide on it.", messages_of(response))
 
     def test_an_automatic_rejection_is_reported_with_its_reason(self):

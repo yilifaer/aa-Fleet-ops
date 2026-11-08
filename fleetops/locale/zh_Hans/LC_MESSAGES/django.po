@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-08 11:20+0000\n"
+"POT-Creation-Date: 2026-11-08 17:30+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -1350,6 +1350,14 @@ msgstr "说明"
 #: forms_srp.py
 msgid "Optional. Anything the reviewer should know."
 msgstr "可选。审核人需要了解的任何信息。"
+
+#: forms_srp.py templates/fleetops/srp/preview.html
+msgid "Why outside the fleet?"
+msgstr "为什么按舰队外提交？"
+
+#: forms_srp.py templates/fleetops/srp/preview.html
+msgid "The reviewer sees this reason."
+msgstr "审核人会看到这个理由。"
 
 #: forms_srp.py
 msgid "Approve suggested"
@@ -3384,6 +3392,18 @@ msgstr "送审并警告"
 msgid "Reject automatically"
 msgstr "自动拒绝"
 
+#: models.py
+msgid "Switch to the fleet link automatically"
+msgstr "自动改用舰队链接"
+
+#: models.py
+msgid "Block it and ask for the fleet link"
+msgstr "阻止，并要求使用舰队链接"
+
+#: models.py
+msgid "Only suggest the fleet link"
+msgstr "只提示舰队链接"
+
 #: models.py templates/fleetops/configuration/index.html
 msgctxt "FleetOps"
 msgid "Enabled"
@@ -3496,6 +3516,14 @@ msgstr "按类别提交不需要常驻链接"
 #: models.py
 msgid "A member who chooses a category on a day without an open standing link of that category can still submit; the claim only records the category. Switch off to require the link."
 msgstr "成员在没有该类别开放常驻链接的日子选择类别时仍可提交，申请只记录类别。关闭后则必须有链接。"
+
+#: models.py
+msgid "Losses inside a tracked fleet"
+msgstr "在追踪舰队内的损失"
+
+#: models.py
+msgid "What happens when a member checks a loss as a loss outside a fleet but the character was in (or near) a tracked fleet that has an open SRP link. Switch: the loss is calculated through the fleet link and with the fleet rules; the member can still submit it as an out-of-fleet loss, with a reason. Block: the member must use the fleet link. Suggest: only a hint is shown and the loss stays outside a fleet."
+msgstr "成员把损失当作舰队外损失检查，但该角色当时在（或接近）一支有开放 SRP 链接的追踪舰队里时怎么处理。改用：按舰队链接和舰队规则计算，成员仍可附理由按舰队外损失提交。阻止：成员必须使用舰队链接。只提示：只显示提示，损失仍按舰队外处理。"
 
 #: models.py
 msgid "Complete SRP links automatically"
@@ -5669,6 +5697,10 @@ msgstr "zKillboard 的价值暂时不可用。"
 #: srp/display.py
 msgid "No value available."
 msgstr "没有可用的价值。"
+
+#: srp/display.py
+msgid "The SRP link of the fleet was closed before this claim was submitted, so it was submitted as a loss outside a fleet."
+msgstr "提交申请之前，该舰队的 SRP 链接已被关闭，因此按舰队外损失提交。"
 
 #: srp/display.py
 msgid "No payout rule for this ship."
@@ -10408,6 +10440,15 @@ msgid "Ban this member from submitting…"
 msgstr "禁止该成员提交…"
 
 #: templates/fleetops/srp/claim.html
+#, python-format
+msgid "Submitted as a loss outside a fleet although it happened in a tracked fleet. Reason: %(reason)s"
+msgstr "尽管损失发生在追踪的舰队里，仍按舰队外损失提交。理由：%(reason)s"
+
+#: templates/fleetops/srp/claim.html
+msgid "Entered outside a fleet; submitted with the SRP link of the fleet the loss happened in."
+msgstr "从舰队外入口提交；已使用损失所在舰队的 SRP 链接提交。"
+
+#: templates/fleetops/srp/claim.html
 msgid "Nothing has happened to this claim yet."
 msgstr "这条申请还没有任何动态。"
 
@@ -10920,12 +10961,45 @@ msgstr "打开你的申请 %(reference)s"
 
 #: templates/fleetops/srp/preview.html
 #, python-format
+msgid "This loss happened in <strong>%(fleet_type)s</strong> (FC %(fc)s), so it is calculated with the SRP link of that fleet."
+msgstr "这笔损失发生在 <strong>%(fleet_type)s</strong>（FC %(fc)s）中，因此按该舰队的 SRP 链接计算。"
+
+#: templates/fleetops/srp/preview.html
+msgid "Submit as a loss outside a fleet anyway"
+msgstr "仍按舰队外损失提交"
+
+#: templates/fleetops/srp/preview.html
+msgid "Submit outside the fleet"
+msgstr "按舰队外提交"
+
+#: templates/fleetops/srp/preview.html
+#, python-format
+msgid "It cannot be submitted as a loss outside a fleet instead: %(reason)s"
+msgstr "无法改按舰队外损失提交：%(reason)s"
+
+#: templates/fleetops/srp/preview.html
+#, python-format
+msgid "This loss happened in <strong>%(fleet_type)s</strong> (FC %(fc)s). It has to be submitted with the SRP link of that fleet."
+msgstr "这笔损失发生在 <strong>%(fleet_type)s</strong>（FC %(fc)s）中。必须使用该舰队的 SRP 链接提交。"
+
+#: templates/fleetops/srp/preview.html
+#, python-format
 msgid "This loss happened in <strong>%(fleet_type)s</strong> (FC %(fc)s). Submit it as a fleet loss?"
 msgstr "这笔损失发生在 <strong>%(fleet_type)s</strong>（FC %(fc)s）中。要作为舰队内损失提交吗？"
 
 #: templates/fleetops/srp/preview.html
+#, python-format
+msgid "Submit with the link of %(fleet_type)s"
+msgstr "改用 %(fleet_type)s 的链接提交"
+
+#: templates/fleetops/srp/preview.html
 msgid "Check it as a fleet loss"
 msgstr "按舰队内损失核对"
+
+#: templates/fleetops/srp/preview.html
+#, python-format
+msgid "This loss happened in <strong>%(fleet_type)s</strong>, but the SRP link of that fleet is closed. It is checked as a loss outside a fleet."
+msgstr "这笔损失发生在 <strong>%(fleet_type)s</strong> 中，但该舰队的 SRP 链接已关闭。按舰队外损失检查。"
 
 #: templates/fleetops/srp/preview.html
 msgid "Found in your recent losses"
@@ -13513,6 +13587,11 @@ msgstr "已在链接设定的时间自动关闭。"
 #: texts.py
 msgid "This category has no open SRP link for the day of the loss."
 msgstr "该类别在损失当天没有开放的 SRP 链接。"
+
+#: texts.py
+#, python-format
+msgid "This loss happened in %(fleet)s. Submit it with the SRP link of that fleet, not as a loss outside a fleet."
+msgstr "这笔损失发生在 %(fleet)s 中。请使用该舰队的 SRP 链接提交，不要按舰队外损失提交。"
 
 #: texts.py
 msgid "Members cannot change their claims."

@@ -203,7 +203,9 @@ def check_presence(
     return result
 
 
-def find_loss_match(character_id: int, at: datetime, *, include_registered: bool = True) -> tuple[SrpFleetLink | None, str]:
+def find_loss_match(
+    character_id: int, at: datetime, *, include_registered: bool = True, open_only: bool = True
+) -> tuple[SrpFleetLink | None, str]:
     """``(link, code)``: the open fleet SRP link of the fleet the character was in when it lost the ship, and how
     the fleet was found.
 
@@ -212,10 +214,15 @@ def find_loss_match(character_id: int, at: datetime, *, include_registered: bool
     was in the fleet beats one where it was only near. Without such a fleet ``registered``: a manual or PAP-link fleet
     with an open fleet link where the character has a PAP registration or granted PAP and ``at`` lies within the
     fleet's time plus the grace (skipped with ``include_registered=False``). ``(None, "")`` when nothing matches.
+
+    ``open_only=False`` also looks at closed fleet links (the caller checks ``is_open``); it is used to tell a member
+    that the link of the fleet the loss lies in is closed. The registered match is always for open links.
     """
     margin = timedelta(seconds=grace_seconds())
     running_then = Q(operation__ended_at__isnull=True) | Q(operation__ended_at__gte=at - margin)
-    open_fleet_link = {"operation__srp_link__is_open": True, "operation__srp_link__kind": SrpFleetLink.Kind.FLEET}
+    open_fleet_link = {"operation__srp_link__kind": SrpFleetLink.Kind.FLEET}
+    if open_only:
+        open_fleet_link["operation__srp_link__is_open"] = True
     states = (
         FleetMemberState.objects.filter(
             running_then,
