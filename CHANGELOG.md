@@ -277,6 +277,15 @@ depends on it. Read the upgrade notes and the rollback notes below before you st
   from ESI once when the rule is saved.
 - Looking up the names of a pasted roster or a manual PAP entry in Alliance Auth uses the index of the name column first
   and falls back to a case-insensitive search only for the names it did not find.
+- `python manage.py check` (and the start of the server) now warns, without ever stopping the site, when the Celery beat
+  entry of fleet tracking or the daily entry is missing, `SITE_URL` is empty, `"fleetops"` is not in
+  `APPS_WITH_PUBLIC_VIEWS`, `ATOMIC_REQUESTS` is on for the default database, or aa-charlink is installed while
+  `INSTALLED_APPS` does not contain the literal entry `"fleetops"`. The warnings are named `fleetops.W001` to
+  `fleetops.W006` and can be silenced with `SILENCED_SYSTEM_CHECKS`.
+- Log lines of the standalone pings and the Send Ping page now go to the extension log of Alliance Auth
+  (`extensions.log`) like those of the rest of FleetOps.
+- Code nothing used was removed: a few unused helper functions and constants and some unused imports. No setting,
+  page or data changes.
 
 ### Documentation
 
@@ -284,6 +293,10 @@ depends on it. Read the upgrade notes and the rollback notes below before you st
   fleetops zero`, the beat entries and `local.py` lines, what stays), a **Data and privacy** section (what FleetOps
   stores, how long, how to delete it) and a warning that the daily task `fleetops_prune_history` deletes old rows
   according to the retention settings. English and Simplified Chinese.
+- The README says to finish the installation with `python manage.py check`, that `ATOMIC_REQUESTS` must stay off,
+  that the Django model permissions of FleetOps should not be given to groups, and lists every host FleetOps and the
+  browsers of its users connect to. The configuration reference lists the check warnings and says that a password in
+  a voice link's path or query is not recognised.
 
 ### Known items
 
@@ -294,6 +307,7 @@ depends on it. Read the upgrade notes and the rollback notes below before you st
 
 Restart the Celery worker as well: PAP link registrations now queue a small background task (`fill_registration_details`)
 that the worker has to know. Nothing else is needed for the fixes of the last list; they add no migration.
+After the upgrade run `python manage.py check` once: the new warnings tell you which lines of `local.py` are missing. They do not change anything and need no rollback step.
 
 First add the scope `esi-killmails.read_killmails.v1` to the EVE application of the site on the EVE developer website
 (see above). Then back up the database, install the release with `--no-deps`, run `python manage.py migrate fleetops`,

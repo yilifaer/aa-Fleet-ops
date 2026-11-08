@@ -456,7 +456,3 @@ def render_cancellation_notice(operation, *, actor=None, now=None) -> str:
             f"-# FleetOps notice from {values['sender']} at {values['sent_at']} EVE"
         )
     return neutralize_mass_mentions(text.strip())
-
-
-def plain_motd(motd: str) -> str:
-    return strip_tags(motd)

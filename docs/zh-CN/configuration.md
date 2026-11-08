@@ -34,6 +34,8 @@ FleetOps 会读取 Alliance Auth 项目（`local.py`）里的几个设置。前�
 | `DISCORD_GUILD_ID` | Alliance Auth 的 Discord 服务使用它；"从 Discord 同步身份组"需要它。 |
 | `LANGUAGE_CODE` | 站点语言。FleetOps 页面跟随每位用户在 Alliance Auth 里选的语言；Ping 和 MOTD 始终是英文。 |
 
+`python manage.py check` 还会在下面这些设置缺失时给出警告（只是警告，不会让任何东西停止）：`fleetops.W001` 舰队跟踪的 beat 条目，`fleetops.W002` 每日 beat 条目，`fleetops.W003` `SITE_URL` 为空，`fleetops.W004` `APPS_WITH_PUBLIC_VIEWS` 里没有 `"fleetops"`，`fleetops.W005` 默认数据库开启了 `ATOMIC_REQUESTS`（必须保持关闭：FleetOps 要锁定数据行，需要每个请求不在同一个事务里），`fleetops.W006` 安装了 aa-charlink，但 `INSTALLED_APPS` 里没有字面写成 `"fleetops"` 的条目。beat 检查读取 `local.py` 里的 `CELERYBEAT_SCHEDULE`；只在 Django 管理后台里维护计划任务的站点可以用 `SILENCED_SYSTEM_CHECKS = ["fleetops.W001", "fleetops.W002"]` 屏蔽它们，不使用语音加入页的站点同样可以屏蔽 `fleetops.W004`。
+
 ## 常规设置
 
 **后台设置** > **常规设置**（General Settings）。页面把设置分成几组，每一组都会说明修改是否影响已经开启的舰队。
@@ -205,7 +207,7 @@ FC 在开舰队页选择的语音选项。
 | 字段 | 含义 |
 |---|---|
 | 名称、频道 | 显示在 Ping 和 MOTD 里（`comms`、`comms_channel`）。 |
-| 语音链接（Voice link） | `mumble://`、`ts3server://`、`discord://` 或 `https://` 链接。语音客户端链接在 Discord 和游戏里点不开，所以 Ping 和 MOTD 链接到预设的 **加入页**（`/fleetops/comms/<token>/join/`），由它打开语音客户端；`http` 和 `https` 链接直接使用。链接里不要放个人用户名或密码；后台设置页会把它们去掉，Django 后台会拒绝保存。 |
+| 语音链接（Voice link） | `mumble://`、`ts3server://`、`discord://` 或 `https://` 链接。语音客户端链接在 Discord 和游戏里点不开，所以 Ping 和 MOTD 链接到预设的 **加入页**（`/fleetops/comms/<token>/join/`），由它打开语音客户端；`http` 和 `https` 链接直接使用。链接里不要放个人用户名或密码；后台设置页会把它们从地址里去掉，Django 后台会拒绝保存。写在路径或查询参数（`?password=...`）里的密码无法识别，而加入页是公开的：不要把这样的密码放进链接。 |
 | 说明 | 自由文本。 |
 | 启用 | 只有启用的预设会被提供，也只有启用的预设的加入页才有效。 |
 | 重新生成加入链接（Issue a new join link） | 让旧的加入链接失效。 |

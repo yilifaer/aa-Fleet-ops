@@ -9,7 +9,6 @@ once more right before the post (a crafted form, or a change made in Alliance Au
 """
 
 from django import forms
-from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.db.models import Q
 from django.urls import NoReverseMatch, reverse

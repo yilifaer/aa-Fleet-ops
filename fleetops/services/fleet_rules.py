@@ -40,7 +40,6 @@ FLEET_COMMAND = gettext_lazy("Fleet Command")
 WING_COMMAND = gettext_lazy("Wing Command")
 
 SHIP_CATEGORY_ID = 6
-RULE_KINDS = ("type", "group")
 # Titan, Dreadnought, Freighter, Carrier, Supercarrier, Rorqual, Jump Freighter,
 # Industrial Command Ship, Force Auxiliary, Lancer Dreadnought, Command Carrier.
 DEFAULT_BRIDGE_EXCLUDED_GROUP_IDS = "30,485,513,547,659,883,902,941,1538,4594,5120"

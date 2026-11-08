@@ -12,10 +12,10 @@ channel, so two leaders cannot both post within the cooldown. The webhook addres
 only for the post; the row and the audit entry never hold it (``PingResult.message`` is already scrubbed).
 """
 
-import logging
 from datetime import timedelta
 from types import SimpleNamespace
 
+from allianceauth.services.hooks import get_extension_logger
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -40,7 +40,7 @@ from fleetops.services.mentions import (
 from fleetops.services.messages import render_standalone_ping
 from fleetops.services.periods import format_eve
 
-logger = logging.getLogger(__name__)
+logger = get_extension_logger(__name__)
 
 AUDIT_ACTION = "ping.send"
 START_FLEET = "fleetops.start_fleet"

@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from django.db.models import Count, Sum
 from django.utils.translation import gettext, gettext_lazy, ngettext, pgettext_lazy
 
-from fleetops.services.periods import Period, format_eve
+from fleetops.services.periods import Period
 from fleetops.srp import access, display
 from fleetops.srp import summaries as srp_summaries
 from fleetops.srp.types import SrpTotals
@@ -484,12 +484,3 @@ def available(user) -> list[Report]:
     """The reports ``user`` may open: all for SRP staff, the others for people with ``view_all_stats``."""
     staff = access.is_srp_staff(user)
     return [report for report in REPORTS.values() if staff or not report.staff_only]
-
-
-def table_cell_text(column: Col, value) -> str:
-    """A cell as text for the search box."""
-    if value is None:
-        return ""
-    if column.kind == DATETIME:
-        return format_eve(value)
-    return str(value)

@@ -20,6 +20,18 @@ INSTALLED_APPS += [  # noqa: F405
     "fleetops",
 ]
 
+# The two scheduled tasks, written as the README tells an administrator to (the system checks of FleetOps would
+# warn about a site without them). The comms join page stays login-protected here, because the permission tests
+# rely on that; the check about it is silenced below.
+CELERYBEAT_SCHEDULE["fleetops_track_active_fleets"] = {  # noqa: F405
+    "task": "fleetops.tasks.schedule_active_fleet_tracking",
+    "schedule": 60.0,
+}
+CELERYBEAT_SCHEDULE["fleetops_prune_history"] = {  # noqa: F405
+    "task": "fleetops.tasks.prune_attendance_history",
+    "schedule": 86400.0,
+}
+
 STATICFILES_DIRS = []
 STATIC_ROOT = os.path.join(BASE_DIR, ".test-static")
 STORAGES = {
@@ -106,4 +118,4 @@ LOGGING = {
     "root": {"handlers": ["null"], "level": "WARNING"},
 }
 CSRF_TRUSTED_ORIGINS = [SITE_URL]
-SILENCED_SYSTEM_CHECKS = ["allianceauth.checks.A002"]
+SILENCED_SYSTEM_CHECKS = ["allianceauth.checks.A002", "fleetops.W004"]

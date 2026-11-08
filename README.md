@@ -213,6 +213,14 @@ python manage.py fleetops_seed          # default templates, multipliers, specia
 Celery worker and Celery beat the way your installation does. FleetOps logs to the extension log of Alliance
 Auth (`extensions.log`).
 
+Finally run `python manage.py check`. FleetOps adds warnings (never errors, and they never stop the site) for a
+missing beat entry, an empty `SITE_URL`, a missing `"fleetops"` in `APPS_WITH_PUBLIC_VIEWS`, `ATOMIC_REQUESTS`
+turned on, and aa-charlink installed while `INSTALLED_APPS` does not list `"fleetops"` literally
+(`fleetops.W001` to `fleetops.W006`, see
+[Configuration](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/configuration.md)). A site that does not want
+one of them can silence it with `SILENCED_SYSTEM_CHECKS = ["fleetops.W004"]`. `ATOMIC_REQUESTS` must stay off (the Alliance Auth default): FleetOps
+locks rows for the SRP limits and for the end of a fleet, which needs each request to run outside one transaction.
+
 **Docker.** Add `aa-fleetops==0.3.0b1` to the requirements of the image that your web, worker and beat services
 share, rebuild it and add the `local.py` lines above. Then open a shell in the web container and run the commands
 there with the `auth` shortcut of the Alliance Auth image:
@@ -268,6 +276,8 @@ Without a ping channel, Start Fleet offers the ping for copying.
 | SRP payer (pays only) | `basic_access`, `pay_srp`, `view_all_fleets` |
 
 Every permission and every row-level rule is in [docs/permissions.md](https://github.com/yilifaer/aa-fleetops/blob/dev/docs/permissions.md).
+Do not give groups the add, change, delete or view permissions that Django lists for the FleetOps models: they
+only matter in the Django admin, which FleetOps does not need for any setting.
 
 ## Optional integrations
 
@@ -304,6 +314,8 @@ have CSV and Excel exports). Do the steps in this order; the app has to be insta
 
 1. Remove the two `CELERYBEAT_SCHEDULE["fleetops_..."]` entries from `local.py` (FleetOps creates no schedule rows in
    the database) and restart Celery beat, so no task is queued for the app any more.
+   `manage.py check` then warns `fleetops.W001` and `fleetops.W002` until step 4; ignore them, do not add the
+   entries back.
 2. Optional: run `python manage.py fleetops_srp_rollback_check`. It only reads and lists what would stop step 3
    (payout rules of a category, links with claims, claims imported from aa-srp); fix those first, as the
    [CHANGELOG](https://github.com/yilifaer/aa-fleetops/blob/dev/CHANGELOG.md) explains.
@@ -335,7 +347,10 @@ FleetOps is a tool for your organization; you decide what to keep. It stores, in
 | ESI tokens | Not stored by FleetOps. It reads the tokens django-esi holds for the user and never writes them to a log, the audit log, a page or an export | Managed by Alliance Auth |
 
 Data goes to Discord (the pings you send), to zKillboard and ESI (killmail ids and character ids for SRP, only when
-SRP is on), and nowhere else. Retention is set as **Data retention days** on the FleetOps settings page of
+SRP is on), and nowhere else. The hosts FleetOps talks to: ESI (through django-esi), `zkillboard.com` (killmail
+values, SRP only), `discord.com` (webhooks you add), and the Discord API of Alliance Auth's own Discord service (roles,
+only when you press the button). The browsers of your users load images from `images.evetech.net` and link to
+`zkillboard.com`, `evewho.com` and `everef.net`. There is no telemetry and no update check. Retention is set as **Data retention days** on the FleetOps settings page of
 **Administration** (365 to 36500). The daily task described above applies it; `python manage.py
 fleetops_prune_history --dry-run` shows the effect first.
 

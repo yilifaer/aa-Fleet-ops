@@ -16,10 +16,8 @@ from dataclasses import dataclass
 
 from allianceauth.services.hooks import get_extension_logger
 from django.contrib.auth import get_user_model
-from esi.models import Token
 
 from fleetops import texts
-from fleetops.constants import FLEET_SCOPES
 from fleetops.models import FleetMemberState, FleetOperation
 from fleetops.providers.esi import FleetESIError, kick_fleet_member
 from fleetops.services import fleet_access, fleet_jobs, fleet_refresh
@@ -97,18 +95,6 @@ def kickable_pod_members(operation):
     """
     protected = protected_character_ids(operation)
     return [m for m in pod_members(operation) if m.character_id not in protected]
-
-
-def fc_can_kick(operation):
-    """Whether the FC character has a token with the fleet scopes.
-
-    The token is not refreshed here, so the fleet page does not call EVE SSO on every view.
-    """
-    return (
-        Token.objects.filter(user_id=operation.fc_user_id, character_id=operation.fc_character_id)
-        .require_scopes(FLEET_SCOPES)
-        .exists()
-    )
 
 
 def member_label(member):

@@ -166,6 +166,28 @@ class LayoutTests(SimpleTestCase):
         self.assertEqual(problems, [])
 
 
+class SystemCheckDocsTests(SimpleTestCase):
+    def test_readmes_cover_every_check_and_the_uninstall_warning(self):
+        for name in ("README.md", "README.zh-CN.md"):
+            text = read(ROOT / name)
+            self.assertIn("fleetops.W006", text, name)
+            self.assertIn("aa-charlink", text, name)
+            heading = "## Uninstalling" if name == "README.md" else "## 卸载"
+            step_one = text[text.index(heading):].split("\n2. ", 1)[0]
+            self.assertIn("fleetops.W001", step_one, name)
+            self.assertIn("fleetops.W002", step_one, name)
+
+    def test_configuration_lists_every_check_in_one_sentence(self):
+        for name in ("docs/configuration.md", "docs/zh-CN/configuration.md"):
+            text = read(ROOT / name)
+            for number in range(1, 7):
+                self.assertIn(f"fleetops.W00{number}", text, name)
+            for line in text.splitlines():
+                if "fleetops.W006" in line:
+                    self.assertNotIn("). `fleetops.W006`", line)
+                    self.assertNotIn("）。`fleetops.W006`", line)
+
+
 class ChineseLabelTests(SimpleTestCase):
     """The controls and messages that the Chinese documents quote read the same on the Chinese pages."""
 

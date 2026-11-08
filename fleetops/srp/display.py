@@ -38,13 +38,6 @@ LIMIT_KIND_LABELS = {
     "category_personal": gettext_lazy("category personal monthly limit"),
     "category_corporation": gettext_lazy("category corporation monthly limit"),
 }
-# Name of the limit inside "the monthly ... limit".
-MONTHLY_KIND_LABELS = {
-    "personal": "personal",
-    "corporation": "corporation",
-    "category_personal": "category personal",
-    "category_corporation": "category corporation",
-}
 
 MATCH_LABELS = {
     "doctrine_ship": gettext_lazy("Doctrine and ship"),

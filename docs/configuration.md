@@ -35,6 +35,15 @@ warning while the first two are missing.
 | `DISCORD_GUILD_ID` | Needed by the Alliance Auth Discord service for **Sync roles from Discord**. |
 | `LANGUAGE_CODE` | The site language. FleetOps pages follow each user's Alliance Auth language; pings and MOTDs are always English. |
 
+`python manage.py check` also warns (warnings only, nothing stops) when one of these is missing: `fleetops.W001` the
+beat entry of fleet tracking, `fleetops.W002` the daily beat entry, `fleetops.W003` an empty `SITE_URL`,
+`fleetops.W004` no `"fleetops"` in `APPS_WITH_PUBLIC_VIEWS`, `fleetops.W005` `ATOMIC_REQUESTS` on for the default
+database (it must stay off: FleetOps locks rows and needs each request outside one transaction), `fleetops.W006` aa-charlink is installed but `INSTALLED_APPS` does not contain the
+literal entry `"fleetops"`. The beat checks read
+`CELERYBEAT_SCHEDULE` of `local.py`; a site that keeps its schedule only in the Django admin silences them with
+`SILENCED_SYSTEM_CHECKS = ["fleetops.W001", "fleetops.W002"]`, and a site without the comms join page silences
+`fleetops.W004` the same way.
+
 ## General settings
 
 **Administration** > **General Settings**. The page groups the settings; each group says whether a change
@@ -268,7 +277,7 @@ Voice choices FCs pick on Start Fleet.
 | Field | Meaning |
 |---|---|
 | Name, Channel | Shown in the ping and MOTD (`comms`, `comms_channel`). |
-| Voice link | `mumble://`, `ts3server://`, `discord://` or `https://` link. A voice client link cannot be clicked in Discord or in game, so pings and MOTDs link to the preset's **join page** (`/fleetops/comms/<token>/join/`), which opens the voice client; `http` and `https` links are used directly. Do not put a personal user name or password in the link; the Administration page removes them and the Django admin refuses them. |
+| Voice link | `mumble://`, `ts3server://`, `discord://` or `https://` link. A voice client link cannot be clicked in Discord or in game, so pings and MOTDs link to the preset's **join page** (`/fleetops/comms/<token>/join/`), which opens the voice client; `http` and `https` links are used directly. Do not put a personal user name or password in the link; the Administration page removes them from the address and the Django admin refuses them. A password written in the path or in the query (`?password=...`) is not recognised, and the join page is public: leave such a password out of the link. |
 | Description | Free text. |
 | Active | Only active presets are offered, and only active presets have a working join page. |
 | Issue a new join link | Makes the old join link stop working. |

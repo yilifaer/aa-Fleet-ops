@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta, timezone as dt_timezone
 from allianceauth.services.hooks import get_extension_logger
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Q
 from django.urls import reverse
 from django.utils import timezone
 

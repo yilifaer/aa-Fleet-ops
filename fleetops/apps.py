@@ -11,6 +11,6 @@ class FleetOpsConfig(AppConfig):
     verbose_name = pgettext_lazy("FleetOps", "Fleet Operations")
 
     def ready(self):
-        from fleetops import signals
+        from fleetops import checks, signals  # noqa: F401  (importing checks registers them)
 
         signals.connect_group_receivers()

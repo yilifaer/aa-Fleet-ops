@@ -45,9 +45,6 @@ class KillmailRef:
     source: str
 
 
-ZKILL_STATUSES = ("ok", "missing", "unavailable", "throttled", "blocked")
-
-
 @dataclass(slots=True)
 class ZkillResult:
     """One answer of the zKillboard killmail API.

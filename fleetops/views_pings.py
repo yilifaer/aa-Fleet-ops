@@ -9,9 +9,9 @@ an Alliance Auth message, which ``fleetops.js`` shows as a toast: a success disa
 names the cause and the next step. A failed ping opens the page again filled in with it ("Use again").
 """
 
-import logging
 import uuid
 
+from allianceauth.services.hooks import get_extension_logger
 from django.contrib import messages
 from django.http import Http404, JsonResponse
 from django.shortcuts import redirect
@@ -33,7 +33,7 @@ from fleetops.texts import translate_stored
 from fleetops.ui import TONE_BAD, TONE_OK, TONE_WARN
 from fleetops.views import _render
 
-logger = logging.getLogger(__name__)
+logger = get_extension_logger(__name__)
 
 # What to do after a failed post, by what Discord answered. The hint is shown, never stored.
 HINT_MAYBE_POSTED = gettext_lazy("The ping may not have been posted; check the channel before sending it again.")
