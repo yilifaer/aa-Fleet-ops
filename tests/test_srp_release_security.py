@@ -105,7 +105,12 @@ class SecretSweepTests(TestCase):
             self.assertLogs(level=logging.DEBUG) as logs,
             mock.patch.object(discovery, "get_recent_killmails", side_effect=esi.list_page),
             mock.patch.object(discovery, "get_killmail", side_effect=esi.detail),
-            mock.patch.object(discovery.killmails, "_names", return_value=("Rifter", "Amamake")),
+            # L-5: the scan asks for the names of all losses of a character at once.
+            mock.patch.object(
+                discovery.killmails,
+                "names_of",
+                side_effect=lambda ships, systems, budget=None: (dict.fromkeys(ships, "Rifter"), dict.fromkeys(systems, "Amamake")),
+            ),
         ):
             logging.getLogger("fleetops").debug("sweep start")
             discovery.run_scan(now)

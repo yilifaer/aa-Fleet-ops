@@ -183,7 +183,8 @@ class HomePageTests(SrpPagesTestCase):
         self.assertContains(response, "50,000,000 ISK")
         self.assertContains(response, "No limit")
         self.assertContains(response, "400m ISK")
-        self.personal.assert_called_once_with(self.member, 2026, 10)
+        # L-3: the page pages its own month list, so it asks the summary for the numbers only.
+        self.personal.assert_called_once_with(self.member, 2026, 10, with_claims=False)
 
     def test_paid_claims_are_counted_once_in_the_approved_card(self):
         # approved_count already holds the paid claims: one paid claim is one approved claim.

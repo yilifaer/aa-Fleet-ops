@@ -8,7 +8,9 @@ import re
 from datetime import datetime, time, timedelta, timezone as dt_timezone
 from urllib.parse import urlencode
 
+from allianceauth.services.hooks import get_extension_logger
 from django.contrib import messages
+from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db.models import Count, Q, Sum
@@ -30,6 +32,7 @@ from fleetops.forms_srp import (
     ReviewFilterForm,
 )
 from fleetops.models import SrpCategory, SrpClaim, SrpFleetLink, SrpPaymentBatch, SrpSettings
+from fleetops.services.errors import log_failure
 from fleetops.services.periods import eve_now, month_bounds
 from fleetops.srp import access, bans, display, payments as srp_payments, review, summaries
 from fleetops.srp.access import MANAGE_SRP, PAY_SRP, REVIEW_SRP
@@ -47,6 +50,8 @@ from fleetops.views_srp import (
     srp_render,
     within_limit_reason,
 )
+
+logger = get_extension_logger(__name__)
 
 # The query parameters the review queue keeps when the month changes.
 REVIEW_FILTERS = (
@@ -177,12 +182,19 @@ def filter_choices():
     """The corporations and FCs that have claims, for the filter drop-downs."""
     corporations = {}
     for pk, name in (
-        SrpClaim.objects.exclude(corporation_id=None).values_list("corporation_id", "corporation_name").order_by("corporation_name")
+        # distinct(): one row per corporation and name, not one per claim.
+        SrpClaim.objects.exclude(corporation_id=None)
+        .values_list("corporation_id", "corporation_name")
+        .distinct()
+        .order_by("corporation_name")
     ):
         corporations.setdefault(pk, name or str(pk))
     fcs = {}
     for pk, name in (
-        SrpClaim.objects.exclude(fc_user=None).values_list("fc_user_id", "fc_main_character_name").order_by("fc_main_character_name")
+        SrpClaim.objects.exclude(fc_user=None)
+        .values_list("fc_user_id", "fc_main_character_name")
+        .distinct()
+        .order_by("fc_main_character_name")
     ):
         fcs.setdefault(pk, name or _("User %(id)s") % {"id": pk})
     return list(corporations.items()), list(fcs.items())
@@ -334,10 +346,41 @@ def bulk_approve(request):
     return back(request, redirect("fleetops:srp_review"))
 
 
+def _recalculate_in_background(request, pending):
+    from fleetops import tasks
+
+    try:
+        free = cache.add(tasks.SRP_RECALCULATE_LOCK_KEY, 1, tasks.SRP_RECALCULATE_LOCK_SECONDS)
+    except Exception as exc:
+        log_failure(logger, "SRP recalculation lock", exc)
+        free = True
+    if not free:
+        messages.info(request, _("The pending claims are being recalculated already. Check again in a few minutes."))
+        return back(request, redirect("fleetops:srp_review"))
+    try:
+        tasks.recalculate_srp_pending.delay(request.user.pk)
+    except Exception as exc:
+        log_failure(logger, "Queueing the SRP recalculation", exc)
+        cache.delete(tasks.SRP_RECALCULATE_LOCK_KEY)
+        messages.error(request, _("The recalculation could not be started right now. Try again later."))
+        return back(request, redirect("fleetops:srp_review"))
+    text = ngettext(
+        "%(count)s pending claim is being recalculated in the background. Check again in a few minutes.",
+        "%(count)s pending claims are being recalculated in the background. Check again in a few minutes.",
+        pending,
+    )
+    messages.success(request, text % {"count": pending})
+    return back(request, redirect("fleetops:srp_review"))
+
+
 @require_POST
 @fleetops_permission_required((MANAGE_SRP, REVIEW_SRP), any_perm=True, page=False)
 def recalculate_pending(request):
-    """Recalculate every pending claim with the current policy."""
+    """Recalculate every pending claim with the current policy; a long list is left to a background task, so the
+    request does not run into the time limit of the web server."""
+    pending = review.pending_count()
+    if pending > review.RECALCULATE_INLINE_LIMIT:
+        return _recalculate_in_background(request, pending)
     count = review.recalculate_pending(actor=request.user)
     text = ngettext(
         "%(count)s pending claim recalculated with the current policy.",
@@ -622,6 +665,7 @@ def payable_corporations():
         SrpClaim.objects.filter(status=SrpClaim.Status.APPROVED)
         .exclude(corporation_id=None)
         .values_list("corporation_id", "corporation_name")
+        .distinct()
         .order_by("corporation_name")
     ):
         rows.setdefault(pk, name or str(pk))

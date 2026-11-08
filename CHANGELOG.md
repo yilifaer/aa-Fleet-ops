@@ -223,6 +223,23 @@ depends on it. Read the upgrade notes and the rollback notes below before you st
   the users with PAP history would be pruned; `fleetops_prune_history --force` overrides it. Retention of old rows is
   not affected. The command exits with an error (and prints the counts as a warning) when it refused the pruning of
   departed members, so a cron job notices; `--dry-run` shows the refusal and exits normally.
+- The SRP member report no longer reads every claim of the period just to show each member's latest corporation: the
+  database returns one row per member. Opening My SRP no longer reads the claims of the month twice, and the review and
+  payment filter lists read one row per corporation and FC instead of one per claim.
+- Looking up a found loss by its killmail (ignore, restore, claim, preview) uses a new index.
+- A manual ban and the automatic ban for an exhausted monthly limit can no longer both be created for the same member at
+  the same moment.
+- Automatic loss reading: the ship and system names of a character's new losses are looked up in one request that counts
+  against the run's request budget; after ESI asked for a pause (or the run is out of requests) no further lookups are
+  made, and the losses that still lack their names and place are read again in the next run instead of being stored
+  without them; the estimated time of a claim imported from aa-srp no longer marks the older killmails of the same
+  character as too old to claim; a loss that happened in the time of the latest fleet is found even when the member has
+  PAP in more than three open manual fleets; pressing **Read my characters now** while the general scan runs is no longer
+  dropped (the characters are read first in the next run and the task tries again for five minutes).
+- The value sweep no longer writes an old state over a killmail that a member's claim preview has put back into the
+  zKillboard queue a moment earlier.
+- **Recalculate** on the review queue handles up to 50 pending claims while you wait; with more, the recalculation runs
+  in the background (one at a time) and the page tells you, so the request cannot run into the time limit of the web server.
 
 ### Known items
 
@@ -281,7 +298,8 @@ payer reports, which are for SRP staff only. Killmails stored before 0.3.0b1 sho
 report until `python manage.py fleetops_srp_backfill_killmails` has read them. The code that read the month of the
 summaries now reads a period; nothing is stored differently.
 
-Migration `0036` adds one column to the FleetOps settings (**Largest share of departed members to prune**, percent, default
+Migration `0037` adds one index to the found losses (SRP loss table) and changes no data; on a large table it takes
+a moment. Migration `0036` adds one column to the FleetOps settings (**Largest share of departed members to prune**, percent, default
 50): the share of the users with PAP history that one pruning of departed members may remove. If the daily task logs "Departed
 members were not pruned", check **Member alliance IDs** before using `fleetops_prune_history --force`.
 This does not concern an upgrade from a release. A site that followed the development branch may already have the column,
@@ -346,8 +364,8 @@ Rolling back `0032` drops the payment batches (the claims keep their status, amo
 the batch they were paid in), the insurance prices, the stored attackers, the revision numbers and the five settings.
 Claims, amounts and statuses are not changed. Export the batches first if you need them. To behave like the previous
 version before rolling back, untick **Members can change their pending claims**.
-Rolling back `0033` drops the external ID of the claims. **`0035` is the guard for the whole way back**; `0036`, which adds the
-pruning share to the settings and is now the last migration, runs the same checks first and only drops that column when they
+Rolling back `0037` drops the index it added; nothing else changes. Rolling back `0033` drops the external ID of the claims. **`0035` is the guard for the whole way back**; `0036`, which adds the
+pruning share to the settings, runs the same checks first and only drops that column when they
 let the rollback go on (then `0035` checks once more). It checks everything that makes going back unsafe, once and before anything is changed, and stops the
 rollback (to `0023` or to any migration of this version, also a partial one such as `0032`) with a list while:
 payout rules belong to a category (the rule IDs are listed), links without a fleet have claims or links were imported

@@ -12,6 +12,7 @@ granted PAP instead.
 from datetime import datetime, timedelta
 
 from django.db.models import Exists, OuterRef, Q
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from fleetops.models import (
@@ -254,6 +255,10 @@ def _find_registered(character_id, at, margin) -> tuple[SrpFleetLink | None, str
             srp_link__kind=SrpFleetLink.Kind.FLEET,
         )
         .filter(evidence)
+        # The time window is part of the query, so the latest few fleets are chosen among the ones that contain ``at``
+        # (a person can have PAP in more than three open fleets, and the loss may lie in an older one).
+        .annotate(begins_at=Coalesce("started_at", "created_at"))
+        .filter(Q(ended_at__isnull=True) | Q(ended_at__gte=at - margin), begins_at__lte=at + margin)
         .select_related("srp_link")
         .order_by("-started_at", "-created_at")[:MAX_CANDIDATE_FLEETS]
     )

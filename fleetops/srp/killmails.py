@@ -393,20 +393,28 @@ def complete_placeholder(km: SrpKillmail, payload: dict, killmail_hash: str, *, 
     return km
 
 
-def _names(ship_type_id: int, solar_system_id: int) -> tuple[str, str]:
-    """English ship and system names: from the SDE when installed, else from ESI (cached); '' when unknown."""
-    ship = sde.item_type_names([ship_type_id]).get(ship_type_id, "")
-    system = sde.solar_system_names([solar_system_id]).get(solar_system_id, "")
-    unknown = [pk for pk, name in ((ship_type_id, ship), (solar_system_id, system)) if not name]
+def names_of(ship_type_ids, solar_system_ids, *, budget=None) -> tuple[dict[int, str], dict[int, str]]:
+    """English ship and system names of many IDs at once: ``({ship id: name}, {system id: name})``. From the SDE when
+    installed, else from ESI in one cached lookup for all of them; IDs nobody can name are left out. ``budget`` (a
+    ``LookupBudget``) limits the ESI calls of the lookup. Never raises."""
+    ships = {pk: name for pk, name in sde.item_type_names(list(ship_type_ids)).items() if name}
+    systems = {pk: name for pk, name in sde.solar_system_names(list(solar_system_ids)).items() if name}
+    unknown = [pk for pk in dict.fromkeys([*ship_type_ids, *solar_system_ids]) if pk not in ships and pk not in systems]
     if unknown:
         try:
-            found = names.entity_names(unknown)
+            found = names.entity_names(unknown, **({} if budget is None else {"budget": budget}))
         except Exception as exc:  # names are a convenience; the claim does not depend on them
             log_failure(logger, "SRP killmail name lookup", exc)
             found = {}
-        ship = ship or found.get(ship_type_id, "")
-        system = system or found.get(solar_system_id, "")
-    return ship[:SHIP_NAME_LENGTH], system[:SYSTEM_NAME_LENGTH]
+        ships.update({pk: found[pk] for pk in ship_type_ids if pk not in ships and found.get(pk)})
+        systems.update({pk: found[pk] for pk in solar_system_ids if pk not in systems and found.get(pk)})
+    return ships, systems
+
+
+def _names(ship_type_id: int, solar_system_id: int) -> tuple[str, str]:
+    """English ship and system names: from the SDE when installed, else from ESI (cached); '' when unknown."""
+    ships, systems = names_of([ship_type_id], [solar_system_id])
+    return ships.get(ship_type_id, "")[:SHIP_NAME_LENGTH], systems.get(solar_system_id, "")[:SYSTEM_NAME_LENGTH]
 
 
 def location_fields(ship_type_id: int, solar_system_id: int, *, now: datetime | None = None) -> dict:

@@ -47,6 +47,7 @@ import_schema = importlib.import_module("fleetops.migrations.0033_srp_import")
 import_guard = importlib.import_module("fleetops.migrations.0034_srp_import_guard")
 rollback_guard = importlib.import_module("fleetops.migrations.0035_srp_rollback_guard")
 prune_share = importlib.import_module("fleetops.migrations.0036_history_prune_share")
+loss_index = importlib.import_module("fleetops.migrations.0037_srp_loss_killmail_index")
 
 NEW_CODENAMES = ("request_srp", "manage_srp")
 # Permissions of 0.3.0b1 (REV-1): registered with the model options, granted to nobody.
@@ -89,6 +90,7 @@ class MigrationModuleTests(TestCase):
             import_guard,
             rollback_guard,
             prune_share,
+            loss_index,
         ):
             source = inspect.getsource(module)
             with self.subTest(module=module.__name__):
@@ -127,6 +129,7 @@ class MigrationModuleTests(TestCase):
         self.assertEqual(import_guard.Migration.dependencies, [("fleetops", "0033_srp_import")])
         self.assertEqual(rollback_guard.Migration.dependencies, [("fleetops", "0034_srp_import_guard")])
         self.assertEqual(prune_share.Migration.dependencies, [("fleetops", "0035_srp_rollback_guard")])
+        self.assertEqual(loss_index.Migration.dependencies, [("fleetops", "0036_history_prune_share")])
 
     def test_the_migrations_start_with_the_plain_header(self):
         for module in (
@@ -143,6 +146,7 @@ class MigrationModuleTests(TestCase):
             import_guard,
             rollback_guard,
             prune_share,
+            loss_index,
         ):
             with self.subTest(module=module.__name__):
                 self.assertTrue(inspect.getsource(module).startswith("# AA FleetOps 0.3.0b1:"))
@@ -171,6 +175,7 @@ class MigrationModuleTests(TestCase):
             import_guard,
             rollback_guard,
             prune_share,
+            loss_index,
         ):
             source = inspect.getsource(module)
             with self.subTest(module=module.__name__):
@@ -1372,7 +1377,8 @@ class RollbackGuardFunctionTests(TestCase):
 
     def test_the_last_migration_adds_the_share_and_runs_the_guard_first_when_going_back(self):
         executor = MigrationExecutor(connection)
-        self.assertEqual(executor.loader.graph.leaf_nodes("fleetops"), [("fleetops", "0036_history_prune_share")])
+        # Changed for 0037: 0036 is no longer the leaf; the leaf is the schema-only index migration after it.
+        self.assertEqual(executor.loader.graph.leaf_nodes("fleetops"), [("fleetops", "0037_srp_loss_killmail_index")])
         # Operations are undone in reverse order: the guard has to come after the column, so it refuses before the
         # column is dropped.
         add_field, guard = prune_share.Migration.operations
@@ -1659,6 +1665,30 @@ class ImportRoundTripTests(TransactionTestCase):
         Settings = new.get_model("fleetops", "FleetOpsSettings")
         Settings.objects.get_or_create(pk=1)
         self.assertEqual(Settings.objects.get(pk=1).history_prune_max_share, 50)
+
+    def loss_indexes(self):
+        with connection.cursor() as cursor:
+            constraints = connection.introspection.get_constraints(cursor, "fleetops_srploss")
+        return {name for name, data in constraints.items() if data["index"]}
+
+    def test_0037_adds_the_killmail_index_and_going_back_drops_it(self):
+        # L-4: schema only, both ways; the rows of the table stay.
+        self.migrate(self.latest)
+        self.assertNotIn("fleetops_srploss_km_idx", self.loss_indexes())
+        new = self.migrate([("fleetops", "0037_srp_loss_killmail_index")])
+        Loss = new.get_model("fleetops", "SrpLoss")
+        self.assertIn("fleetops_srploss_km_idx", self.loss_indexes())
+        self.assertEqual(Loss.objects.count(), 0)
+
+        self.migrate(self.latest)
+
+        self.assertNotIn("fleetops_srploss_km_idx", self.loss_indexes())
+        self.assertIn("fleetops_srploss_char_idx", self.loss_indexes())
+
+    def test_0037_is_only_an_index(self):
+        [operation] = loss_index.Migration.operations
+        self.assertEqual(type(operation).__name__, "AddIndex")
+        self.assertEqual(operation.index.fields, ["killmail_id", "kind"])
 
     def test_a_site_that_already_applied_0035_gets_the_share_from_0036(self):
         # The development branch had 0035 as the last migration; the next migrate must add the column.

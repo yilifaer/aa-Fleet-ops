@@ -170,7 +170,7 @@ def home_context(request, year, month, claim_form, settings_obj):
     context["standing_links"] = links.open_standing_links()
     if discovery.discovery_active(settings_obj):
         context.update(discovery_context(request, settings_obj, context["standing_links"]))
-    personal = summaries.personal(user, year, month)
+    personal = summaries.personal(user, year, month, with_claims=False)
     start, end = month_bounds(year, month)
     month_claims = (
         SrpClaim.objects.filter(user=user, killmail_time__gte=start, killmail_time__lt=end)

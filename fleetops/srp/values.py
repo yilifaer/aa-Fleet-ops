@@ -275,16 +275,37 @@ def refresh_zkill(km, *, now: datetime | None = None) -> bool:
     return apply_zkill_result(km, result, now=now)
 
 
-def settle_without_zkill(km, status: str, *, now: datetime | None = None) -> bool:
+def settle_without_zkill(km, status: str, *, now: datetime | None = None, guarded: bool = False) -> bool:
     """Give up on zKillboard for the killmail (``disabled`` or ``unavailable``) and make the ESI estimate.
 
     Also the retry of an estimate that failed before. Returns True when the value claims depend on changed.
+
+    ``guarded`` is for the sweep, which works on a row loaded some time ago: the row is taken with a conditional
+    update first (like ``refresh_zkill``), and the result is stored only while nobody has changed it since, so a
+    web request that scheduled the killmail for zKillboard during the slow ESI estimate is not overwritten.
+    Returns False when the row was changed by someone else.
     """
     now = now or timezone.now()
     before = _signature(km)
+    loaded = (km.zkill_status, km.zkill_next_attempt_at)
+    lease = now + ZKILL_LEASE
+    if guarded:
+        taken = SrpKillmail.objects.filter(
+            pk=km.pk, zkill_status=loaded[0], zkill_next_attempt_at=loaded[1]
+        ).update(zkill_next_attempt_at=lease)
+        if not taken:
+            return False
     km.zkill_status = status
     fields = {"zkill_status"} | _settle(km, now)
-    km.save(update_fields=sorted(fields))
+    if not guarded:
+        km.save(update_fields=sorted(fields))
+        return _signature(km) != before
+    stored = SrpKillmail.objects.filter(pk=km.pk, zkill_status=loaded[0], zkill_next_attempt_at=lease).update(
+        **{field: getattr(km, field) for field in fields}
+    )
+    if not stored:
+        # Changed during the estimate: the other writer's state stands; the in-memory killmail is out of date.
+        return False
     return _signature(km) != before
 
 

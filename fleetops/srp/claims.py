@@ -798,6 +798,7 @@ def submit_claim(user, token: str, *, comment: str = "") -> SrpClaim:
     with quota.quota_lock() as srp:
         # With the settings of the lock: no read of its own, and none at all while discovery is off.
         missing_alts = discovery.unauthorized_characters(user, srp)
+        bans.lock_member_for_auto_ban(user, srp)
         # The killmail again, locked: a value stored since it was read above is used, and a value that arrives
         # later waits for this claim and then recalculates it.
         try:
@@ -962,6 +963,7 @@ def resubmit_claim(claim: SrpClaim, *, actor) -> SrpClaim:
     now = timezone.now()
     with quota.quota_lock() as srp:
         missing_alts = discovery.unauthorized_characters(actor, srp)
+        bans.lock_member_for_auto_ban(actor, srp)
         locked = lock_native(claim)
         if locked.status != Status.WITHDRAWN:
             raise wrong_state(locked, texts.SRP_ONLY_WITHDRAWN_RESUBMITTED(), Status.PENDING)

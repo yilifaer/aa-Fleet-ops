@@ -317,6 +317,12 @@ class ScheduledTaskDocsTests(SimpleTestCase):
                 if not queued:
                     self.assertIn(name, BEAT_TASKS + RETIRED_TASKS, f"{name} is never queued: add a beat entry?")
 
+    def test_the_architecture_document_lists_every_task(self):
+        text = read(DOCS / "architecture.md")
+        for name in self.celery_tasks():
+            with self.subTest(task=name):
+                self.assertIn(f"`{name}`", text)
+
 
 class InstallDocsTests(SimpleTestCase):
     def test_the_readmes_name_the_scopes(self):

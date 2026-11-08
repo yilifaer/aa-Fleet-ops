@@ -100,8 +100,9 @@ def _store_names(results, now):
     _upsert(EveEntityName, unresolved, ["category", "updated_at"])
 
 
-def entity_names(ids) -> dict[int, str]:
+def entity_names(ids, *, budget=None) -> dict[int, str]:
     """Names of EVE IDs of any category: cached ones first, the others from ESI (and then cached).
+    ``budget`` (a ``LookupBudget``) limits the ESI calls; IDs left when it runs out stay unnamed.
 
     IDs nobody could name are left out. When ESI fails the cached names are returned, also old ones.
     """
@@ -113,7 +114,7 @@ def entity_names(ids) -> dict[int, str]:
     missing = [entity_id for entity_id in ids if not _fresh(rows.get(entity_id), now)]
     if missing:
         try:
-            _store_names(esi.resolve_names(missing), now)
+            _store_names(esi.resolve_names(missing, **({} if budget is None else {"budget": budget})), now)
         except esi.FleetESIError:
             # The provider has logged the failure; old names are better than none.
             pass

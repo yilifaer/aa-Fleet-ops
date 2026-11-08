@@ -869,7 +869,8 @@ interval. A character that cannot be read is looked at again later: without a us
 rate limit was reached the run ends and nothing is queued for 15 minutes.
 
 **Members.** A member can press **Read my characters now** (not more than once in five minutes; the task does the
-reading, the page calls no ESI). Each loss of the list shows the ship, the character, the system, the EVE time, the days
+reading, the page calls no ESI). The characters are read first in the next run; while the general scan is running, the
+task tries again every minute for five minutes. Each loss of the list shows the ship, the character, the system, the EVE time, the days
 left when there is a deadline, the fleet FleetOps matched it to, and why it is not covered when it is not (from the
 values stored with the loss, so the page makes no ESI call). **Claim** opens the usual check with the matched fleet
 preselected; the choice can also be an open standing link or a category, or "Outside a fleet". **Ignore** hides a loss from
@@ -906,7 +907,8 @@ to claims of that category. The most specific active rule wins: doctrine and shi
 ship; at the same level a rule of the claim's category beats a general one, and then a rule for the scope of the claim
 beats one for both scopes. The same ship, doctrine and scope can have one rule per category. Doctrine rules match losses in a fleet that has that doctrine. Ships without a rule
 are paid the percentage of the loss value. Every claim keeps the rule and the settings it was calculated with;
-**Recalculate** applies the current ones to pending claims. The amount is paid as it is, before the per-loss cap
+**Recalculate** applies the current ones to pending claims (up to 50 claims at once while you wait; with more pending claims the
+recalculation runs in the background and the page says so). The amount is paid as it is, before the per-loss cap
 and the monthly limits. The optional **Label** is shown in the payout table and in the calculation of a claim.
 
 When the SRP settings, the categories, the payout table or the corporation limits change while claims are pending, the
@@ -1034,8 +1036,9 @@ through a fleet link at 571m.
 
 ## Going back to FleetOps 0.2.x
 
-Migrations `0035` and `0036` are the guard of the 0.3.0b1 chain. `0036`, the last migration, adds the pruning share to the
-settings; going back runs its copy of the guard before that column is dropped, and `0035` runs the same checks once more. The
+Migrations `0035` and `0036` are the guard of the 0.3.0b1 chain. `0036` adds the pruning share to the
+settings; going back runs its copy of the guard before that column is dropped, and `0035` runs the same checks once more.
+`0037`, the last migration, only adds an index and is undone first (the index is dropped, nothing else changes). The
 guard checks everything that makes going back unsafe before the first change is undone: payout rules that belong to a category, links without a fleet that have claims (standing
 links) or that were imported, and claims imported from aa-srp. It stops **any** way back, a partial one included
 (`migrate fleetops 0032` is stopped too). `python manage.py fleetops_srp_rollback_check` runs the same checks, reads only and

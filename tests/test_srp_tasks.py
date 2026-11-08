@@ -259,6 +259,62 @@ class ZkillboardOnTests(SweepTestCase):
         self.on_updated.assert_not_called()
 
 
+class StaleRowTests(SweepTestCase):
+    """L-10: a row changed by a web request while the sweep was busy is not overwritten with the loaded state."""
+
+    def stale_batch(self, km):
+        selected = list(SrpKillmail.objects.filter(pk=km.pk))
+        return mock.patch.object(srp_tasks, "due_killmails", return_value=selected)
+
+    def test_a_row_scheduled_by_a_preview_is_not_settled_as_disabled(self):
+        km = self.due(zkill_status="disabled")
+        later = self.now + timedelta(minutes=2)
+        with self.stale_batch(km):
+            # The preview of a claim put it back into the queue after the sweep had loaded it.
+            SrpKillmail.objects.filter(pk=km.pk).update(zkill_status="pending", zkill_next_attempt_at=later)
+            self.sweep()
+
+        km.refresh_from_db()
+        self.assertEqual((km.zkill_status, km.zkill_next_attempt_at), ("pending", later))
+        self.prices.assert_not_called()
+
+    def test_a_waiting_row_that_got_its_value_meanwhile_is_not_settled_with_zkillboard_off(self):
+        f.srp_settings(zkillboard_enabled=False, value_source="esi_estimate")
+        km = self.due()
+        with self.stale_batch(km):
+            SrpKillmail.objects.filter(pk=km.pk).update(zkill_status="ok", zkill_next_attempt_at=None)
+            self.sweep()
+
+        km.refresh_from_db()
+        self.assertEqual(km.zkill_status, "ok")
+
+    def test_a_row_scheduled_during_the_estimate_is_not_overwritten(self):
+        # The check passed; the preview of a claim puts the row back into the queue while ESI is slow.
+        km = self.due(zkill_status="disabled")
+        later = self.now + timedelta(minutes=2)
+        real = self.prices.return_value
+
+        def slow_market(*args, **kwargs):
+            SrpKillmail.objects.filter(pk=km.pk).update(zkill_status="pending", zkill_next_attempt_at=later)
+            return real
+
+        self.prices.side_effect = slow_market
+        with self.stale_batch(km):
+            self.sweep()
+
+        km.refresh_from_db()
+        self.assertEqual((km.zkill_status, km.zkill_next_attempt_at), ("pending", later))
+        self.assertIsNone(km.esi_estimate)
+
+    def test_an_unchanged_row_is_still_settled(self):
+        km = self.due(zkill_status="disabled")
+        with self.stale_batch(km):
+            self.sweep()
+
+        km.refresh_from_db()
+        self.assertEqual((km.esi_estimate, km.zkill_next_attempt_at), (ESTIMATE, None))
+
+
 class ZkillboardOffTests(SweepTestCase):
     def setUp(self):
         super().setUp()

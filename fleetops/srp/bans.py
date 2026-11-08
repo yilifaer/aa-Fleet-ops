@@ -255,6 +255,15 @@ def exhausted_personal_limit(calculation):
     return None
 
 
+def lock_member_for_auto_ban(user, srp):
+    """Lock the member's row when the settings may ban for the monthly limit. Call it inside ``quota.quota_lock()``
+    BEFORE the claim is written: inserting a claim puts a shared lock on the member's row (foreign key), and
+    upgrading that to the exclusive lock of ``auto_ban_for_cap`` while a manual ban waits for it would deadlock
+    on InnoDB. Lock order: settings row, then the member's row (``ban_user`` takes the member's row only)."""
+    if srp.auto_ban_over_monthly_cap:
+        get_user_model().objects.select_for_update().get(pk=user.pk)
+
+
 def auto_ban_for_cap(user, claim, calculation, srp, *, now):
     """Ban ``user`` until the end of the EVE month when the settings say so and the claim was submitted although a
     personal monthly limit is used up. Call it inside ``quota.quota_lock()``, right after the claim was saved
@@ -266,7 +275,13 @@ def auto_ban_for_cap(user, claim, calculation, srp, *, now):
     if not srp.auto_ban_over_monthly_cap:
         return None
     state = exhausted_personal_limit(calculation)
-    if state is None or active_ban(user, now) is not None:
+    if state is None:
+        return None
+    # The same row lock as ban_user(): a manual ban of the member that is being written right now is seen here, so
+    # the member never ends up with two bans in force. The callers took the lock before they wrote the claim
+    # (lock_member_for_auto_ban), so this is not an upgrade of a shared lock.
+    user = get_user_model().objects.select_for_update().get(pk=user.pk)
+    if active_ban(user, now) is not None:
         return None
     from fleetops.srp.claims import limit_name
 

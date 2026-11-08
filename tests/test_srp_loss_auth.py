@@ -305,7 +305,8 @@ class AuthorizeViewTests(AuthBase):
 
         self.assertRedirects(response, route("srp_home"), fetch_redirect_response=False)
         scan = SrpLossScan.objects.get(character_id=self.alt_b.character_id)
-        self.assertLessEqual(scan.next_check_at, timezone.now())
+        # Changed for L-9: a character made due has no next check, which sorts before every overdue character.
+        self.assertIsNone(scan.next_check_at)
         self.assertIn("Loss reading is authorized. Your recent losses will appear shortly.", self.messages(response))
 
     def test_a_character_of_somebody_else_is_refused_and_not_read(self):

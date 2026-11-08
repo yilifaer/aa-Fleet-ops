@@ -720,6 +720,15 @@ def recalculate_claim(claim: SrpClaim, *, actor=None, reason: str = "") -> SrpCl
     return claims.recalculate_under_lock(claim, actor=actor, reason=reason)
 
 
+# Up to this many pending claims are recalculated while the reviewer waits; more are done in a background task.
+RECALCULATE_INLINE_LIMIT = 50
+
+
+def pending_count() -> int:
+    """The number of claims waiting for a decision."""
+    return SrpClaim.objects.filter(status=Status.PENDING).count()
+
+
 def recalculate_pending(*, actor) -> int:
     """Recalculate every pending claim, oldest loss first; returns how many.
 

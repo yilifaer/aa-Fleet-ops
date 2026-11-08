@@ -32,6 +32,8 @@ from .test_srp_presence import Event as TrackEvent
 Kind = SrpLoss.Kind
 Status = SrpLossScan.Status
 NEWEST = 200_000_000
+# The real name lookup, kept before ScanBase replaces it, for the tests of the lookup itself.
+REAL_NAMES_OF = discovery.killmails.names_of
 
 
 class FakeEsi:
@@ -103,7 +105,12 @@ class ScanBase(TestCase):
             patcher = mock.patch.object(discovery, name, side_effect=target)
             patcher.start()
             self.addCleanup(patcher.stop)
-        names = mock.patch.object(discovery.killmails, "_names", return_value=("Rifter", "Amamake"))
+        # L-5: the scan names all ships and systems of a character in one call (names_of), not one call per loss.
+        names = mock.patch.object(
+            discovery.killmails,
+            "names_of",
+            side_effect=lambda ships, systems, budget=None: (dict.fromkeys(ships, "Rifter"), dict.fromkeys(systems, "Amamake")),
+        )
         names.start()
         self.addCleanup(names.stop)
         # No jitter unless a test asks for it.
@@ -453,6 +460,159 @@ class LocationTests(ScanBase):
         self.assertEqual(budget.details.remaining, discovery.LOSS_DETAIL_BUDGET - 1 - 3)
 
 
+class NameLookupTests(ScanBase):
+    """L-5: without the SDE the names of all losses of a character are looked up once, within the detail budget."""
+
+    def test_one_lookup_names_every_loss_of_the_character(self):
+        ids = [self.esi.killmail(self.main, minutes_ago=number + 1, solar_system_id=30000142 + number) for number in range(4)]
+        self.esi.listed(self.main, *ids)
+        looked_up = []
+
+        def entity_names(wanted, **kwargs):
+            looked_up.append(sorted(wanted))
+            return {pk: f"Name {pk}" for pk in wanted}
+
+        discovery.killmails.names_of.side_effect = REAL_NAMES_OF
+        with (
+            mock.patch.object(discovery.killmails.sde, "item_type_names", return_value={}),
+            mock.patch.object(discovery.killmails.sde, "solar_system_names", return_value={}),
+            mock.patch.object(discovery.killmails.names, "entity_names", side_effect=entity_names),
+            mock.patch.object(discovery.universe, "system_infos", return_value={}),
+            mock.patch.object(discovery.universe, "type_groups", return_value={}),
+        ):
+            self.scan()
+
+        self.assertEqual(len(looked_up), 1)
+        self.assertEqual(len(looked_up[0]), 5)  # the ship type and four systems
+        self.assertEqual(set(self.rows().values_list("ship_type_name", flat=True)), {f"Name {f.RIFTER}"})
+        self.assertFalse(self.rows().filter(solar_system_name="").exists())
+
+    def test_the_name_lookup_gets_the_detail_budget(self):
+        loss_id = self.esi.killmail(self.main, minutes_ago=30)
+        self.esi.listed(self.main, loss_id)
+        budget = discovery.ScanBudget()
+        seen = []
+
+        def lookup(ships, systems, budget=None):
+            seen.append(budget)
+            budget.take()
+            return {}, {}
+
+        discovery.killmails.names_of.side_effect = lookup
+        scan = SrpLossScan.objects.create(character_id=self.main.character_id, user=self.user)
+        with (
+            mock.patch.object(discovery.universe, "system_infos", return_value={}),
+            mock.patch.object(discovery.universe, "type_groups", return_value={}),
+        ):
+            discovery.scan_character(scan, SrpSettings.get_solo(), self.now, budget)
+
+        self.assertIs(seen[0], budget.details)
+        self.assertEqual(budget.details.remaining, discovery.LOSS_DETAIL_BUDGET - 1 - 1)
+
+    def test_the_budget_reaches_the_name_request(self):
+        from fleetops.providers.esi import LookupBudget
+
+        budget = LookupBudget(3)
+        with (
+            mock.patch.object(discovery.killmails.sde, "item_type_names", return_value={}),
+            mock.patch.object(discovery.killmails.sde, "solar_system_names", return_value={}),
+            mock.patch.object(discovery.killmails.names, "entity_names", return_value={}) as lookup,
+        ):
+            REAL_NAMES_OF([f.RIFTER], [30000142], budget=budget)
+
+        lookup.assert_called_once_with([f.RIFTER, 30000142], budget=budget)
+
+
+class LimitedScanTests(ScanBase):
+    """L-8: after ESI asked for a pause the scan makes no lookups for what it already read."""
+
+    def three_killmails(self):
+        """Read newest first: a kill, then the loss, then another kill."""
+        other = f.main_of(f.create_user("victim_of_scan"))
+        first = self.esi.killmail(other, minutes_ago=10)
+        loss = self.esi.killmail(self.main, minutes_ago=20)
+        last = self.esi.killmail(other, minutes_ago=30)
+        self.esi.listed(self.main, first, loss, last)
+        return first, loss, last
+
+    def fail_on_the_third_read(self, code, status):
+        real = self.esi.detail
+        calls = []
+
+        def detail(killmail_id, killmail_hash):
+            calls.append(killmail_id)
+            if len(calls) == 3:
+                raise FleetESIError(code, "Could not read", status)
+            return real(killmail_id, killmail_hash)
+
+        return detail
+
+    def test_no_universe_request_is_made_after_a_limit_and_the_loss_is_read_again_later(self):
+        first, loss, _last = self.three_killmails()
+
+        with (
+            mock.patch.object(discovery, "get_killmail", side_effect=self.fail_on_the_third_read("ESI_LIMITED", 420)),
+            mock.patch.object(discovery.universe, "system_infos", return_value={}) as systems,
+            mock.patch.object(discovery.universe, "type_groups", return_value={}) as groups,
+        ):
+            result = self.scan()
+
+        self.assertEqual(result.ended, "limited")
+        systems.assert_not_called()
+        groups.assert_not_called()
+        discovery.killmails.names_of.assert_not_called()
+        # The kill needs no lookup and is stored; the loss would need one and is left for the next run.
+        self.assertEqual(set(self.rows().values_list("killmail_id", "kind")), {(first, Kind.KILL)})
+
+    def test_a_run_that_is_out_of_requests_makes_no_lookup_either(self):
+        self.three_killmails()
+        scan = SrpLossScan.objects.create(character_id=self.main.character_id, user=self.user)
+        budget = discovery.ScanBudget()
+        budget.details.remaining = 2
+
+        with (
+            mock.patch.object(discovery.universe, "system_infos", return_value={}) as systems,
+            mock.patch.object(discovery.universe, "type_groups", return_value={}) as groups,
+        ):
+            with self.assertRaises(discovery.OutOfBudget):
+                discovery.scan_character(scan, SrpSettings.get_solo(), self.now, budget)
+
+        systems.assert_not_called()
+        groups.assert_not_called()
+        self.assertFalse(self.rows().filter(kind=Kind.LOSS).exists())
+
+    def test_a_loss_read_with_the_last_detail_call_is_stored_only_with_its_names(self):
+        # The list ends normally and nothing raises, but no call is left for the names: the loss is read again later.
+        loss_id = self.esi.killmail(self.main, minutes_ago=30)
+        self.esi.listed(self.main, loss_id)
+        scan = SrpLossScan.objects.create(character_id=self.main.character_id, user=self.user)
+        budget = discovery.ScanBudget()
+        budget.details.remaining = 1
+
+        with (
+            mock.patch.object(discovery.universe, "system_infos", return_value={}) as systems,
+            mock.patch.object(discovery.universe, "type_groups", return_value={}),
+            mock.patch.object(discovery.killmails, "names_of", return_value=({}, {})),
+        ):
+            discovery.scan_character(scan, SrpSettings.get_solo(), self.now, budget)
+
+        systems.assert_not_called()
+        self.assertFalse(self.rows().filter(kind=Kind.LOSS).exists())
+
+    def test_an_ordinary_error_still_stores_what_was_read_with_its_lookups(self):
+        self.three_killmails()
+
+        with (
+            mock.patch.object(discovery, "get_killmail", side_effect=self.fail_on_the_third_read("ESI_ERROR", 500)),
+            mock.patch.object(discovery.universe, "system_infos", return_value={}) as systems,
+            mock.patch.object(discovery.universe, "type_groups", return_value={}),
+        ):
+            self.scan()
+
+        systems.assert_called_once()
+        self.assertEqual(set(self.rows().values_list("kind", flat=True)), {Kind.KILL, Kind.LOSS})
+
+
 class StoredKillmailTests(ScanBase):
     def test_a_stored_killmail_with_a_checked_location_is_used_without_a_call(self):
         km = f.srp_killmail(
@@ -510,6 +670,21 @@ class StoredKillmailTests(ScanBase):
         self.scan()
 
         self.assertEqual(self.rows().get().kind, Kind.OLD)
+
+    def test_an_old_estimate_of_a_placeholder_does_not_make_the_smaller_ids_old(self):
+        # L-7: the time of a placeholder is only an estimate; "smaller ID = older" holds for real times only.
+        f.srp_settings(claim_deadline_days=7)
+        placeholder = f.srp_killmail(
+            self.main, killmail_id=NEWEST + 5, time=self.now - timedelta(days=30), origin="aasrp", solar_system_id=0, killmail_hash=""
+        )
+        real = self.esi.killmail(self.main, minutes_ago=60 * 24)
+        self.esi.listed(self.main, placeholder.killmail_id, real)
+
+        self.scan()
+
+        self.assertEqual(self.rows().get(killmail_id=placeholder.killmail_id).kind, Kind.OLD)
+        self.assertEqual(self.rows().get(killmail_id=real).kind, Kind.LOSS)
+        self.assertEqual(self.esi.detail_calls, [real])
 
     def test_the_scan_never_writes_a_killmail(self):
         from fleetops.models import SrpKillmail
@@ -658,7 +833,9 @@ class BudgetTests(ScanBase):
 
         self.assertEqual(result.ended, "budget")
         self.assertEqual(len(self.esi.detail_calls), 4)
-        self.assertEqual(self.rows().count(), 4)
+        # Changed for L-8: the run is out of requests, so the four losses it read are not stored without their names and
+        # place (no lookup is made); the next run reads them again.
+        self.assertEqual(self.rows().count(), 0)
         # The character stays due: the next run goes on with the rest.
         self.assertIsNone(SrpLossScan.objects.get(character_id=self.main.character_id).last_checked_at)
 
@@ -720,6 +897,53 @@ class TaskTests(ScanBase):
         self.assertEqual(fleet_tasks.scan_srp_losses(), "already-running")
         self.assertEqual(self.esi.list_calls, [])
         cache.delete(discovery.SCAN_LOCK_KEY)
+
+    def test_the_task_for_a_user_tries_again_while_the_general_scan_holds_the_lock(self):
+        # L-9: the refresh of a member is not dropped when the general scan is running.
+        from celery.exceptions import Retry
+
+        cache.set(discovery.SCAN_LOCK_KEY, "1", 600)
+
+        with mock.patch.object(fleet_tasks.scan_srp_losses_for_user, "retry", side_effect=Retry()) as retry:
+            with self.assertRaises(Retry):
+                fleet_tasks.scan_srp_losses_for_user(self.user.pk)
+
+        retry.assert_called_once_with(countdown=fleet_tasks.LOSS_REFRESH_RETRY_SECONDS)
+        self.assertEqual(self.esi.list_calls, [])
+        cache.delete(discovery.SCAN_LOCK_KEY)
+
+    def test_the_task_for_a_user_gives_up_after_the_last_retry(self):
+        from celery.exceptions import MaxRetriesExceededError
+
+        cache.set(discovery.SCAN_LOCK_KEY, "1", 600)
+
+        with mock.patch.object(fleet_tasks.scan_srp_losses_for_user, "retry", side_effect=MaxRetriesExceededError()):
+            self.assertEqual(fleet_tasks.scan_srp_losses_for_user(self.user.pk), "already-running")
+        cache.delete(discovery.SCAN_LOCK_KEY)
+
+    def test_the_general_scan_is_not_retried(self):
+        cache.set(discovery.SCAN_LOCK_KEY, "1", 600)
+        self.assertEqual(fleet_tasks.scan_srp_losses(), "already-running")
+        cache.delete(discovery.SCAN_LOCK_KEY)
+
+    def test_a_refreshed_character_is_read_before_the_overdue_ones(self):
+        overdue = SrpLossScan.objects.create(
+            character_id=self.alt_a.character_id, user=self.user, next_check_at=self.now - timedelta(days=2)
+        )
+        refreshed = SrpLossScan.objects.create(
+            character_id=self.alt_b.character_id, user=self.user, next_check_at=self.now - timedelta(minutes=3)
+        )
+
+        discovery.mark_due([self.alt_b.character_id], self.now)
+
+        order = list(
+            SrpLossScan.objects.filter(pk__in=[overdue.pk, refreshed.pk])
+            .filter(next_check_at__isnull=True)
+            .values_list("pk", flat=True)
+        )
+        self.assertEqual(order, [refreshed.pk])
+        self.scan()
+        self.assertEqual(self.esi.list_calls[0][0], self.alt_b.character_id)
 
     def test_the_task_for_a_user_reads_that_users_characters(self):
         self.assertEqual(fleet_tasks.scan_srp_losses_for_user(self.user.pk), "done: 3 characters")
@@ -804,6 +1028,17 @@ class FindLossMatchTests(PresenceBase):
         f.add_attendance(operation, self.pilot, self.character)
 
         self.assertEqual(presence.find_loss_match(self.character.character_id, at(0)), (link, display.REGISTERED))
+
+    def test_the_fleet_of_the_loss_is_found_among_more_than_three_open_registered_fleets(self):
+        # L-6: the time window is part of the query, so newer fleets that do not contain the loss do not push the
+        # right one out of the three candidates.
+        oldest, oldest_link = self.link_for(started=at(-120), ended=at(60), is_manual=True, esi_fleet_id=None)
+        f.registration(oldest, self.character)
+        for number in range(4):
+            later, _link = self.link_for(started=at(600 + number * 10), ended=at(900), is_manual=True, esi_fleet_id=None)
+            f.registration(later, self.character)
+
+        self.assertEqual(presence.find_loss_match(self.character.character_id, at(0)), (oldest_link, display.REGISTERED))
 
     def test_a_registration_outside_the_time_of_the_fleet_does_not_match(self):
         operation, _link = self.link_for(ended=at(60), is_manual=True, esi_fleet_id=None)

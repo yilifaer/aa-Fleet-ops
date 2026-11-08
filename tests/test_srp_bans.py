@@ -11,8 +11,10 @@ from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 from unittest import mock
 
+from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.db import connection
+from django.db.models.query import QuerySet
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
@@ -516,6 +518,70 @@ class AutoBanTests(BanBase):
 
         self.assertIsNone(bans.auto_ban_for_cap(self.user, claim, calculation, self.srp, now=timezone.now()))
         self.assertEqual(SrpBan.objects.count(), 1)
+
+    def test_a_manual_ban_written_while_the_helper_waits_for_the_member_is_seen(self):
+        # L-2: the helper takes the member's row lock (as ban_user does) before the last check. The lock is
+        # simulated: when it is taken, the manual ban of the other request has just been committed.
+        self.approved(1_000_000_000)
+        claim = f.srp_claim(self.user)
+        calculation = Calculation(limits=(LimitState("personal", cap=1, remaining=0),))
+        real = QuerySet.select_for_update
+        locked = []
+
+        def lock_then_ban(queryset, *args, **kwargs):
+            if queryset.model is get_user_model() and not locked:
+                locked.append(True)
+                make_ban(self.user, starts_at=timezone.now() - timedelta(minutes=1), expires_at=timezone.now() + timedelta(days=3))
+            return real(queryset, *args, **kwargs)
+
+        with mock.patch.object(QuerySet, "select_for_update", lock_then_ban):
+            result = bans.auto_ban_for_cap(self.user, claim, calculation, self.srp, now=timezone.now())
+
+        self.assertTrue(locked)
+        self.assertIsNone(result)
+        self.assertEqual(SrpBan.objects.filter(user=self.user).count(), 1)
+
+    def test_the_member_is_locked_before_the_claim_is_written(self):
+        # A claim insert takes a shared lock on the member's row; the exclusive lock must come first (InnoDB deadlock).
+        self.approved(1_000_000_000)
+        km = self.killmail()
+        token = self.prepare(km).token
+        order = []
+        real_lock = QuerySet.select_for_update
+        real_save = SrpClaim.save
+
+        def lock(queryset, *args, **kwargs):
+            if queryset.model is get_user_model():
+                order.append("member")
+            return real_lock(queryset, *args, **kwargs)
+
+        def save(claim, *args, **kwargs):
+            order.append("claim")
+            return real_save(claim, *args, **kwargs)
+
+        with (
+            mock.patch.object(QuerySet, "select_for_update", lock),
+            mock.patch.object(SrpClaim, "save", save),
+        ):
+            claims.submit_claim(self.user, token)
+
+        self.assertEqual(order[0], "member")
+        self.assertLess(order.index("member"), order.index("claim"))
+
+    def test_with_the_switch_off_the_member_is_not_locked(self):
+        self.settings(auto_ban_over_monthly_cap=False)
+        locked = []
+        real_lock = QuerySet.select_for_update
+
+        def lock(queryset, *args, **kwargs):
+            if queryset.model is get_user_model():
+                locked.append(True)
+            return real_lock(queryset, *args, **kwargs)
+
+        with mock.patch.object(QuerySet, "select_for_update", lock):
+            self.new()
+
+        self.assertFalse(locked)
 
     def test_submitting_a_withdrawn_claim_again_bans_too(self):
         claim = self.new()

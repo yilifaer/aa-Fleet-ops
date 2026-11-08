@@ -165,11 +165,13 @@ def character_cards(user) -> list[dict]:
 
 
 def mark_due(character_ids, now=None) -> int:
-    """Read these characters in the next run (rows that do not exist yet are due anyway); returns the rows changed."""
+    """Read these characters first in the next run (rows that do not exist yet are due anyway); returns the rows
+    changed. A row without a next check comes before every row that is merely overdue, so a member who asked is not
+    queued behind a backlog. ``now`` is kept for callers; the order does not depend on it."""
     ids = [int(value) for value in character_ids]
     if not ids:
         return 0
-    return SrpLossScan.objects.filter(character_id__in=ids).update(next_check_at=now or timezone.now())
+    return SrpLossScan.objects.filter(character_id__in=ids).update(next_check_at=None)
 
 
 # --- The scan ------------------------------------------------------------------------------------------------------
@@ -276,17 +278,38 @@ def _row_from_detail(character_id, killmail_id, killmail_hash, fields, floor) ->
         killmail_time=fields["killmail_time"],
     )
     if kind == Kind.LOSS:
-        ship_name, system_name = killmails._names(fields["ship_type_id"], fields["solar_system_id"])
-        row.ship_type_id, row.ship_type_name = fields["ship_type_id"], ship_name
-        row.solar_system_id, row.solar_system_name = fields["solar_system_id"], system_name
+        # The names are added for all rows of the character at once by _add_names().
+        row.ship_type_id, row.solar_system_id = fields["ship_type_id"], fields["solar_system_id"]
         row.war_id = fields["war_id"]
     return row
+
+
+def _needs_names(row) -> bool:
+    return row.kind == Kind.LOSS and row.ship_type_id is not None and not (row.ship_type_name and row.solar_system_name)
+
+
+def _needs_location(row) -> bool:
+    return row.kind == Kind.LOSS and row.ship_group_id is None and row.solar_system_security is None
+
+
+def _add_names(rows, budget) -> None:
+    """The ship and system names of the loss rows that have none: one lookup for all of them (the SDE when installed,
+    else one cached ESI request), whose calls count against the detail budget. A name that cannot be found stays empty."""
+    pending = [row for row in rows if _needs_names(row)]
+    if not pending:
+        return
+    ships, systems = killmails.names_of(
+        {row.ship_type_id for row in pending}, {row.solar_system_id for row in pending}, budget=budget.details
+    )
+    for row in pending:
+        row.ship_type_name = row.ship_type_name or ships.get(row.ship_type_id, "")[: killmails.SHIP_NAME_LENGTH]
+        row.solar_system_name = row.solar_system_name or systems.get(row.solar_system_id, "")[: killmails.SYSTEM_NAME_LENGTH]
 
 
 def _add_locations(rows, budget) -> None:
     """The ship group, security status and region of the loss rows that have none: one lookup of the systems and one
     of the ship types for all of them. A lookup that fails leaves the values empty (nothing is refused for it)."""
-    pending = [row for row in rows if row.kind == Kind.LOSS and row.ship_group_id is None and row.solar_system_security is None]
+    pending = [row for row in rows if _needs_location(row)]
     if not pending:
         return
     before = esi_universe.calls_made()
@@ -322,6 +345,8 @@ def _read_character(scan, token, floor, budget) -> bool:
     rows: list[SrpLoss] = []
     fetched = 0
     complete = True
+    # False once ESI asked us to slow down or the run's budget ended: no more ESI requests are made for this character.
+    may_ask_esi = True
     try:
         for page in range(1, MAX_RECENT_PAGES + 1):
             if not budget.lists.take():
@@ -366,7 +391,10 @@ def _read_character(scan, token, floor, budget) -> bool:
                         continue
                     row = _row_from_detail(character_id, killmail_id, killmail_hash, fields, floor)
                 rows.append(row)
-                if row.kind == Kind.OLD:
+                # The time of an imported placeholder is only an estimate (never later than the real one), so it
+                # says nothing about the killmails with smaller IDs; the placeholder itself is not shown anyway.
+                placeholder = km is not None and km.origin == SrpKillmail.Origin.AASRP
+                if row.kind == Kind.OLD and not placeholder:
                     # Killmail IDs grow with time: every smaller ID is older still and is not read.
                     rows.extend(
                         SrpLoss(character_id=character_id, killmail_id=older_id, killmail_hash=older_hash, kind=Kind.OLD)
@@ -379,15 +407,35 @@ def _read_character(scan, token, floor, budget) -> bool:
                 break
             if listed.pages is not None and page >= listed.pages:
                 break
+    except OutOfBudget:
+        may_ask_esi = False
+        raise
+    except FleetESIError as exc:
+        if exc.code == "ESI_LIMITED" or is_rate_limited(exc):
+            may_ask_esi = False
+        raise
     finally:
-        _store(rows, floor, budget)
+        _store(rows, floor, budget, may_ask_esi=may_ask_esi)
     return complete
 
 
-def _store(rows, floor, budget) -> None:
+def _store(rows, floor, budget, *, may_ask_esi=True) -> None:
     if not rows:
         return
-    _add_locations(rows, budget)
+    # Lookups only while ESI may be asked and the detail budget has a call left; a lookup that used the last call
+    # is complete (it asked for everything it needed) but the next one is not made.
+    looked_up = False
+    if may_ask_esi and budget.details.remaining > 0:
+        _add_names(rows, budget)
+        if budget.details.remaining > 0:
+            _add_locations(rows, budget)
+            looked_up = True
+    if not looked_up:
+        # ESI asked for a pause, or the run is out of requests: no lookups now. A loss that still needs its names
+        # and place is not stored, so the next run reads it again; the other rows need nothing from ESI.
+        rows = [row for row in rows if not (_needs_names(row) or _needs_location(row))]
+        if not rows:
+            return
     _add_matches(rows, floor)
     SrpLoss.objects.bulk_create(rows, ignore_conflicts=True)
 

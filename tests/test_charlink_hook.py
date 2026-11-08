@@ -256,7 +256,8 @@ class CharLinkImportTests(TestCase):
         self.assertIsNone(self.app_import.get("srplosses").add_character(mock.Mock(), token))
 
         scan.refresh_from_db()
-        self.assertLessEqual(scan.next_check_at, timezone.now())
+        # Changed for L-9: a character made due has no next check, which sorts before every overdue character.
+        self.assertIsNone(scan.next_check_at)
 
     def test_adding_a_character_needs_nothing_more(self):
         token = f.add_token(self.member, f.main_of(self.member), scopes=CLICK_SCOPES)

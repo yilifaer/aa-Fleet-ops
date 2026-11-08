@@ -633,7 +633,8 @@ class RefreshTests(ViewBase):
 
         self.assertRedirects(response, route("srp_home"), fetch_redirect_response=False)
         delay.assert_called_once_with(self.user.pk)
-        self.assertLessEqual(SrpLossScan.objects.get(character_id=self.main.character_id).next_check_at, timezone.now())
+        # Changed for L-9: a refreshed character gets no next check, which sorts before every overdue character.
+        self.assertIsNone(SrpLossScan.objects.get(character_id=self.main.character_id).next_check_at)
 
     def test_the_refresh_makes_no_esi_call(self):
         boom = AssertionError("ESI was called in the request")

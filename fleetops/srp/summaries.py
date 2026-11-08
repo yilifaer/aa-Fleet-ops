@@ -19,8 +19,8 @@ from datetime import timedelta
 from datetime import timezone as dt_timezone
 
 from django.contrib.auth import get_user_model
-from django.db.models import BigIntegerField, Case, CharField, Count, F, Max, Min, Q, Sum, Value, When
-from django.db.models.functions import Coalesce, TruncMonth
+from django.db.models import BigIntegerField, Case, CharField, Count, F, Max, Min, Q, Sum, Value, When, Window
+from django.db.models.functions import Coalesce, RowNumber, TruncMonth
 from django.utils.translation import gettext
 
 from fleetops.models import SrpCategory, SrpClaim, SrpClaimEvent, SrpCorporationLimit, SrpSettings
@@ -162,14 +162,15 @@ def _main_of(user):
     return getattr(getattr(user, "profile", None), "main_character", None)
 
 
-def personal(user, year: int, month: int) -> PersonalSrp:
+def personal(user, year: int, month: int, *, with_claims: bool = True) -> PersonalSrp:
     """The claims of one player in a month, with the totals (withdrawn ones left out) and the limits of the
     player and of the corporation of the player's current main. The list keeps withdrawn claims, so they can
-    be submitted again. The limits are the ones a claim of the month is checked against."""
+    be submitted again. The limits are the ones a claim of the month is checked against. A caller that pages the claims
+    itself (My SRP) passes ``with_claims=False`` and gets an empty list instead of reading every claim of the month."""
     start, end = month_bounds(year, month)
     claims = SrpClaim.objects.filter(user=user, killmail_time__gte=start, killmail_time__lt=end)
     totals = claims_totals(claims)
-    listed = list(claims.order_by("-killmail_time", "-pk"))
+    listed = list(claims.order_by("-killmail_time", "-pk")) if with_claims else []
 
     main = _main_of(user)
     corporation_id = main.corporation_id if main is not None else None
@@ -203,12 +204,20 @@ _MEMBER_KEY = Coalesce(
 
 
 def _latest_claim_of_members(claims, keys) -> dict:
-    """``{member key: main character and corporation of the newest claim}``: one streamed query, the newest claim
-    comes last so that it wins; id and name always come from the same claim."""
-    ordered = (
+    """``{member key: main character and corporation of the newest claim}``: the database numbers the claims of
+    each member from the newest ((killmail time, id), newest first) and returns only the first one, so one row per
+    member comes back instead of every claim of the period; id and name always come from the same claim."""
+    newest = (
         claims.order_by()
-        .annotate(member_key=_MEMBER_KEY)
-        .order_by("killmail_time", "pk")
+        .annotate(
+            member_key=_MEMBER_KEY,
+            newest_rank=Window(
+                expression=RowNumber(),
+                partition_by=[_MEMBER_KEY],
+                order_by=[F("killmail_time").desc(), F("pk").desc()],
+            ),
+        )
+        .filter(newest_rank=1)
         .values(
             "member_key",
             "main_character_id",
@@ -219,7 +228,7 @@ def _latest_claim_of_members(claims, keys) -> dict:
         )
     )
     wanted = set(keys)
-    return {e["member_key"]: e for e in ordered.iterator(chunk_size=2000) if e["member_key"] in wanted}
+    return {e["member_key"]: e for e in newest.iterator(chunk_size=2000) if e["member_key"] in wanted}
 
 
 def by_member(start, end, *, corporation_id=None) -> list[SrpMemberRow]:

@@ -44,14 +44,24 @@ def due_killmails(now):
     )
 
 
+def _unchanged_since_loaded(km) -> bool:
+    """Whether the stored state of the killmail is still the one the sweep loaded (status and next attempt)."""
+    current = SrpKillmail.objects.filter(pk=km.pk).values_list("zkill_status", "zkill_next_attempt_at").first()
+    return current == (km.zkill_status, km.zkill_next_attempt_at)
+
+
 def _refresh_one(km, zkill_enabled: bool, when):
     """Handle one due killmail; returns whether the value changed and whether zKillboard was asked."""
     status = values.ZkillStatus
+    if not _unchanged_since_loaded(km):
+        # A web request scheduled or settled it while the sweep worked through the batch (the rows were loaded up to
+        # 20 requests, about 40 seconds, ago): the state in memory is out of date and must not be written back.
+        return False, False
     if km.zkill_status not in values.WAITING_STATUSES:
         # zKillboard gave up on it or is off, and the estimate failed before: try the estimate again.
-        return values.settle_without_zkill(km, km.zkill_status, now=when), False
+        return values.settle_without_zkill(km, km.zkill_status, now=when, guarded=True), False
     if not zkill_enabled:
-        return values.settle_without_zkill(km, status.DISABLED, now=when), False
+        return values.settle_without_zkill(km, status.DISABLED, now=when, guarded=True), False
     checked = km.zkill_checked_at
     changed = values.refresh_zkill(km, now=when)
     return changed, km.zkill_checked_at != checked

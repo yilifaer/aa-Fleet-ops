@@ -416,6 +416,61 @@ class BulkApproveTests(ManagerPagesTestCase):
         self.assertEqual(self.client_for(self.stats).post(route("srp_review_bulk_approve")).status_code, 403)
 
 
+class DropDownRowsTests(ManagerPagesTestCase):
+    """L-11: the drop-downs read one row per corporation and FC, not one per claim."""
+
+    def rows_read(self, call):
+        from unittest import mock
+
+        from django.db.models.query import ValuesListIterable
+
+        read = []
+        real = ValuesListIterable.__iter__
+
+        def counting(iterable):
+            for row in real(iterable):
+                read.append(row)
+                yield row
+
+        with mock.patch.object(ValuesListIterable, "__iter__", counting):
+            result = call()
+        return result, read
+
+    def test_the_review_filters_read_one_row_per_corporation_and_fc(self):
+        from fleetops.views_srp_review import filter_choices
+
+        for _number in range(12):
+            self.pending(link=self.link)
+
+        (corporations, fcs), read = self.rows_read(filter_choices)
+
+        self.assertEqual(len(corporations), 1)
+        self.assertEqual(len(fcs), 1)
+        self.assertEqual(len(read), 2)
+
+    def test_the_payment_filter_reads_one_row_per_corporation(self):
+        from fleetops.views_srp_review import payable_corporations
+
+        for _number in range(12):
+            f.srp_claim(self.member, status=APPROVED, time=self.loss_time)
+
+        corporations, read = self.rows_read(payable_corporations)
+
+        self.assertEqual(corporations, [(f.DEFAULT_CORP[0], f.DEFAULT_CORP[1])])
+        self.assertEqual(len(read), 1)
+
+    def test_a_corporation_that_was_renamed_is_listed_once_under_the_first_name(self):
+        from fleetops.views_srp_review import filter_choices
+
+        self.pending(self.member)
+        old = self.pending(self.member)
+        SrpClaim.objects.filter(pk=old.pk).update(corporation_name="Aaa Old Name")
+
+        corporations, _fcs = filter_choices()
+
+        self.assertEqual(corporations, [(f.DEFAULT_CORP[0], "Aaa Old Name")])
+
+
 class RecalculateTests(ManagerPagesTestCase):
     def test_recalculates_every_pending_claim_as_the_manager(self):
         recalc = self.patch("fleetops.srp.review.recalculate_pending", return_value=3)
@@ -432,6 +487,79 @@ class RecalculateTests(ManagerPagesTestCase):
         response = self.client.post(route("srp_review_recalculate"))
 
         self.assertIn("1 pending claim recalculated with the current policy.", messages_of(response))
+
+    def test_a_long_list_is_recalculated_in_the_background(self):
+        # L-12: more pending claims than the limit are not done in the web request.
+        from unittest import mock
+
+        from django.core.cache import cache
+
+        from fleetops import tasks
+
+        cache.delete(tasks.SRP_RECALCULATE_LOCK_KEY)
+        recalc = self.patch("fleetops.srp.review.recalculate_pending")
+        self.patch("fleetops.srp.review.pending_count", return_value=review.RECALCULATE_INLINE_LIMIT + 1)
+
+        with mock.patch.object(tasks.recalculate_srp_pending, "delay") as delay:
+            response = self.client.post(route("srp_review_recalculate"))
+
+        self.assertRedirects(response, route("srp_review"), fetch_redirect_response=False)
+        recalc.assert_not_called()
+        delay.assert_called_once_with(self.manager.pk)
+        self.assertIn("pending claims are being recalculated in the background", " ".join(messages_of(response)))
+        cache.delete(tasks.SRP_RECALCULATE_LOCK_KEY)
+
+    def test_a_second_background_recalculation_is_not_queued(self):
+        from unittest import mock
+
+        from django.core.cache import cache
+
+        from fleetops import tasks
+
+        self.patch("fleetops.srp.review.pending_count", return_value=review.RECALCULATE_INLINE_LIMIT + 1)
+        cache.set(tasks.SRP_RECALCULATE_LOCK_KEY, 1, 600)
+
+        with mock.patch.object(tasks.recalculate_srp_pending, "delay") as delay:
+            response = self.client.post(route("srp_review_recalculate"))
+
+        delay.assert_not_called()
+        self.assertIn("being recalculated already", " ".join(messages_of(response)))
+        cache.delete(tasks.SRP_RECALCULATE_LOCK_KEY)
+
+    def test_a_broker_error_frees_the_lock_and_says_so(self):
+        from unittest import mock
+
+        from django.core.cache import cache
+
+        from fleetops import tasks
+
+        cache.delete(tasks.SRP_RECALCULATE_LOCK_KEY)
+        self.patch("fleetops.srp.review.pending_count", return_value=review.RECALCULATE_INLINE_LIMIT + 1)
+
+        with mock.patch.object(tasks.recalculate_srp_pending, "delay", side_effect=OSError("broker down")):
+            response = self.client.post(route("srp_review_recalculate"))
+
+        self.assertIn("could not be started", " ".join(messages_of(response)))
+        self.assertIsNone(cache.get(tasks.SRP_RECALCULATE_LOCK_KEY))
+
+    def test_the_background_task_recalculates_as_the_reviewer_and_frees_the_lock(self):
+        from django.core.cache import cache
+
+        from fleetops import tasks
+
+        cache.set(tasks.SRP_RECALCULATE_LOCK_KEY, 1, 600)
+        recalc = self.patch("fleetops.srp.review.recalculate_pending", return_value=7)
+
+        self.assertEqual(tasks.recalculate_srp_pending(self.manager.pk), 7)
+
+        recalc.assert_called_once_with(actor=self.manager)
+        self.assertIsNone(cache.get(tasks.SRP_RECALCULATE_LOCK_KEY))
+
+    def test_the_background_task_does_nothing_for_someone_who_may_not_review(self):
+        from fleetops import tasks
+
+        self.assertEqual(tasks.recalculate_srp_pending(self.member.pk), 0)
+        self.assertEqual(tasks.recalculate_srp_pending(0), 0)
 
     def test_members_cannot(self):
         recalc = self.patch("fleetops.srp.review.recalculate_pending")

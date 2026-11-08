@@ -257,6 +257,22 @@ class PersonalTests(SummaryData):
         self.assertEqual(personal.pending, 20 * M)
 
 
+class PersonalWithoutListTests(SummaryData):
+    """L-3: My SRP pages the claims itself, so the summary can skip reading them."""
+
+    def test_without_the_list_the_claims_of_the_month_are_not_read(self):
+        with CaptureQueriesContext(connection) as full:
+            with_list = summaries.personal(self.alice, 2026, 3)
+        with CaptureQueriesContext(connection) as lean:
+            without = summaries.personal(self.alice, 2026, 3, with_claims=False)
+
+        self.assertTrue(with_list.claims)
+        self.assertEqual(without.claims, [])
+        self.assertEqual(len(lean), len(full) - 1)
+        self.assertEqual(without.totals, with_list.totals)
+        self.assertEqual(without.limits, with_list.limits)
+
+
 class MemberTests(SummaryData):
     def test_one_row_per_player_the_most_approved_first(self):
         rows = summaries.by_member(*month_bounds(2026, 3))
@@ -313,6 +329,42 @@ class MemberTests(SummaryData):
         rows = {row.main_character_name: row for row in summaries.by_member(*month_bounds(2026, 3))}
 
         self.assertEqual(rows["Alice Main"].corporation_id, f.DEFAULT_CORP[0])
+
+
+class LatestClaimOfMembersTests(SummaryData):
+    """M-8: the database picks the newest claim of every member; the rows read are one per member."""
+
+    def test_one_row_per_member_is_read_not_one_per_claim(self):
+        from unittest import mock
+
+        from django.db.models.query import QuerySet
+
+        read = []
+        real = QuerySet.iterator
+
+        def counting(queryset, *args, **kwargs):
+            for row in real(queryset, *args, **kwargs):
+                read.append(row)
+                yield row
+
+        start, end = month_bounds(2026, 3)
+        claims = summaries.period_claims(start, end)
+        keys = [row["member_key"] for row in claims.order_by().annotate(member_key=summaries._MEMBER_KEY).values("member_key").distinct()]
+        with mock.patch.object(QuerySet, "iterator", counting):
+            latest = summaries._latest_claim_of_members(claims, keys)
+
+        self.assertEqual(len(latest), 3)
+        self.assertEqual(len(read), 3)
+        self.assertGreater(claims.count(), 3)
+
+    def test_the_newest_claim_wins_and_a_tie_goes_to_the_higher_id(self):
+        SrpClaim.objects.filter(user=self.alice).update(corporation_name="Old Corp", killmail_time=at(2))
+        SrpClaim.objects.filter(pk__in=[self.a2.pk, self.a3.pk]).update(corporation_name="Tie Corp", killmail_time=at(20))
+        SrpClaim.objects.filter(pk=self.a3.pk).update(corporation_name="Higher Id Corp")
+
+        rows = {row.user_id: row for row in summaries.by_member(*month_bounds(2026, 3))}
+
+        self.assertEqual(rows[self.alice.pk].corporation_name, "Higher Id Corp")
 
 
 class CorporationTests(SummaryData):

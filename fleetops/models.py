@@ -2811,7 +2811,11 @@ class SrpLoss(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["character_id", "killmail_id"], name="fleetops_unique_srp_loss"),
         ]
-        indexes = [models.Index(fields=["character_id", "kind", "killmail_time"], name="fleetops_srploss_char_idx")]
+        indexes = [
+            models.Index(fields=["character_id", "kind", "killmail_time"], name="fleetops_srploss_char_idx"),
+            # owned_loss() looks a loss up by killmail and kind, without the character.
+            models.Index(fields=["killmail_id", "kind"], name="fleetops_srploss_km_idx"),
+        ]
 
     def __str__(self):
         return gettext("Loss %(id)s") % {"id": self.killmail_id}

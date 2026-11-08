@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from allianceauth.services.hooks import get_extension_logger
 from celery import shared_task
+from celery.exceptions import MaxRetriesExceededError
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.db.models import Q
@@ -433,11 +434,23 @@ def scan_srp_losses():
     return _run_loss_scan(None)
 
 
-@shared_task
-def scan_srp_losses_for_user(user_id):
+# The general scan holds the lock for up to four minutes; the refresh of a member waits for it and tries again.
+LOSS_REFRESH_RETRY_SECONDS = 60
+LOSS_REFRESH_MAX_RETRIES = 5
+
+
+@shared_task(bind=True, max_retries=LOSS_REFRESH_MAX_RETRIES)
+def scan_srp_losses_for_user(self, user_id):
     """Read the characters of one member that are due now (the member pressed "Refresh"). Same limits and lock as
-    the general scan."""
-    return _run_loss_scan(user_id)
+    the general scan; while the general scan runs, the task is tried again every minute for a few minutes (the
+    characters are marked to be read first in the next run, so nothing is lost when it gives up)."""
+    result = _run_loss_scan(user_id)
+    if result == "already-running":
+        try:
+            self.retry(countdown=LOSS_REFRESH_RETRY_SECONDS)
+        except MaxRetriesExceededError:
+            return result
+    return result
 
 
 def _run_loss_scan(user_id):
@@ -455,6 +468,33 @@ def _run_loss_scan(user_id):
         return "error"
     finally:
         cache.delete(srp_discovery.SCAN_LOCK_KEY)
+
+
+# One recalculation of all pending claims at a time; the lock ends with the task and in any case after an hour.
+SRP_RECALCULATE_LOCK_KEY = "fleetops:srp:recalculate-pending"
+SRP_RECALCULATE_LOCK_SECONDS = 3600
+
+
+@shared_task
+def recalculate_srp_pending(actor_id):
+    """Recalculate every pending SRP claim with the current policy for the reviewer who asked (many claims are not
+    done in the web request). Returns the number recalculated, or 0 when the reviewer may not do it any more."""
+    from fleetops.srp import review
+    from fleetops.srp.types import SrpError
+
+    try:
+        actor = get_user_model().objects.filter(pk=actor_id, is_active=True).first()
+        if actor is None:
+            return 0
+        try:
+            return review.recalculate_pending(actor=actor)
+        except SrpError:
+            return 0
+    except Exception as exc:
+        log_failure(logger, "SRP recalculation of the pending claims", exc)
+        return 0
+    finally:
+        cache.delete(SRP_RECALCULATE_LOCK_KEY)
 
 
 @shared_task
