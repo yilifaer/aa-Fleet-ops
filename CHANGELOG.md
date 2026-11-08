@@ -176,6 +176,15 @@ depends on it. Read the upgrade notes and the rollback notes below before you st
 
 ### Changed
 
+- **A fitting link pasted from the game no longer breaks the fleet messages.** A custom doctrine name copied from the
+  game (a fitting link with its tags, about 600 characters) used to be cut off silently by the input box at 255
+  characters, which left an open tag that swallowed the Comms, Logi, Boost and SRP lines of the MOTD and showed the
+  markup in the Discord ping. Every custom doctrine field (start and scheduled fleet, the fleet records, Send Ping, the
+  PAP link and the payout rule) now keeps only the plain name, accepts a paste of up to 4000 characters, and reports a
+  clear error when the name is still longer than 255 characters instead of cutting it. In the MOTD and the ping, the
+  doctrine, form-up place, group and additional message are shown as plain text as well, so a fleet saved with a cut-off
+  link is shown correctly too. Mentions of everyone or here in these fields still do not notify anybody. The fitting link
+  itself is not stored or clickable.
 - **A loss inside a tracked fleet is no longer paid as a loss outside a fleet by accident.** When a member checks a
   loss from **My SRP** as a loss outside a fleet, but fleet tracking shows that the character was in (or within the
   polling grace of) a fleet whose SRP link is open, the check is now made with that fleet's link, so the fleet rules
@@ -316,6 +325,11 @@ depends on it. Read the upgrade notes and the rollback notes below before you st
 
 ### Upgrade notes
 
+The plain-text change to custom doctrine names and to the messages needs no migration and no setting; fleets that
+are already stored are cleaned when their messages are rendered, the stored text stays as it is, also when such a payout rule or fleet
+is saved again without a change to its doctrine name. Only the game's own tags are removed; text such as `<ABCD>` or
+a Discord timestamp stays.
+
 Restart the Celery worker as well: PAP link registrations now queue a small background task (`fill_registration_details`)
 that the worker has to know. Nothing else is needed for the fixes of the last list; they add no migration.
 After the upgrade run `python manage.py check` once: the new warnings tell you which lines of `local.py` are missing. They do not change anything and need no rollback step.
@@ -394,6 +408,9 @@ claims outside a fleet; or restore the backup taken before the upgrade). (3) Run
 `python manage.py fleetops_srp_rollback_check` until every line passes. (4) Run `python manage.py migrate fleetops 0023`.
 (5) Only then install the previous package. **Migrations first, package second:** the older package does not know the
 newer migrations and could not undo them.
+
+The cleaning of doctrine names and message texts changes code only: going back leaves the names saved in plain text as
+they are and the old version shows rich text in the messages again.
 
 The fixes listed under Fixed change code only: going back to an earlier build brings the old behaviour back (the PAP of
 deleted accounts is removed again by the next recalculation; the approver rule looks at the last decider only).

@@ -14,7 +14,7 @@ from django.utils.translation import gettext
 from django.utils.translation import gettext_lazy as _
 
 from fleetops.constants import OVERRIDE_REASON_MIN_LENGTH
-from fleetops.forms_common import _style, _to_minute
+from fleetops.forms_common import DoctrineNameField, _style, _to_minute, keep_stored_name
 from fleetops.models import (
     MAX_DATABASE_ID,
     MIN_RETENTION_DAYS,
@@ -205,7 +205,7 @@ class ManualFleetForm(forms.Form):
     LONG_FLEET = timedelta(hours=6)
 
     fleet_type = forms.ModelChoiceField(label=_("Fleet type"), queryset=FleetType.objects.none())
-    doctrine_name = forms.CharField(label=_("Doctrine name"), max_length=255, required=False)
+    doctrine_name = DoctrineNameField(label=_("Doctrine name"))
     formup = forms.CharField(label=_("Form Up / Staging"), max_length=255)
     started_at = EveDateTimeField(label=_("Start Time — EVE time (UTC)"))
     ended_at = EveDateTimeField(label=_("End Time — EVE time (UTC)"))
@@ -261,6 +261,7 @@ class ManualFleetForm(forms.Form):
 class OperationEditForm(forms.ModelForm):
     LONG_FLEET = ManualFleetForm.LONG_FLEET
 
+    doctrine_name = DoctrineNameField(label=_("Doctrine name"))
     started_at = EveDateTimeField(label=_("Start Time — EVE time (UTC)"))
     ended_at = EveDateTimeField(label=_("End Time — EVE time (UTC)"), required=False)
     confirm_long_fleet = forms.BooleanField(
@@ -287,6 +288,9 @@ class OperationEditForm(forms.ModelForm):
         widgets = {
             "additional_message": forms.Textarea(attrs={"rows": 4}),
         }
+
+    def clean_doctrine_name(self):
+        return keep_stored_name(self, "doctrine_name", self.cleaned_data["doctrine_name"])
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)

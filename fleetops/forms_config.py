@@ -19,6 +19,7 @@ from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 from django.utils.translation import pgettext_lazy
 
+from fleetops.forms_common import DoctrineNameField, keep_stored_name
 from fleetops.models import (
     MAX_DATABASE_ID,
     ChannelPreset,
@@ -1026,10 +1027,8 @@ class SrpPayoutRuleForm(forms.ModelForm):
         required=False,
         help_text=_("Doctrine rules only apply to losses in a fleet that flew this doctrine."),
     )
-    doctrine_custom = forms.CharField(
+    doctrine_custom = DoctrineNameField(
         label=_("Custom doctrine name"),
-        required=False,
-        max_length=255,
         help_text=_("For fleets with a typed doctrine name; matched ignoring case. Used with “Custom name”."),
     )
 
@@ -1085,6 +1084,9 @@ class SrpPayoutRuleForm(forms.ModelForm):
         if rule.doctrine_source and rule.doctrine_external_id:
             return f"{rule.doctrine_source}|{rule.doctrine_external_id}|{rule.doctrine_name}"
         return CUSTOM_DOCTRINE if rule.doctrine_name else ""
+
+    def clean_doctrine_custom(self):
+        return keep_stored_name(self, "doctrine_custom", self.cleaned_data["doctrine_custom"])
 
     def clean_ship(self):
         lookup = lookup_ship(self.cleaned_data.get("ship"))

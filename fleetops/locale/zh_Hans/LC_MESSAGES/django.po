@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-08 17:30+0000\n"
+"POT-Creation-Date: 2026-11-08 18:32+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -223,6 +223,11 @@ msgstr "立即发送集结 Ping"
 #: forms.py
 msgid "Post a cancellation notice"
 msgstr "发布取消通知"
+
+#: forms_common.py
+#, python-format
+msgid "The doctrine name is %(length)s characters long without formatting; the limit is %(limit)s."
+msgstr "去掉格式后，建制名称有 %(length)s 个字符，上限为 %(limit)s 个。"
 
 #: forms_config.py
 msgid "Automatic (FleetOps SRP when enabled, then aa-srp, then Alliance Auth SRP)"

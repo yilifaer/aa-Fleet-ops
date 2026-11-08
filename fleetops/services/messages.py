@@ -22,6 +22,7 @@ from fleetops.constants import (
 from fleetops.models import FleetOpsSettings, MessageTemplate
 from fleetops.providers.doctrines import doctrine_url
 from fleetops.services import eve_links, links
+from fleetops.services.ingame_text import plain_text
 from fleetops.services.mentions import (
     DISCORD_MESSAGE_LIMIT,
     discord_length,
@@ -74,8 +75,8 @@ def _fleet_times(scheduled_at) -> dict:
 def _doctrine_lists(operation) -> tuple[str, str]:
     """Hull of every fit (duplicates kept) and the fit names, in doctrine order, joined with " > "."""
     fits = [fit for fit in getattr(operation, "doctrine_fits", None) or [] if isinstance(fit, dict)]
-    ships = (str(fit.get("ship") or fit.get("ship_type_id") or "").strip() for fit in fits)
-    names = (str(fit.get("fit") or "").strip() for fit in fits)
+    ships = (plain_text(fit.get("ship") or fit.get("ship_type_id") or "") for fit in fits)
+    names = (plain_text(fit.get("fit") or "") for fit in fits)
     return " > ".join(ship for ship in ships if ship), " > ".join(name for name in names if name)
 
 
@@ -129,6 +130,10 @@ def _context(operation, selection, mention: str, *, actor, pre_ping, now, lookup
     ``lookups`` looks up the clickable FC and form-up place of the MOTD; a ping without a fleet leaves it off.
     """
     comms = operation.comms
+    # Whatever a person typed or pasted is plain text here: a tag cut off in one field (a fitting link pasted from the
+    # game) must not swallow the lines after it in the MOTD, and a ping shows no markup.
+    doctrine_name = plain_text(operation.doctrine_name)
+    formup = plain_text(operation.formup)
     logi = operation.logi_channel
     boost = operation.boost_channel
     doctrine_ships, doctrine_fits = _doctrine_lists(operation)
@@ -139,19 +144,19 @@ def _context(operation, selection, mention: str, *, actor, pre_ping, now, lookup
         "fc_main": operation.fc_main_character_name or operation.fc_character_name,
         "sender": _sender(operation, actor),
         "fleet_type": str(operation.fleet_type),
-        "doctrine": operation.doctrine_name or "None / Custom",
-        "doctrine_name": operation.doctrine_name or "",
+        "doctrine": doctrine_name or "None / Custom",
+        "doctrine_name": doctrine_name,
         "doctrine_url": doctrine_url(operation.doctrine_source, operation.doctrine_external_id),
         "doctrine_ships": doctrine_ships,
         "doctrine_fits": doctrine_fits,
-        "formup": operation.formup,
+        "formup": formup,
         **_link_values(
             operation.fc_character_name,
             getattr(operation, "fc_character_id", ""),
-            operation.formup,
+            formup,
             lookups=lookups,
         ),
-        "group": getattr(operation, "group_name", "") or "",
+        "group": plain_text(getattr(operation, "group_name", "")),
         "comms": comms.name if comms else "",
         "comms_channel": comms.channel_name if comms else "",
         "comms_link": links.comms_link(comms),
@@ -169,7 +174,7 @@ def _context(operation, selection, mention: str, *, actor, pre_ping, now, lookup
         "ping_target_name": label,
         "ping_channel": _ping_channel_name(operation),
         "sent_at": format_eve(now or timezone.now()),
-        "additional_message": operation.additional_message,
+        "additional_message": plain_text(operation.additional_message, keep_lines=True),
     }
 
 

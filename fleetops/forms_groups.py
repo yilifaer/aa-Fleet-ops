@@ -18,7 +18,7 @@ from django.utils.translation import gettext_lazy as _
 from django.utils.translation import pgettext, pgettext_lazy
 
 from fleetops import texts
-from fleetops.forms_common import style_fields
+from fleetops.forms_common import DoctrineNameField, style_fields
 from fleetops.models import CommsPreset, DiscordWebhook, FleetType, GroupAccess, MessageTemplate, PingRole
 from fleetops.providers.doctrines import get_doctrines
 from fleetops.services import group_access
@@ -332,7 +332,7 @@ class SendPingForm(forms.Form):
     )
     formup = forms.CharField(label=_("Form Up / Staging"), max_length=255, required=False)
     doctrine_choice = forms.ChoiceField(label=pgettext_lazy("FleetOps", "Doctrine"), required=False)
-    custom_doctrine = forms.CharField(label=_("Custom Doctrine"), required=False, max_length=255)
+    custom_doctrine = DoctrineNameField(label=_("Custom Doctrine"))
     comms = forms.ModelChoiceField(label=_("Comms"), queryset=CommsPreset.objects.none(), required=False)
     fleet_date = forms.DateField(
         label=_("Date"),

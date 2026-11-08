@@ -368,11 +368,13 @@ class DefaultMotdTests(MessageTestBase):
         self.assertNotIn("<a href=\"/fittings", motd)
 
     def test_line_breaks_keep_the_text_as_it_is(self):
+        # Changed with the plain-text rule: the game's tags a person typed (<b>) no longer reach the MOTD, the line
+        # breaks and the words stay.
         operation = self.operation(additional_message="Bring <b>drones</b>\r\nand cap\nboosters")
 
         motd = self.render(operation).motd
 
-        self.assertTrue(motd.endswith("<br><br>Bring <b>drones</b><br>and cap<br>boosters</font>"))
+        self.assertTrue(motd.endswith("<br><br>Bring drones<br>and cap<br>boosters</font>"))
 
     def test_scripts_stay_neutralised(self):
         operation = self.operation(additional_message="<script>alert(1)</script>")
@@ -381,6 +383,11 @@ class DefaultMotdTests(MessageTestBase):
 
         self.assertNotIn("<script", motd)
         self.assertIn("&lt;script>alert(1)&lt;/script>", motd)
+
+        template = make_template("Hello <script>alert(2)</script>", MessageTemplate.TemplateType.MOTD)
+        motd = self.render(self.operation(motd_template=template)).motd
+
+        self.assertEqual(motd, "Hello &lt;script>alert(2)&lt;/script>")
 
     def test_the_fc_and_the_form_up_place_are_printed_through_their_links(self):
         # The built-in MOTD asks for {{ fc_link }} and {{ formup_link }}.

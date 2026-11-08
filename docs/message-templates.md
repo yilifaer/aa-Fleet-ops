@@ -84,6 +84,13 @@ preview warns that nobody will be notified.
   `<font color="#bfffffff">`, `<a href="…">`). `{{ additional_message|linebreaksbr }}` keeps the line breaks the
   FC typed. `<script` is escaped. A MOTD longer than 1000 characters only gets a warning, because the game may
   cut a longer one.
+- Text typed by people is plain text in the messages: the doctrine name, the form-up place, the group and the
+  additional message are cleaned of the game's rich text (`<font>`, `<b>`, `<a href="…">name</a>` keeps only
+  the name, a tag that was cut off is dropped) before they are put into a template, in the MOTD and in the ping, so
+  one field cannot swallow the lines after it. Only the tags the game writes are removed; other text in angle
+  brackets (an alliance ticker `<ABCD>`, a Discord timestamp `<t:…>`, `x<y`) stays as typed. Line breaks of the
+  additional message stay. This also cleans fleets that were saved before: nothing stored is changed, and saving a
+  payout rule or a fleet without touching its doctrine name keeps the stored name (and so its doctrine key).
 - Links to comms and doctrines are built from `SITE_URL`. Without it they are site paths that do not open
   outside Alliance Auth, and the preview warns about it.
 

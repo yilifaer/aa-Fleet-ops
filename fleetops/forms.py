@@ -11,7 +11,7 @@ from django.utils import timezone
 from django.utils.translation import pgettext_lazy
 from django.utils.translation import gettext_lazy as _
 
-from fleetops.forms_common import _style, _to_minute
+from fleetops.forms_common import DoctrineNameField, _style, _to_minute, keep_stored_name
 from fleetops.forms_config import (  # noqa: F401 - configuration forms, re-exported
     ChannelPresetForm,
     CommsPresetForm,
@@ -124,7 +124,7 @@ class FleetSettingsForm(PapLimitForm):
 
     fleet_type = forms.ModelChoiceField(label=_("Fleet type"), queryset=FleetType.objects.none())
     doctrine_choice = forms.ChoiceField(label=pgettext_lazy("FleetOps", "Doctrine"), required=False)
-    custom_doctrine = forms.CharField(label=_("Custom Doctrine"), required=False, max_length=255)
+    custom_doctrine = DoctrineNameField(label=_("Custom Doctrine"))
     formup = forms.CharField(label=_("Form Up / Staging"), max_length=255)
     fleet_date = forms.DateField(
         label=_("Date"),
@@ -235,6 +235,9 @@ class FleetSettingsForm(PapLimitForm):
         if not _can_start_alliance_fleets(self.user):
             return set()
         return set(group_access.alliance_channels(self.user).values_list("pk", flat=True))
+
+    def clean_custom_doctrine(self):
+        return keep_stored_name(self, "custom_doctrine", self.cleaned_data["custom_doctrine"])
 
     def clean_fleet_clock(self):
         # The format is checked with the date, and only when the fleet has a fleet time.

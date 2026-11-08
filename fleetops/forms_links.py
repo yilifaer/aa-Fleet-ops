@@ -9,7 +9,7 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 from django.utils.translation import pgettext_lazy
 
-from fleetops.forms_common import style_fields
+from fleetops.forms_common import DoctrineNameField, style_fields
 from fleetops.forms_pap_limit import PapLimitForm
 from fleetops.models import FleetOpsSettings, FleetType
 from fleetops.providers.doctrines import get_doctrines
@@ -55,7 +55,7 @@ class LinkOnlyFleetForm(PapLimitForm):
     fc_character_id = forms.TypedChoiceField(label=_("FC character"), coerce=int)
     fleet_type = forms.ModelChoiceField(label=_("Fleet type"), queryset=FleetType.objects.none())
     doctrine_choice = forms.ChoiceField(label=pgettext_lazy("FleetOps", "Doctrine"), required=False)
-    custom_doctrine = forms.CharField(label=_("Custom doctrine"), required=False, max_length=255)
+    custom_doctrine = DoctrineNameField(label=_("Custom doctrine"))
     formup = forms.CharField(label=_("Form up"), max_length=255)
     notes = forms.CharField(label=_("Notes"), required=False, widget=forms.Textarea(attrs={"rows": 2}))
     link_minutes = forms.IntegerField(
