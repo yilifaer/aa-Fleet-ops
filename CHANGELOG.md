@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.3.0b2] - Unreleased
+## [0.3.0b2] - 2026-11-10
 
 Fixes from the run of 0.3.0b1 on a test site, one new SRP setting, the order of the ships of a doctrine and a payment page that is easier for the people who pay. Install it the way you installed 0.3.0b1; read the
 upgrade notes and the rollback notes below first.
