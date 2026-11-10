@@ -44,8 +44,8 @@ except `is_pre_ping`. Times are EVE time (UTC).
 | `doctrine` | Doctrine name, or `None / Custom` (always English). To test for a doctrine, use `doctrine_name`, which is empty when there is none. |
 | `doctrine_name` | Doctrine name, or empty. |
 | `doctrine_url` | Link to the doctrine's Fittings page, or empty for other doctrines. |
-| `doctrine_ships` | Hull of every fit of a Fittings doctrine in doctrine order, joined with ` > ` (for example `Moa > Moa > Osprey`). |
-| `doctrine_fits` | Fit names of a Fittings doctrine, joined with ` > `. |
+| `doctrine_ships` | The hulls of a Fittings doctrine, each once, joined with ` > ` in doctrine order (for example `Moa > Osprey`), or in the order and with the marks `>`, `=` and `>>>` stored for the doctrine under **Doctrine Ship Order** (for example `Minokawa = Lif > Raven >>> Basilisk`). |
+| `doctrine_fits` | Fit names of a Fittings doctrine, every fit, joined with ` > `. |
 | `comms` | Comms preset name. |
 | `comms_channel` | Channel name of the comms preset. |
 | `comms_link` | Link that opens the comms: the join page for voice client links, the link itself for `http` and `https` links. |

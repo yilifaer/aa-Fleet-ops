@@ -21,11 +21,12 @@ from fleetops.constants import (
 )
 from fleetops.models import FleetOpsSettings, MessageTemplate
 from fleetops.providers.doctrines import doctrine_url
-from fleetops.services import eve_links, links
+from fleetops.services import doctrine_order, eve_links, links
 from fleetops.services.ingame_text import plain_text
 from fleetops.services.mentions import (
     DISCORD_MESSAGE_LIMIT,
     discord_length,
+    discord_link_text,
     mention_text,
     neutralize_mass_mentions,
     selection_from_operation,
@@ -73,11 +74,13 @@ def _fleet_times(scheduled_at) -> dict:
 
 
 def _doctrine_lists(operation) -> tuple[str, str]:
-    """Hull of every fit (duplicates kept) and the fit names, in doctrine order, joined with " > "."""
+    """The ship list (each hull once, in the stored order of the doctrine if there is one) and the fit names.
+
+    The fit names keep every fit, in doctrine order, joined with " > ".
+    """
     fits = [fit for fit in getattr(operation, "doctrine_fits", None) or [] if isinstance(fit, dict)]
-    ships = (plain_text(fit.get("ship") or fit.get("ship_type_id") or "") for fit in fits)
     names = (plain_text(fit.get("fit") or "") for fit in fits)
-    return " > ".join(ship for ship in ships if ship), " > ".join(name for name in names if name)
+    return doctrine_order.doctrine_ships(operation), " > ".join(name for name in names if name)
 
 
 def _ping_channel_name(operation) -> str:
@@ -315,6 +318,20 @@ def _mention_for(selection) -> str:
     return _mention_placeholder() if mention_text(selection) else ""
 
 
+# The variables that are the text of a masked link in the shipped pings: [name](address).
+_LINK_TEXT_VALUES = ("doctrine", "doctrine_name", "comms")
+
+
+def _discord_names(values: dict) -> dict:
+    """The link-text variables of a ping with the characters that would break a Discord masked link escaped.
+
+    A name such as "[ACTIVE] Doctrine" would end the link text at its first "]" and show the raw markdown; with a
+    backslash in front of ``[``, ``]`` and the backslash itself Discord shows the name as typed, and a name cannot
+    close the link text or open an address ("](" or ")"). The MOTD gets the names unchanged.
+    """
+    return {key: discord_link_text(values[key]) for key in _LINK_TEXT_VALUES if values.get(key)}
+
+
 def _render_ping(record, fallback: str, values: dict, selection, errors: list[str]) -> _Ping:
     """Render a ping so that only the mention FleetOps adds can notify anybody.
 
@@ -323,7 +340,7 @@ def _render_ping(record, fallback: str, values: dict, selection, errors: list[st
     with the selected mention.
     """
     placeholder = values["ping_mention"]
-    ping = _render(record, fallback, values, "Ping", errors)
+    ping = _render(record, fallback, {**values, **_discord_names(values)}, "Ping", errors)
     lost_mention = selection.notifies and placeholder not in ping
     ping = neutralize_mass_mentions(ping)
     display = ping

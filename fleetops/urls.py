@@ -81,6 +81,15 @@ urlpatterns += [
     path("configuration/", views_config.configuration_index, name="configuration_index"),
     path("configuration/settings/", views_config.configuration_settings, name="configuration_settings"),
     path("configuration/ping-roles/sync/", views_config.sync_discord_roles, name="sync_discord_roles"),
+    path("configuration/doctrine-order/", views_config.doctrine_orders, name="doctrine_orders"),
+    path(
+        "configuration/doctrine-order/<int:doctrine_id>/", views_config.doctrine_order_edit, name="doctrine_order_edit"
+    ),
+    path(
+        "configuration/doctrine-order/<int:doctrine_id>/reset/",
+        views_config.doctrine_order_reset,
+        name="doctrine_order_reset",
+    ),
     path("configuration/<slug:section>/", views_config.configuration_list, name="configuration_list"),
     path("configuration/<slug:section>/add/", views_config.configuration_edit, name="configuration_add"),
     path("configuration/<slug:section>/<int:pk>/edit/", views_config.configuration_edit, name="configuration_edit"),

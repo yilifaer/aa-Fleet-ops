@@ -6,6 +6,7 @@ from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.translation import gettext as _
 
+from fleetops.services.doctrine_order import doctrine_ships
 from fleetops.services.mentions import ROLE_MENTION_RE
 from fleetops.services.periods import EVE_DATETIME_FORMAT, format_eve
 
@@ -22,6 +23,12 @@ def eve_time(value, fmt=EVE_DATETIME_FORMAT):
         return format_eve(value, fmt)
     except TypeError:
         return ""
+
+
+@register.filter(name="doctrine_ships")
+def doctrine_ships_filter(operation):
+    """The ship list of a fleet's doctrine as its messages show it (each hull once, in the stored order)."""
+    return doctrine_ships(operation)
 
 
 @register.filter

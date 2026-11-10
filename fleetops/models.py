@@ -3371,3 +3371,33 @@ class StandalonePing(models.Model):
 
     def __str__(self):
         return f"{self.channel_name} — {self.sender_name} ({self.uuid})"
+
+
+class DoctrineShipOrder(models.Model):
+    """The order in which the ships of one doctrine are listed in pings and MOTDs, with a mark between every two.
+
+    One row per doctrine, keyed like the fleet record (source and external ID). ``ships`` are the hull names in
+    order; ``marks`` holds one mark between every two ships (``">"``, ``"="`` or ``">>>"``), so it has one entry less.
+    A doctrine without a row is listed in the order of the doctrine. Ships that left the doctrine are dropped when
+    the list is shown; ships added to it later are appended.
+    """
+
+    doctrine_source = models.CharField(verbose_name=_("Doctrine source"), max_length=50)
+    doctrine_external_id = models.CharField(verbose_name=_("Doctrine external ID"), max_length=100)
+    ships = models.JSONField(verbose_name=_("Ships"), default=list)
+    marks = models.JSONField(verbose_name=_("Marks"), default=list)
+    updated_at = models.DateTimeField(verbose_name=_("Updated at"), auto_now=True)
+
+    class Meta:
+        default_permissions = ()
+        verbose_name = _("doctrine ship order")
+        verbose_name_plural = _("doctrine ship orders")
+        ordering = ["doctrine_source", "doctrine_external_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["doctrine_source", "doctrine_external_id"], name="fleetops_unique_doctrine_ship_order"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.doctrine_source} {self.doctrine_external_id}"

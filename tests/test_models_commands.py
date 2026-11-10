@@ -41,6 +41,7 @@ from fleetops.models import (
     CharacterAffiliation,
     CommsPreset,
     DiscordWebhook,
+    DoctrineShipOrder,
     EveEntityName,
     FleetMemberEvent,
     FleetMemberState,
@@ -1326,6 +1327,10 @@ class AdminTests(TestCase):
         f.statistics_target(2026, 9, "2.50")
         f.payout_rule(f.RIFTER, 20_000_000)
         SrpCorporationLimit.objects.create(corporation_id=f.DEFAULT_CORP[0], corporation_name=f.DEFAULT_CORP[1])
+        # The change page of every registered model is opened, so there must be one row of the doctrine ship order.
+        DoctrineShipOrder.objects.create(
+            doctrine_source="fittings:fittings.doctrine", doctrine_external_id="1", ships=["Moa", "Osprey"], marks=[">"]
+        )
         link = f.fleet_link(cls.operation)
         claim = f.srp_claim(cls.fc, link=link)
         f.claim_event(claim, SrpClaimEvent.Action.SUBMIT, actor=cls.fc)

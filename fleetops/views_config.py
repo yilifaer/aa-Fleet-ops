@@ -37,6 +37,7 @@ from fleetops.forms_pap import MultiplierTierForm
 from fleetops.forms_records import SpecialRoleForm
 from fleetops.models import (
     AuditLog,
+    DoctrineShipOrder,
     ChannelPreset,
     CommsPreset,
     DiscordWebhook,
@@ -57,7 +58,8 @@ from fleetops.models import (
     SrpSettings,
     StatisticsTarget,
 )
-from fleetops.services import discord_roles, links
+from fleetops.providers.doctrines import FITTINGS_DOCTRINE_SOURCE, doctrine_fits_snapshot, get_doctrines
+from fleetops.services import discord_roles, doctrine_order, links
 from fleetops.services.audit import audit, cascaded_config_rows, config_snapshot
 from fleetops.services.fleet_rules import FleetRuleError, parse_fleet_roles
 from fleetops.services.mentions import role_delete_refusal
@@ -360,7 +362,7 @@ INDEX_GROUPS = [
     (
         gettext_lazy("Messages and Discord"),
         "fa-message",
-        ["templates", "ping-channels", "groups", "ping-roles", "comms", "channels"],
+        ["templates", "ping-channels", "groups", "ping-roles", "comms", "channels", "doctrine-order"],
     ),
     (gettext_lazy("Composition"), "fa-layer-group", ["ship-functions", "ship-function-rules"]),
     (gettext_lazy("Statistics"), "fa-bullseye", ["statistics-targets"]),
@@ -386,6 +388,7 @@ INDEX_ICONS = {
     "srp-categories": "fa-tags",
     "srp-rules": "fa-coins",
     "groups": "fa-users",
+    "doctrine-order": "fa-arrow-down-wide-short",
     "srp-corporation-limits": "fa-building",
 }
 DEFAULT_ICON = "fa-sliders"
@@ -582,6 +585,9 @@ def configuration_index(request):
             "cards": cards,
             "settings_group": index_group("settings"),
             "srp_group": index_group("srp"),
+            "doctrine_group": index_group("doctrine-order"),
+            "doctrine_icon": INDEX_ICONS["doctrine-order"],
+            "doctrine_orders": DoctrineShipOrder.objects.count(),
             "icons": INDEX_ICONS,
             **_link_settings(),
         },
@@ -806,3 +812,144 @@ def sync_discord_roles(request):
     else:
         messages.error(request, texts.translate_stored(result.message))
     return redirect("fleetops:configuration_list", section="ping-roles")
+
+
+def _fittings_doctrine(doctrine_id):
+    """The Fittings doctrine with this ID, or a 404."""
+    wanted = str(doctrine_id)
+    for choice in get_doctrines():
+        if choice.source == FITTINGS_DOCTRINE_SOURCE and choice.external_id == wanted:
+            return choice
+    raise Http404
+
+
+@fleetops_permission_required("fleetops.manage_configuration")
+def doctrine_orders(request):
+    """The doctrines of the doctrine app with the state of their ship order."""
+    stored = {
+        row.doctrine_external_id: row
+        for row in DoctrineShipOrder.objects.filter(doctrine_source=FITTINGS_DOCTRINE_SOURCE)
+    }
+    rows = [
+        {"doctrine": choice, "order": stored.get(choice.external_id)}
+        for choice in get_doctrines()
+        if choice.source == FITTINGS_DOCTRINE_SOURCE
+    ]
+    return _render(request, "fleetops/configuration/doctrine_orders.html", {"rows": rows})
+
+
+def _submitted_rows(post, current):
+    """The ships and marks of the editor form, cleaned for showing again: unknown and repeated ships are left out."""
+    ships = []
+    for ship in post.getlist("ship"):
+        if ship in current and ship not in ships:
+            ships.append(ship)
+    marks = [mark if mark in doctrine_order.MARKS else doctrine_order.DEFAULT_MARK for mark in post.getlist("mark")]
+    marks = (marks + [doctrine_order.DEFAULT_MARK] * len(ships))[: max(len(ships) - 1, 0)]
+    return ships, marks
+
+
+def _move(ships, command):
+    """Move one ship up or down (``"up:2"``); the marks stay between the same positions."""
+    direction, _sep, index = command.partition(":")
+    if not index.isdigit() or direction not in ("up", "down"):
+        return ships
+    index = int(index)
+    other = index - 1 if direction == "up" else index + 1
+    if 0 <= index < len(ships) and 0 <= other < len(ships):
+        ships = list(ships)
+        ships[index], ships[other] = ships[other], ships[index]
+    return ships
+
+
+def _order_audit_values(order, doctrine):
+    return {**config_snapshot(order), "doctrine_name": doctrine.name}
+
+
+@fleetops_permission_required("fleetops.manage_configuration")
+def doctrine_order_edit(request, doctrine_id):
+    doctrine = _fittings_doctrine(doctrine_id)
+    current = doctrine_order.hulls(doctrine_fits_snapshot(doctrine.source, doctrine.external_id))
+    order = doctrine_order.stored_order(doctrine.source, doctrine.external_id)
+    ships, marks = None, None
+    if request.method == "POST":
+        ships, marks = _submitted_rows(request.POST, current)
+        if request.POST.get("move"):
+            # No JavaScript needed: the buttons post the form, the page comes back with the ship moved, not yet saved.
+            ships = _move(ships, request.POST["move"])
+            messages.info(request, _("Order changed but not saved yet. Use Save to keep it."))
+        else:
+            try:
+                saved_ships, saved_marks = doctrine_order.clean_submission(
+                    request.POST.getlist("ship"), request.POST.getlist("mark"), current
+                )
+            except doctrine_order.OrderError:
+                messages.error(request, _("The order could not be saved: check the ships and the marks."))
+            else:
+                old = _order_audit_values(order, doctrine) if order is not None else None
+                with transaction.atomic():
+                    saved, _created = DoctrineShipOrder.objects.update_or_create(
+                        doctrine_source=doctrine.source,
+                        doctrine_external_id=doctrine.external_id,
+                        defaults={"ships": saved_ships, "marks": saved_marks},
+                    )
+                    audit(
+                        request.user,
+                        "configuration.update" if order is not None else "configuration.create",
+                        saved,
+                        old,
+                        _order_audit_values(saved, doctrine),
+                        reason=texts.AUDIT_CONFIG_CHANGED(),
+                    )
+                messages.success(request, _("Ship order saved."))
+                return redirect("fleetops:doctrine_order_edit", doctrine_id=doctrine_id)
+    if ships is None:
+        items = doctrine_order.arrange(current, order.ships, order.marks) if order is not None else doctrine_order.arrange(current)
+    else:
+        items = [(ship, marks[index - 1] if index else "") for index, ship in enumerate(ships)]
+        # A form that lost ships (a stale page) shows the doctrine's hulls it does not know at the end.
+        items += [(ship, doctrine_order.DEFAULT_MARK) for ship in current if ship not in ships]
+    rows = [
+        {"index": index, "ship": ship, "mark": mark, "last": index == len(items) - 1}
+        for index, (ship, mark) in enumerate(items)
+    ]
+    return _render(
+        request,
+        "fleetops/configuration/doctrine_order.html",
+        {
+            "doctrine": doctrine,
+            "rows": rows,
+            "marks": [
+                (doctrine_order.HIGHER, _("> higher priority")),
+                (doctrine_order.SAME, _("= same priority")),
+                (doctrine_order.MUCH_HIGHER, _(">>> much higher priority")),
+            ],
+            "preview": doctrine_order.ship_line(items),
+            "has_order": order is not None,
+        },
+    )
+
+
+@fleetops_permission_required("fleetops.manage_configuration", page=False)
+@require_POST
+def doctrine_order_reset(request, doctrine_id):
+    doctrine = _fittings_doctrine(doctrine_id)
+    order = doctrine_order.stored_order(doctrine.source, doctrine.external_id)
+    if order is None:
+        messages.info(request, _("This doctrine already uses the automatic order."))
+    else:
+        old = _order_audit_values(order, doctrine)
+        object_id = str(order.pk)
+        with transaction.atomic():
+            order.delete()
+            AuditLog.objects.create(
+                actor=request.user,
+                action="configuration.delete",
+                object_type="DoctrineShipOrder",
+                object_id=object_id,
+                old_value=old,
+                new_value=None,
+                reason=texts.AUDIT_CONFIG_DELETED(),
+            )
+        messages.warning(request, _("The stored ship order was deleted. The doctrine uses the automatic order again."))
+    return redirect("fleetops:doctrine_order_edit", doctrine_id=doctrine_id)

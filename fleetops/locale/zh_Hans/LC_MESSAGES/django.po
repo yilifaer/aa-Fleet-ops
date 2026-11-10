@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-10 02:56+0000\n"
+"POT-Creation-Date: 2026-11-10 04:14+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -98,6 +98,7 @@ msgstr "舰队类型"
 
 #: forms.py forms_config.py forms_groups.py forms_links.py forms_srp.py
 #: models.py services/export_datasets.py srp/display.py
+#: templates/fleetops/configuration/doctrine_orders.html
 #: templates/fleetops/fc_statistics_detail.html
 #: templates/fleetops/fleet_operations.html
 #: templates/fleetops/scheduled_fleet.html
@@ -4601,6 +4602,23 @@ msgstr "无舰队 Ping"
 msgid "pings without fleet"
 msgstr "无舰队 Ping"
 
+#: models.py srp/reports.py templates/fleetops/my_statistics.html
+#: templates/fleetops/srp/_not_covered.html
+msgid "Ships"
+msgstr "舰船"
+
+#: models.py
+msgid "Marks"
+msgstr "符号"
+
+#: models.py
+msgid "doctrine ship order"
+msgstr "教义舰船顺序"
+
+#: models.py
+msgid "doctrine ship orders"
+msgstr "教义舰船顺序"
+
 #: providers/srp.py
 msgid "enabled"
 msgstr "已启用"
@@ -5987,11 +6005,6 @@ msgstr "按月趋势"
 msgid "Categories"
 msgstr "类别"
 
-#: srp/reports.py templates/fleetops/my_statistics.html
-#: templates/fleetops/srp/_not_covered.html
-msgid "Ships"
-msgstr "舰船"
-
 #: srp/reports.py
 msgid "Regions"
 msgstr "星域"
@@ -6742,16 +6755,51 @@ msgstr "重新计算"
 msgid "Recalculate all pending with current rules"
 msgstr "按当前规则重新计算所有待审核申请"
 
-#: templates/fleetops/configuration/form.html
-#: templates/fleetops/configuration/list.html
-#: templates/fleetops/fleet_operations.html templates/fleetops/srp/links.html
-msgid "Edit"
-msgstr "编辑"
+#: templates/fleetops/configuration/doctrine_order.html
+#: templates/fleetops/configuration/doctrine_orders.html
+#: templates/fleetops/configuration/index.html
+msgid "Doctrine Ship Order"
+msgstr "教义舰船顺序"
 
-#: templates/fleetops/configuration/form.html
-msgid "Nothing to choose from yet."
-msgstr "暂时没有可选项。"
+#: templates/fleetops/configuration/doctrine_order.html
+msgid "Put the ships in the order you want and choose the mark between every two ships. Pings and MOTDs of open fleets show a changed order the next time they are made."
+msgstr "按需要的顺序排列舰船，并在每两艘舰船之间选择符号。进行中舰队的 Ping 和 MOTD 会在下一次生成时显示新的顺序。"
 
+#: templates/fleetops/configuration/doctrine_order.html
+#, python-format
+msgid "Mark in front of %(ship)s"
+msgstr "%(ship)s 前面的符号"
+
+#: templates/fleetops/configuration/doctrine_order.html
+msgid "Move up"
+msgstr "上移"
+
+#: templates/fleetops/configuration/doctrine_order.html
+#, python-format
+msgid "Move %(ship)s up"
+msgstr "上移 %(ship)s"
+
+#: templates/fleetops/configuration/doctrine_order.html
+msgid "Move down"
+msgstr "下移"
+
+#: templates/fleetops/configuration/doctrine_order.html
+#, python-format
+msgid "Move %(ship)s down"
+msgstr "下移 %(ship)s"
+
+#: templates/fleetops/configuration/doctrine_order.html
+#: templates/fleetops/partials/discord_preview.html
+#: templates/fleetops/partials/motd_preview.html
+#: templates/fleetops/roster_import.html templates/fleetops/send_ping.html
+msgid "Preview"
+msgstr "预览"
+
+#: templates/fleetops/configuration/doctrine_order.html
+msgid "Ships added to the doctrine later are listed at the end with the mark “higher priority”."
+msgstr "之后加入教义的舰船会以符号“优先级更高”接在末尾。"
+
+#: templates/fleetops/configuration/doctrine_order.html
 #: templates/fleetops/configuration/form.html
 #: templates/fleetops/incentive_review.html
 #: templates/fleetops/operation/_fleet_classify.html
@@ -6759,6 +6807,7 @@ msgstr "暂时没有可选项。"
 msgid "Save"
 msgstr "保存"
 
+#: templates/fleetops/configuration/doctrine_order.html
 #: templates/fleetops/configuration/form.html
 #: templates/fleetops/configuration/settings_form.html
 #: templates/fleetops/configuration/srp_settings.html
@@ -6777,12 +6826,62 @@ msgstr "保存"
 msgid "Cancel"
 msgstr "取消"
 
+#: templates/fleetops/configuration/doctrine_order.html
+msgid "Delete the stored order and use the automatic order again?"
+msgstr "删除保存的顺序并重新使用自动顺序？"
+
+#: templates/fleetops/configuration/doctrine_order.html
+msgid "Back to the automatic order"
+msgstr "恢复自动顺序"
+
+#: templates/fleetops/configuration/doctrine_order.html
+msgid "This doctrine has no ships yet, so there is nothing to order."
+msgstr "这个教义还没有舰船，没有可排序的内容。"
+
+#: templates/fleetops/configuration/doctrine_orders.html
 #: templates/fleetops/configuration/index.html
 #: templates/fleetops/configuration/list.html
 #: templates/fleetops/configuration/settings_form.html
 #: templates/fleetops/configuration/srp_settings.html
 msgid "FleetOps Administration"
 msgstr "FleetOps 后台设置"
+
+#: templates/fleetops/configuration/doctrine_orders.html
+msgid "The order in which the ships of a doctrine are listed in pings and MOTDs, with a mark between every two ships. A doctrine without a stored order lists its ships in the order of the doctrine."
+msgstr "教义的舰船在 Ping 和 MOTD 中的排列顺序，每两艘舰船之间有一个符号。没有保存顺序的教义按教义本身的顺序列出舰船。"
+
+#: templates/fleetops/configuration/doctrine_orders.html
+msgid "Order"
+msgstr "顺序"
+
+#: templates/fleetops/configuration/doctrine_orders.html
+#: templates/fleetops/configuration/list.html
+#: templates/fleetops/operation/_fleet_member_actions.html
+msgid "Actions"
+msgstr "操作"
+
+#: templates/fleetops/configuration/doctrine_orders.html
+msgid "Stored order"
+msgstr "已保存的顺序"
+
+#: templates/fleetops/configuration/doctrine_orders.html
+msgid "Automatic order"
+msgstr "自动顺序"
+
+#: templates/fleetops/configuration/doctrine_orders.html
+#: templates/fleetops/configuration/form.html
+#: templates/fleetops/configuration/list.html
+#: templates/fleetops/fleet_operations.html templates/fleetops/srp/links.html
+msgid "Edit"
+msgstr "编辑"
+
+#: templates/fleetops/configuration/doctrine_orders.html
+msgid "No doctrines found. Doctrines come from a doctrine app such as Fittings; a fleet with a typed doctrine name has no ship list."
+msgstr "没有找到教义。教义来自 Fittings 这类教义应用；手动输入教义名称的舰队没有舰船列表。"
+
+#: templates/fleetops/configuration/form.html
+msgid "Nothing to choose from yet."
+msgstr "暂时没有可选项。"
 
 #: templates/fleetops/configuration/index.html
 msgid "Alliance-level FleetOps configuration. No Django Admin access is required."
@@ -6831,6 +6930,10 @@ msgid "Corporation Limits"
 msgstr "军团限额"
 
 #: templates/fleetops/configuration/index.html
+msgid "The order of the ships of a doctrine in pings and MOTDs, with a mark between every two ships."
+msgstr "教义的舰船在 Ping 和 MOTD 中的顺序，每两艘舰船之间有一个符号。"
+
+#: templates/fleetops/configuration/index.html
 msgid "Manage"
 msgstr "管理"
 
@@ -6865,11 +6968,6 @@ msgstr "Ping 和 MOTD 里的链接（例如语音加入链接）只是站内路�
 #: templates/fleetops/configuration/list.html
 msgid "Delete this item? Existing fleet history may prevent deletion."
 msgstr "删除此项？已有的舰队历史可能导致无法删除。"
-
-#: templates/fleetops/configuration/list.html
-#: templates/fleetops/operation/_fleet_member_actions.html
-msgid "Actions"
-msgstr "操作"
 
 #: templates/fleetops/configuration/list.html
 #: templates/fleetops/manual_attendance.html
@@ -9160,12 +9258,6 @@ msgstr "（已关闭；请重新加载页面）"
 #, python-format
 msgid "(closes in %(minutes)s min %(seconds)s s)"
 msgstr "（%(minutes)s 分 %(seconds)s 秒后关闭）"
-
-#: templates/fleetops/partials/discord_preview.html
-#: templates/fleetops/partials/motd_preview.html
-#: templates/fleetops/roster_import.html templates/fleetops/send_ping.html
-msgid "Preview"
-msgstr "预览"
 
 #: templates/fleetops/partials/discord_preview.html
 msgid "Look"
@@ -14504,6 +14596,38 @@ msgstr "此项已被现有舰队数据引用，无法删除。请改为停用它
 #, python-format
 msgid "%(title)s item deleted."
 msgstr "%(title)s 中的一项已删除。"
+
+#: views_config.py
+msgid "Order changed but not saved yet. Use Save to keep it."
+msgstr "顺序已更改但尚未保存。点“保存”以保留。"
+
+#: views_config.py
+msgid "The order could not be saved: check the ships and the marks."
+msgstr "无法保存顺序：请检查舰船和符号。"
+
+#: views_config.py
+msgid "Ship order saved."
+msgstr "舰船顺序已保存。"
+
+#: views_config.py
+msgid "> higher priority"
+msgstr "> 优先级更高"
+
+#: views_config.py
+msgid "= same priority"
+msgstr "= 优先级相同"
+
+#: views_config.py
+msgid ">>> much higher priority"
+msgstr ">>> 优先级高得多"
+
+#: views_config.py
+msgid "This doctrine already uses the automatic order."
+msgstr "这个教义已在使用自动顺序。"
+
+#: views_config.py
+msgid "The stored ship order was deleted. The doctrine uses the automatic order again."
+msgstr "保存的舰船顺序已删除，这个教义重新使用自动顺序。"
 
 #: views_controls.py
 #, python-format

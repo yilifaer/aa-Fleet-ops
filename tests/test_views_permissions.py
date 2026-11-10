@@ -478,6 +478,20 @@ class PermissionMatrixTests(SrpViewTestCase):
         super().setUp()
         # The Fleet tab routes read and change the fleet: they reach an in-memory EVE, never ESI.
         FleetSim().install(self)
+        # The doctrine ship order pages need a doctrine app; the matrix is about who may open them.
+        from fleetops.providers.doctrines import FITTINGS_DOCTRINE_SOURCE, DoctrineChoice
+
+        choice = DoctrineChoice(external_id="12", name="Example Doctrine", source=FITTINGS_DOCTRINE_SOURCE)
+        for target, replacement in (
+            ("fleetops.views_config.get_doctrines", lambda user=None: [choice]),
+            (
+                "fleetops.views_config.doctrine_fits_snapshot",
+                lambda source, external_id: [{"fit": "DPS Moa", "ship_type_id": 623, "ship": "Moa"}],
+            ),
+        ):
+            patcher = mock.patch(target, replacement)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def cases(self):
         r = reverse
@@ -559,6 +573,9 @@ class PermissionMatrixTests(SrpViewTestCase):
             Case("configuration_index", "get", r("fleetops:configuration_index"), None, member_only),
             Case("configuration_settings", "get", r("fleetops:configuration_settings"), None, member_only),
             Case("sync_discord_roles", "post", r("fleetops:sync_discord_roles"), None, lead_post),
+            Case("doctrine_orders", "get", r("fleetops:doctrine_orders"), None, member_only),
+            Case("doctrine_order_edit", "get", r("fleetops:doctrine_order_edit", args=[12]), None, member_only),
+            Case("doctrine_order_reset", "post", r("fleetops:doctrine_order_reset", args=[12]), None, lead_post),
             # The translations of the page scripts need a login only (see test_js_catalog).
             Case("jsi18n", "get", r("fleetops:jsi18n"), None, dict.fromkeys(ROLES, OK)),
             # Public page; anonymous access depends on APPS_WITH_PUBLIC_VIEWS (see test_public_urls).

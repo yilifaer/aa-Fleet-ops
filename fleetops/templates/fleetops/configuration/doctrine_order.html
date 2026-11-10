@@ -1,0 +1,53 @@
+{% extends "fleetops/base.html" %}
+{% load i18n static fleetops_i18n %}
+{% block fleetops_content %}
+<div class="mb-3">
+  <div class="small"><a href="{% url 'fleetops:doctrine_orders' %}">{% translate "Doctrine Ship Order" %}</a></div>
+  <h2 class="mb-1">{{ doctrine.name }}</h2>
+  <div class="text-muted">{% translate "Put the ships in the order you want and choose the mark between every two ships. Pings and MOTDs of open fleets show a changed order the next time they are made." %}</div>
+</div>
+<div class="card fo-form-card"><div class="card-body">
+{% if rows %}
+<form method="post" id="doctrine-order-form" data-doctrine-order>
+  {% csrf_token %}
+  <ol class="fo-order-list">
+    {% for row in rows %}
+    {% if not forloop.first %}
+    <li class="fo-order-mark">
+      <label class="visually-hidden" for="order-mark-{{ row.index }}">{% blocktranslate trimmed with ship=row.ship %}Mark in front of {{ ship }}{% endblocktranslate %}</label>
+      <select class="form-select form-select-sm" name="mark" id="order-mark-{{ row.index }}" data-order-mark>
+        {% for value, label in marks %}<option value="{{ value }}"{% if value == row.mark %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </li>
+    {% endif %}
+    <li class="fo-order-ship" data-order-ship>
+      <input type="hidden" name="ship" value="{{ row.ship }}">
+      <span class="fo-order-name" data-order-name>{{ row.ship }}</span>
+      <span class="fo-order-buttons">
+        <button type="submit" name="move" value="up:{{ row.index }}" class="btn btn-sm btn-outline-secondary" data-order-move="up"{% if forloop.first %} disabled{% endif %} title="{% translate 'Move up' %}"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i><span class="visually-hidden">{% blocktranslate trimmed with ship=row.ship %}Move {{ ship }} up{% endblocktranslate %}</span></button>
+        <button type="submit" name="move" value="down:{{ row.index }}" class="btn btn-sm btn-outline-secondary" data-order-move="down"{% if row.last %} disabled{% endif %} title="{% translate 'Move down' %}"><i class="fa-solid fa-arrow-down" aria-hidden="true"></i><span class="visually-hidden">{% blocktranslate trimmed with ship=row.ship %}Move {{ ship }} down{% endblocktranslate %}</span></button>
+      </span>
+    </li>
+    {% endfor %}
+  </ol>
+  <div class="mb-3">
+    <div class="form-label">{% translate "Preview" %}</div>
+    <div class="fo-order-preview" id="doctrine-order-preview" aria-live="polite" data-order-preview>{{ preview }}</div>
+    <div class="form-text">{% translate "Ships added to the doctrine later are listed at the end with the mark “higher priority”." %}</div>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <button type="submit" class="btn btn-primary">{% translate "Save" %}</button>
+    <a class="btn btn-outline-secondary" href="{% url 'fleetops:doctrine_orders' %}">{% translate "Cancel" %}</a>
+  </div>
+</form>
+{% if has_order %}
+<form method="post" action="{% url 'fleetops:doctrine_order_reset' doctrine.external_id %}" class="mt-3" data-fo-confirm="{% translate 'Delete the stored order and use the automatic order again?' %}" data-fo-confirm-label="{% translate 'Back to the automatic order' %}">
+  {% csrf_token %}<button class="btn btn-outline-danger">{% translate "Back to the automatic order" %}</button>
+</form>
+{% endif %}
+{% else %}
+<p class="mb-0">{% translate "This doctrine has no ships yet, so there is nothing to order." %}</p>
+{% endif %}
+</div></div>
+<script src="{% static 'fleetops/doctrine_order.js' %}?v={% fleetops_version %}"></script>
+{% endblock %}

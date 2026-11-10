@@ -1,0 +1,29 @@
+{% extends "fleetops/base.html" %}
+{% load i18n fleetops_ui %}
+{% block fleetops_content %}
+<div class="mb-3">
+  <div class="small"><a href="{% url 'fleetops:configuration_index' %}">{% translate "FleetOps Administration" %}</a></div>
+  <h2 class="mb-1">{% translate "Doctrine Ship Order" %}</h2>
+  <div class="text-muted">{% translate "The order in which the ships of a doctrine are listed in pings and MOTDs, with a mark between every two ships. A doctrine without a stored order lists its ships in the order of the doctrine." %}</div>
+</div>
+<div class="card">
+  {% if rows %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 fo-admin-table fo-table-pin">
+      <thead><tr><th scope="col">{% translate "Doctrine" context "FleetOps" %}</th><th scope="col">{% translate "Order" %}</th><th scope="col" class="text-end">{% translate "Actions" %}</th></tr></thead>
+      <tbody>
+      {% for row in rows %}
+        <tr>
+          <td>{{ row.doctrine.name }}</td>
+          <td>{% if row.order %}{% translate "Stored order" as state %}{% pill "info" state %}{% else %}{% translate "Automatic order" as state %}{% pill "neutral" state %}{% endif %}</td>
+          <td class="text-end text-nowrap"><a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:doctrine_order_edit' row.doctrine.external_id %}">{% translate "Edit" %}</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card-body">{% translate "No doctrines found. Doctrines come from a doctrine app such as Fittings; a fleet with a typed doctrine name has no ship list." %}</div>
+  {% endif %}
+</div>
+{% endblock %}

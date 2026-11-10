@@ -292,7 +292,7 @@ right actor.
   with claims, run `fleetops_srp_rollback_check` (it must pass), `migrate fleetops 0023`, put the 0.2.0b3 code back (the wheel or commit the site used before; it was never released) and start it. From a 0.2.0b2 site the target is `migrate fleetops 0021`.
   Claims, amounts and statuses are as before; the categories, standing links, batches, bans and found losses are gone.
 - [ ] With imported claims, rules of a category or standing links with claims still in place, `migrate fleetops 0023`
-  stops at `0040` (its guard runs before the **Notify members when a payment is undone** column is dropped), so nothing is undone; without the stop, the help text of `0038` and the index of `0037` would be undone next, and `0036` runs its guard before the pruning share column is dropped.
+  stops at `0041` (its guard runs before the doctrine ship order table is dropped), so nothing is undone; without the stop, the help text of `0038` and the index of `0037` would be undone next, and `0036` runs its guard before the pruning share column is dropped.
 - [ ] A loss of a pilot who was in a tracked fleet, checked from My SRP as a loss outside a fleet: with the default setting the check shows the fleet and the fleet amount; **Submit as a loss outside a fleet anyway** needs a reason and the claim page shows it; with **Block** the check has no submit button and offers the link of the fleet; with **Only suggest** it only asks "Submit it as a fleet loss?". Close the fleet link after the check and submit: the claim is made outside a fleet with the closed-link warning.
 
 **Version and database matrix** (CI runs SQLite and MariaDB with the whole suite and the migration tests on PostgreSQL; the PostgreSQL job covers the migrations only, so run the rest of this list on PostgreSQL by hand for a release)
@@ -328,3 +328,10 @@ right actor.
 - [ ] Make the claim deadline longer: losses that were marked too old show up on **My SRP** after the next scan.
 - [ ] Turn on **Notify members when a payment is undone** (with **Notify members** on), undo a payment with a reason: the
   member gets a notification with the reason, in their language. With either switch off nothing is sent.
+- [ ] Doctrine Ship Order: open the page from the Administration index, edit a doctrine with two fits of one hull: each hull is
+  listed once. Move a ship with the buttons (also with JavaScript off and on a phone), change a mark, watch the preview, save.
+  Regenerate the MOTD of an open fleet with that doctrine: the in-game MOTD and the next ping show the stored order, the marks
+  as `>`, `=` and `>>>`. Add a fit with a new hull to the doctrine: it is appended with `>`. **Back to the automatic order**
+  removes the order. The audit log has the three entries. A user without the configuration permission gets 403.
+- [ ] Start a fleet with a doctrine named `[ACTIVE] Example Doctrine`: the Discord ping shows the doctrine as a link with the
+  whole name, the MOTD shows the name as typed.

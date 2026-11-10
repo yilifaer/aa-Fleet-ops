@@ -51,7 +51,7 @@
   <div class="col-lg-5"><div class="card h-100"><div class="card-header"><strong>{% translate "Settings" %}</strong></div><div class="card-body p-0">
     <table class="table table-sm mb-0"><tbody>
       <tr><th>FC</th><td>{{ operation.fc_character_name }}{% if operation.fc_main_character_name and operation.fc_main_character_name != operation.fc_character_name %} <span class="small text-muted">{% blocktranslate trimmed with main=operation.fc_main_character_name %}Main: {{ main }}{% endblocktranslate %}</span>{% endif %}</td></tr>
-      <tr><th>{% translate "Doctrine" context "FleetOps" %}</th><td>{{ operation.doctrine_name|default:"—" }}{% if operation.doctrine_fits %}<div class="small text-muted">{% for fit in operation.doctrine_fits %}{{ fit.ship }}{% if not forloop.last %} &gt; {% endif %}{% endfor %}</div>{% endif %}</td></tr>
+      <tr><th>{% translate "Doctrine" context "FleetOps" %}</th><td>{{ operation.doctrine_name|default:"—" }}{% if operation.doctrine_fits %}<div class="small text-muted">{{ operation|doctrine_ships }}</div>{% endif %}</td></tr>
       <tr><th>{% translate "Comms" %}</th><td>{{ operation.comms|default:"—" }}</td></tr>
       <tr><th>{% translate "Logi" %}</th><td>{{ operation.logi_channel.channel_value|default:"—" }}</td></tr>
       <tr><th>{% translate "Boost" %}</th><td>{{ operation.boost_channel.channel_value|default:"—" }}</td></tr>

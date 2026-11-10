@@ -168,6 +168,8 @@ def build_pages():
         Page("config-templates", "admin", lambda ctx: reverse("fleetops:configuration_list", args=["templates"])),
         Page("config-settings", "admin", u("configuration_settings")),
         Page("config-srp-settings", "admin", lambda ctx: reverse("fleetops:configuration_list", args=["srp"])),
+        Page("config-doctrine-orders", "admin", u("doctrine_orders")),
+        Page("config-doctrine-order", "admin", lambda ctx: reverse("fleetops:doctrine_order_edit", args=[12])),
         Page("audit", "admin", u("audit_log")),
         # Error states of the forms (FB02): the page is loaded, filled in and sent by script (states.js).
         Page("start-error", "fc", u("start_fleet"), states=("start-error",)),

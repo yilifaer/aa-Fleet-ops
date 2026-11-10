@@ -2,11 +2,19 @@
 
 ## [0.3.0b2] - Unreleased
 
-Fixes from the run of 0.3.0b1 on a test site, and one new SRP setting. Install it the way you installed 0.3.0b1; read the
+Fixes from the run of 0.3.0b1 on a test site, one new SRP setting and the order of the ships of a doctrine. Install it the way you installed 0.3.0b1; read the
 upgrade notes and the rollback notes below first.
 
 ### Added
 
+- **Doctrine Ship Order** (Administration). For a doctrine of a doctrine app such as Fittings an administrator can store
+  the order in which its ships are listed in pings and MOTDs, with a mark between every two ships: `>` (higher
+  priority), `=` (same priority) or `>>>` (much higher priority), for example `Minokawa = Lif > Raven >>> Basilisk`.
+  The ships move with up and down buttons (they work without JavaScript and on a phone), a preview line shows the
+  result and **Back to the automatic order** deletes the stored order. It needs the permission that already
+  allows changing the FleetOps configuration; every change is audited. The order is applied whenever a ping or MOTD is
+  made, so open fleets show it at their next MOTD or ping. Ships added to the doctrine later are listed at the end
+  with `>`, and ships that left the doctrine are left out.
 - **Notify members when a payment is undone** (SRP settings, **Members and review**; off by default). When it is on and
   **Notify members** is on as well, undoing a payment sends the member an Alliance Auth notification with the reason
   that was given, in the member's language. With **Notify members** off nothing is sent, whatever this setting says.
@@ -14,6 +22,9 @@ upgrade notes and the rollback notes below first.
 
 ### Changed
 
+- Each ship appears once in the ship list of a doctrine (`doctrine_ships`) in pings, MOTDs and on the page of a
+  scheduled fleet: a doctrine with two Moa fits now reads `Moa > Osprey`, not `Moa > Moa > Osprey`. The list of fit
+  names (`doctrine_fits`) still names every fit.
 - **Retry Ping** renders the ping again from the current data of the fleet before it posts it, so a fleet started
   by an older version no longer posts its stored text (with the game's markup) a second time.
 - One cooldown per ping channel: a ping for a fleet and a ping without a fleet both hold the channel for 60 seconds, in
@@ -35,6 +46,10 @@ upgrade notes and the rollback notes below first.
 
 ### Fixed
 
+- A doctrine name with square brackets, such as `[ACTIVE] Example Doctrine`, no longer breaks the doctrine link in a
+  Discord ping: the link shows the whole name. The same is done for the name of the comms preset in its link, and a
+  name can no longer end the link text early or put a second address into the link. The stored message templates do not
+  change; the MOTD shows the names as typed.
 - The SRP settings page refuses a configuration in which nobody can submit a loss outside a fleet (a category is
   required, but there is no default category and no category members can choose). The same goes for deactivating,
   hiding or deleting the last category members can choose. Sites that are in that state already show a warning on the
@@ -55,7 +70,7 @@ upgrade notes and the rollback notes below first.
 ### Upgrade notes
 
 1. Back up the database and upgrade the package as for any release.
-2. Run `python manage.py migrate fleetops`. It applies `0040`, which adds the new SRP setting (off). It changes no data.
+2. Run `python manage.py migrate fleetops`. It applies `0040`, which adds the new SRP setting (off), and `0041`, which creates the table for the ship orders (empty, so every doctrine keeps its automatic order, now with each ship once). It changes no data.
 3. Collect the static files (`python manage.py collectstatic --noinput`): the style sheet changed.
 4. Nothing else needs to be done. If the SRP settings page now shows the warning about a missing category, turn off
    **Members must choose a category for losses outside a fleet**, choose a default category, or make a category
@@ -63,7 +78,8 @@ upgrade notes and the rollback notes below first.
 
 ### Rollback notes
 
-- `python manage.py migrate fleetops 0039` undoes `0040` and drops the new setting; its guard runs first and refuses a way
+- `python manage.py migrate fleetops 0039` undoes `0041` (drops the table of the stored ship orders; the doctrines are
+  listed in their own order again) and `0040` (drops the new setting); the guard of `0041` runs first and refuses a way
   back below `0035` as before (see the rollback notes of 0.3.0b1, which apply unchanged). Going back to a 0.3.0b1
   install after that needs no further step.
 

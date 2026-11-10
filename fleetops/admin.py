@@ -19,6 +19,7 @@ from fleetops.models import (
     DiscordWebhook,
     EveEntityName,
     FleetMemberEvent,
+    DoctrineShipOrder,
     FleetMemberState,
     FleetOperation,
     FleetOpsSettings,
@@ -234,6 +235,11 @@ class SpecialRoleAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
 @admin.register(StatisticsTarget)
 class StatisticsTargetAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
     list_display = ("effective_from", "corporation_average_target", "member_minimum_pap", "note")
+
+
+@admin.register(DoctrineShipOrder)
+class DoctrineShipOrderAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
+    list_display = ("doctrine_source", "doctrine_external_id", "updated_at")
 
 
 @admin.register(CommsPreset)

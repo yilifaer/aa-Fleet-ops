@@ -187,7 +187,7 @@ class DefaultPingTests(MessageTestBase):
             "**Formup Location:** Jita IV-4\n"
             "**PAP Type:** StratOp\n"
             f"**Comms:** [Main Comms]({self.join_url()})\n"
-            f"**Doctrine:** [Moa Fleet]({SITE}{DOCTRINE_PATH}) (Moa > Moa > Osprey)\n"
+            f"**Doctrine:** [Moa Fleet]({SITE}{DOCTRINE_PATH}) (Moa > Osprey)\n"
             "\n"
             "-# This was a FleetOps broadcast from Boss Main to this channel at 2026-10-12 18:30 EVE",
         )
@@ -207,7 +207,7 @@ class DefaultPingTests(MessageTestBase):
             "**Formup Location:** Jita IV-4\n"
             "**PAP Type:** StratOp\n"
             f"**Comms:** [Main Comms]({self.join_url()})\n"
-            f"**Doctrine:** [Moa Fleet]({SITE}{DOCTRINE_PATH}) (Moa > Moa > Osprey)\n"
+            f"**Doctrine:** [Moa Fleet]({SITE}{DOCTRINE_PATH}) (Moa > Osprey)\n"
             "**Fleet Time:** 2026-10-12 19:00 EVE · <t:1791831600:t> (<t:1791831600:R>)\n"
             "\n"
             "-# This was a FleetOps broadcast from Boss Main to this channel at 2026-10-12 18:30 EVE",
@@ -341,7 +341,7 @@ class DefaultMotdTests(MessageTestBase):
         self.assertEqual(
             motd,
             f'<font color="#bfffffff"><b>StratOp</b><br>FC: {character_link(operation.fc_character_id, "Boss Alt")}'
-            f'<br>Form Up: Jita IV-4<br>Doctrine: <a href="{SITE}{DOCTRINE_PATH}">Moa Fleet</a> (Moa > Moa > Osprey)'
+            f'<br>Form Up: Jita IV-4<br>Doctrine: <a href="{SITE}{DOCTRINE_PATH}">Moa Fleet</a> (Moa > Osprey)'
             f'<br>Comms: <a href="{self.join_url()}">Main Comms</a>'
             f'<br>Logi: <a href="joinChannel:{CHANNEL_ID}">Logi Chat</a>'
             "<br>Boost: Boosts"
@@ -502,8 +502,9 @@ class ContextTests(MessageTestBase):
         self.assertEqual(values["doctrine"], "Moa Fleet")
         self.assertEqual(values["doctrine_name"], "Moa Fleet")
         self.assertEqual(values["doctrine_url"], f"{SITE}{DOCTRINE_PATH}")
-        # Every fit's hull in doctrine order, duplicates kept.
-        self.assertEqual(values["doctrine_ships"], "Moa > Moa > Osprey > Drake")
+        # Changed for the doctrine ship order: every hull once, in doctrine order (the two Moa fits give one Moa);
+        # the fit names below keep every fit.
+        self.assertEqual(values["doctrine_ships"], "Moa > Osprey > Drake")
         self.assertEqual(values["doctrine_fits"], "DPS Moa > DPS Moa 2 > Logi Osprey > Booster Drake")
 
     def test_doctrine_values_without_a_doctrine(self):

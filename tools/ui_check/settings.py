@@ -76,4 +76,35 @@ class DetectFleetAnswerMiddleware:
         return self.get_response(request)
 
 
-MIDDLEWARE = [*MIDDLEWARE, "tools.ui_check.settings.DetectFleetAnswerMiddleware"]  # noqa: F405
+class ExampleDoctrineMiddleware:
+    """Give the doctrine ship order pages one example doctrine: the check site has no doctrine app.
+
+    The list of doctrines and the fits of a doctrine are replaced for the pages of the ship order only.
+    """
+
+    FITS = [
+        {"fit": "DPS Minokawa", "ship_type_id": 1, "ship": "Minokawa"},
+        {"fit": "Logi Lif", "ship_type_id": 2, "ship": "Lif"},
+        {"fit": "DPS Minokawa 2", "ship_type_id": 1, "ship": "Minokawa"},
+        {"fit": "DPS Raven", "ship_type_id": 3, "ship": "Raven"},
+        {"fit": "Tackle Basilisk", "ship_type_id": 4, "ship": "Basilisk"},
+    ]
+
+    def __init__(self, get_response):
+        from fleetops import views_config
+        from fleetops.providers.doctrines import FITTINGS_DOCTRINE_SOURCE, DoctrineChoice
+
+        choice = DoctrineChoice(external_id="12", name="[ACTIVE] Example Doctrine", source=FITTINGS_DOCTRINE_SOURCE)
+        views_config.get_doctrines = lambda user=None: [choice]
+        views_config.doctrine_fits_snapshot = lambda source, external_id: [dict(fit) for fit in self.FITS]
+        self.get_response = get_response
+
+    def __call__(self, request):
+        return self.get_response(request)
+
+
+MIDDLEWARE = [
+    *MIDDLEWARE,  # noqa: F405
+    "tools.ui_check.settings.DetectFleetAnswerMiddleware",
+    "tools.ui_check.settings.ExampleDoctrineMiddleware",
+]

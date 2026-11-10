@@ -19,6 +19,7 @@ A Simplified Chinese version of this page is in [zh-CN/configuration.md](zh-CN/c
 | [Ping Channels](#ping-channels) and [Ping Roles](#ping-roles) | Discord webhooks, allowed mentions, mentionable roles, the groups that may use a channel |
 | [Groups](#groups) | What the leaders of an Alliance Auth group may do: send pings, start fleets with PAP |
 | [Message Templates](#message-templates) | Ping, MOTD and Ping without fleet texts |
+| [Doctrine Ship Order](#doctrine-ship-order) | The order and the marks of the ships of a doctrine in pings and MOTDs |
 | [Ship Functions](#ship-functions-and-rules), [Ship Function Rules](#ship-functions-and-rules), [Fleet Structure Templates](#fleet-structure-templates) | Composition groups and wing and squad layouts |
 | [FleetOps SRP](#fleetops-srp), [SRP Payout Table](#srp-payout-table), [SRP Corporation Limits](#srp-corporation-limits) | The ship replacement program |
 
@@ -415,6 +416,34 @@ so other `@everyone`, `@here` or `<@&id>` text in the ping notifies nobody.
 
 The Ping, MOTD and Ping without fleet texts. Variables, the built-in templates and the rules are in
 [message templates](message-templates.md).
+
+## Doctrine Ship Order
+
+**Administration, Doctrine Ship Order** (`fleetops.manage_configuration`, no permission of its own) sets how the ships
+of a doctrine of a doctrine app such as Fittings are listed in `doctrine_ships`, the ship list of pings and MOTDs. A
+doctrine typed by name has no ships and is not affected.
+
+- Without a stored order the list is the hulls of the doctrine, each once, in the order of the doctrine, joined with
+  ` > `. Two Moa fits give one Moa.
+- The editor lists the ships of the doctrine, each hull once. Move a ship with its up and down buttons (they post the
+  page, so they work without JavaScript; the result is kept only after **Save**) and choose between every two ships
+  one of three marks: `>` higher priority, `=` same priority, `>>>` much higher priority. The preview line shows the
+  list as it will be written, for example `Minokawa = Lif > Raven >>> Basilisk`.
+- **Back to the automatic order** deletes the stored order.
+- The server accepts only those three marks, only ships of the doctrine as it is now, and each ship once. One order is
+  stored per doctrine (by the doctrine source and its ID, like the fleet record).
+- The order is applied when a ping or MOTD is made, so an open fleet shows a change at its next MOTD or ping (**Regenerate
+  and push MOTD**); nothing in the fleet record changes. A ship that left the doctrine is left out (and dropped for good at the
+  next save); a ship added to the doctrine later is appended at the end with `>`. When a ship is left out, the mark that
+  stood in front of the next ship stays.
+- The marks are written as plain text in both messages. In the MOTD `>` is written as it always was in this list,
+  so the game shows `A > B`. In Discord the marks come after a ship name inside the line, where `>` is no quote.
+- Creating, changing and deleting an order write `configuration.create`, `configuration.update` and
+  `configuration.delete` entries (object type `DoctrineShipOrder`).
+
+Doctrine names with square brackets: in a Discord ping the names that are the text of a link (`doctrine`, `doctrine_name`
+and `comms`) get a backslash in front of `[`, `]` and `\`, so Discord shows the name as typed inside the link. The MOTD and
+the other uses of the variables are not changed.
 
 ## Ship functions and rules
 
@@ -1064,7 +1093,7 @@ through a fleet link at 571m.
 
 Migrations `0035` and `0036` are the guard of the 0.3.0b1 chain. `0036` adds the pruning share to the
 settings; going back runs its copy of the guard before that column is dropped, and `0035` runs the same checks once more.
-`0040`, the last migration, adds the setting **Notify members when a payment is undone**, and `0039` adds **Losses inside a tracked fleet**; both run the guard before they drop their column (so a way back below `0035` is refused before anything is dropped); `0038` only changes a help text and `0037` only adds an index; they are undone next (the help text comes back, the index is dropped, nothing else changes). The
+`0041`, the last migration, creates the table of the stored doctrine ship orders (undoing it drops the table and runs the same guard first); `0040` adds the setting **Notify members when a payment is undone**, and `0039` adds **Losses inside a tracked fleet**; both run the guard before they drop their column (so a way back below `0035` is refused before anything is dropped); `0038` only changes a help text and `0037` only adds an index; they are undone next (the help text comes back, the index is dropped, nothing else changes). The
 guard checks everything that makes going back unsafe before the first change is undone: payout rules that belong to a category, links without a fleet that have claims (standing
 links) or that were imported, and claims imported from aa-srp. It stops **any** way back, a partial one included
 (`migrate fleetops 0032` is stopped too). `python manage.py fleetops_srp_rollback_check` runs the same checks, reads only and

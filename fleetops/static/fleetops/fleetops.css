@@ -744,3 +744,10 @@ button.fo-live { cursor: pointer; }
 .fo-group-leaders-list > li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fo-space-2); padding: var(--fo-space-1) 0; border-bottom: 1px solid var(--fo-divider); }
 .fo-group-leaders-list > li:last-child { border-bottom: 0; }
 /* end 6.F */
+/* Doctrine ship order editor: ships in rows, a mark between every two */
+.fo-order-list { list-style: none; margin: 0 0 var(--fo-space-4); padding: 0; }
+.fo-order-ship { display: flex; align-items: center; justify-content: space-between; gap: var(--fo-space-3); padding: var(--fo-space-2) var(--fo-space-3); border: 1px solid var(--fo-border); border-radius: var(--fo-radius-sm); background: var(--fo-surface-1); }
+.fo-order-name { min-width: 0; overflow-wrap: anywhere; }
+.fo-order-buttons { display: flex; flex: none; gap: var(--fo-space-2); }
+.fo-order-mark { padding: var(--fo-space-1) 0 var(--fo-space-1) var(--fo-space-5); max-width: 18rem; }
+.fo-order-preview { padding: var(--fo-space-2) var(--fo-space-3); border-radius: var(--fo-radius-sm); background: var(--fo-surface-2); color: var(--fo-text-1); overflow-wrap: anywhere; }

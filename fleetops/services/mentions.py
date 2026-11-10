@@ -251,6 +251,15 @@ def neutralize_mass_mentions(text: str) -> str:
     return _MASS_MENTION_RE.sub(rf"@{_ZERO_WIDTH_SPACE}\1", text or "")
 
 
+def discord_link_text(text) -> str:
+    """``text`` as the visible text of a Discord masked link ``[text](address)``.
+
+    ``[``, ``]`` and the backslash get a backslash in front: Discord shows them as typed, and the text can neither
+    end the link text early nor start an address with ``](``.
+    """
+    return re.sub(r"([\\\[\]])", r"\\\1", str(text or ""))
+
+
 def limit_mass_mentions(text: str, selection) -> str:
     """``text`` as it may be sent with ``allowed_mentions(selection)``.
 

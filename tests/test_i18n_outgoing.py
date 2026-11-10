@@ -205,7 +205,8 @@ class MessageTextTests(FakeCatalogs, MessageTestBase):
             "**Formup Location:** Jita IV-4\n"
             "**PAP Type:** StratOp\n"
             f"**Comms:** [Main Comms]({self.join_url()})\n"
-            "**Doctrine:** [Moa Fleet](https://auth.example.org/fittings/doctrine/12/) (Moa > Moa > Osprey)\n"
+            # Changed for the doctrine ship order: each hull is listed once, so the two Moa fits give one Moa.
+            "**Doctrine:** [Moa Fleet](https://auth.example.org/fittings/doctrine/12/) (Moa > Osprey)\n"
             "**Fleet Time:** 2026-10-12 19:00 EVE · <t:1791831600:t> (<t:1791831600:R>)\n"
             "\n"
             "-# This was a FleetOps broadcast from Boss Main to online members at 2026-10-12 18:30 EVE"

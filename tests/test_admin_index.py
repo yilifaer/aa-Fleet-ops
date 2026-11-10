@@ -23,7 +23,8 @@ class IndexGroupTests(SimpleTestCase):
         self.assertEqual(len(keys), len(set(keys)))
 
     def test_a_group_names_only_sections_or_the_two_special_cards(self):
-        known = set(CONFIG_SECTIONS) | {"settings", "srp"}
+        # Changed for the doctrine ship order: its card is a third special card (its own pages, no section).
+        known = set(CONFIG_SECTIONS) | {"settings", "srp", "doctrine-order"}
 
         for _title, _icon, section_keys in INDEX_GROUPS:
             self.assertLessEqual(set(section_keys), known)

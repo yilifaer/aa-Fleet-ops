@@ -33,6 +33,12 @@
       <a class="btn btn-outline-primary" href="{% url 'fleetops:configuration_list' 'srp-corporation-limits' %}">{% translate "Corporation Limits" %}</a>
     </div>
   </div>
+  <div class="fo-admin-card" id="admin-card-doctrine-order">
+    <span class="fo-admin-kicker">{{ doctrine_group }}</span>
+    <div class="fo-admin-head"><h3 class="card-title mb-0"><i class="fa-solid {{ doctrine_icon }} me-2" aria-hidden="true"></i>{% translate "Doctrine Ship Order" %}</h3><span class="fo-count">{{ doctrine_orders }}</span></div>
+    <p class="fo-admin-text mb-0">{% translate "The order of the ships of a doctrine in pings and MOTDs, with a mark between every two ships." %}</p>
+    <div class="fo-admin-actions"><a class="btn btn-outline-primary" href="{% url 'fleetops:doctrine_orders' %}">{% translate "Manage" %}</a></div>
+  </div>
   {% for card in cards %}
   <div class="fo-admin-card" id="admin-card-{{ card.key }}">
     <span class="fo-admin-kicker">{{ card.group }}</span>
