@@ -19,7 +19,7 @@ from esi.models import Token
 from esi.openapi_clients import ESIClientProvider
 
 from fleetops import __title__, __url__, __version__
-from fleetops.constants import FLEET_READ_SCOPE, FLEET_WRITE_SCOPE
+from fleetops.constants import FLEET_READ_SCOPE, FLEET_WRITE_SCOPE, OPEN_WINDOW_SCOPE
 from fleetops.services.fleet_rules import normalize_wings, position_body
 from fleetops.texts import (
     AFFILIATIONS_LOOKUP_FAILED,
@@ -50,6 +50,8 @@ from fleetops.texts import (
     MOVE_FAILED,
     NAMES_LOOKUP_FAILED,
     NOT_IN_FLEET,
+    OPEN_WINDOW_DENIED,
+    OPEN_WINDOW_FAILED,
     ONLINE_DENIED,
     ONLINE_FAILED,
     READ_FLEET_FAILED,
@@ -83,6 +85,9 @@ UNIVERSE_OPERATIONS = (
     "GetUniverseGroupsGroupId",
 )
 
+# Opening the information window of a character in the game client (providers/esi.py, open_character_window).
+UI_OPERATIONS = ("PostUiOpenwindowInformation",)
+
 esi = ESIClientProvider(
     compatibility_date="2025-11-06",
     ua_appname=__title__,
@@ -110,6 +115,8 @@ esi = ESIClientProvider(
         "GetCharactersCharacterIdShip",
         "PostUniverseIds",
         "GetCharactersCharacterId",
+        # Optional: the "Open in game" button of the SRP payments (scope esi-ui.open_window.v1).
+        *UI_OPERATIONS,
         *KILLMAIL_OPERATIONS,
         *UNIVERSE_OPERATIONS,
         *LOSS_OPERATIONS,
@@ -416,6 +423,23 @@ def fleet_token_flags(user, character_ids) -> dict:
     return flags
 
 
+def scope_token_ids(user, character_ids, scope: str) -> set:
+    """The IDs among ``character_ids`` for which ``user`` has a token with ``scope`` that can work.
+
+    Like ``fleet_token_flags`` this reads the database only: nothing is refreshed and nothing is deleted while a
+    page is drawn. One query, whatever the number of characters.
+    """
+    ids = [int(character_id) for character_id in character_ids]
+    if user is None or not ids:
+        return set()
+    valid_since = timezone.now() - timedelta(seconds=getattr(esi_settings, "ESI_TOKEN_VALID_DURATION", 1170))
+    return set(
+        Token.objects.filter(user=user, character_id__in=ids, scopes__name=scope)
+        .filter(Q(refresh_token__isnull=False) | Q(created__gt=valid_since))
+        .values_list("character_id", flat=True)
+    )
+
+
 def has_scope_token(user, character_id: int, write: bool = False) -> bool:
     """Whether ``user`` has a fleet token for the character that can work (database only, see above)."""
     read, can_write = fleet_token_flags(user, [character_id])[int(character_id)]
@@ -699,6 +723,27 @@ def invite_fleet_member(
         lambda token: esi.client.Fleets.PostFleetsFleetIdMembers(fleet_id=fleet_id, token=token, body=body),
         **params,
     )
+
+
+def open_character_window(user, source_character_id: int, target_id: int) -> None:
+    """Open the information window of ``target_id`` in the game client of ``source_character_id``.
+
+    ``POST /ui/openwindow/information/`` with the token (scope ``esi-ui.open_window.v1``) of one of the character
+    ``user`` owns. One call, no retries. Failures raise FleetESIError: MISSING_SCOPE or TOKEN_REFRESH_FAILED when
+    there is no usable token, OPEN_WINDOW_FORBIDDEN for 401/403, OPEN_WINDOW_LIMITED when the error limit or rate
+    limit is reached and OPEN_WINDOW_ERROR for everything else. A token is never logged.
+    """
+    token = get_scoped_token(user, int(source_character_id), [OPEN_WINDOW_SCOPE])
+    try:
+        _post(esi.client.User_Interface.PostUiOpenwindowInformation(target_id=int(target_id), token=token))
+    except Exception as exc:
+        status = _status_code(exc)
+        if status in (401, 403):
+            raise _esi_failure("OPEN_WINDOW_FORBIDDEN", OPEN_WINDOW_DENIED, exc) from exc
+        limited = status == 420 or any(
+            isinstance(item, (ESIErrorLimitException, ESIBucketLimitException)) for item in _exception_chain(exc)
+        )
+        raise _esi_failure("OPEN_WINDOW_LIMITED" if limited else "OPEN_WINDOW_ERROR", OPEN_WINDOW_FAILED, exc) from exc
 
 
 def _character_read(operation_name, token, code, denied, failed):

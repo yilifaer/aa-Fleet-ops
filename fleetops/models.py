@@ -3401,3 +3401,32 @@ class DoctrineShipOrder(models.Model):
 
     def __str__(self):
         return f"{self.doctrine_source} {self.doctrine_external_id}"
+
+
+class SrpPayerSetting(models.Model):
+    """What one payer chose on the SRP payments page: the view to open it in and the character to open windows with.
+
+    One row per user, made when they choose something. ``payment_view`` is ``"player"`` or ``"claim"`` (empty until
+    they chose: the page then shows the claims by player). ``game_character_id`` is a character of the user that has
+    a token with the scope ``esi-ui.open_window.v1``; the token itself stays in django-esi, and removing the choice
+    leaves every token alone.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("User"),
+        on_delete=models.CASCADE,
+        related_name="fleetops_srp_payer_setting",
+    )
+    payment_view = models.CharField(verbose_name=_("Payment view"), max_length=10, blank=True)
+    game_character_id = models.BigIntegerField(verbose_name=_("In-game character ID"), null=True, blank=True)
+    game_character_name = models.CharField(verbose_name=_("In-game character name"), max_length=255, blank=True)
+    updated_at = models.DateTimeField(verbose_name=_("Updated at"), auto_now=True)
+
+    class Meta:
+        default_permissions = ()
+        verbose_name = _("SRP payer setting")
+        verbose_name_plural = _("SRP payer settings")
+
+    def __str__(self):
+        return f"SRP payer setting of user {self.user_id}"

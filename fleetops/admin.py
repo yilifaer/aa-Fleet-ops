@@ -51,6 +51,7 @@ from fleetops.models import (
     SrpLoss,
     SrpLossScan,
     SrpInsurancePrice,
+    SrpPayerSetting,
     SrpPaymentBatch,
     SrpPayoutRule,
     SrpSettings,
@@ -513,6 +514,14 @@ class SrpPaymentBatchAdmin(SrpReadOnlyAdmin):
 
     list_display = ("__str__", "created_by_name", "created_at", "claim_count", "payee_count", "total")
     search_fields = ("created_by_name",)
+
+
+@admin.register(SrpPayerSetting)
+class SrpPayerSettingAdmin(SrpReadOnlyAdmin):
+    """What each payer chose on the SRP Payments page (the view and the in-game character); changed there only."""
+
+    list_display = ("user", "payment_view", "game_character_name", "updated_at")
+    search_fields = ("game_character_name",)
 
 
 @admin.register(SrpInsurancePrice)

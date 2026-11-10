@@ -25,6 +25,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 from esi import openapi_clients
+from esi.models import Token
 from esi.exceptions import (
     ESIBucketLimitException,
     ESIErrorLimitException,
@@ -34,7 +35,13 @@ from esi.exceptions import (
 )
 from esi.openapi_clients import ESIClientProvider
 
-from fleetops.constants import CLICK_SCOPES, FLEET_READ_SCOPE, FLEET_WRITE_SCOPE, KILLMAIL_READ_SCOPE as KILLMAIL_SCOPE
+from fleetops.constants import (
+    CLICK_SCOPES,
+    FLEET_READ_SCOPE,
+    FLEET_WRITE_SCOPE,
+    KILLMAIL_READ_SCOPE as KILLMAIL_SCOPE,
+    OPEN_WINDOW_SCOPE,
+)
 from fleetops.models import AttendanceRecord, FleetMemberEvent, FleetMemberState, FleetOperation, OperationAction
 from fleetops.providers import esi as esi_provider, esi_killmails, esi_universe
 from fleetops.providers.esi import (
@@ -685,6 +692,12 @@ def _fleet_spec():
         spec["x-rate-limit"] = {"group": "char-killmail", "max-tokens": 30, "window-size": "15m"}
         return spec
 
+    def open_window(operation_id, scope):
+        spec = operation(operation_id, scope, [], "204", tag="User Interface")
+        spec["parameters"].append({"name": "target_id", "in": "query", "required": True, "schema": integer})
+        spec["x-rate-limit"] = {"group": "ui", "max-tokens": 600, "window-size": "15m"}
+        return spec
+
     def location(operation_id, scope, schema):
         spec = operation(operation_id, scope, ["character_id"], "200", schema, tag="Location")
         spec["x-rate-limit"] = {"group": "char-location", "max-tokens": 1200, "window-size": "15m"}
@@ -713,6 +726,7 @@ def _fleet_spec():
             {"name": "Killmails"},
             {"name": "Market"},
             {"name": "Insurance"},
+            {"name": "User Interface"},
         ],
         "paths": {
             "/characters/{character_id}/fleet": {
@@ -759,6 +773,8 @@ def _fleet_spec():
                     "x-compatibility-date": "2020-01-01",
                 }
             },
+            # 0.3.0b2: the Open in game button of the SRP payments opens the window of a character in the client.
+            "/ui/openwindow/information": {"post": open_window("PostUiOpenwindowInformation", OPEN_WINDOW_SCOPE)},
             "/characters/{character_id}/online": {
                 "get": location("GetCharactersCharacterIdOnline", ONLINE_SCOPE, "CharactersOnline"),
             },
@@ -1052,7 +1068,7 @@ def _fleet_spec():
                         "authorizationCode": {
                             "authorizationUrl": "https://login.eveonline.com/v2/oauth/authorize",
                             "tokenUrl": "https://login.eveonline.com/v2/oauth/token",
-                            "scopes": {scope: scope for scope in (FLEET_READ_SCOPE, FLEET_WRITE_SCOPE, KILLMAIL_SCOPE, *CLICK_SCOPES)},
+                            "scopes": {scope: scope for scope in (FLEET_READ_SCOPE, FLEET_WRITE_SCOPE, KILLMAIL_SCOPE, OPEN_WINDOW_SCOPE, *CLICK_SCOPES)},
                         }
                     },
                 }
@@ -1133,6 +1149,7 @@ class DjangoEsiOperationTests(TestCase):
                 *esi_killmails.KILLMAIL_OPERATIONS,
                 *esi_provider.UNIVERSE_OPERATIONS,
                 *esi_provider.LOSS_OPERATIONS,
+                *esi_provider.UI_OPERATIONS,
             ],
         )
 
@@ -1782,6 +1799,79 @@ class DjangoEsiOperationTests(TestCase):
 
         self.assertEqual((ctx.exception.code, str(ctx.exception)), ("ESI_ERROR", "Could not read the recent losses: ESI returned HTTP 500."))
         self.assertNotIn("header-secret-value", "\n".join(logs.output))
+
+    # -- Open in game (0.3.0b2) -----------------------------------------------------------------------
+
+    OPEN_ROUTE = ("POST", "/ui/openwindow/information")
+
+    def open_token(self, scopes=None):
+        pilot = f.main_of(f.create_user(perms=f.SRP_PAYER_PERMS))
+        user = pilot.character_ownership.user
+        f.add_token(user, pilot, scopes=[OPEN_WINDOW_SCOPE] if scopes is None else scopes)
+        return user, pilot.character_id
+
+    def test_the_open_window_operation_is_part_of_the_client(self):
+        operations = getattr(esi_provider.esi, "_operations", None)
+        if operations is None:
+            self.skipTest("django-esi no longer keeps the operation list of the provider")
+
+        self.assertEqual(esi_provider.UI_OPERATIONS, ("PostUiOpenwindowInformation",))
+        self.assertLessEqual(set(esi_provider.UI_OPERATIONS), set(operations))
+        self.assertEqual(OPEN_WINDOW_SCOPE, "esi-ui.open_window.v1")
+
+    def test_a_window_is_opened_with_the_target_in_the_query_the_token_of_the_character_and_no_body(self):
+        user, character_id = self.open_token()
+        self.server.routes[self.OPEN_ROUTE] = (204, None)
+
+        esi_provider.open_character_window(user, character_id, 2_119_000_555)
+
+        self.assertEqual(self.server.requests, [("POST", "/ui/openwindow/information", None, None)])
+        self.assertEqual(self.server.queries, [{"target_id": "2119000555"}])
+        self.assertTrue(self.server.authorizations[0].startswith("Bearer "))
+
+    def test_every_click_is_sent_even_if_esi_marks_the_answer_cacheable(self):
+        user, character_id = self.open_token()
+        self.server.cache_seconds = 300
+        self.server.routes[self.OPEN_ROUTE] = (204, None)
+
+        esi_provider.open_character_window(user, character_id, 2_119_000_555)
+        esi_provider.open_character_window(user, character_id, 2_119_000_555)
+
+        self.assertEqual(len(self.server.requests_of("POST")), 2)
+
+    def test_a_character_without_the_scope_has_no_token_and_nothing_is_sent(self):
+        user, character_id = self.open_token(scopes=[FLEET_READ_SCOPE])
+
+        with self.assertRaises(FleetESIError) as caught:
+            esi_provider.open_character_window(user, character_id, 2_119_000_555)
+
+        self.assertEqual(caught.exception.code, "MISSING_SCOPE")
+        self.assertEqual(self.server.requests, [])
+
+    def test_the_failures_of_esi_are_short_codes_without_headers_or_tokens(self):
+        user, character_id = self.open_token()
+        token = Token.objects.get(user=user, character_id=character_id)
+        self.server.error_headers = {"X-Private-Header": "header-secret-value", "X-ESI-Request-ID": "esi-request-77"}
+        cases = (
+            (403, {"error": "Forbidden"}, "OPEN_WINDOW_FORBIDDEN"),
+            (401, {"error": "Unauthorized"}, "OPEN_WINDOW_FORBIDDEN"),
+            (404, {"error": "Not found"}, "OPEN_WINDOW_ERROR"),
+            (420, {"error": "error limit"}, "OPEN_WINDOW_LIMITED"),
+            (500, {"error": "boom"}, "OPEN_WINDOW_ERROR"),
+        )
+        for status, body, code in cases:
+            with self.subTest(status=status):
+                self.server.routes[self.OPEN_ROUTE] = (status, body)
+                with mock.patch("esi.app_settings.ESI_SERVER_ERROR_MAX_RETRIES", 1), self.assertLogs(
+                    esi_provider.logger, "WARNING"
+                ) as logs, self.assertRaises(FleetESIError) as caught:
+                    esi_provider.open_character_window(user, character_id, 2_119_000_555)
+
+                self.assertEqual(caught.exception.code, code)
+                for text in (str(caught.exception), "\n".join(logs.output)):
+                    self.assertNotIn("header-secret-value", text)
+                    self.assertNotIn(token.access_token, text)
+                    self.assertNotIn(token.refresh_token, text)
 
     def test_the_universe_operations_are_part_of_the_client(self):
         operations = getattr(esi_provider.esi, "_operations", None)

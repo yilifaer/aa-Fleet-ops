@@ -42,6 +42,7 @@ from fleetops.models import (
     CommsPreset,
     DiscordWebhook,
     DoctrineShipOrder,
+    SrpPayerSetting,
     EveEntityName,
     FleetMemberEvent,
     FleetMemberState,
@@ -96,6 +97,8 @@ READ_ONLY_ADMIN_MODELS = (
     # 0.3.0b1 (REV-5, REV-10): payment batches and insurance prices are written by the pages and the task only.
     SrpPaymentBatch,
     SrpInsurancePrice,
+    # 0.3.0b2: the choices of a payer are made on the payments page only.
+    SrpPayerSetting,
     # 0.3.0b1 (L-26): the audit log and the records of PAP, members, roles, incentives and statistics are never
     # added or changed in the admin.
     AuditLog,
@@ -1339,6 +1342,8 @@ class AdminTests(TestCase):
         SrpLossScan.objects.create(character_id=9_000_001, user=cls.fc)
         SrpPaymentBatch.objects.create(created_by=cls.fc, created_by_name="Boss Main", claim_count=1, payee_count=1, total=1)
         SrpInsurancePrice.objects.create(ship_type_id=587, levels={})
+        # The change page of every registered model is opened, so there must be one row of the payers' choices.
+        SrpPayerSetting.objects.create(user=cls.fc, payment_view="claim")
         cls.group = Group.objects.create(name="Sig A")
         cls.access = GroupAccess.objects.create(group=cls.group, mode=GroupAccess.Mode.FLEETS)
         cls.access.fleet_types.add(cls.fleet_type)

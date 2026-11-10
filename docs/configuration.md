@@ -660,6 +660,36 @@ To enable FleetOps SRP:
 - **SRP** > **Payments** has the same kind of filter for the claims to pay: category, link and corporation. The
   group totals, the copy buttons and the count above the list are those of the claims left by the filter. The paid
   claims list shows the category, the link and the payment batch of each claim.
+- **By player and by claim.** The payments page has the switch **By player** / **By claim** (buttons that save your choice with a POST; a link with `?view=player` or
+  `?view=claim` only shows that view once and saves nothing). **By player** has one card per player with **Copy name**, **Copy amount**, **Copy name and amount**,
+  **Copy claim numbers** and a tick box per claim. **By claim** is one flat table, one row per claim that waits for payment, the oldest claim first (not grouped by player): the
+  time of the claim (EVE time), the player (main character), the character that lost the ship (with **Copy**), the claim
+  number `SRP-<number>` (with **Copy**), the ship, the value of the loss when it is known, the category or link, the
+  amount (with **Copy**) and the buttons **Open in game** and **Paid**; the table scrolls sideways on a phone. **Paid**
+  pays that one claim: it is the same payment as **Mark selected paid** for one claim, so it makes a payment batch of one
+  claim and follows the same rules (a payer's own claim and, with **The approver of a claim may not pay it**, a claim
+  the payer approved are refused with the usual message), the same payment note field below the list, the same
+  `srp.payment_batch` audit entry and the same notice to the member. The filters, the exports, the totals and the
+  tick boxes with **Mark selected paid** work in both views. The last view each payer chose is stored with the payer
+  (the table `SrpPayerSetting`, one row per payer, made when they choose); a payer who never chose sees **By player**.
+- **Claim numbers.** The claim number `SRP-<number>` is the code to put in the reason of the in-game ISK transfer; it is
+  shown on every claim page, in the payment batch and in the lists, and the search of the review list finds it. **Copy
+  claim numbers** copies the numbers of the claims of one player card that the payer can pay, separated by spaces. FleetOps
+  knows of no documented limit for the length of the reason, so it does not cut or count anything: with very many claims
+  the game may cut the text. Paying claim by claim (**By claim**, one number per transfer) is the safe way.
+- **Open in game.** Needs the scope `esi-ui.open_window.v1` on the EVE application of the site; the scope is optional and
+  only used for this button. A payer (`pay_srp` or `manage_srp`) chooses one of their own characters in the box **Opening
+  characters in game** of the payments page: **Add and authorize a character** goes through the EVE login once for that
+  scope (django-esi stores the token; FleetOps stores only the character's ID and name), then **Use this character**
+  makes it the in-game character. **Remove the choice** forgets the choice and leaves every token alone. The buttons
+  show only for a payer whose in-game character has a token with the scope; the others see the link **Set up opening
+  characters in game**. A click asks ESI (`POST /ui/openwindow/information/`, one call, no retry) to open the information
+  window of the character that lost the ship (**By claim**) or of the main character of the player (**By player**) in
+  the client of the in-game character. The server takes the claim and `main` or `lost`, never a character number, and
+  only for claims the payments page shows (waiting for payment, or paid in the last 30 days). The page shows a short
+  message (sent, token missing or expired, ESI error); the game client must be running and logged in with the in-game
+  character, and EVE sometimes opens nothing until any character window was opened in the game once. A click writes no
+  audit entry (it is not a data change) and logs at debug level only, never a token.
 - **Payment batches.** Every payment makes a batch (`PAY-<number>`): the claims a payer marked paid together, the
   number of players, the total and the optional note, which members see in the claim (the note is the payment note).
   The numbers are those of the moment of payment and do not change when a payment is undone later. A single payment
@@ -1093,7 +1123,7 @@ through a fleet link at 571m.
 
 Migrations `0035` and `0036` are the guard of the 0.3.0b1 chain. `0036` adds the pruning share to the
 settings; going back runs its copy of the guard before that column is dropped, and `0035` runs the same checks once more.
-`0041`, the last migration, creates the table of the stored doctrine ship orders (undoing it drops the table and runs the same guard first); `0040` adds the setting **Notify members when a payment is undone**, and `0039` adds **Losses inside a tracked fleet**; both run the guard before they drop their column (so a way back below `0035` is refused before anything is dropped); `0038` only changes a help text and `0037` only adds an index; they are undone next (the help text comes back, the index is dropped, nothing else changes). The
+`0042`, the last migration, creates the table of the payers' choices on the payments page (undoing it drops the table and runs the same guard first); `0041` creates the table of the stored doctrine ship orders (undoing it drops the table); `0040` adds the setting **Notify members when a payment is undone**, and `0039` adds **Losses inside a tracked fleet**; both run the guard before they drop their column (so a way back below `0035` is refused before anything is dropped); `0038` only changes a help text and `0037` only adds an index; they are undone next (the help text comes back, the index is dropped, nothing else changes). The
 guard checks everything that makes going back unsafe before the first change is undone: payout rules that belong to a category, links without a fleet that have claims (standing
 links) or that were imported, and claims imported from aa-srp. It stops **any** way back, a partial one included
 (`migrate fleetops 0032` is stopped too). `python manage.py fleetops_srp_rollback_check` runs the same checks, reads only and

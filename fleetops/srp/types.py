@@ -763,3 +763,9 @@ class SrpPayRow:
     main_character_name: str
     total: int = 0
     claims: list = field(default_factory=list)
+
+    @property
+    def claim_numbers(self) -> str:
+        """The numbers of the claims the viewer can pay, separated by spaces (``SRP-123 SRP-124``): the text for the
+        reason of an ISK transfer. Needs the ``payable`` mark the payments page sets on every claim."""
+        return " ".join(claim.reference for claim in self.claims if getattr(claim, "payable", False))

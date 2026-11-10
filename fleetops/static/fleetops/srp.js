@@ -217,6 +217,45 @@
     if (!busy && form.hasAttribute('data-srp-check')) hideChecking(form);
   }
 
+  // --- Open in game ----------------------------------------------------------------------------------------
+
+  // The button asks the server to open a character in the game client; the answer is a short message beside the
+  // button. Without this script the button posts the form and the page comes back with a message.
+  function showOpenMessage(button, ok, text) {
+    let note = button.parentElement.querySelector('[data-srp-open-note]');
+    if (!note) {
+      note = document.createElement('div');
+      note.className = 'small mt-1';
+      note.setAttribute('data-srp-open-note', '');
+      note.setAttribute('role', 'status');
+      button.insertAdjacentElement('afterend', note);
+    }
+    note.classList.toggle('text-success', ok);
+    note.classList.toggle('text-danger', !ok);
+    note.textContent = text;
+  }
+
+  document.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-srp-open]');
+    if (!button || !window.fetch) return;
+    const form = button.form;
+    const token = form && form.querySelector('[name="csrfmiddlewaretoken"]');
+    if (!form || !token) return;
+    event.preventDefault();
+    if (button.disabled) return;
+    button.disabled = true;
+    fetch(button.getAttribute('formaction'), {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'X-CSRFToken': token.value, 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' },
+    }).then((response) => response.json().then((data) => ({ ok: response.ok && data.ok, text: data.message })))
+      .catch(() => ({ ok: false, text: gettext('The request could not be sent. Try again.') }))
+      .then((result) => {
+        button.disabled = false;
+        showOpenMessage(button, result.ok, result.text || gettext('The request could not be sent. Try again.'));
+      });
+  });
+
   // A question the form asks before it is sent (data-fo-confirm) is handled by fleetops.js, which stops the
   // first submit; this handler only sees the confirmed one.
   document.addEventListener('submit', (event) => {

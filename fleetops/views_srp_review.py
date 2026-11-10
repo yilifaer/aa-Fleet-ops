@@ -34,7 +34,7 @@ from fleetops.forms_srp import (
 from fleetops.models import SrpCategory, SrpClaim, SrpFleetLink, SrpPaymentBatch, SrpSettings
 from fleetops.services.errors import log_failure
 from fleetops.services.periods import eve_now, month_bounds
-from fleetops.srp import access, bans, display, payments as srp_payments, review, summaries
+from fleetops.srp import access, bans, display, ingame, payments as srp_payments, policy as rules, review, summaries
 from fleetops.srp.access import MANAGE_SRP, PAY_SRP, REVIEW_SRP
 from fleetops.srp.display import category_label
 from fleetops.srp.types import SrpError, SrpStateError
@@ -119,6 +119,14 @@ def without_period(request, *drop):
     """The query string of the page without the month, the page number and ``drop``."""
     query = request.GET.copy()
     for name in ("year", "month", "page", *drop):
+        query.pop(name, None)
+    return query.urlencode()
+
+
+def _query_without(request, *drop):
+    """The query string of the page without ``drop`` (the month and the page number stay)."""
+    query = request.GET.copy()
+    for name in drop:
         query.pop(name, None)
     return query.urlencode()
 
@@ -662,11 +670,18 @@ def posted_filters(request):
 
 
 def mark_selected_paid(request, settings_obj):
-    form = ClaimSelectionForm(request.POST)
+    data = request.POST
+    only = (data.get("only") or "").strip()
+    if only:
+        # The "Paid" button of one row: the same payment as the bulk button, for that claim alone (a batch of one),
+        # whatever else is ticked. Its amount is the one the row showed (``shown-<uuid>``).
+        data = data.copy()
+        data.setlist("claim", [only])
+    form = ClaimSelectionForm(data)
     if not form.is_valid():
         messages.error(request, form_errors(form))
         return back(request, redirect("fleetops:srp_payments"))
-    note_form = PaidForm(request.POST)
+    note_form = PaidForm(data)
     if not note_form.is_valid():
         messages.error(request, form_errors(note_form))
         return back(request, redirect("fleetops:srp_payments"))
@@ -771,6 +786,16 @@ def payments(request):
     for claim in to_pay:
         claim.pay_block = access.payment_block(request.user, claim, settings_obj=settings_obj)
         claim.payable = not claim.pay_block
+        # Who gets the ISK, as it is now (one query for all of them: the profile is read with the claims).
+        claim.pay_main_id, claim.pay_main_name = rules.pay_to(claim)
+    setting = ingame.get_setting(request.user)
+    view = ingame.choose_view(setting, request.GET.get("view"))
+    characters = ingame.authorized_characters(request.user)
+    if view == ingame.VIEW_CLAIM:
+        # By claim: one flat list, the oldest claims first (not grouped by player).
+        claim_rows = sorted(to_pay, key=lambda claim: (claim.submitted_at, claim.pk))
+    else:
+        claim_rows = []
     paid = base.filter(status=SrpClaim.Status.PAID)
     lower, upper = day_bounds(paid_from, paid_to)
     if lower is not None:
@@ -789,6 +814,7 @@ def payments(request):
             earliest=summaries.earliest_claim_time(),
             preserve=PAYMENT_FILTERS,
             pay_rows=rows,
+            claim_rows=claim_rows,
             to_pay_total=sum(row.total for row in rows),
             to_pay_count=len(to_pay),
             paid_claims=list(
@@ -808,6 +834,12 @@ def payments(request):
             month_filter_active=bounds is not None,
             all_months_query=without_period(request),
             next_url=request.get_full_path(),
+            payment_view=view,
+            # Where the view switch (a POST) comes back to: this page without the one-off ``view`` parameter.
+            view_next=request.path + (f"?{rest}" if (rest := _query_without(request, "view")) else ""),
+            game_character=ingame.game_character(setting, characters),
+            game_characters=characters,
+            game_characters_authorized=any(row["authorized"] for row in characters),
         ),
         settings_obj=settings_obj,
     )

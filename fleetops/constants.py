@@ -16,6 +16,10 @@ CLICK_SCOPES = [
 KILLMAIL_READ_SCOPE = "esi-killmails.read_killmails.v1"
 LOSS_SCOPES = [KILLMAIL_READ_SCOPE]
 
+# Opening the information window of a character in the game client (the "Open in game" button of the SRP payments).
+OPEN_WINDOW_SCOPE = "esi-ui.open_window.v1"
+OPEN_WINDOW_SCOPES = [OPEN_WINDOW_SCOPE]
+
 # Built-in templates, also used as the fallback when a stored template cannot be rendered.
 # Pings and MOTDs are always English (their own words are never translated). Migration 0009 keeps copies of the
 # ping and of the MOTD as they were before the SRP line, migration 0017 a copy of the MOTD with the SRP line and

@@ -246,8 +246,11 @@ PAP links read where a pilot is, what they fly and whether they are online, with
 `esi-location.read_location.v1`, `esi-location.read_ship_type.v1` and `esi-location.read_online.v1`. These are
 the scopes of AFAT's click tracking and of the matching aa-charlink import, so tokens they already hold are
 reused. FleetOps SRP can read the recent losses of the members' characters (`esi-killmails.read_killmails.v1`, with the
-member's own token, only while **Find losses automatically** is on). Enable all six scopes in your EVE SSO application;
-without the last one, loss discovery cannot be authorized and everything else works.
+member's own token, only while **Find losses automatically** is on). Enable these six scopes in your EVE SSO application;
+without the last one, loss discovery cannot be authorized and everything else works. A seventh scope is optional:
+`esi-ui.open_window.v1` is used only by the **Open in game** button of the SRP payments page, with the token of the payer's
+own in-game character, and is requested only when a payer adds that character. Without it on the application, only that
+authorization fails.
 
 ## First steps
 
@@ -331,7 +334,8 @@ have CSV and Excel exports). Do the steps in this order; the app has to be insta
 keep the assignment of those permissions; they do nothing without the app and you can delete them in the Django
 admin or the Django shell, filtering by `app_label="fleetops"`. Do not run `remove_stale_contenttypes
 --include-stale-apps`, which touches other apps too. Alliance Auth's own data stays untouched: users, groups, characters
-and the ESI tokens that django-esi holds (FleetOps stores none of its own). Cached values (keys starting with
+and the ESI tokens that django-esi holds (FleetOps stores none of its own; this includes the tokens with the scope
+`esi-ui.open_window.v1` that payers added for **Open in game**, which you can delete in Alliance Auth). Cached values (keys starting with
 `fleetops:`) expire by themselves. Discord messages already sent and the EVE SSO application scopes are not
 changed; remove the scopes you no longer need from the EVE application yourself.
 
@@ -347,6 +351,7 @@ FleetOps is a tool for your organization; you decide what to keep. It stores, in
 | Audit log | Who changed what and when (settings, reviews, payments, PAP corrections); no tokens, no webhook addresses | Never removed by FleetOps |
 | Settings | Discord webhook addresses, stored in plain text in the database like other Alliance Auth secrets, SRP and fleet settings | Until you delete them |
 | Name caches | Character, corporation and alliance names and affiliations looked up from ESI | Until the next lookup; never removed |
+| SRP payer choices | For each payer who chose something on the payments page: the view (by player or by claim) and the in-game character for **Open in game** (its ID and name) | Until the user is deleted or the choice is removed; not part of the retention |
 | ESI tokens | Not stored by FleetOps. It reads the tokens django-esi holds for the user and never writes them to a log, the audit log, a page or an export | Managed by Alliance Auth |
 
 Data goes to Discord (the pings you send), to zKillboard and ESI (killmail ids and character ids for SRP, only when

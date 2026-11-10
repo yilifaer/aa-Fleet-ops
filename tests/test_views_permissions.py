@@ -788,6 +788,20 @@ class PermissionMatrixTests(SrpViewTestCase):
                  {"paid_from": "2026-01-01", "paid_to": "nonsense"}, payers),
             Case("srp_payments filters", "get", r("fleetops:srp_payments"),
                  {"category": "none", "link": "abc", "corporation": "nonsense"}, payers),
+            # 0.3.0b2: Open in game and the in-game character are for the people who may pay (manage_srp or pay_srp).
+            # The claim of the matrix waits for a decision, so the payments page does not show it: 404 for payers.
+            Case("srp_open_in_game", "post",
+                 r("fleetops:srp_open_in_game", args=[self.claim_fleet.uuid, "lost"]), None,
+                 by_srp_role(SRP_PAYERS, granted=HIDDEN)),
+            Case("srp_payment_view", "post", r("fleetops:srp_payment_view"), {"view": "claim"}, payer_redirects),
+            Case("srp_payment_view unknown", "post", r("fleetops:srp_payment_view"), {"view": "x"},
+                 by_srp_role(SRP_PAYERS, granted=HIDDEN)),
+            Case("srp_game_character remove", "post", r("fleetops:srp_game_character"), {"action": "remove"},
+                 payer_redirects),
+            Case("srp_game_character unknown action", "post", r("fleetops:srp_game_character"), {"action": "x"},
+                 by_srp_role(SRP_PAYERS, granted=HIDDEN)),
+            Case("srp_game_character_authorize", "get", r("fleetops:srp_game_character_authorize"), None,
+                 payer_redirects),
             Case("srp_link_close", "post", r("fleetops:srp_link_close", args=[self.srp_link.code]), None,
                  staff_redirects),
             # LINK (INT-9): opening a link lets members submit again, so it is for reviewers; closing

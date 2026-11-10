@@ -483,7 +483,10 @@ class LanguageTests(PingFixture):
 
     def run_in(self, site, viewer):
         StandalonePing.objects.all().delete()
-        frozen = timezone.now().replace(second=0, microsecond=0) + timedelta(seconds=30)
+        # One fixed moment for every run of a test, so a minute that rolls over between two runs changes nothing.
+        if not hasattr(self, "frozen_moment"):
+            self.frozen_moment = timezone.now().replace(second=0, microsecond=0) + timedelta(seconds=30)
+        frozen = self.frozen_moment
         data = self.data(self.group_channel, group=self.ping_group, mentions_=(mentions.role_choice(self.role),))
         with override_settings(LANGUAGE_CODE=site), mock.patch("django.utils.timezone.now", return_value=frozen):
             self.client.cookies[settings.LANGUAGE_COOKIE_NAME] = viewer

@@ -39,10 +39,53 @@
   <div class="col-6 col-xl-3"><div class="stat-card"><span>{% translate "Paid in the dates below" %}</span><strong>{{ paid_total|isk }}</strong><small class="text-muted">{% blocktranslate trimmed count counter=paid_count %}{{ counter }} claim{% plural %}{{ counter }} claims{% endblocktranslate %}</small></div></div>
 </div>
 
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3" id="srp-payment-view">
+  <span class="small text-muted">{% translate "Show the claims" %}</span>
+  <form method="post" action="{% url 'fleetops:srp_payment_view' %}" class="btn-group" role="group" aria-label="{% translate 'Show the claims' %}">
+    {% csrf_token %}<input type="hidden" name="next" value="{{ view_next }}">
+    <button type="submit" name="view" value="player" class="btn btn-sm {% if payment_view == 'player' %}btn-primary{% else %}btn-outline-secondary{% endif %}"{% if payment_view == 'player' %} aria-current="true"{% endif %}>{% translate "By player" %}</button>
+    <button type="submit" name="view" value="claim" class="btn btn-sm {% if payment_view == 'claim' %}btn-primary{% else %}btn-outline-secondary{% endif %}"{% if payment_view == 'claim' %} aria-current="true"{% endif %}>{% translate "By claim" %}</button>
+  </form>
+  <span class="small text-muted">{% translate "Your choice is remembered." %}</span>
+</div>
+
 {% if pay_rows %}
 <form method="post" action="{% url 'fleetops:srp_payments' %}" class="fleetops-srp-form" data-srp-once id="fleetops-srp-pay-form">
   {% csrf_token %}<input type="hidden" name="next" value="{{ next_url }}">
   {% for name, value in payable_filters.items %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+  {# The first button of a form answers the Enter key. It is the bulk button, so Enter never pays or opens one row. #}
+  <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true" data-srp-bulk-button disabled></button>
+  {% if payment_view == "claim" %}
+  <div class="card mb-3" id="srp-claim-table">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0 fo-table-pin">
+        <thead><tr>
+          <th scope="col" class="fleetops-srp-check"><label class="fo-check-cell"><input type="checkbox" class="form-check-input mt-0" data-srp-select-all aria-label="{% translate 'Select all claims' %}"></label></th>
+          <th scope="col">{% translate "Claimed (EVE)" %}</th><th scope="col">{% translate "Player" %}</th><th scope="col">{% translate "Lost by" %}</th><th scope="col">{% translate "Claim" %}</th><th scope="col">{% translate "Ship" %}</th><th scope="col" class="text-end">{% translate "Loss value" %}</th><th scope="col">{% translate "Category / link" %}</th><th scope="col" class="text-end">{% translate "Amount" %}</th><th scope="col">{% translate "Actions" %}</th>
+        </tr></thead>
+        <tbody>
+          {% for claim in claim_rows %}
+          <tr data-srp-claim-row>
+            <td class="fleetops-srp-check">{% if claim.payable %}<label class="fo-check-cell"><input type="checkbox" class="form-check-input" name="claim" value="{{ claim.uuid }}" data-srp-select data-srp-amount="{{ claim.approved_amount }}" aria-label="{% blocktranslate trimmed with reference=claim.reference %}Select {{ reference }}{% endblocktranslate %}"></label><input type="hidden" name="shown-{{ claim.uuid }}" value="{{ claim.approved_amount }}">{% else %}<span class="text-muted" title="{% if claim.pay_block == 'own_approval_pay' %}{% translate 'You approved this claim or changed its amount: a different payer has to pay it.' %}{% else %}{% translate 'Your own claim: another payer has to pay it.' %}{% endif %}">{% if claim.pay_block == 'own_approval_pay' %}{% translate "approved or changed by you" %}{% else %}{% translate "own" %}{% endif %}</span>{% endif %}</td>
+            <td class="text-nowrap">{{ claim.submitted_at|eve_time }}</td>
+            <td>{{ claim.pay_main_name }}</td>
+            <td class="text-nowrap">{{ claim.character_name }} <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ claim.character_name }}" hidden>{% translate "Copy" %}</button></td>
+            <td class="text-nowrap"><a href="{% url 'fleetops:srp_claim' claim.uuid %}">{{ claim.reference }}</a> <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ claim.reference }}" aria-label="{% blocktranslate trimmed with reference=claim.reference %}Copy {{ reference }}{% endblocktranslate %}" hidden>{% translate "Copy" %}</button></td>
+            <td><span class="fleetops-srp-ship-cell"><img class="fo-render" src="{% ship_render_url claim.ship_type_id 32 %}" width="32" height="32" alt="" loading="lazy"><span>{{ claim.ship_type_name|default:claim.ship_type_id }}</span></span></td>
+            <td class="text-end text-nowrap">{% if claim.loss_value is not None %}{{ claim.loss_value|isk }}{% else %}<span class="text-muted">&ndash;</span>{% endif %}</td>
+            <td>{% if claim.category_id %}{{ claim.category|srp_category_label }}{% endif %}{% if claim.link_id %}<div class="small">{{ claim.link.name|default:claim.link.code }}</div>{% elif claim.scope == "in_fleet" %}<div class="small">{{ claim.fleet_label|default:_("In fleet") }}</div>{% elif not claim.category_id %}<span class="text-muted">{% translate "Out of fleet" %}</span>{% endif %}</td>
+            <td class="text-end text-nowrap">{{ claim.approved_amount|isk }} <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ claim.approved_amount|isk_plain }}" hidden>{% translate "Copy" %}</button></td>
+            <td class="text-nowrap">
+              {% if game_character.ready %}<button type="submit" class="btn btn-sm btn-outline-secondary" formaction="{% url 'fleetops:srp_open_in_game' claim.uuid 'lost' %}" data-srp-open>{% translate "Open in game" %}</button>{% else %}<a class="small" href="#srp-game-character">{% translate "Set up opening characters in game" %}</a>{% endif %}
+              {% if claim.payable %}<button type="submit" class="btn btn-sm btn-outline-primary" name="only" value="{{ claim.uuid }}" aria-label="{% blocktranslate trimmed with reference=claim.reference %}Mark {{ reference }} paid{% endblocktranslate %}">{% translate "Paid" %}</button>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
   {% for row in pay_rows %}
   <div class="card mb-3" data-srp-group>
     <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
@@ -51,10 +94,12 @@
         <strong>{{ row.main_character_name }}</strong>
         <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.main_character_name }}" hidden>{% translate "Copy name" %}</button>
       </div>
-      <div class="d-flex align-items-center gap-2">
+      <div class="d-flex flex-wrap align-items-center gap-2">
         <span class="text-end"><span class="fo-pay-total">{{ row.total|isk }}</span>{% if payable_filtered %}<br><small class="text-muted">{% translate "total of this group by the current filters" %}</small>{% endif %}</span>
         <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.total|isk_plain }}" hidden>{% translate "Copy amount" %}</button>
         <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.main_character_name }}&#9;{{ row.total|isk_plain }}" hidden>{% translate "Copy name and amount" %}</button>
+        {% if row.claim_numbers %}<button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.claim_numbers }}" hidden>{% translate "Copy claim numbers" %}</button>{% endif %}
+        {% if game_character.ready %}<button type="submit" class="btn btn-sm btn-outline-secondary" formaction="{% url 'fleetops:srp_open_in_game' row.claims.0.uuid 'main' %}" data-srp-open>{% translate "Open in game" %}</button>{% else %}<a class="small" href="#srp-game-character">{% translate "Set up opening characters in game" %}</a>{% endif %}
       </div>
     </div>
     <div class="table-responsive">
@@ -78,6 +123,7 @@
     </div>
   </div>
   {% endfor %}
+  {% endif %}
   <div class="card fleetops-srp-paybar mb-4">
     <div class="card-body d-flex flex-wrap align-items-end gap-3">
       <div><div class="small text-muted">{% translate "Selected" %}</div><div class="fo-pay-total">{% blocktranslate trimmed %}<span data-srp-selected-count>0</span> claims &middot; <span data-srp-selected-total>0 ISK</span>{% endblocktranslate %}</div></div>
@@ -89,6 +135,31 @@
 {% else %}
 <div class="card mb-3"><div class="card-body">{% if month_filter_active %}{% blocktranslate trimmed with label=month_ref.label asvar empty_text %}Nothing waits for payment for the losses of {{ label }}.{% endblocktranslate %}{% else %}{% translate "Nothing waits for payment." as empty_text %}{% endif %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-circle-check" %}</div></div>
 {% endif %}
+
+<div class="card mb-3" id="srp-game-character">
+  <div class="card-header"><strong>{% translate "Opening characters in game" %}</strong> <span class="small text-muted">{% translate "optional" %}</span></div>
+  <div class="card-body">
+    <p class="text-muted mb-2">{% translate "The Open in game button opens a character in your EVE client. Choose one of your own characters for it. It needs a one-time authorization with the scope esi-ui.open_window.v1; nothing else is requested. If nothing opens, open any character window in the game once and try again." %}</p>
+    {% if game_character %}
+    <p class="mb-2">{% blocktranslate trimmed with name=game_character.name %}In-game character: <strong>{{ name }}</strong>{% endblocktranslate %}
+      {% if game_character.ready %}<span class="fo-pill fo-pill-ok">{% translate "ready" %}</span>{% else %}<span class="fo-pill fo-pill-warn">{% translate "needs to be added again" %}</span>{% endif %}</p>
+    {% else %}
+    <p class="mb-2 text-muted">{% translate "No in-game character chosen yet." %}</p>
+    {% endif %}
+    <div class="d-flex flex-wrap gap-2 align-items-end">
+      {% if game_characters_authorized %}<form method="post" action="{% url 'fleetops:srp_game_character' %}" class="d-flex flex-wrap gap-2 align-items-end">
+        {% csrf_token %}<input type="hidden" name="action" value="set"><input type="hidden" name="next" value="{{ next_url }}">
+        <div><label class="form-label mb-1" for="srp-game-character-select">{% translate "Authorized character" %}</label>
+          <select class="form-select" name="character_id" id="srp-game-character-select">
+            {% for character in game_characters %}{% if character.authorized %}<option value="{{ character.id }}"{% if game_character.id == character.id %} selected{% endif %}>{{ character.name }}</option>{% endif %}{% endfor %}
+          </select></div>
+        <button type="submit" class="btn btn-outline-secondary">{% translate "Use this character" %}</button>
+      </form>{% endif %}
+      <a class="btn btn-outline-primary" href="{% url 'fleetops:srp_game_character_authorize' %}">{% translate "Add and authorize a character" %}</a>
+      {% if game_character %}<form method="post" action="{% url 'fleetops:srp_game_character' %}">{% csrf_token %}<input type="hidden" name="action" value="remove"><input type="hidden" name="next" value="{{ next_url }}"><button type="submit" class="btn btn-outline-secondary">{% translate "Remove the choice" %}</button></form>{% endif %}
+    </div>
+  </div>
+</div>
 
 <div class="card mb-3" id="srp-recent-batches">
   <div class="card-header"><strong>{% translate "Recent payment batches" %}</strong> <span class="small text-muted">{% translate "last 30 days" %}</span></div>

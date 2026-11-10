@@ -2,10 +2,33 @@
 
 ## [0.3.0b2] - Unreleased
 
-Fixes from the run of 0.3.0b1 on a test site, one new SRP setting and the order of the ships of a doctrine. Install it the way you installed 0.3.0b1; read the
+Fixes from the run of 0.3.0b1 on a test site, one new SRP setting, the order of the ships of a doctrine and a payment page that is easier for the people who pay. Install it the way you installed 0.3.0b1; read the
 upgrade notes and the rollback notes below first.
 
 ### Added
+
+- **SRP payments, by claim.** The payments page has a switch **By player** / **By claim**. **By player** is the page as
+  it was. **By claim** lists one row per claim that waits for payment: when it was claimed, the player, the character
+  that lost the ship, the claim number, the ship, the value of the loss, the category or link, the amount to pay and the
+  buttons **Copy**, **Open in game** and **Paid**. **Paid** pays that one claim (a payment batch of one claim) with the
+  same rules as every other payment: not your own claim, not a claim you approved while the four-eyes rule is on, and
+  the same payment note, audit entry and member notice. The filters, the exports, the totals and **Mark selected paid**
+  work in both views. **By claim** is one flat list, the oldest claim first. The switch buttons save the payer's choice with a POST; a `?view=` link only shows that view once and writes nothing. Every payer's last choice is remembered; anybody who never chose sees **By player**, as before.
+- **Claim numbers for the transfer reason.** The claim number (`SRP-123`) is the code to type in the reason of the
+  ISK transfer in game. **By claim** has a copy button next to every number and every player card of **By player** has
+  **Copy claim numbers**, which copies the numbers of the claims of that card that you can pay, separated by spaces
+  (`SRP-123 SRP-124`). EVE's limit for the length of the reason is not documented anywhere FleetOps could check, so
+  nothing is cut or counted: with very many claims the game may cut the text, and paying claim by claim is the safe
+  way.
+- **Open in game** (optional). Each payer can choose one of their own characters as their **in-game character** in the
+  new box **Opening characters in game** of the payments page. The buttons **Open in game** then open the character that
+  lost the ship (**By claim**) or the main character of the player (**By player**) in the EVE client of that character.
+  Adding the character asks for one new scope, `esi-ui.open_window.v1`, only at that moment and only from the payer who
+  adds it; payers who do not use the button are never asked and nothing else changes. Without the scope on the EVE
+  application of your site the authorization fails with a clear message and everything else works. The button works
+  only for the claims of the payments page (waiting for payment, or paid in the last 30 days) and never takes a
+  character number from the request. If nothing opens in the game, open any character window once and try again. A
+  click is not a data change: it writes no audit entry.
 
 - **Doctrine Ship Order** (Administration). For a doctrine of a doctrine app such as Fittings an administrator can store
   the order in which its ships are listed in pings and MOTDs, with a mark between every two ships: `>` (higher
@@ -70,18 +93,23 @@ upgrade notes and the rollback notes below first.
 ### Upgrade notes
 
 1. Back up the database and upgrade the package as for any release.
-2. Run `python manage.py migrate fleetops`. It applies `0040`, which adds the new SRP setting (off), and `0041`, which creates the table for the ship orders (empty, so every doctrine keeps its automatic order, now with each ship once). It changes no data.
+2. Run `python manage.py migrate fleetops`. It applies `0040`, which adds the new SRP setting (off), `0041`, which creates the table for the ship orders (empty, so every doctrine keeps its automatic order, now with each ship once), and `0042`, which creates the table of the payers' choices (the view of the payments page and the in-game character; empty, so every payer starts with **By player**). It changes no data.
 3. Collect the static files (`python manage.py collectstatic --noinput`): the style sheet changed.
-4. Nothing else needs to be done. If the SRP settings page now shows the warning about a missing category, turn off
+4. Optional: to use **Open in game**, add the scope `esi-ui.open_window.v1` to the EVE application of your site (the one
+   that belongs to `ESI_SSO_CLIENT_ID`) before a payer adds an in-game character. Without it only that authorization
+   fails; nothing else needs the scope.
+5. Nothing else needs to be done. If the SRP settings page now shows the warning about a missing category, turn off
    **Members must choose a category for losses outside a fleet**, choose a default category, or make a category
    choosable by members.
 
 ### Rollback notes
 
-- `python manage.py migrate fleetops 0039` undoes `0041` (drops the table of the stored ship orders; the doctrines are
-  listed in their own order again) and `0040` (drops the new setting); the guard of `0041` runs first and refuses a way
-  back below `0035` as before (see the rollback notes of 0.3.0b1, which apply unchanged). Going back to a 0.3.0b1
-  install after that needs no further step.
+- `python manage.py migrate fleetops 0039` undoes `0042` (drops the table of the payers' choices, so every payer
+  starts with **By player** again and has to choose the in-game character again), `0041` (drops the table of the stored
+  ship orders; the doctrines are listed in their own order again) and `0040` (drops the new setting); the guard of `0042`
+  runs first and refuses a way back below `0035` as before (see the rollback notes of 0.3.0b1, which apply unchanged).
+  Going back to a 0.3.0b1 install after that needs no further step. The ESI tokens that were added for **Open in
+  game** stay in django-esi; remove them in Alliance Auth if you want them gone.
 
 ## [0.3.0b1] - 2026-11-08
 

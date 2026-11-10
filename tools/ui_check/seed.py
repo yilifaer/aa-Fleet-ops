@@ -146,7 +146,9 @@ def build_pages():
         Page("history-alliance", "stats", u("attendance_history_alliance")),
         # srp
         Page("srp-review", "srp", u("srp_review")),
-        Page("srp-payments", "srp", u("srp_payments")),
+        Page("srp-payments", "srp", u("srp_payments", query="?view=player")),
+        # 0.3.0b2: one row per claim, with the claim numbers, Open in game and the Paid button.
+        Page("srp-payments-claim", "srp", u("srp_payments", query="?view=claim")),
         Page("srp-summary", "srp", u("srp_summary")),
         Page("srp-reports", "srp", u("srp_reports")),
         Page("srp-reports-categories", "srp", u("srp_reports", query="?report=categories&preset=last_12")),
@@ -587,6 +589,16 @@ def build_data(login_count):
     f.claim_event(pending_two, m.SrpClaimEvent.Action.SUBMIT, actor=users["pilot02"])
     approved = f.srp_claim(users["pilot03"], status=m.SrpClaim.Status.APPROVED, amount=20_000_000, decided_by=users["srp"])
     f.claim_event(approved, m.SrpClaimEvent.Action.APPROVE, actor=users["srp"], amount=20_000_000)
+    # More claims to pay (the payments page by claim), one of them lost by an alternate character, and the in-game
+    # character of the payer for the Open in game buttons (with the optional scope).
+    f.srp_claim(users["pilot03"], character=f.add_alt(users["pilot03"], "Example Pilot Three Alt"),
+                status=m.SrpClaim.Status.APPROVED, amount=35_000_000, decided_by=users["srp"], loss_value=410_000_000)
+    f.srp_claim(users["pilot02"], status=m.SrpClaim.Status.APPROVED, amount=12_500_000, decided_by=users["srp"])
+    payer_character = f.main_of(users["srp"])
+    f.add_token(users["srp"], payer_character, scopes=["esi-ui.open_window.v1"])
+    m.SrpPayerSetting.objects.create(
+        user=users["srp"], game_character_id=payer_character.character_id, game_character_name=payer_character.character_name
+    )
     ctx.claim_paid = f.srp_claim(member, character=victims[1], status=m.SrpClaim.Status.PAID, amount=20_000_000,
                                  decided_by=users["srp"])
     f.claim_event(ctx.claim_paid, m.SrpClaimEvent.Action.SUBMIT, actor=member)

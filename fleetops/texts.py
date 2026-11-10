@@ -594,6 +594,10 @@ ESI_TOKEN_REFRESH_FAILED = StoredText(
 ESI_NO_SCOPED_TOKEN = StoredText(
     gettext_noop("No valid ESI token with the required scopes was found for this character.")
 )
+OPEN_WINDOW_FAILED = StoredText(gettext_noop("Could not open the window in the game: %(detail)s"), nested=("detail",))
+OPEN_WINDOW_DENIED = StoredText(
+    gettext_noop("ESI denied opening a window for this character: %(detail)s"), nested=("detail",)
+)
 NOT_IN_FLEET = StoredText(gettext_noop("Character is currently not in a fleet."))
 DETECT_FAILED = StoredText(gettext_noop("Could not detect fleet: %(detail)s"), nested=("detail",))
 DETECT_DENIED = StoredText(gettext_noop("ESI denied access to this character's fleet: %(detail)s"), nested=("detail",))

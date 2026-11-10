@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-10 04:14+0000\n"
+"POT-Creation-Date: 2026-11-10 07:02+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -1466,7 +1466,7 @@ msgstr "已通过"
 #: forms_srp.py models.py templates/fleetops/operation/_srp.html
 #: templates/fleetops/srp/_summary_table.html templates/fleetops/srp/claim.html
 #: templates/fleetops/srp/home.html templates/fleetops/srp/links.html
-#: templates/fleetops/srp/reports.html
+#: templates/fleetops/srp/payments.html templates/fleetops/srp/reports.html
 msgid "Paid"
 msgstr "已付款"
 
@@ -4321,7 +4321,7 @@ msgid "Corporation ticker"
 msgstr "军团简称"
 
 #: models.py templates/fleetops/srp/_calculation.html
-#: templates/fleetops/srp/claim.html
+#: templates/fleetops/srp/claim.html templates/fleetops/srp/payments.html
 msgid "Loss value"
 msgstr "损失价值"
 
@@ -4618,6 +4618,26 @@ msgstr "教义舰船顺序"
 #: models.py
 msgid "doctrine ship orders"
 msgstr "教义舰船顺序"
+
+#: models.py
+msgid "Payment view"
+msgstr "付款视图"
+
+#: models.py
+msgid "In-game character ID"
+msgstr "游戏内角色 ID"
+
+#: models.py
+msgid "In-game character name"
+msgstr "游戏内角色名称"
+
+#: models.py
+msgid "SRP payer setting"
+msgstr "SRP 付款人设置"
+
+#: models.py
+msgid "SRP payer settings"
+msgstr "SRP 付款人设置"
 
 #: providers/srp.py
 msgid "enabled"
@@ -6857,6 +6877,7 @@ msgstr "顺序"
 #: templates/fleetops/configuration/doctrine_orders.html
 #: templates/fleetops/configuration/list.html
 #: templates/fleetops/operation/_fleet_member_actions.html
+#: templates/fleetops/srp/payments.html
 msgid "Actions"
 msgstr "操作"
 
@@ -9796,6 +9817,7 @@ msgid "Value"
 msgstr "价值"
 
 #: templates/fleetops/srp/_claims_table.html
+#: templates/fleetops/srp/payments.html
 msgid "Category / link"
 msgstr "类别 / 链接"
 
@@ -10982,6 +11004,68 @@ msgid "Paid in the dates below"
 msgstr "在下列日期内已付款"
 
 #: templates/fleetops/srp/payments.html
+msgid "Show the claims"
+msgstr "显示申请"
+
+#: templates/fleetops/srp/payments.html
+msgid "By player"
+msgstr "按玩家"
+
+#: templates/fleetops/srp/payments.html
+msgid "By claim"
+msgstr "按申请"
+
+#: templates/fleetops/srp/payments.html
+msgid "Your choice is remembered."
+msgstr "你的选择会被记住。"
+
+#: templates/fleetops/srp/payments.html
+msgid "Select all claims"
+msgstr "全选申请"
+
+#: templates/fleetops/srp/payments.html
+msgid "Claimed (EVE)"
+msgstr "申请时间（EVE）"
+
+#: templates/fleetops/srp/payments.html
+msgid "Player"
+msgstr "玩家"
+
+#: templates/fleetops/srp/payments.html
+msgid "Lost by"
+msgstr "损失角色"
+
+#: templates/fleetops/srp/payments.html
+msgid "You approved this claim or changed its amount: a different payer has to pay it."
+msgstr "这条申请是你批准或修改过金额的：必须由另一位付款人支付。"
+
+#: templates/fleetops/srp/payments.html
+msgid "Your own claim: another payer has to pay it."
+msgstr "你自己的申请：必须由另一位付款人支付。"
+
+#: templates/fleetops/srp/payments.html
+msgid "approved or changed by you"
+msgstr "你批准或修改过金额的"
+
+#: templates/fleetops/srp/payments.html
+#, python-format
+msgid "Copy %(reference)s"
+msgstr "复制 %(reference)s"
+
+#: templates/fleetops/srp/payments.html
+msgid "Open in game"
+msgstr "在游戏中打开"
+
+#: templates/fleetops/srp/payments.html
+msgid "Set up opening characters in game"
+msgstr "设置游戏内打开角色"
+
+#: templates/fleetops/srp/payments.html
+#, python-format
+msgid "Mark %(reference)s paid"
+msgstr "将 %(reference)s 标记为已付款"
+
+#: templates/fleetops/srp/payments.html
 #, python-format
 msgid "Select all claims of %(name)s"
 msgstr "选择 %(name)s 的所有申请"
@@ -10999,16 +11083,8 @@ msgid "Copy name and amount"
 msgstr "复制名字和金额"
 
 #: templates/fleetops/srp/payments.html
-msgid "You approved this claim or changed its amount: a different payer has to pay it."
-msgstr "这条申请是你批准或修改过金额的：必须由另一位付款人支付。"
-
-#: templates/fleetops/srp/payments.html
-msgid "Your own claim: another payer has to pay it."
-msgstr "你自己的申请：必须由另一位付款人支付。"
-
-#: templates/fleetops/srp/payments.html
-msgid "approved or changed by you"
-msgstr "你批准或修改过金额的"
+msgid "Copy claim numbers"
+msgstr "复制申请编号"
 
 #: templates/fleetops/srp/payments.html
 msgid "Selected"
@@ -11030,6 +11106,51 @@ msgstr "%(label)s 的损失没有待付款项。"
 #: templates/fleetops/srp/payments.html
 msgid "Nothing waits for payment."
 msgstr "没有待付款项。"
+
+#: templates/fleetops/srp/payments.html
+msgid "Opening characters in game"
+msgstr "游戏内打开角色"
+
+#: templates/fleetops/srp/payments.html
+msgid "optional"
+msgstr "可选"
+
+#: templates/fleetops/srp/payments.html
+msgid "The Open in game button opens a character in your EVE client. Choose one of your own characters for it. It needs a one-time authorization with the scope esi-ui.open_window.v1; nothing else is requested. If nothing opens, open any character window in the game once and try again."
+msgstr "“在游戏中打开”按钮会在你的 EVE 客户端里打开一个角色的信息窗口。请选择你自己的一个角色来执行。它需要一次性授权权限范围 esi-ui.open_window.v1，不会请求其他权限。如果什么都没有打开，请先在游戏里随便打开一个角色信息窗口，再试一次。"
+
+#: templates/fleetops/srp/payments.html
+#, python-format
+msgid "In-game character: <strong>%(name)s</strong>"
+msgstr "游戏内角色：<strong>%(name)s</strong>"
+
+#: templates/fleetops/srp/payments.html
+msgid "ready"
+msgstr "可用"
+
+#: templates/fleetops/srp/payments.html
+msgid "needs to be added again"
+msgstr "需要重新添加"
+
+#: templates/fleetops/srp/payments.html
+msgid "No in-game character chosen yet."
+msgstr "还没有选择游戏内角色。"
+
+#: templates/fleetops/srp/payments.html
+msgid "Authorized character"
+msgstr "已授权的角色"
+
+#: templates/fleetops/srp/payments.html
+msgid "Use this character"
+msgstr "使用这个角色"
+
+#: templates/fleetops/srp/payments.html
+msgid "Add and authorize a character"
+msgstr "添加并授权角色"
+
+#: templates/fleetops/srp/payments.html
+msgid "Remove the choice"
+msgstr "移除所选角色"
 
 #: templates/fleetops/srp/payments.html
 msgid "Recent payment batches"
@@ -12053,6 +12174,16 @@ msgstr "无法刷新该角色的 ESI 令牌（%(error_type)s）。请稍后重�
 #: texts.py
 msgid "No valid ESI token with the required scopes was found for this character."
 msgstr "没有找到该角色带有所需权限范围的有效 ESI 令牌。"
+
+#: texts.py
+#, python-format
+msgid "Could not open the window in the game: %(detail)s"
+msgstr "无法在游戏中打开窗口：%(detail)s"
+
+#: texts.py
+#, python-format
+msgid "ESI denied opening a window for this character: %(detail)s"
+msgstr "ESI 拒绝为这个角色打开窗口：%(detail)s"
 
 #: texts.py
 msgid "Character is currently not in a fleet."
@@ -15277,6 +15408,54 @@ msgstr "类别（不在舰队内）"
 #, python-format
 msgid "%(reference)s changed. A reviewer will decide on it."
 msgstr "%(reference)s 已修改。审核人会处理它。"
+
+#: views_srp_ingame.py
+msgid "Choose your in-game character first (Opening characters in game, on the payments page)."
+msgstr "请先选择你的游戏内角色（付款页面上的“游戏内打开角色”）。"
+
+#: views_srp_ingame.py
+#, python-format
+msgid "The token of %(character)s is missing or has expired. Add the character again."
+msgstr "%(character)s 的令牌缺失或已过期。请重新添加这个角色。"
+
+#: views_srp_ingame.py
+#, python-format
+msgid "EVE refused the request for %(character)s. Add the character again."
+msgstr "EVE 拒绝了 %(character)s 的请求。请重新添加这个角色。"
+
+#: views_srp_ingame.py
+#, python-format
+msgid "Sent to the game client of %(character)s. If nothing opens, the client must be running and logged in with that character."
+msgstr "已发送到 %(character)s 的游戏客户端。如果什么都没有打开，客户端必须正在运行，并且已用该角色登录。"
+
+#: views_srp_ingame.py
+msgid "The character could not be authorized. If EVE reports an invalid scope, ask an administrator to add the scope esi-ui.open_window.v1 to the EVE developer application (the scope is optional and only needed for the Open in game button)."
+msgstr "无法授权这个角色。如果 EVE 提示权限范围无效，请管理员在 EVE 开发者应用里加上 esi-ui.open_window.v1（这个权限是可选的，只用于“在游戏中打开”按钮）。"
+
+#: views_srp_ingame.py
+msgid "That character is not on your account. It was not added."
+msgstr "该角色不在你的账号下，没有被添加。"
+
+#: views_srp_ingame.py
+msgid "The character is authorized. Choose it as your in-game character in the box Opening characters in game."
+msgstr "角色已授权。请在“游戏内打开角色”框里把它选为你的游戏内角色。"
+
+#: views_srp_ingame.py
+msgid "The in-game character was removed. Your tokens were not touched."
+msgstr "已移除游戏内角色。你的令牌没有被改动。"
+
+#: views_srp_ingame.py
+msgid "Choose one of your own characters."
+msgstr "请选择你自己的一个角色。"
+
+#: views_srp_ingame.py
+msgid "That character has no authorization for this yet. Add it first."
+msgstr "这个角色还没有为此授权。请先添加它。"
+
+#: views_srp_ingame.py
+#, python-format
+msgid "%(character)s is your in-game character."
+msgstr "%(character)s 现在是你的游戏内角色。"
 
 #: views_srp_links.py
 msgid "This category has a link of the day for this date already."
