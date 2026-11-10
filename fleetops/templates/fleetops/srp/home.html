@@ -15,6 +15,12 @@
   <div class="small">{% translate "You can still withdraw claims that are waiting for a decision." %}</div>
 </div>
 {% endif %}
+{% if category_dead_end %}
+<div class="alert alert-warning" role="alert" id="srp-category-dead-end">
+  <div>{% translate "No category can be chosen for a loss outside a fleet right now. Ask an SRP manager to change the SRP settings." %}</div>
+  {% if can_fix_settings %}<div class="small mt-1">{% translate "Fix: turn off “Members must choose a category for losses outside a fleet”, choose a default category, or make an active category choosable by members." %} <a href="{% url 'fleetops:configuration_list' 'srp' %}">{% translate "SRP Settings" %}</a></div>{% endif %}
+</div>
+{% endif %}
 {% include "fleetops/month_selector.html" %}
 {% if srp_settings.member_instructions %}<div class="alert alert-secondary">{{ srp_settings.member_instructions|linebreaksbr }}</div>{% endif %}
 {% include "fleetops/srp/_not_covered.html" %}

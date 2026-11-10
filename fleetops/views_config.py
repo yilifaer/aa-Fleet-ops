@@ -62,6 +62,8 @@ from fleetops.services.audit import audit, cascaded_config_rows, config_snapshot
 from fleetops.services.fleet_rules import FleetRuleError, parse_fleet_roles
 from fleetops.services.mentions import role_delete_refusal
 from fleetops.srp import access as srp_access
+from fleetops.srp import categories as srp_categories
+from fleetops.srp import discovery as srp_discovery
 from fleetops.srp import display as srp_display
 from fleetops.srp import policy as srp_policy
 from fleetops.texts import FLEET_ROLE_LABELS
@@ -538,6 +540,9 @@ def _delete_refusal(obj):
             return texts.translate_stored(texts.SRP_CATEGORY_DELETE_SYSTEM())
         if SrpClaim.objects.filter(category=obj).exists() or SrpPayoutRule.objects.filter(category=obj).exists():
             return texts.translate_stored(texts.SRP_CATEGORY_DELETE_USED())
+        srp = SrpSettings.get_solo()
+        if srp.out_of_fleet_dead_end(category=obj, deleted=True) and not srp.out_of_fleet_dead_end():
+            return texts.translate_stored(texts.SRP_CATEGORY_DELETE_LAST())
     return ""
 
 
@@ -634,6 +639,9 @@ def configuration_srp(request):
                 config_snapshot(obj),
                 reason=texts.AUDIT_CONFIG_UPDATED(),
             )
+            if "claim_deadline_days" in old:
+                # A longer claim deadline brings back the losses that were marked too old.
+                srp_discovery.reopen_old_losses(old["claim_deadline_days"], obj.claim_deadline_days)
             messages.success(request, _("SRP settings updated."))
             for warning in form.warnings:
                 messages.warning(request, warning)
@@ -653,6 +661,7 @@ def configuration_srp(request):
             "settings_obj": obj,
             "fleetops_settings": fleetops_settings,
             # Fleets get their SRP link from another SRP app, so FleetOps SRP is not offered at their start.
+            "category_dead_end": srp_categories.has_dead_end(SrpSettings.get_solo()),
             "provider_elsewhere": fleetops_settings.srp_provider.strip() not in ("auto", "fleetops", ""),
             **_outdated_claims_context(request),
         },

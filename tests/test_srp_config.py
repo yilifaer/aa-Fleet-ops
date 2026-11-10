@@ -9,7 +9,7 @@ from unittest import mock
 
 from allianceauth.eveonline.models import EveCorporationInfo
 from django.contrib.messages import get_messages
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.test import TestCase
 from django.urls import reverse
 
@@ -1346,3 +1346,186 @@ class MemberEditAndInsuranceSettingsTests(TestCase):
         page = self.client.get(self.url)
         for name in ("member_edit_enabled", "member_swap_loss_enabled", "show_insurance", "insurance_level", "review_history_days"):
             self.assertContains(page, f'name="{name}"')
+
+
+class DeadEndCategorySettingsTests(TestCase):
+    """The settings and category pages refuse a configuration in which nobody can submit a loss outside a fleet."""
+
+    def setUp(self):
+        self.admin = f.create_user("dead_end_admin", perms=CONFIG_PERMS + f.SRP_MEMBER_PERMS)
+        self.client.force_login(self.admin)
+        self.url = reverse("fleetops:configuration_list", args=["srp"])
+
+    def test_required_without_default_and_choosable_category_is_refused(self):
+        response = self.client.post(self.url, settings_post(out_of_fleet_category_required="on"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("out_of_fleet_category_required", response.context["form"].errors)
+        self.assertContains(response, "Turn this setting off, choose a default category")
+        self.assertFalse(SrpSettings.get_solo().out_of_fleet_category_required)
+
+    def test_each_way_out_is_accepted(self):
+        solo = f.srp_category("Solo PVP")
+        # a default category
+        ok = self.client.post(self.url, settings_post(out_of_fleet_category_required="on", default_category=solo.pk))
+        self.assertEqual(ok.status_code, 302)
+        # a choosable category without a default
+        ok = self.client.post(self.url, settings_post(out_of_fleet_category_required="on"))
+        self.assertEqual(ok.status_code, 302)
+        # the requirement off
+        solo.delete()
+        ok = self.client.post(self.url, settings_post())
+        self.assertEqual(ok.status_code, 302)
+
+    def test_the_last_choosable_category_cannot_be_deactivated_or_hidden(self):
+        solo = f.srp_category("Solo PVP")
+        f.srp_settings(out_of_fleet_category_required=True)
+        edit = reverse("fleetops:configuration_edit", args=["srp-categories", solo.pk])
+        base = {"name": "Solo PVP", "key": solo.key, "member_selectable": "on", "loss_cap_mode": solo.loss_cap_mode,
+                "percentage": "", "sort_order": "0", "is_active": "on", "daily_link_name": ""}
+
+        inactive = self.client.post(edit, {**base, "is_active": ""})
+        hidden = self.client.post(edit, {**base, "member_selectable": ""})
+        unchanged = self.client.post(edit, {**base, "name": "Solo PVP 2"})
+
+        self.assertEqual(inactive.status_code, 200)
+        self.assertIn("is_active", inactive.context["form"].errors)
+        self.assertEqual(hidden.status_code, 200)
+        self.assertIn("member_selectable", hidden.context["form"].errors)
+        self.assertEqual(unchanged.status_code, 302)
+        solo.refresh_from_db()
+        self.assertTrue(solo.is_active)
+        self.assertTrue(solo.member_selectable)
+
+    def test_a_category_can_go_when_another_one_or_a_default_remains(self):
+        first = f.srp_category("Solo PVP")
+        second = f.srp_category("Roams")
+        f.srp_settings(out_of_fleet_category_required=True)
+
+        first.is_active = False
+        first.full_clean()  # the second one is still there
+        first.save()
+        second.is_active = False
+        with self.assertRaises(ValidationError):
+            second.full_clean()
+
+    def test_the_last_choosable_category_cannot_be_deleted(self):
+        solo = f.srp_category("Solo PVP")
+        f.srp_settings(out_of_fleet_category_required=True)
+        delete = reverse("fleetops:configuration_delete", args=["srp-categories", solo.pk])
+
+        response = self.client.post(delete)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(SrpCategory.objects.filter(pk=solo.pk).exists())
+        self.assertTrue(any("last category" in m for m in messages_of(response)))
+        f.srp_settings(out_of_fleet_category_required=False)
+        self.client.post(delete)
+        self.assertFalse(SrpCategory.objects.filter(pk=solo.pk).exists())
+
+    def test_a_default_category_keeps_the_last_one_deletable_only_while_it_is_not_the_default(self):
+        solo = f.srp_category("Solo PVP")
+        f.srp_settings(out_of_fleet_category_required=True, default_category=solo)
+
+        # The default is the last choosable category: removing it leaves nothing.
+        self.assertTrue(SrpSettings.get_solo().out_of_fleet_dead_end(category=solo, deleted=True))
+        other = f.srp_category("Roams")
+        self.assertFalse(SrpSettings.get_solo().out_of_fleet_dead_end(category=solo, deleted=True))
+        other.delete()
+
+    def test_existing_dead_end_shows_a_warning_to_managers_and_a_clear_message_to_members(self):
+        f.srp_settings(out_of_fleet_category_required=True)
+        member = f.create_user("dead_end_member", perms=f.SRP_MEMBER_PERMS)
+
+        settings_page = self.client.get(self.url)
+        self.assertContains(settings_page, 'id="srp-category-dead-end"')
+
+        home = self.client.get(reverse("fleetops:srp_home"))
+        self.assertContains(home, "Fix: turn off")
+
+        self.client.force_login(member)
+        home = self.client.get(reverse("fleetops:srp_home"))
+        self.assertContains(home, 'id="srp-category-dead-end"')
+        self.assertNotContains(home, "Fix: turn off")
+        checked = self.client.post(reverse("fleetops:srp_check"), {"killmail": "12345 abcdef"})
+        self.assertContains(checked, "No category can be chosen for a loss outside a fleet")
+        self.assertNotContains(checked, "Choose a category</")
+
+
+class DeadEndGuardRefinementTests(TestCase):
+    """The dead-end checks only look at what a save makes worse, and only while losses outside a fleet are on."""
+
+    def setUp(self):
+        self.admin = f.create_user("dead_end_refine_admin", perms=CONFIG_PERMS + f.SRP_MEMBER_PERMS)
+        self.client.force_login(self.admin)
+        self.url = reverse("fleetops:configuration_list", args=["srp"])
+
+    def test_nothing_is_a_dead_end_while_losses_outside_a_fleet_are_off(self):
+        f.srp_settings(out_of_fleet_category_required=True, out_of_fleet_enabled=False)
+
+        self.assertFalse(SrpSettings.get_solo().out_of_fleet_dead_end())
+        saved = self.client.post(
+            self.url, settings_post(out_of_fleet_category_required="on", out_of_fleet_enabled="")
+        )
+        self.assertEqual(saved.status_code, 302)
+        page = self.client.get(self.url)
+        self.assertNotContains(page, 'id="srp-category-dead-end"')
+
+    def test_the_last_category_can_go_while_losses_outside_a_fleet_are_off(self):
+        solo = f.srp_category("Solo PVP")
+        f.srp_settings(out_of_fleet_category_required=True, out_of_fleet_enabled=False)
+
+        solo.is_active = False
+        solo.full_clean()
+
+    def test_an_unrelated_edit_of_a_category_is_allowed_on_a_site_in_the_dead_end_already(self):
+        hidden = f.srp_category("Logi", member_selectable=False)
+        f.srp_settings(out_of_fleet_category_required=True)
+        self.assertTrue(SrpSettings.get_solo().out_of_fleet_dead_end())
+
+        hidden.name = "Logi renamed"
+        hidden.percentage = 50
+        hidden.full_clean()
+        hidden.is_active = True
+        hidden.full_clean()
+
+    def test_an_edit_that_creates_the_dead_end_is_still_refused(self):
+        solo = f.srp_category("Solo PVP")
+        f.srp_settings(out_of_fleet_category_required=True)
+
+        solo.member_selectable = False
+        with self.assertRaises(ValidationError):
+            solo.full_clean()
+
+    def test_the_admin_refuses_to_delete_the_last_choosable_category(self):
+        from django.contrib.admin.sites import site
+
+        solo = f.srp_category("Solo PVP")
+        f.srp_settings(out_of_fleet_category_required=True)
+        model_admin = site._registry[SrpCategory]
+        request = mock.Mock(user=self.admin)
+
+        self.assertFalse(model_admin.has_delete_permission(request, solo))
+        with self.assertRaises(PermissionDenied):
+            model_admin.delete_model(request, solo)
+        model_admin.message_user = mock.Mock()
+        model_admin.delete_queryset(request, SrpCategory.objects.filter(pk=solo.pk))
+        self.assertTrue(SrpCategory.objects.filter(pk=solo.pk).exists())
+        model_admin.message_user.assert_called_once()
+
+    def test_the_admin_bulk_delete_looks_at_the_whole_selection(self):
+        from django.contrib.admin.sites import site
+
+        first = f.srp_category("Solo PVP")
+        second = f.srp_category("Roams")
+        f.srp_settings(out_of_fleet_category_required=True)
+        model_admin = site._registry[SrpCategory]
+        request = mock.Mock(user=self.admin)
+        model_admin.message_user = mock.Mock()
+
+        model_admin.delete_queryset(request, SrpCategory.objects.filter(pk__in=[first.pk, second.pk]))
+        self.assertEqual(SrpCategory.objects.filter(pk__in=[first.pk, second.pk]).count(), 2)
+
+        model_admin.delete_queryset(request, SrpCategory.objects.filter(pk=first.pk))
+        self.assertFalse(SrpCategory.objects.filter(pk=first.pk).exists())
+        self.assertTrue(SrpCategory.objects.filter(pk=second.pk).exists())

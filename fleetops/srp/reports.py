@@ -33,7 +33,7 @@ DATETIME = "datetime"
 
 # Rows of a list report (rejections, payments) on the page; the files take up to their own limit.
 PAGE_LIST_LIMIT = 2000
-TOTAL = gettext_lazy("Total")
+TOTAL = pgettext_lazy("FleetOps", "Total")
 
 
 @dataclass(frozen=True, slots=True)

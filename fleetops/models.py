@@ -1896,6 +1896,12 @@ class SrpCategory(models.Model):
     def __str__(self):
         return translate_stored(self.name)
 
+    def _makes_dead_end(self) -> bool:
+        """True when saving this category as it is now leaves members without a category to choose, and the
+        settings were not in that state already (an edit that changes nothing for members is always allowed)."""
+        srp = SrpSettings.get_solo()
+        return srp.out_of_fleet_dead_end(category=self) and not srp.out_of_fleet_dead_end()
+
     def clean(self):
         super().clean()
         errors = {}
@@ -1906,6 +1912,13 @@ class SrpCategory(models.Model):
                 errors["key"] = _("The key of the built-in category cannot be changed.")
             if self.member_selectable:
                 errors["member_selectable"] = _("Members cannot choose the built-in category.")
+        if self.pk is not None and not self.is_system and self._makes_dead_end():
+            # Saving this category as it is now would leave members without any category to choose.
+            field = "is_active" if not self.is_active else "member_selectable"
+            errors[field] = _(
+                "This is the last category that members can choose, and the SRP settings require a category for "
+                "a loss outside a fleet. Choose another default category or turn that requirement off first."
+            )
         if self.loss_cap_mode == self.LossCapMode.CUSTOM:
             if self.loss_cap is None:
                 errors["loss_cap"] = _("Enter the per-loss cap.")
@@ -2218,6 +2231,14 @@ class SrpSettings(models.Model):
         default=True,
         help_text=_("Send an Alliance Auth notification when a claim is decided or paid."),
     )
+    notify_on_unpaid = models.BooleanField(
+        _("Notify members when a payment is undone"),
+        default=False,
+        help_text=_(
+            "Tell the member with an Alliance Auth notification, with the reason given, when a payment is undone. "
+            "Only works while “Notify members” is also on."
+        ),
+    )
     member_instructions = models.TextField(
         verbose_name=_("Member instructions"),
         blank=True,
@@ -2233,6 +2254,38 @@ class SrpSettings(models.Model):
     def __str__(self):
         return gettext("FleetOps SRP Settings")
 
+    def out_of_fleet_dead_end(self, *, category=None, deleted=False, removed=()) -> bool:
+        """True when a category is required for a loss outside a fleet but no category can be used for it.
+
+        With ``category`` the answer is for the state after that category is saved as it is now (an unsaved
+        change of an existing category), or, with ``deleted``, after it is deleted. ``removed`` lists the primary keys
+        of further categories that are deleted together with it (a bulk delete in the admin).
+        """
+        if not self.out_of_fleet_category_required or not self.out_of_fleet_enabled:
+            # Without a requirement, or with losses outside a fleet switched off, no category is ever asked for.
+            return False
+
+        removed = set(removed)
+
+        def usable(candidate):
+            if candidate is None or candidate.pk in removed:
+                return False
+            if category is not None and candidate.pk == category.pk:
+                return not deleted and candidate is category and category.is_active and category.member_selectable
+            return candidate.is_active and candidate.member_selectable
+
+        default = None
+        if self.default_category_id is not None:
+            default = category if category is not None and category.pk == self.default_category_id else self.default_category
+        if usable(default):
+            return False
+        others = SrpCategory.objects.filter(is_active=True, member_selectable=True).exclude(pk__in=removed)
+        if category is not None and category.pk is not None:
+            others = others.exclude(pk=category.pk)
+        if others.exists():
+            return False
+        return not (category is not None and not deleted and usable(category))
+
     def clean(self):
         super().clean()
         if not self.zkillboard_enabled and self.value_source != self.ValueSource.ESI_ESTIMATE:
@@ -2242,6 +2295,16 @@ class SrpSettings(models.Model):
         category = self.default_category
         if category is not None and not (category.is_active and category.member_selectable):
             raise ValidationError({"default_category": _("Choose an active category that members can choose.")})
+        if self.out_of_fleet_dead_end():
+            raise ValidationError(
+                {
+                    "out_of_fleet_category_required": _(
+                        "Members would have no way to submit a loss outside a fleet: a category is required, but there "
+                        "is no default category and no active category that members can choose. Turn this setting "
+                        "off, choose a default category, or make at least one active category choosable by members."
+                    )
+                }
+            )
         if self.ban_default_days and self.ban_max_days and self.ban_default_days > self.ban_max_days:
             raise ValidationError(
                 {"ban_default_days": _("The default length cannot be longer than the longest ban.")}

@@ -35,6 +35,11 @@ def group_deleted(sender, instance, **kwargs):
     """
     if not isinstance(instance, Group) or instance.pk is None:
         return
+    # Alliance Auth's group admin sends the signal a second time for the same object, with the base group as the
+    # sender, so a deletion in the admin would reach this receiver twice; one deletion is one entry.
+    if getattr(instance, "_fleetops_group_deleted", False):
+        return
+    instance._fleetops_group_deleted = True
     from fleetops import texts
     from fleetops.models import AuditLog, DiscordWebhook, GroupAccess
     from fleetops.services.audit import config_snapshot

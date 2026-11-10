@@ -21,7 +21,6 @@ from django.db.models import Q
 from django.utils import timezone
 
 from fleetops import texts
-from fleetops.constants import PING_COOLDOWN_SECONDS
 from fleetops.models import DiscordWebhook, StandalonePing
 from fleetops.providers.pings import PingResult, send_discord_webhook
 from fleetops.services import group_access
@@ -117,23 +116,11 @@ def ping_refusal(user, channel, group) -> str:
 
 
 def cooldown_problem(channel, *, now=None) -> str:
-    """The cooldown text when ``channel`` received a ping without a fleet less than the cooldown ago; else ""."""
-    now = now or timezone.now()
-    last = (
-        StandalonePing.objects.filter(
-            channel_id=channel.pk,
-            status__in=(StandalonePing.Status.PENDING, StandalonePing.Status.SENT),
-            created_at__gt=now - timedelta(seconds=PING_COOLDOWN_SECONDS),
-        )
-        .order_by("-created_at")
-        .values_list("created_at", flat=True)
-        .first()
-    )
-    if last is None:
-        return ""
-    seconds = max(0, int((now - last).total_seconds()))
-    wait = max(1, PING_COOLDOWN_SECONDS - seconds)
-    return texts.PING_COOLDOWN(name=channel.name, seconds=seconds, wait=wait)
+    """The cooldown text when ``channel`` received a ping, of a fleet or without one, less than the cooldown ago;
+    else "". One cooldown per channel, shared with the fleet pings."""
+    from fleetops.services.operations import ping_cooldown_problem
+
+    return ping_cooldown_problem(channel, now=now)
 
 
 def _existing(request_id, user):

@@ -530,7 +530,7 @@ class StartFleetSafetyTests(TestCase):
         self.assertEqual((operation.ping_text, operation.motd_text), ("", ""))
 
     def test_database_error_inside_the_srp_provider_does_not_break_the_start(self):
-        def write_then_fail(operation, provider_key):
+        def write_then_fail(operation, provider_key, actor=None):
             first = AuditLog.objects.create(action="srp.partial", object_type="SRP", object_id="1")
             AuditLog.objects.create(pk=first.pk, action="srp.duplicate", object_type="SRP", object_id="1")
 

@@ -47,6 +47,22 @@ def is_fleet_member(operation, character_id) -> bool:
     )
 
 
+def may_give_fc_credit(user, operation) -> bool:
+    """Whether ``user`` may give special roles that carry FC credit in this fleet.
+
+    FC credit decides FC points and incentives, so it is given only by people who may manage fleets (FC leads) and
+    by the FC of a fleet, the way their own permission allows. A leader who manages a group fleet only through
+    leading the group cannot: the right to start and manage a group fleet does not include handing out FC credit.
+    """
+    if user is None:
+        return True  # no person acts (a system step)
+    if user.has_perm("fleetops.manage_fleets"):
+        return True
+    if not user.has_perm("fleetops.manage_own_fleet"):
+        return False
+    return operation.fc_user_id == user.pk or operation.role_assignments.filter(auth_user=user, grants_fc_credit=True).exists()
+
+
 def add_role_assignment(operation, *, actor, role, character_id: int, notes: str = ""):
     """Assign a special role (a ``SpecialRole`` or its key) to a character in the fleet.
 
@@ -62,6 +78,8 @@ def add_role_assignment(operation, *, actor, role, character_id: int, notes: str
     if role.grants_fc_credit and operation.review_status != ReviewStatus.APPROVED:
         # FC credit and the right to manage the fleet follow the role; they wait for an FC lead's approval.
         raise ValueError(texts.SPECIAL_ROLE_FC_CREDIT_AFTER_APPROVAL())
+    if role.grants_fc_credit and not may_give_fc_credit(actor, operation):
+        raise ValueError(texts.SPECIAL_ROLE_FC_CREDIT_NOT_ALLOWED())
     if not is_fleet_member(operation, character_id):
         # Pending or rejected manual PAP is no proof of taking part, so it gives no FC credit.
         raise ValueError(NOT_IN_FLEET)

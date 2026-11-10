@@ -351,6 +351,10 @@ def bulk_approve(request):
 def _recalculate_in_background(request, pending):
     from fleetops import tasks
 
+    own = review.own_pending_left_out(request.user)
+    if pending - own <= 0:
+        # Nothing to do for this reviewer: say why instead of queueing a task that skips everything.
+        return _nothing_recalculated(request, own)
     try:
         free = cache.add(tasks.SRP_RECALCULATE_LOCK_KEY, 1, tasks.SRP_RECALCULATE_LOCK_SECONDS)
     except Exception as exc:
@@ -366,12 +370,32 @@ def _recalculate_in_background(request, pending):
         cache.delete(tasks.SRP_RECALCULATE_LOCK_KEY)
         messages.error(request, _("The recalculation could not be started right now. Try again later."))
         return back(request, redirect("fleetops:srp_review"))
+    count = pending - own
     text = ngettext(
         "%(count)s pending claim is being recalculated in the background. Check again in a few minutes.",
         "%(count)s pending claims are being recalculated in the background. Check again in a few minutes.",
-        pending,
+        count,
     )
-    messages.success(request, text % {"count": pending})
+    text = text % {"count": count}
+    if own:
+        skipped = ngettext(
+            "%(own)s of your own claim will be skipped: the settings do not let you decide your own claims.",
+            "%(own)s of your own claims will be skipped: the settings do not let you decide your own claims.",
+            own,
+        )
+        text += " " + skipped % {"own": own}
+    messages.success(request, text)
+    return back(request, redirect("fleetops:srp_review"))
+
+
+def _nothing_recalculated(request, own):
+    # Not a green "0": nothing was done, and the reason is the rule about the reviewer's own claims.
+    text = ngettext(
+        "No claim was recalculated. %(own)s pending claim is your own, and the settings do not let you decide your own claims; another reviewer can recalculate it.",
+        "No claim was recalculated. %(own)s pending claims are your own, and the settings do not let you decide your own claims; another reviewer can recalculate them.",
+        own,
+    )
+    messages.warning(request, text % {"own": own})
     return back(request, redirect("fleetops:srp_review"))
 
 
@@ -384,12 +408,23 @@ def recalculate_pending(request):
     if pending > review.RECALCULATE_INLINE_LIMIT:
         return _recalculate_in_background(request, pending)
     count = review.recalculate_pending(actor=request.user)
+    own = review.own_pending_left_out(request.user)
+    if count == 0 and own:
+        return _nothing_recalculated(request, own)
     text = ngettext(
         "%(count)s pending claim recalculated with the current policy.",
         "%(count)s pending claims recalculated with the current policy.",
         count,
     )
-    messages.success(request, text % {"count": count})
+    text = text % {"count": count}
+    if own:
+        skipped = ngettext(
+            "%(own)s of your own claims was skipped: the settings do not let you decide your own claims.",
+            "%(own)s of your own claims were skipped: the settings do not let you decide your own claims.",
+            own,
+        )
+        text += " " + skipped % {"own": own}
+    messages.success(request, text)
     return back(request, redirect("fleetops:srp_review"))
 
 

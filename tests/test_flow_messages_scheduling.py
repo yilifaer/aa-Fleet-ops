@@ -181,6 +181,8 @@ class PrePingToClosedFleetTests(FlowTestBase):
         self.esi.put_in_fleet(self.fc_char)
         self.esi.members[FLEET_ID] = [f.esi_member(self.fc_char, role="fleet_commander", wing_id=-1, squad_id=-1)]
         self.discord_post.reset_mock()
+        # The pre ping holds the channel for 60 seconds (one cooldown for every ping of a channel): let it run out.
+        f.cool_down_pings()
         self.client.force_login(self.fc)
         response = self.client.post(
             reverse("fleetops:start_scheduled_fleet", args=[operation.uuid]),

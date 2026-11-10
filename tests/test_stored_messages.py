@@ -326,10 +326,12 @@ class StartFlowTests(StoredTextAssertions, StartFleetTestBase):
             self.assertStored(operation)
         self.discord_post.side_effect = None
         # A ping over Discord's limit is not sent.
-        FleetOperation.objects.filter(pk=operation.pk).update(ping_text="x" * 2100)
+        # Changed: a retry renders the ping again, so the long text comes from the fleet's additional message.
+        FleetOperation.objects.filter(pk=operation.pk).update(additional_message="x" * 2100)
         operation.refresh_from_db()
         action = self.retry(operation)
-        self.assertEqual(action.error_message, texts.PING_TOO_LONG(length=2100, limit=2000))
+        self.assertTrue(action.error_message.startswith("The ping is "), action.error_message)
+        self.assertIn("Discord accepts at most 2000", action.error_message)
         # The webhook is switched off, then gone.
         self.webhook.is_active = False
         self.webhook.save()

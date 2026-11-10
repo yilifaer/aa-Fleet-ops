@@ -434,6 +434,9 @@ class SentTextTests(FakeCatalogs, StartFleetTestBase):
         """Start a fleet as a request in ``viewer``, then end it; what was sent and stored."""
         self.discord_post.reset_mock()
         self.esi.put_calls.clear()
+        # Changed for the shared ping cooldown: the fleets of this test start one after the other on one channel (with
+        # a frozen clock), so the cooldown of the earlier start is let run out.
+        f.cool_down_pings()
         with translation.override(viewer), frozen_now(self.NOW):
             operation = self.start()
         operation.refresh_from_db()

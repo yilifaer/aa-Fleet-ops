@@ -356,3 +356,48 @@ class GroupSignalScopeTests(TestCase):
 
         self.assertEqual(sorted(uids), sorted(set(uids)))
         self.assertIn("fleetops_group_deleted_auth.Group", uids)
+
+
+class GroupDeletionInTheAdminTests(GroupConfigFixture):
+    """The Django admin deletes a group that FleetOps has settings for, with one audit entry."""
+
+    def delete_in_admin(self, user, group):
+        self.client.force_login(user)
+        url = reverse("admin:groupmanagement_group_delete", args=[group.pk])
+        return self.client.get(url), self.client.post(url, {"post": "yes"})
+
+    def test_a_superuser_can_delete_a_group_with_fleetops_settings(self):
+        superuser = f.create_user("super_admin")
+        superuser.is_superuser = superuser.is_staff = True
+        superuser.save()
+
+        page, response = self.delete_in_admin(superuser, self.group)
+
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Group.objects.filter(pk=self.group.pk).exists())
+        self.assertFalse(GroupAccess.objects.filter(pk=self.access.pk).exists())
+        # One entry, written by the receiver for the deletion in Alliance Auth.
+        self.assertEqual(AuditLog.objects.filter(action="group.deleted", object_id=str(self.group.pk)).count(), 1)
+
+    def test_a_staff_member_with_the_group_permission_can_delete_it_too(self):
+        staff = f.create_user("staff_admin", perms=["groupmanagement.view_group", "groupmanagement.delete_group"])
+        staff.is_staff = True
+        staff.save()
+
+        _page, response = self.delete_in_admin(staff, self.group)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Group.objects.filter(pk=self.group.pk).exists())
+        self.assertEqual(AuditLog.objects.filter(action="group.deleted").count(), 1)
+
+    def test_the_access_row_alone_still_cannot_be_deleted_in_the_admin(self):
+        superuser = f.create_user("super_admin2")
+        superuser.is_superuser = superuser.is_staff = True
+        superuser.save()
+        self.client.force_login(superuser)
+
+        response = self.client.post(reverse("admin:fleetops_groupaccess_delete", args=[self.access.pk]), {"post": "yes"})
+
+        self.assertIn(response.status_code, (403, 404))
+        self.assertTrue(GroupAccess.objects.filter(pk=self.access.pk).exists())

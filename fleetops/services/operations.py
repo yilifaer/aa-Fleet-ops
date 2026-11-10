@@ -231,6 +231,30 @@ def _render_missing_text(operation, field):
     return True
 
 
+def _render_ping_again(operation, actor):
+    """Render ``ping_text`` again from the current fleet data and templates, whatever was stored before.
+
+    A ping stored by an older version may hold text that is no longer allowed in a message (markup of the game's
+    rich text); posting it again as it was would send that to the channel. Returns False when the message cannot
+    be rendered; the stored text is then left as it was.
+    """
+    try:
+        with transaction.atomic():
+            rendered = render_messages(
+                operation, actor=actor, pre_ping=operation.status == FleetOperation.Status.SCHEDULED
+            )
+            operation.ping_text = rendered.ping
+            operation.save(update_fields=["ping_text", "updated_at"])
+    except Exception as exc:
+        set_action(operation, "message_render", False, report_failure(logger, "Message rendering", exc, operation))
+        return False
+    if rendered.errors:
+        set_action(operation, "message_render", False, " ".join(rendered.errors))
+    elif operation.actions.filter(action="message_render").exists():
+        set_action(operation, "message_render", True)
+    return True
+
+
 def _apply_srp_result(operation, srp):
     # A declined or unavailable provider must never erase a link that already exists.
     if srp.created or not (operation.srp_reference or operation.srp_url):
@@ -546,7 +570,7 @@ def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None
     return operation
 
 
-def create_srp_at_start(operation) -> None:
+def create_srp_at_start(operation, actor=None) -> None:
     """The SRP step of a start: create the fleet's SRP link and keep it on the record.
 
     Best effort like every start step: a failure is recorded as the ``srp_link`` step and never stops the
@@ -559,7 +583,7 @@ def create_srp_at_start(operation) -> None:
             set_action(operation, "srp_link", None, texts.GROUP_NO_SRP(group=operation.group_name))
         elif settings_obj.srp_auto_create:
             with transaction.atomic():
-                srp = create_srp_link(operation, settings_obj.srp_provider)
+                srp = create_srp_link(operation, settings_obj.srp_provider, actor=actor)
             _apply_srp_result(operation, srp)
             set_action(operation, "srp_link", True if srp.created else None, srp.message)
         else:
@@ -580,7 +604,7 @@ def run_start_steps(operation, *, user, character_id, full_mode, send_ping=True)
     if not full_mode:
         set_action(operation, "srp_link", None, _skipped_message(operation, "SRP creation"))
     else:
-        create_srp_at_start(operation)
+        create_srp_at_start(operation, actor=user)
 
     messages_ready = False
     try:
@@ -604,7 +628,7 @@ def run_start_steps(operation, *, user, character_id, full_mode, send_ping=True)
     else:
         if send_ping:
             try:
-                _send_ping(operation, actor=user)
+                send_ping_after_cooldown(operation, actor=user, action="discord_ping")
             except Exception as exc:
                 set_action(operation, "discord_ping", False, report_failure(logger, "Discord ping", exc, operation))
         else:
@@ -685,13 +709,25 @@ def _claim_ping_retry(operation, action):
         OperationAction.objects.filter(pk=step.pk).update(status=OperationAction.Status.PENDING, executed_at=now)
 
 
+def send_ping_after_cooldown(operation, *, actor, action):
+    """Post the fleet's ping unless its channel received any ping (of a fleet or without one) less than
+    ``PING_COOLDOWN_SECONDS`` ago. The cooldown is the same one the retry and the pings without a fleet use; a
+    refused post is the step's result (failed, with the wait), so a start never stops because of it."""
+    try:
+        _claim_ping_retry(operation, action)
+    except PingCooldown as exc:
+        return set_action(operation, action, False, str(exc))
+    return _send_ping(operation, actor=actor, action=action)
+
+
 def retry_ping(operation, *, actor):
-    """Post the fleet's stored ping again on behalf of ``actor`` (who must still be allowed to use the channel)."""
+    """Render the fleet's ping again and post it on behalf of ``actor`` (who must still be allowed to use the channel)."""
     # A fleet that has not started yet only has its pre ping.
     action = "pre_ping" if operation.status == FleetOperation.Status.SCHEDULED else "discord_ping"
     if not operation.send_ping:
         return _keep_skipped(operation, action, _skipped_message(operation, "Discord ping"))
-    if not _render_missing_text(operation, "ping_text"):
+    # The ping is rendered again from the current data: the stored text may come from an older version.
+    if not _render_ping_again(operation, actor):
         return set_action(operation, action, False, NOT_RENDERED)
     _claim_ping_retry(operation, action)
     try:
@@ -708,7 +744,7 @@ def retry_motd(operation):
     return _update_motd(operation, operation.fc_user, operation.fc_character_id)
 
 
-def retry_srp(operation):
+def retry_srp(operation, actor=None):
     # Manual records may link SRP later; PAP-only fleets never create one.
     if not operation.send_ping and not operation.is_manual:
         return _keep_skipped(operation, "srp_link", _skipped_message(operation, "SRP creation"))
@@ -720,7 +756,7 @@ def retry_srp(operation):
             current = FleetOperation.objects.select_for_update().get(pk=operation.pk)
             if current.srp_reference or current.srp_url:
                 return set_action(operation, "srp_link", True, texts.SRP_ALREADY_LINKED())
-            srp = create_srp_link(operation, FleetOpsSettings.get_solo().srp_provider)
+            srp = create_srp_link(operation, FleetOpsSettings.get_solo().srp_provider, actor=actor)
             _apply_srp_result(operation, srp)
             operation.save(update_fields=["srp_provider", "srp_reference", "srp_url", "srp_error", "updated_at"])
             return set_action(operation, "srp_link", True if srp.created else None, srp.message)

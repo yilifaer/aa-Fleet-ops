@@ -290,10 +290,15 @@ class FleetOpsSRPProvider:
     def available(self) -> bool:
         return bool(SrpSettings.get_solo().enabled)
 
-    def create_for_operation(self, operation) -> SRPLinkResult:
+    # create_srp_link hands this provider the person who acts; providers of other apps keep their own signature.
+    takes_actor = True
+
+    def create_for_operation(self, operation, actor=None) -> SRPLinkResult:
         if not self.available():
             return SRPLinkResult(self.key, message=self.unavailable_message)
-        link, created = ensure_fleet_link(operation)
+        # The person who started the fleet or pressed Retry SRP is the one named; the automatic start without a
+        # person is the FC's own.
+        link, created = ensure_fleet_link(operation, actor=actor or operation.fc_user)
         return SRPLinkResult(
             provider=self.key,
             reference=link.code,
@@ -328,7 +333,7 @@ def get_srp_provider(key: str = "auto") -> SRPProvider | None:
     return None
 
 
-def create_srp_link(operation, provider_key: str = "auto") -> SRPLinkResult:
+def create_srp_link(operation, provider_key: str = "auto", actor=None) -> SRPLinkResult:
     # Group fleets get an SRP link only when their group allows it.
     if not group_access.group_srp_allowed(operation):
         return SRPLinkResult(
@@ -342,4 +347,6 @@ def create_srp_link(operation, provider_key: str = "auto") -> SRPLinkResult:
         # A provider that is registered but switched off says so (FleetOps SRP while it is not enabled).
         message = getattr(_PROVIDERS.get(_provider_key(key)), "unavailable_message", "")
         return SRPLinkResult(key, message=message or texts.SRP_PROVIDER_MISSING(key=key))
+    if getattr(provider, "takes_actor", False):
+        return provider.create_for_operation(operation, actor=actor)
     return provider.create_for_operation(operation)

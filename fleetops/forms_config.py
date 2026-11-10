@@ -664,6 +664,7 @@ class SrpSettingsForm(forms.ModelForm):
             "",
             [
                 "notify_members",
+                "notify_on_unpaid",
                 "allow_self_review",
                 "allow_self_payment",
                 "require_different_payer",
@@ -766,6 +767,7 @@ class SrpSettingsForm(forms.ModelForm):
             "show_insurance",
             "insurance_level",
             "notify_members",
+            "notify_on_unpaid",
             "member_instructions",
         ]
         widgets = {

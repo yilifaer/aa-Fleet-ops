@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-08 18:32+0000\n"
+"POT-Creation-Date: 2026-11-10 02:56+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -3349,6 +3349,10 @@ msgstr "内置类别的 key 不能修改。"
 msgid "Members cannot choose the built-in category."
 msgstr "成员不能选择内置类别。"
 
+#: models.py texts.py
+msgid "This is the last category that members can choose, and the SRP settings require a category for a loss outside a fleet. Choose another default category or turn that requirement off first."
+msgstr "这是成员唯一可以选择的类别，而 SRP 设置要求舰队外损失必须选择类别。请先选择另一个默认类别，或关闭该要求。"
+
 #: models.py
 msgid "Enter the per-loss cap."
 msgstr "请输入单笔上限。"
@@ -3691,6 +3695,14 @@ msgid "Send an Alliance Auth notification when a claim is decided or paid."
 msgstr "申请被处理或付款时发送 Alliance Auth 通知。"
 
 #: models.py
+msgid "Notify members when a payment is undone"
+msgstr "撤销付款时通知成员"
+
+#: models.py
+msgid "Tell the member with an Alliance Auth notification, with the reason given, when a payment is undone. Only works while “Notify members” is also on."
+msgstr "撤销付款时，用 Alliance Auth 通知告诉成员，并附上填写的理由。只有“通知成员”也打开时才生效。"
+
+#: models.py
 msgid "Member instructions"
 msgstr "成员须知"
 
@@ -3717,6 +3729,10 @@ msgstr "关闭 zKillboard 时，请选择 ESI 市场估价。"
 #: models.py
 msgid "Choose an active category that members can choose."
 msgstr "请选择一个启用的、成员可以选择的类别。"
+
+#: models.py
+msgid "Members would have no way to submit a loss outside a fleet: a category is required, but there is no default category and no active category that members can choose. Turn this setting off, choose a default category, or make at least one active category choosable by members."
+msgstr "成员将无法提交舰队外损失：设置要求选择类别，但没有默认类别，也没有成员可选的启用类别。请关闭此设置、选择默认类别，或让至少一个启用的类别可供成员选择。"
 
 #: models.py
 msgid "The default length cannot be longer than the longest ban."
@@ -4233,8 +4249,7 @@ msgstr "申请"
 msgid "Payees"
 msgstr "收款人数"
 
-#: models.py services/export_datasets.py srp/reports.py
-#: templates/fleetops/srp/payment_batch.html
+#: models.py templates/fleetops/srp/payment_batch.html
 #: templates/fleetops/srp/payments.html
 msgid "Total"
 msgstr "合计"
@@ -5038,6 +5053,12 @@ msgstr "申请计入损失发生所在的 EVE 月（按 KM 时间）。已撤回
 msgid "Approved claims that are not paid yet, with the filters of the payments page. Only payers can export this list."
 msgstr "尚未付款的已通过申请，带付款页的筛选。只有付款人可以导出这份清单。"
 
+#
+#: services/export_datasets.py srp/reports.py
+msgctxt "FleetOps"
+msgid "Total"
+msgstr "合计"
+
 #: services/export_datasets.py
 msgid "Pay to"
 msgstr "收款人"
@@ -5753,6 +5774,11 @@ msgstr "SRP 通过已撤销"
 msgid "SRP claim reopened"
 msgstr "SRP 申请已重新打开"
 
+#
+#: srp/notify.py
+msgid "SRP payment undone"
+msgstr "SRP 付款已撤销"
+
 #: srp/notify.py
 #, python-format
 msgid "Claim: %(reference)s"
@@ -5777,6 +5803,10 @@ msgstr "金额：%(amount)s"
 #, python-format
 msgid "Reason: %(reason)s"
 msgstr "原因：%(reason)s"
+
+#: srp/notify.py
+msgid "The payment of this claim was undone. The claim is approved and not paid yet."
+msgstr "这条申请的付款已撤销。申请仍是已通过状态，尚未付款。"
 
 #: srp/notify.py
 msgid "SRP submissions blocked"
@@ -6786,6 +6816,7 @@ msgstr "开启 SRP，选择价值来源、赔付比例、单笔上限和月度�
 
 #: templates/fleetops/configuration/index.html
 #: templates/fleetops/configuration/srp_settings.html
+#: templates/fleetops/srp/home.html
 msgid "SRP Settings"
 msgstr "SRP 设置"
 
@@ -6879,6 +6910,10 @@ msgstr "FleetOps SRP：成员可以申请什么、赔付多少以及月度限额
 #: templates/fleetops/configuration/srp_settings.html
 msgid "General settings (SRP provider, automatic SRP link)"
 msgstr "常规设置（SRP 提供方、自动创建 SRP 链接）"
+
+#: templates/fleetops/configuration/srp_settings.html
+msgid "Members cannot submit a loss outside a fleet right now: a category is required, but there is no default category and no active category that members can choose. Turn off “Members must choose a category for losses outside a fleet”, choose a default category, or make an active category choosable by members, then save."
+msgstr "目前成员无法提交舰队外损失：设置要求选择类别，但没有默认类别，也没有成员可选的启用类别。请关闭“舰队外损失必须选择类别”、选择默认类别，或让一个启用的类别可供成员选择，然后保存。"
 
 #: templates/fleetops/configuration/srp_settings.html
 #, python-format
@@ -10542,6 +10577,14 @@ msgstr "你被永久禁止提交 SRP 申请。"
 msgid "You can still withdraw claims that are waiting for a decision."
 msgstr "等待决定的申请你仍然可以撤回。"
 
+#: templates/fleetops/srp/home.html texts.py
+msgid "No category can be chosen for a loss outside a fleet right now. Ask an SRP manager to change the SRP settings."
+msgstr "目前无法为舰队外损失选择类别。请联系 SRP 管理员修改 SRP 设置。"
+
+#: templates/fleetops/srp/home.html
+msgid "Fix: turn off “Members must choose a category for losses outside a fleet”, choose a default category, or make an active category choosable by members."
+msgstr "解决办法：关闭“舰队外损失必须选择类别”、选择默认类别，或让一个启用的类别可供成员选择。"
+
 #: templates/fleetops/srp/home.html templates/fleetops/srp/link.html
 #, python-format
 msgid "A loss can be claimed within %(counter)s day after it happened."
@@ -13837,6 +13880,11 @@ msgstr "中队队员"
 msgid "Could not look up solar system names: %(detail)s"
 msgstr "无法查询星系名称：%(detail)s"
 
+#
+#: texts.py
+msgid "Only FC leads and the FC of the fleet can give special roles that carry FC credit."
+msgstr "只有 FC 主管和该舰队的 FC 可以分配带 FC 积分的特殊角色。"
+
 #: texts.py
 msgid "Only rejected fleets can be sent back for approval."
 msgstr "只有被拒绝的舰队才能重新提交审批。"
@@ -15263,9 +15311,27 @@ msgstr[0] "%(count)s 条待审核申请正在后台重新计算，请几分钟�
 
 #: views_srp_review.py
 #, python-format
+msgid "%(own)s of your own claim will be skipped: the settings do not let you decide your own claims."
+msgid_plural "%(own)s of your own claims will be skipped: the settings do not let you decide your own claims."
+msgstr[0] "将跳过你自己的 %(own)s 条申请：按设置你不能处理自己的申请。"
+
+#: views_srp_review.py
+#, python-format
+msgid "No claim was recalculated. %(own)s pending claim is your own, and the settings do not let you decide your own claims; another reviewer can recalculate it."
+msgid_plural "No claim was recalculated. %(own)s pending claims are your own, and the settings do not let you decide your own claims; another reviewer can recalculate them."
+msgstr[0] "没有重新计算任何申请。有 %(own)s 条待处理申请是你自己的，按设置你不能处理自己的申请；请其他审核员重新计算。"
+
+#: views_srp_review.py
+#, python-format
 msgid "%(count)s pending claim recalculated with the current policy."
 msgid_plural "%(count)s pending claims recalculated with the current policy."
 msgstr[0] "已按当前规则重新计算 %(count)s 条待审核申请。"
+
+#: views_srp_review.py
+#, python-format
+msgid "%(own)s of your own claims was skipped: the settings do not let you decide your own claims."
+msgid_plural "%(own)s of your own claims were skipped: the settings do not let you decide your own claims."
+msgstr[0] "已跳过你自己的 %(own)s 条申请：按设置你不能处理自己的申请。"
 
 #: views_srp_review.py
 #, python-format

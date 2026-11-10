@@ -162,7 +162,7 @@ class ClaimPageStepsTests(SrpPagesTestCase):
 
         html = self.page(claim).content.decode()
 
-        self.assertRegex(html, r'<img class="fo-render" src="https://images\.evetech\.net/types/\d+/render\?size=64"')
+        self.assertRegex(html, r'<img class="fo-render fo-render-64" src="https://images\.evetech\.net/types/\d+/render\?size=64"')
         self.assertNotIn("fleetops-srp-ship", html)
 
     def test_an_automatic_rejection_is_marked_with_a_neutral_pill(self):

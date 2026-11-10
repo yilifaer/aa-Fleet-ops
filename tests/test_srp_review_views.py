@@ -509,6 +509,43 @@ class RecalculateTests(ManagerPagesTestCase):
         self.assertIn("pending claims are being recalculated in the background", " ".join(messages_of(response)))
         cache.delete(tasks.SRP_RECALCULATE_LOCK_KEY)
 
+    def test_the_background_message_names_the_own_claims_that_are_skipped(self):
+        from unittest import mock
+
+        from django.core.cache import cache
+
+        from fleetops import tasks
+
+        cache.delete(tasks.SRP_RECALCULATE_LOCK_KEY)
+        self.patch("fleetops.srp.review.pending_count", return_value=60)
+        self.patch("fleetops.srp.review.own_pending_left_out", return_value=3)
+
+        with mock.patch.object(tasks.recalculate_srp_pending, "delay") as delay:
+            response = self.client.post(route("srp_review_recalculate"))
+
+        delay.assert_called_once_with(self.manager.pk)
+        text = " ".join(messages_of(response))
+        self.assertIn("57 pending claims are being recalculated in the background", text)
+        self.assertIn("3 of your own claims will be skipped", text)
+        cache.delete(tasks.SRP_RECALCULATE_LOCK_KEY)
+
+    def test_a_long_list_that_is_all_own_claims_queues_nothing_and_says_why(self):
+        from unittest import mock
+
+        from django.core.cache import cache
+
+        from fleetops import tasks
+
+        cache.delete(tasks.SRP_RECALCULATE_LOCK_KEY)
+        self.patch("fleetops.srp.review.pending_count", return_value=60)
+        self.patch("fleetops.srp.review.own_pending_left_out", return_value=60)
+
+        with mock.patch.object(tasks.recalculate_srp_pending, "delay") as delay:
+            response = self.client.post(route("srp_review_recalculate"))
+
+        delay.assert_not_called()
+        self.assertIn("No claim was recalculated. 60 pending claims are your own", " ".join(messages_of(response)))
+
     def test_a_second_background_recalculation_is_not_queued(self):
         from unittest import mock
 

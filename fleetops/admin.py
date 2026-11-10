@@ -9,6 +9,7 @@ from django.shortcuts import redirect
 from django.utils.translation import gettext_lazy as _
 
 from fleetops.forms_config import DiscordWebhookForm, SrpCategoryForm
+from fleetops import texts
 from fleetops.models import (
     AttendanceRecord,
     AuditLog,
@@ -57,6 +58,16 @@ from fleetops.models import (
 )
 from fleetops.services.audit import audit, cascaded_config_rows
 from fleetops.services.mentions import role_delete_refusal
+
+
+def _deleting_leaves_dead_end(pks) -> bool:
+    """True when deleting these categories leaves members without a category to choose for a loss outside a fleet
+    that the settings require one for; a site that is in that state already is not made worse by it."""
+    srp = SrpSettings.get_solo()
+    pks = list(pks)
+    if not pks or srp.out_of_fleet_dead_end():
+        return False
+    return srp.out_of_fleet_dead_end(deleted=True, removed=pks)
 
 
 def _audit_snapshot(obj):
@@ -382,14 +393,20 @@ class SrpCategoryAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
         # The built-in category stays; the bulk action asks for every selected row.
         if obj is not None and obj.is_system:
             return False
+        if obj is not None and _deleting_leaves_dead_end([obj.pk]):
+            return False
         return super().has_delete_permission(request, obj)
 
     def delete_queryset(self, request, queryset):
         # Never through the back door of a changelist action.
-        super().delete_queryset(request, queryset.filter(is_system=False))
+        queryset = queryset.filter(is_system=False)
+        if _deleting_leaves_dead_end(list(queryset.values_list("pk", flat=True))):
+            self.message_user(request, texts.translate_stored(texts.SRP_CATEGORY_DELETE_LAST()), messages.ERROR)
+            return
+        super().delete_queryset(request, queryset)
 
     def delete_model(self, request, obj):
-        if obj.is_system:
+        if obj.is_system or _deleting_leaves_dead_end([obj.pk]):
             raise PermissionDenied
         super().delete_model(request, obj)
 
@@ -428,6 +445,15 @@ class GroupAccessAdmin(RecordAdmin):
     list_display = ("group", "mode", "members_are_leaders", "srp_enabled", "is_active", "updated_at")
     list_filter = ("mode", "is_active")
     search_fields = ("group__name",)
+
+    def has_delete_permission(self, request, obj=None):
+        """The access row cannot be deleted on its own, but it goes with its group: the admin page that deletes an
+        Alliance Auth group asks every related row for permission, and a refusal here would make a group with
+        FleetOps settings undeletable. Whether the person may delete the group is the group admin's own check; the
+        receiver in ``signals`` writes the audit entry and settles the channels."""
+        match = getattr(request, "resolver_match", None)
+        name = getattr(match, "url_name", "") or ""
+        return bool(name) and not name.startswith("fleetops_")
 
 
 @admin.register(StandalonePing)

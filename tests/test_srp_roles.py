@@ -885,6 +885,8 @@ class SettingsPageTests(TestCase):
             # LINK (INT-9): "Complete SRP links automatically" joined the group.
             [
                 "notify_members",
+                # 0.3.0b2: the switch for the notification of an undone payment follows "Notify members".
+                "notify_on_unpaid",
                 "allow_self_review",
                 "allow_self_payment",
                 "require_different_payer",

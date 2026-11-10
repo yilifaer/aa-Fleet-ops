@@ -913,6 +913,11 @@ def edit_operation_view(request, operation_uuid):
             times_changed = _minute(updated.started_at) != _minute(old["started_at"]) or _minute(
                 updated.ended_at
             ) != _minute(old["ended_at"])
+            # The form shows minutes only: a time that was not changed keeps its stored seconds.
+            if _minute(updated.started_at) == _minute(old["started_at"]):
+                updated.started_at = old["started_at"]
+            if _minute(updated.ended_at) == _minute(old["ended_at"]):
+                updated.ended_at = old["ended_at"]
             approver = is_approver(request.user)
             # An approved fleet goes back to review when someone who is not an FC lead changes what decides how it
             # counts. A rejected fleet is never sent back by an edit: "Resubmit for approval" does that.
@@ -931,14 +936,11 @@ def edit_operation_view(request, operation_uuid):
                 evaluate_stats_inclusion(updated)
             updated.save()
             new = model_to_dict(updated, fields=EDITED_FIELDS + REVIEW_FIELDS)
-            audit(
-                request.user,
-                "operation.edit",
-                updated,
-                {k: str(v) for k, v in old.items()},
-                {k: str(v) for k, v in new.items()},
-                reason=texts.AUDIT_ARCHIVE_EDIT(),
-            )
+            old_text = {k: str(v) for k, v in old.items()}
+            new_text = {k: str(v) for k, v in new.items()}
+            # Saving without a change leaves nothing to audit.
+            if old_text != new_text:
+                audit(request.user, "operation.edit", updated, old_text, new_text, reason=texts.AUDIT_ARCHIVE_EDIT())
             # The multiplier chosen for the old times stays within the duration rule, whoever edits the times.
             lowered = None
             if times_changed:
@@ -1066,7 +1068,7 @@ def operation_detail(request, operation_uuid):
         "unique_players": unique_players,
         "map_rows": map_rows,
         "role_assignments": role_assignments,
-        "role_assignment_form": OperationRoleAssignmentForm(operation=operation),
+        "role_assignment_form": OperationRoleAssignmentForm(operation=operation, user=request.user),
         "stale": stale,
         "unreadable_warning": unreadable_fleet_warning(operation, settings) if is_active else "",
         "can_manage": _can_manage_operation(request.user, operation),
@@ -1330,6 +1332,10 @@ def retry_ping_view(request, operation_uuid):
     if operation.status == FleetOperation.Status.CANCELLED and is_pre_ping_record(operation):
         messages.info(request, _("This scheduled fleet was cancelled, so its pre ping is not posted again."))
         return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+    if operation.status in (FleetOperation.Status.CLOSED, FleetOperation.Status.CANCELLED):
+        # Nothing is posted for a fleet that ended.
+        messages.info(request, _already_text(operation))
+        return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     before = _step_statuses(operation)
     try:
         action = retry_ping(operation, actor=request.user)
@@ -1351,6 +1357,9 @@ def retry_motd_view(request, operation_uuid):
     if is_pre_ping_record(operation):
         messages.info(request, NOT_STARTED_MESSAGE)
         return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
+    if operation.status in (FleetOperation.Status.CLOSED, FleetOperation.Status.CANCELLED):
+        messages.info(request, _already_text(operation))
+        return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     before = _step_statuses(operation)
     action = retry_motd(operation)
     _audit_retry(request.user, "fleet.retry_motd", operation, action, before)
@@ -1368,7 +1377,7 @@ def retry_srp_view(request, operation_uuid):
         messages.info(request, NOT_STARTED_MESSAGE)
         return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
     before = _step_statuses(operation)
-    action = retry_srp(operation)
+    action = retry_srp(operation, actor=request.user)
     _audit_retry(request.user, "fleet.retry_srp", operation, action, before)
     messages.info(request, _retry_text(_("SRP retry: %(status)s."), action))
     return redirect("fleetops:operation_detail", operation_uuid=operation.uuid)
@@ -1806,7 +1815,7 @@ def add_operation_role(request, operation_uuid):
     operation = _operation_for_user(request, operation_uuid, manage=True)
     if not _can_manage_operation(request.user, operation):
         raise Http404
-    form = OperationRoleAssignmentForm(request.POST, operation=operation)
+    form = OperationRoleAssignmentForm(request.POST, operation=operation, user=request.user)
     if not form.is_valid():
         details = " ".join(str(error) for errors in form.errors.values() for error in errors)
         messages.error(request, (_("Invalid special-role assignment. %(details)s") % {"details": details}).strip())

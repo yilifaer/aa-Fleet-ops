@@ -1201,10 +1201,10 @@ class SecretHandlingTests(StartFleetPatchesMixin, TestCase):
         self.client.post(reverse("fleetops:retry_ping", args=[self.operation.uuid]), follow=True)
         self.mocks["post"].assert_called_once()
         self.assertEqual(self.mocks["post"].call_args.args[0], WEBHOOK_URL)
-        self.assertEqual(
-            self.mocks["post"].call_args.kwargs["json"],
-            {"content": "Ping body", "allowed_mentions": {"parse": []}, "flags": 4},
-        )
+        # Changed: a retry renders the ping again instead of posting the stored "Ping body".
+        payload = self.mocks["post"].call_args.kwargs["json"]
+        self.assertEqual((payload["allowed_mentions"], payload["flags"]), ({"parse": []}, 4))
+        self.assertIn("**FC Name:** Lead Main", payload["content"])
         action = OperationAction.objects.get(operation=self.operation, action="discord_ping")
         self.assertEqual(action.status, OperationAction.Status.SUCCESS)
         self.assertNotIn(WEBHOOK_TOKEN, action.error_message)

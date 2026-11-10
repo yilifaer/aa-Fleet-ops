@@ -547,36 +547,40 @@ class SendPingTests(TestCase):
         result = retry_ping(self.operation(), actor=self.fc)
 
         self.assertEqual(result.status, ActionStatus.SUCCESS)
-        self.assertEqual(
-            self.post.call_args.kwargs["json"],
-            {"content": "Ping", "allowed_mentions": {"parse": ["everyone"]}, "flags": 4},
-        )
+        payload = self.post.call_args.kwargs["json"]
+        # Changed: the ping is rendered again (it starts with the stored mention), not posted as stored.
+        self.assertTrue(payload["content"].startswith("@everyone\n"))
+        self.assertEqual((payload["allowed_mentions"], payload["flags"]), ({"parse": ["everyone"]}, 4))
 
     def test_retry_of_an_here_ping_never_notifies_everyone(self):
         operation = self.operation(HERE)
         self.channel.allow_here = True
         self.channel.save()
-        FleetOperation.objects.filter(pk=operation.pk).update(ping_text="@here\nStratOp\n\nBring alts, @everyone welcome")
+        # Changed: the retry renders the ping again; the people's text lives in the additional message.
+        FleetOperation.objects.filter(pk=operation.pk).update(additional_message="Bring alts, @everyone welcome")
         operation.refresh_from_db()
 
         retry_ping(operation, actor=operation.fc_user)
 
         payload = self.post.call_args.kwargs["json"]
-        self.assertEqual(payload["content"], "@here\nStratOp\n\nBring alts, @\u200beveryone welcome")
+        self.assertTrue(payload["content"].startswith("@here\n"))
+        self.assertIn("Bring alts, @\u200beveryone welcome", payload["content"])
         self.assertEqual(payload["allowed_mentions"], {"parse": ["everyone"]})
 
-    def test_everyone_and_role_pings_are_sent_as_stored(self):
-        text = "@everyone\nStratOp @here"
-        for mode, roles in ((EVERYONE, None), (ROLES, [{"id": str(self.sig_a.role_id), "name": "Sig A"}])):
+    def test_everyone_and_role_pings_are_sent_with_the_stored_mention(self):
+        # Changed: the retry renders the ping again; what stays is the stored mention at its start.
+        cases = (
+            (EVERYONE, None, "@everyone\n"),
+            (ROLES, [{"id": str(self.sig_a.role_id), "name": "Sig A"}], f"<@&{self.sig_a.role_id}>\n"),
+        )
+        for mode, roles, start in cases:
             with self.subTest(mode=mode):
                 operation = self.operation(mode, roles)
-                FleetOperation.objects.filter(pk=operation.pk).update(ping_text=text)
-                operation.refresh_from_db()
 
                 OperationAction.objects.update(executed_at=timezone.now() - timedelta(minutes=5))
                 retry_ping(operation, actor=operation.fc_user)
 
-                self.assertEqual(self.post.call_args.kwargs["json"]["content"], text)
+                self.assertTrue(self.post.call_args.kwargs["json"]["content"].startswith(start))
 
     def test_channel_disabled_since_the_start(self):
         operation = self.operation()
@@ -768,7 +772,8 @@ class EditOperationViewTests(TestCase):
         )
         self.assertNotContains(page, "Changed templates are used by the next ping or MOTD retry.")
 
-    def test_retries_after_a_template_change_send_the_stored_text(self):
+    def test_a_ping_retry_follows_a_template_change_and_a_motd_retry_sends_the_stored_text(self):
+        # Changed: the ping is rendered again with the current template; the MOTD retry still sends the stored MOTD.
         channel = f.ping_channel("STR", allow_here=True)
         FleetOperation.objects.filter(pk=self.operation.pk).update(
             esi_fleet_id=FLEET_ID,
@@ -792,7 +797,7 @@ class EditOperationViewTests(TestCase):
             operations_module.retry_motd(self.operation)
 
         self.assertEqual(self.operation.ping_template, self.ping)
-        self.assertEqual(post.call_args.kwargs["json"]["content"], "@here OLD PING")
+        self.assertTrue(post.call_args.kwargs["json"]["content"].startswith("NEW PING "))
         self.assertEqual(set_motd.call_args.args[3], "OLD MOTD")
 
 

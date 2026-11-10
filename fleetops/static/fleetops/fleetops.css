@@ -268,6 +268,8 @@ button.fo-live { cursor: pointer; }
 
 /* EVE images: ship renders, portraits, icons */
 .fo-render { border-radius: var(--fo-radius-sm); border: 1px solid var(--fo-border); background: #111; } /* ui-allow: ship image backdrop */
+/* The 64 px ship render of the SRP pages keeps its size in a flex row, also inside a card that fills its column. */
+.fo-render-64 { flex: 0 0 64px; align-self: flex-start; width: 64px; height: 64px; max-width: none; object-fit: contain; }
 
 /* Icon buttons and 44 px touch targets */
 .fo-icon-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 2rem; min-height: 2rem; padding: 0 .35rem; border: 0; border-radius: var(--fo-radius-sm); background: transparent; color: var(--fo-text-2); }

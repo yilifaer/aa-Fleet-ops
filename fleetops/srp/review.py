@@ -505,6 +505,7 @@ def undo_payment(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
             old=previous,
             new={"status": locked.status},
         )
+        claims.notify_after_commit(locked, "unpaid", reason)
     return claims.sync_claim(claim, locked)
 
 
@@ -727,6 +728,14 @@ RECALCULATE_INLINE_LIMIT = 50
 def pending_count() -> int:
     """The number of claims waiting for a decision."""
     return SrpClaim.objects.filter(status=Status.PENDING).count()
+
+
+def own_pending_left_out(actor) -> int:
+    """How many pending claims of ``actor`` a recalculation by them leaves to another reviewer (the settings do not
+    let reviewers decide their own claims); 0 when they may."""
+    if SrpSettings.get_solo().allow_self_review:
+        return 0
+    return SrpClaim.objects.filter(status=Status.PENDING, user_id=actor.pk).count()
 
 
 def recalculate_pending(*, actor) -> int:

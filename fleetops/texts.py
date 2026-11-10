@@ -1109,6 +1109,18 @@ SRP_REDUCED_CATEGORY_CORPORATION = StoredText(
 # SRP categories. The built-in category is stored under this name and shown in the language of the viewer.
 SRP_CATEGORY_FLEET = StoredText(gettext_noop("Fleet"))
 SRP_CATEGORY_REQUIRED = StoredText(gettext_noop("Choose a category for this loss."))
+SRP_CATEGORY_NONE_TO_CHOOSE = StoredText(
+    gettext_noop(
+        "No category can be chosen for a loss outside a fleet right now. Ask an SRP manager to change the SRP "
+        "settings."
+    )
+)
+SRP_CATEGORY_DELETE_LAST = StoredText(
+    gettext_noop(
+        "This is the last category that members can choose, and the SRP settings require a category for a loss "
+        "outside a fleet. Choose another default category or turn that requirement off first."
+    )
+)
 SRP_CATEGORY_UNAVAILABLE = StoredText(gettext_noop("This category is not available. Check the loss again."))
 SRP_CATEGORY_UNCHANGED = StoredText(gettext_noop("The claim already has this category."))
 SRP_ONLY_PENDING_RECATEGORIZED = StoredText(gettext_noop("Only pending claims can change their category."))
@@ -1361,6 +1373,9 @@ SYSTEM_NAMES_LOOKUP_FAILED = StoredText(
 # --- 0.2.0b2 lane C: records and incentives ---
 SPECIAL_ROLE_FC_CREDIT_AFTER_APPROVAL = StoredText(
     gettext_noop("Special roles with FC credit can be assigned once an FC lead has approved the fleet.")
+)
+SPECIAL_ROLE_FC_CREDIT_NOT_ALLOWED = StoredText(
+    gettext_noop("Only FC leads and the FC of the fleet can give special roles that carry FC credit.")
 )
 APPROVAL_RESUBMIT_NOT_REJECTED = StoredText(gettext_noop("Only rejected fleets can be sent back for approval."))
 INCENTIVES_AUTO_RECALCULATED = StoredText(

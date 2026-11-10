@@ -1,5 +1,72 @@
 # Changelog
 
+## [0.3.0b2] - Unreleased
+
+Fixes from the run of 0.3.0b1 on a test site, and one new SRP setting. Install it the way you installed 0.3.0b1; read the
+upgrade notes and the rollback notes below first.
+
+### Added
+
+- **Notify members when a payment is undone** (SRP settings, **Members and review**; off by default). When it is on and
+  **Notify members** is on as well, undoing a payment sends the member an Alliance Auth notification with the reason
+  that was given, in the member's language. With **Notify members** off nothing is sent, whatever this setting says.
+  Changing it is audited like every SRP setting.
+
+### Changed
+
+- **Retry Ping** renders the ping again from the current data of the fleet before it posts it, so a fleet started
+  by an older version no longer posts its stored text (with the game's markup) a second time.
+- One cooldown per ping channel: a ping for a fleet and a ping without a fleet both hold the channel for 60 seconds, in
+  both directions. If the start ping of a fleet meets a cooling channel, the step shows the wait and **Retry Ping** posts
+  it later; the fleet still starts. This includes the pre ping of the same fleet: a scheduled fleet that is started
+  less than a minute after its pre ping (or its edit with **Send update**) shows the wait on the start ping step.
+- Only FC leads, and the FC of a fleet through the permissions they already have, can give special roles that carry FC
+  credit. Group leaders who started a group fleet no longer get those roles offered, and the server refuses them.
+  Roles given before stay as they are.
+- A group that FleetOps has settings for can be deleted in the Django admin by someone who may delete groups. Its
+  FleetOps settings are handled as for any other deletion of a group, and the audit log gets one **Group deleted**
+  entry, not two.
+- **Recalculate** on the review page says how many pending claims were recalculated and how many of your own claims were
+  skipped because reviewers may not decide their own claims. If only your own claims were waiting, the message is a
+  warning, not a green "0". The same goes for a long list that is recalculated in the background: the message says how
+  many of your own claims are skipped, and nothing is queued when all waiting claims are your own.
+- The word "Total" of the total rows of exports and reports has its own translation context, so another app that translates
+  "Total" differently can no longer change the total row in Chinese.
+
+### Fixed
+
+- The SRP settings page refuses a configuration in which nobody can submit a loss outside a fleet (a category is
+  required, but there is no default category and no category members can choose). The same goes for deactivating,
+  hiding or deleting the last category members can choose. Sites that are in that state already show a warning on the
+  SRP settings page and on **My SRP**, and members see one clear sentence instead of "Choose a category". Only
+  a loss that ends up outside a fleet is refused: a loss inside a tracked fleet still goes to the fleet's link and needs
+  no category. The checks apply only while losses outside a fleet are switched on, they refuse only what makes things
+  worse (a site that is in that state already can still rename or edit its categories), and the Django admin follows
+  them when it deletes categories.
+- Editing a fleet without changing its times keeps the start and end exactly as they were (they lost their seconds before)
+  and writes no audit entry when nothing changed.
+- The SRP link that is made when a fleet starts is audited with the person who started the fleet as the actor, and the
+  link made by **Retry SRP** with the person who pressed it; only an automatic start without a person names the FC.
+- The ship image on the SRP check page, the claim page and the loss card stays 64 by 64 pixels.
+- When the claim deadline is made longer, the losses that were marked too old are looked at again at once and show up
+  again with the next scan; they no longer wait for the daily cleanup.
+- An ended fleet no longer shows **Retry Ping** and **Retry MOTD**, and those actions are refused for it.
+
+### Upgrade notes
+
+1. Back up the database and upgrade the package as for any release.
+2. Run `python manage.py migrate fleetops`. It applies `0040`, which adds the new SRP setting (off). It changes no data.
+3. Collect the static files (`python manage.py collectstatic --noinput`): the style sheet changed.
+4. Nothing else needs to be done. If the SRP settings page now shows the warning about a missing category, turn off
+   **Members must choose a category for losses outside a fleet**, choose a default category, or make a category
+   choosable by members.
+
+### Rollback notes
+
+- `python manage.py migrate fleetops 0039` undoes `0040` and drops the new setting; its guard runs first and refuses a way
+  back below `0035` as before (see the rollback notes of 0.3.0b1, which apply unchanged). Going back to a 0.3.0b1
+  install after that needs no further step.
+
 ## [0.3.0b1] - 2026-11-08
 
 The SRP rework: categories, separate review and payment permissions, standing links, automatic loss discovery, rules

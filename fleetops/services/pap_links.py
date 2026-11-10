@@ -430,5 +430,5 @@ def start_link_only_fleet(user, cleaned_data):
             raise
         return existing
     # The SRP link of the fleet, like an ESI fleet's. It is best effort and records its own step.
-    create_srp_at_start(operation)
+    create_srp_at_start(operation, actor=user)
     return operation

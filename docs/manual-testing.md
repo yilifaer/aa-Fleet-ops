@@ -57,7 +57,7 @@ produced) with `pip install --no-deps <wheel>` next to the Alliance Auth test si
 - [ ] A role is mentioned only when it is mentionable; a role that is not allowed in the channel is refused.
 - [ ] A ping over 2000 characters is refused before it is sent.
 - [ ] Break the webhook: the start continues, the Discord step shows the failure, **Copy Ping** works and
-  **Retry Ping** sends it after the webhook is fixed.
+  **Retry Ping** sends it after the webhook is fixed (it renders the ping again first; an ended fleet has no retry buttons).
 - [ ] The MOTD is set in game, and the comms link opens the join page (logged out too, with
   `APPS_WITH_PUBLIC_VIEWS`). The Logi and Boost names are links to the in-game channels.
 - [ ] Remove the write scope from the FC token: the MOTD step fails without stopping the start; **Copy MOTD**
@@ -292,7 +292,7 @@ right actor.
   with claims, run `fleetops_srp_rollback_check` (it must pass), `migrate fleetops 0023`, put the 0.2.0b3 code back (the wheel or commit the site used before; it was never released) and start it. From a 0.2.0b2 site the target is `migrate fleetops 0021`.
   Claims, amounts and statuses are as before; the categories, standing links, batches, bans and found losses are gone.
 - [ ] With imported claims, rules of a category or standing links with claims still in place, `migrate fleetops 0023`
-  stops at `0039` (its guard runs before the **Losses inside a tracked fleet** column is dropped), so nothing is undone; without the stop, the help text of `0038` and the index of `0037` would be undone next, and `0036` runs its guard before the pruning share column is dropped.
+  stops at `0040` (its guard runs before the **Notify members when a payment is undone** column is dropped), so nothing is undone; without the stop, the help text of `0038` and the index of `0037` would be undone next, and `0036` runs its guard before the pruning share column is dropped.
 - [ ] A loss of a pilot who was in a tracked fleet, checked from My SRP as a loss outside a fleet: with the default setting the check shows the fleet and the fleet amount; **Submit as a loss outside a fleet anyway** needs a reason and the claim page shows it; with **Block** the check has no submit button and offers the link of the fleet; with **Only suggest** it only asks "Submit it as a fleet loss?". Close the fleet link after the check and submit: the claim is made outside a fleet with the closed-link warning.
 
 **Version and database matrix** (CI runs SQLite and MariaDB with the whole suite and the migration tests on PostgreSQL; the PostgreSQL job covers the migrations only, so run the rest of this list on PostgreSQL by hand for a release)
@@ -304,3 +304,27 @@ right actor.
 - [ ] Without aa-srp the import command stops with a clear message; without django-eveonline-sde the location and the ship
   group come from ESI and a failed lookup lets the claim through; without aa-charlink the authorization page works; without
   fittings nothing changes.
+
+## 17. Fixes of 0.3.0b2
+
+- [ ] SRP settings: turn on **Members must choose a category for losses outside a fleet** with no default category and
+  no category members can choose: saving is refused with the three ways out. With one choosable category, deactivating,
+  hiding or deleting it is refused; with a second one or a default category it is allowed. On a site that is already in
+  that state, the settings page and **My SRP** show the warning.
+- [ ] Open an older fleet that was started by 0.2.x and use **Retry Ping**: the posted ping has no `fitting:` or `<font`.
+  A ping without a fleet and a fleet ping to the same channel within 60 seconds: the second one is refused with the wait.
+  The same for a scheduled fleet started less than a minute after its pre ping: the fleet starts, the ping step shows the wait.
+- [ ] Edit a fleet and save without changing anything: the start and end keep their seconds and the audit log has no
+  new **operation.edit** entry. Start a fleet with automatic SRP link: **srp.link_create** names the person who started it; press **Retry SRP** as another FC lead on a fleet without a link: it names that lead.
+- [ ] A group leader who started a group fleet does not see the roles marked FC credit when assigning a special role; an FC
+  lead does.
+- [ ] Delete an Alliance Auth group that has FleetOps group settings in the Django admin: it works and the audit log has one
+  **Group deleted** entry.
+- [ ] With **SRP reviewers may decide on their own claims** off, press **Recalculate** while only your own claims wait: the
+  message is a warning that says nothing was recalculated; with other claims waiting it says how many of yours were skipped.
+- [ ] A Chinese export or report ends with its total row in Chinese, on a site where other apps are installed too.
+- [ ] An ended fleet shows no **Retry Ping** or **Retry MOTD**.
+- [ ] The ship image on the check page, the claim page and the loss cards is square (64 by 64) at every width.
+- [ ] Make the claim deadline longer: losses that were marked too old show up on **My SRP** after the next scan.
+- [ ] Turn on **Notify members when a payment is undone** (with **Notify members** on), undo a payment with a reason: the
+  member gets a notification with the reason, in their language. With either switch off nothing is sent.

@@ -158,9 +158,9 @@ def sync_claim(target, source):
     return target
 
 
-def notify_after_commit(claim, action: str) -> None:
+def notify_after_commit(claim, action: str, reason: str = "") -> None:
     """Tell the claimant once the decision is committed; a failure is logged and ignored."""
-    transaction.on_commit(lambda: notify.notify_claimant(claim, action))
+    transaction.on_commit(lambda: notify.notify_claimant(claim, action, reason))
 
 
 def record_event(

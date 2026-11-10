@@ -167,6 +167,10 @@ def home_context(request, year, month, claim_form, settings_obj):
     user = request.user
     context["ban"] = bans.active_ban(user)
     context["not_covered"] = blocks.member_notice(settings_obj)
+    # A configuration that leaves nobody a category for a loss outside a fleet: members get one clear sentence, the
+    # people who can change the settings also get the way out.
+    context["category_dead_end"] = settings_obj.out_of_fleet_enabled and categories.has_dead_end(settings_obj)
+    context["can_fix_settings"] = request.user.has_perm("fleetops.manage_configuration")
     context["standing_links"] = links.open_standing_links()
     if discovery.discovery_active(settings_obj):
         context.update(discovery_context(request, settings_obj, context["standing_links"]))

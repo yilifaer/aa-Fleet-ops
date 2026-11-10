@@ -17,7 +17,7 @@ from fleetops.constants import MAX_ISK
 from fleetops.forms import _style
 from fleetops.forms_operation import EveDateTimeField
 from fleetops.models import MAX_DATABASE_ID, SrpBan, SrpCategory, SrpFleetLink, SrpSettings
-from fleetops.srp.categories import default_category, selectable_categories
+from fleetops.srp.categories import default_category, has_dead_end, selectable_categories
 from fleetops.srp.display import category_label
 from fleetops.srp.killmails import parse_killmail_reference
 from fleetops.srp.types import SrpError
@@ -220,6 +220,9 @@ class ClaimInputForm(forms.Form):
         srp = settings_obj or SrpSettings.get_solo()
         choices = selectable_categories().order_by("sort_order", "pk")
         if not choices.exists():
+            # Required but impossible to satisfy. Only a loss outside a fleet needs the category, so the form stays
+            # valid: a loss that is switched to a fleet link needs none, and the check says so for the others.
+            self.category_dead_end = has_dead_end(srp)
             return
         default = default_category(srp)
         required = srp.out_of_fleet_category_required
@@ -234,6 +237,8 @@ class ClaimInputForm(forms.Form):
             if required
             else _("Optional. The category decides the payout table and the limits."),
         )
+
+    category_dead_end = False
 
     def clean_killmail(self):
         """The text must hold a killmail the service can look up; the person is told what to paste otherwise."""

@@ -33,7 +33,7 @@ from fleetops.services import group_access, roster_import
 from fleetops.services.history import retention_cutoff
 from fleetops.services.multipliers import multiplier_label
 from fleetops.services.periods import MIN_YEAR
-from fleetops.services.roles import participant_rows
+from fleetops.services.roles import may_give_fc_credit, participant_rows
 from fleetops.services.roster_paste import clean_name, name_error
 from fleetops.texts import translate_stored
 
@@ -479,9 +479,12 @@ class OperationRoleAssignmentForm(forms.Form):
     character_id = forms.ChoiceField(label=_("Fleet Member"))
     notes = forms.CharField(label=_("Notes"), required=False, widget=forms.Textarea(attrs={"rows": 2}))
 
-    def __init__(self, *args, operation=None, **kwargs):
+    def __init__(self, *args, operation=None, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["role"].queryset = SpecialRole.objects.filter(is_active=True)
+        if user is not None and operation is not None and not may_give_fc_credit(user, operation):
+            # A group leader does not get the roles that carry FC credit offered (the service refuses them too).
+            self.fields["role"].queryset = self.fields["role"].queryset.filter(grants_fc_credit=False)
         self.fields["role"].label_from_instance = _role_label
         # Until an FC lead has approved the fleet, roles with FC credit cannot be assigned (the server refuses too).
         self.credit_after_approval = bool(operation is not None and operation.review_status != ReviewStatus.APPROVED)

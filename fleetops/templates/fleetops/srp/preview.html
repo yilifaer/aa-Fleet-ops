@@ -66,7 +66,7 @@
     <div class="card h-100">
       <div class="card-header"><strong>{% translate "Loss" %}</strong></div>
       <div class="card-body d-flex gap-3">
-        <img class="fo-render" src="{% ship_render_url km.ship_type_id 64 %}" width="64" height="64" alt="" loading="lazy">
+        <img class="fo-render fo-render-64" src="{% ship_render_url km.ship_type_id 64 %}" width="64" height="64" alt="" loading="lazy">
         <div class="min-w-0">
           <h3 class="h5 mb-1">{{ km.ship_type_name|default:km.ship_type_id }}</h3>
           {% if identity %}<div>{{ identity.character_name }}{% if identity.main_character_name and identity.main_character_name != identity.character_name %} <span class="text-muted">{% blocktranslate trimmed with main=identity.main_character_name %}(main {{ main }}){% endblocktranslate %}</span>{% endif %}</div>

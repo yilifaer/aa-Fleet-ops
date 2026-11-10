@@ -31,8 +31,11 @@
         {% if can_manage %}
           <div class="mt-3 d-flex gap-2 flex-wrap">
             {% if operation.send_ping and not operation.is_manual %}
+            {# An ended fleet posts nothing any more: its ping and MOTD are not sent again. #}
+            {% if operation.status != 'closed' and operation.status != 'cancelled' %}
             {% if operation.ping_channel_id %}<form method="post" action="{% url 'fleetops:retry_ping' operation.uuid %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary">{% translate "Retry Ping" %}</button></form>{% endif %}
             <form method="post" action="{% url 'fleetops:retry_motd' operation.uuid %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary">{% translate "Retry MOTD" %}</button></form>
+            {% endif %}
             {% if operation.status == 'active' %}
             <form method="post" action="{% url 'fleetops:regenerate_motd' operation.uuid %}" id="regenerate-motd" data-fo-confirm="{{ regenerate_confirm }}" data-fo-confirm-label="{% translate 'Regenerate &amp; Push MOTD' %}" data-fo-confirm-danger="false">{% csrf_token %}<button class="btn btn-sm btn-outline-primary"{% if operation.missing_reason == 'boss_handover' %} disabled title="{{ handover_text }}"{% endif %}>{% translate "Regenerate &amp; Push MOTD" %}</button></form>
             {% if operation.missing_reason == 'boss_handover' %}<div class="small text-muted align-self-center">{{ handover_text }}</div>{% endif %}

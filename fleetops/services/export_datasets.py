@@ -710,7 +710,7 @@ SRP_STATUS_FILTERS = (
     SrpClaim.Status.PAID,
     SrpClaim.Status.REJECTED,
 )
-SRP_TOTAL_ROW = gettext_lazy("Total")
+SRP_TOTAL_ROW = pgettext_lazy("FleetOps", "Total")
 
 
 def _srp_corporation(request):

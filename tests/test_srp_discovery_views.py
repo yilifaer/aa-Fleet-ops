@@ -460,7 +460,11 @@ class CheckFlowTests(ViewBase):
         response = self.check(loss, "")
 
         self.assertRedirects(response, route("srp_home"), fetch_redirect_response=False)
-        self.assertEqual(self.messages(response), ["Choose a category for this loss."])
+        # With no category that members can choose the reason is that, not "Choose a category".
+        self.assertEqual(
+            self.messages(response),
+            ["No category can be chosen for a loss outside a fleet right now. Ask an SRP manager to change the SRP settings."],
+        )
         self.assertFalse(SrpClaim.objects.exists())
 
     def test_a_category_with_a_standing_link_of_the_day_is_out_of_fleet_with_that_link(self):

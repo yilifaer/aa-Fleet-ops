@@ -2,7 +2,7 @@
 # SrpSettings.in_fleet_match_action (auto, block or suggest; default auto) to the SRP settings. New and upgraded sites
 # get "auto"; no data is changed or read.
 #
-# This is now the last migration of the chain, so going back undoes it first. Its operations are undone in reverse
+# Later migrations of the chain are undone before this one when going back. Its operations are undone in reverse
 # order: the rollback guard below runs before the column is dropped, so a rollback below 0035 is still refused first
 # and a refused rollback leaves the running version with a settings table it can read. The guard is the one of 0035 (the
 # same checks, the same message); 0035 runs it a second time when the rollback goes on, which changes nothing. Going

@@ -91,6 +91,7 @@ preview warns that nobody will be notified.
   brackets (an alliance ticker `<ABCD>`, a Discord timestamp `<t:…>`, `x<y`) stays as typed. Line breaks of the
   additional message stay. This also cleans fleets that were saved before: nothing stored is changed, and saving a
   payout rule or a fleet without touching its doctrine name keeps the stored name (and so its doctrine key).
+- **Retry Ping** renders the ping again from the current data of the fleet and the current templates before it posts it, so a fleet saved by an older version does not post its old stored text. **Retry MOTD** posts the stored MOTD; **Regenerate & Push MOTD** renders it again. An ended fleet has neither retry button.
 - Links to comms and doctrines are built from `SITE_URL`. Without it they are site paths that do not open
   outside Alliance Auth, and the preview warns about it.
 

@@ -326,7 +326,9 @@ class GroupFlowTests(FakeESIMixin, TestCase):
         self.assertEqual(toward_minimum_count(row), 0)
         self.assertFalse(row.eligible)
 
-        # The same leader sends a ping to the group channel: a record without a fleet.
+        # The same leader sends a ping to the group channel: a record without a fleet. The channel is quiet again by
+        # now (a channel holds for 60 seconds after any ping of a fleet or without one).
+        f.cool_down_pings()
         self.discord_post.reset_mock()
         group_ping = self.client.post(
             reverse("fleetops:send_ping"),
@@ -517,6 +519,9 @@ class LanguageOfMessagesTests(StartFormTestBase):
         self.assertNotRegex(notice, CJK)
 
         self.mocks["post"].reset_mock()
+        # Changed for the shared ping cooldown: a ping of a fleet and a ping without a fleet hold the channel for 60
+        # seconds; this test sends one after the other, so the cooldown is let run out.
+        f.cool_down_pings()
         sender = f.create_user("zh_sender", perms=f.FC_PERMS, main_name="Zh Sender")
         self.client.force_login(sender)
         self.client.cookies[django_settings.LANGUAGE_COOKIE_NAME] = ZH

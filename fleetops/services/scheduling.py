@@ -19,7 +19,7 @@ from fleetops.services.errors import report_failure
 from fleetops.services.messages import render_cancellation_notice, render_messages
 from fleetops.services.operations import (
     NOT_RENDERED,
-    _send_ping,
+    send_ping_after_cooldown,
     cancel_abandoned_starts,
     claim_esi_fleet,
     detect_fleet_boss,
@@ -102,7 +102,7 @@ def _render_pre_ping(operation, *, actor):
 
 def _send_pre_ping(operation, *, actor):
     try:
-        return _send_ping(operation, actor=actor, action="pre_ping")
+        return send_ping_after_cooldown(operation, actor=actor, action="pre_ping")
     except Exception as exc:
         return set_action(operation, "pre_ping", False, report_failure(logger, "Pre ping", exc, operation))
 

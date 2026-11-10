@@ -55,7 +55,8 @@ class StartWithFleetOpsSrpTests(PatchedStartFleetMixin, TestCase):
         )
         step = action_of(operation, "srp_link")
         self.assertEqual((step.status, step.error_message), (ActionStatus.SUCCESS, "FleetOps SRP link created."))
-        self.assertEqual((link.fc_user, link.created_by), (self.fc, None))
+        # Changed: the link made at the start of a fleet is audited with the FC who started it as the actor.
+        self.assertEqual((link.fc_user, link.created_by), (self.fc, self.fc))
         self.assertTrue(link.is_open)
 
     def test_the_link_exists_when_the_messages_are_rendered(self):

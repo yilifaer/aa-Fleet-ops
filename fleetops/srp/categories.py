@@ -21,6 +21,12 @@ def selectable_categories():
     return SrpCategory.objects.filter(is_active=True, member_selectable=True)
 
 
+def has_dead_end(settings_obj=None) -> bool:
+    """True when members must choose a category for a loss outside a fleet and none can be chosen or defaulted."""
+    srp = settings_obj or SrpSettings.get_solo()
+    return srp.out_of_fleet_dead_end()
+
+
 def category_for_fleet_type(fleet_type_id) -> SrpCategory | None:
     """The active category that the fleet type is mapped to, if any."""
     if not fleet_type_id:
@@ -68,5 +74,7 @@ def resolve_category(*, scope, link, operation, chosen, settings_obj=None) -> Sr
     if default is not None:
         return default
     if srp.out_of_fleet_category_required:
+        if not selectable_categories().exists():
+            raise SrpError("category_required", texts.SRP_CATEGORY_NONE_TO_CHOOSE())
         raise SrpError("category_required", texts.SRP_CATEGORY_REQUIRED())
     return None

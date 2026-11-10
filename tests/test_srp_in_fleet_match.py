@@ -310,6 +310,67 @@ class OutOfFleetWayOutChecksTests(MatchBase):
         self.assertEqual((claim.scope, claim.category), (OUT_OF_FLEET, category))
 
 
+class DeadEndSettingsTests(MatchBase):
+    """A site that is in the dead end already (a category is required, none can be chosen): only a loss that ends up
+    outside a fleet is refused, a loss inside a tracked fleet needs no category."""
+
+    def setUp(self):
+        super().setUp()
+        self.settings(out_of_fleet_category_required=True, default_category=None)
+        self.client.force_login(self.user)
+
+    def check(self):
+        with mock.patch.object(claims.killmails, "fetch_killmail", return_value=self.km):
+            return self.client.post(reverse("fleetops:srp_check"), {"killmail": self.text(self.km)})
+
+    def test_a_loss_inside_a_fleet_with_an_open_link_is_switched_and_previewed(self):
+        response = self.check()
+
+        self.assertEqual(response.status_code, 200)
+        preview = response.context["preview"]
+        self.assertEqual((preview.scope, preview.link), (IN_FLEET, self.link))
+        self.assertTrue(preview.switched)
+        self.assertTrue(preview.token)
+        self.assertNotContains(response, 'id="srp-category-dead-end"')
+
+    def test_a_loss_inside_a_fleet_with_a_closed_link_is_refused_with_the_clear_message(self):
+        self.link.is_open = False
+        self.link.save()
+
+        response = self.check()
+
+        self.assertNotIn("preview", response.context)
+        self.assertFalse(SrpClaim.objects.exists())
+        self.assertContains(response, "No category can be chosen for a loss outside a fleet")
+
+    def test_block_mode_still_tells_the_member_to_use_the_fleet_link(self):
+        self.settings(in_fleet_match_action=Action.BLOCK)
+
+        response = self.check()
+
+        self.assertFalse(response.context["preview"].eligible)
+        self.assertContains(response, "SRP link of that fleet")
+        self.assertNotContains(response, "No category can be chosen")
+        self.assertFalse(SrpClaim.objects.exists())
+
+    def test_a_loss_outside_every_fleet_is_refused(self):
+        km = self.killmail(time=timezone.now() - timedelta(days=2))
+        with mock.patch.object(claims.killmails, "fetch_killmail", return_value=km):
+            response = self.client.post(reverse("fleetops:srp_check"), {"killmail": self.text(km)})
+
+        self.assertNotIn("preview", response.context)
+        self.assertContains(response, "No category can be chosen for a loss outside a fleet")
+        self.assertFalse(SrpClaim.objects.exists())
+
+    def test_the_form_itself_stays_valid(self):
+        from fleetops.forms_srp import ClaimInputForm
+
+        form = ClaimInputForm({"killmail": self.text(self.km)}, with_category=True)
+
+        self.assertTrue(form.is_valid())
+        self.assertTrue(form.category_dead_end)
+
+
 class StaleTokenAgainstBlockTests(MatchBase):
     def test_a_token_from_suggest_mode_is_refused_after_the_switch_to_block(self):
         self.settings(in_fleet_match_action=Action.SUGGEST)

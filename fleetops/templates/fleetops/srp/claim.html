@@ -3,7 +3,7 @@
 {% block fleetops_content %}
 {% translate "System" context "automatic actor" as system_actor %}
 <div class="d-flex flex-wrap align-items-start gap-3 mb-3">
-  <img class="fo-render" src="{% ship_render_url claim.ship_type_id 64 %}" width="64" height="64" alt="" loading="lazy">
+  <img class="fo-render fo-render-64" src="{% ship_render_url claim.ship_type_id 64 %}" width="64" height="64" alt="" loading="lazy">
   <div class="flex-grow-1">
     <h2 class="mb-1">{{ claim.reference }} {{ claim|srp_status_badge }}{% if claim.auto_rejected %} {% pill "neutral" _("Automatic") %}{% endif %}{% if is_imported %} {% translate "aa-srp import" as import_label %}{% pill "neutral" import_label %}{% endif %}</h2>
     <div class="text-muted">{% blocktranslate trimmed with ship=claim.ship_type_name|default:claim.ship_type_id time=claim.killmail_time|eve_time pilot=claim.character_name %}{{ ship }} lost {{ time }} EVE &middot; {{ pilot }}{% endblocktranslate %}</div>

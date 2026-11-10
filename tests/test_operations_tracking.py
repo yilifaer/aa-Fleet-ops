@@ -1993,15 +1993,20 @@ class RetryTests(FakeESIMixin, TestCase):
         self.assertEqual(result.status, ActionStatus.SUCCESS)
         self.assertEqual(result.error_message, "")
 
-    def test_retry_ping_posts_stored_ping_text(self):
+    def test_retry_ping_renders_the_ping_again_and_posts_it(self):
+        # Changed: a retry no longer posts the stored text as it is (it may come from an older version); it renders the
+        # ping again from the current data of the fleet, notifying exactly the stored mention.
         result = retry_ping(self.operation, actor=self.operation.fc_user)
 
-        self.discord_post.assert_called_once_with(
-            WEBHOOK_URL,
-            json={"content": "ping", "allowed_mentions": {"parse": ["everyone"]}, "flags": 4},
-            timeout=15,
-            allow_redirects=False,
-        )
+        self.discord_post.assert_called_once()
+        self.assertEqual(self.discord_post.call_args.args, (WEBHOOK_URL,))
+        payload = self.discord_post.call_args.kwargs["json"]
+        self.assertNotEqual(payload["content"], "ping")
+        self.assertIn("**Formup Location:** Jita", payload["content"])
+        self.assertEqual(payload["allowed_mentions"], {"parse": ["everyone"]})
+        self.assertEqual(payload["flags"], 4)
+        self.operation.refresh_from_db()
+        self.assertEqual(self.operation.ping_text, payload["content"])
         self.assertEqual(result.status, ActionStatus.SUCCESS)
 
     def test_retry_motd_uses_fc_character_token(self):

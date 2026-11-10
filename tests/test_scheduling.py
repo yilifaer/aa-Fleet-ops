@@ -437,6 +437,25 @@ class StartScheduledFleetTests(SchedulingTestBase):
         self.assertEqual(self.discord_post.call_count, 1)
         self.assertEqual(len(self.esi.put_calls), 1)
 
+    def test_a_start_within_a_minute_of_the_pre_ping_waits_for_the_channel(self):
+        # The 60 second wait of a ping channel also holds between a fleet's own pre ping and its start ping: the
+        # start goes on, the ping step shows the wait, and Retry Ping posts once the channel is quiet.
+        self.post_schedule(when=in_two_hours())
+        operation = FleetOperation.objects.get()
+        self.assertEqual(steps(operation)["pre_ping"], ActionStatus.SUCCESS)
+
+        self.post_start(operation)
+
+        operation.refresh_from_db()
+        self.assertEqual(operation.status, Status.ACTIVE)
+        step = operation.actions.get(action="discord_ping")
+        self.assertEqual(step.status, ActionStatus.FAILED)
+        self.assertIn("wait", step.error_message.lower())
+        self.assertEqual(self.discord_post.call_count, 1)
+        f.cool_down_pings()
+        operations_module.retry_ping(operation, actor=self.fc)
+        self.assertEqual(self.discord_post.call_count, 2)
+
     def test_service_returns_a_started_fleet_unchanged(self):
         operation = self.scheduled()
         start_scheduled_fleet(operation, user=self.fc, character_id=self.fc_char.character_id, send_ping=True)
@@ -626,7 +645,8 @@ class EditScheduledFleetTests(SchedulingTestBase):
         self.assertIn("Scheduled fleet updated. The updated pre ping was already posted.", flashed(second))
         self.assertEqual(len(self.discord_payloads()), 1)
         self.assertFalse(AuditLog.objects.filter(action="fleet.schedule_edit").order_by("pk").last().new_value["send_update"])
-        # Another edit page posts again.
+        # Another edit page posts again once the channel is quiet (changed for the shared ping cooldown of 60 seconds).
+        f.cool_down_pings()
         self.edit(operation, formup="Perimeter", send_update="on", edit_token=str(uuid.uuid4()))
         self.assertEqual(len(self.discord_payloads()), 2)
 
@@ -859,7 +879,10 @@ class ScheduledFleetPageTests(SchedulingTestBase):
 
         self.assertEqual(operation.actions.get(action="pre_ping").status, ActionStatus.SUCCESS)
         self.assertFalse(operation.actions.filter(action="discord_ping").exists())
-        self.assertEqual(self.discord_payloads()[0]["content"], "Pre ping")
+        # Changed: the pre ping is rendered again from the current data of the fleet, not posted as stored.
+        content = self.discord_payloads()[0]["content"]
+        self.assertNotEqual(content, "Pre ping")
+        self.assertIn("**Formup Location:** Amarr", content)
 
     def test_motd_and_srp_retries_wait_for_the_start(self):
         operation = self.scheduled()

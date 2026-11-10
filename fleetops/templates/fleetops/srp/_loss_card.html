@@ -1,6 +1,6 @@
 {% load i18n fleetops_srp fleetops_messages %}{% comment %}One loss of a pilot as a card: the render, the ship, the claim, the amount, the time and the status. Context: claim.{% endcomment %}
 <div class="fo-loss-card" data-claim="{{ claim.uuid }}">
-  <img class="fo-render" src="{% ship_render_url claim.ship_type_id 64 %}" width="64" height="64" alt="" loading="lazy">
+  <img class="fo-render fo-render-64" src="{% ship_render_url claim.ship_type_id 64 %}" width="64" height="64" alt="" loading="lazy">
   <div class="fo-loss-body">
     <div class="fw-semibold">{{ claim.ship_type_name|default:claim.ship_type_id }}</div>
     <a class="stretched-link small" href="{% url 'fleetops:srp_claim' claim.uuid %}">{{ claim.reference }}</a>

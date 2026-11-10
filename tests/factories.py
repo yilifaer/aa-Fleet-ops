@@ -38,6 +38,7 @@ from fleetops.models import (
     GroupAccess,
     MessageTemplate,
     MultiplierTier,
+    OperationAction,
     PapLink,
     PapRegistration,
     PingRole,
@@ -932,6 +933,17 @@ def standalone_ping(**fields) -> StandalonePing:
     }
     values.update(fields)
     return StandalonePing.objects.create(**values)
+
+
+def cool_down_pings() -> None:
+    """Let the 60 second cooldown of every ping channel run out: the pings sent so far are moved far into the past.
+
+    A ping channel holds for 60 seconds after a ping of a fleet or without a fleet; a test that sends several pings
+    to one channel one after the other (or with a frozen clock) calls this between them.
+    """
+    long_ago = datetime(2000, 1, 1, tzinfo=dt_timezone.utc)
+    OperationAction.objects.update(executed_at=long_ago)
+    StandalonePing.objects.update(created_at=long_ago)
 
 
 def notification_badge_queries(user) -> int:

@@ -523,6 +523,23 @@ def queue_loss_scan(now=None) -> bool:
     return True
 
 
+def reopen_old_losses(old_deadline_days, new_deadline_days, now=None) -> int:
+    """Evaluate the killmails marked too old again after the claim deadline was made longer; returns the rows removed.
+
+    The rows of too-old killmails that fit the new window (and those without a time, which were never read) are
+    removed and every character is read again in the next scan, so the losses show up without waiting for the daily
+    cleanup. A deadline that is not longer changes nothing.
+    """
+    if (new_deadline_days or DEFAULT_WINDOW_DAYS) <= (old_deadline_days or DEFAULT_WINDOW_DAYS):
+        return 0
+    now = now or timezone.now()
+    floor = now - timedelta(days=new_deadline_days or DEFAULT_WINDOW_DAYS)
+    removed = SrpLoss.objects.filter(kind=Kind.OLD).filter(Q(killmail_time__gte=floor) | Q(killmail_time__isnull=True)).delete()[0]
+    if removed:
+        SrpLossScan.objects.update(next_check_at=None)
+    return removed
+
+
 def prune_losses(now=None) -> int:
     """Delete the rows that are no use any more; returns how many. Kills and too-old rows go a day after they left
     the window, losses 30 days after, and scan rows of characters that are no longer on any account."""

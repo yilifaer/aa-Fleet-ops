@@ -142,8 +142,8 @@ channels of that group only. Members of "Example Squad members" have none of the
 has them. Details: [Groups](configuration.md#two-groups-per-small-group).
 
 What a group leader cannot do: change any setting, send a pre ping, start a PAP-link fleet, use an alliance channel
-(a channel without a group) or another group's channel, change the fleet type of a group fleet, or loosen the PAP
-character limit. A leader who also holds the normal FC permissions keeps those rights as well and chooses between
+(a channel without a group) or another group's channel, change the fleet type of a group fleet, loosen the PAP
+character limit, or give special roles that carry FC credit (the role list they see leaves those roles out, and the server refuses them; roles given before stay). A leader who also holds the normal FC permissions keeps those rights as well and chooses between
 an alliance fleet and a group fleet.
 
 ## Row-level rules
@@ -164,7 +164,7 @@ an alliance fleet and a group fleet.
   corporation exists or not, and the page says why ("You can only open the statistics of your own corporation."
   and similar). Every unknown or hidden FleetOps page answers one neutral FleetOps 404 page; pages that need a
   permission the user lacks show the FleetOps page with the reason and the permission name (403).
-- Special roles with FC credit can be assigned once an FC lead has approved the fleet. A rejected fleet stays
+- Special roles with FC credit are given only by FC leads (`manage_fleets`) and by the FC of the fleet or a credited FC with `manage_own_fleet`; a group leader who manages a group fleet only as a leader cannot give them. They can be assigned once an FC lead has approved the fleet. A rejected fleet stays
   rejected after edits; its FC (or whoever manages it) sends it back with **Resubmit for approval**, with an optional
   note the approvers see.
 - Reject (fleet, PAP rows, SRP claims), Undo payment, Revoke approval and similar irreversible steps ask for a
