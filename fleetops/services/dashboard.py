@@ -20,7 +20,8 @@ def dashboard_metrics(user):
     attendance = apply_current_membership_filter(
         counted_attendance(AttendanceRecord.objects.filter(auth_user=user)).select_related("operation__fleet_type")
     )
-    types = list(FleetType.objects.filter(is_active=True).order_by("sort_order", "name")[:4])
+    # The types with "Show on dashboard" on (the migration set it for the first four active types), in sort order.
+    types = list(FleetType.objects.filter(is_active=True, show_on_dashboard=True).order_by("sort_order", "name"))
     # One grouped query for the month, the last 30 and the last 90 days of every card.
     since = min(month_start, now - timedelta(days=90))
     in_month = Q(operation__started_at__gte=month_start, operation__started_at__lt=month_end)

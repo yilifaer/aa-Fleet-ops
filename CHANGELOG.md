@@ -2,7 +2,7 @@
 
 ## [0.3.0b3] - Unreleased
 
-Fixes from the second run of 0.3.0b2 on a test site, and a new setting: who may ping which doctrine. There is one new migration (`0043`, two small tables); install it the way you installed 0.3.0b2 and read the upgrade and rollback notes below.
+Fixes from the second run of 0.3.0b2 on a test site, a new setting (who may ping which doctrine), and colours and dashboard cards for fleet types. There are two new migrations (`0043`, two small tables; `0044`, two columns of the fleet types); install them the way you installed 0.3.0b2 and read the upgrade and rollback notes below.
 
 ### Added
 
@@ -30,6 +30,18 @@ Fixes from the second run of 0.3.0b2 on a test site, and a new setting: who may 
 - Every change of these settings is written to the audit log as `configuration.create` or `configuration.update`
   (object types `DoctrineAccess` and `DoctrineSettings`) with the groups before and after. A record of a doctrine that was
   deleted in the doctrine app is kept and listed as such; it restricts nothing.
+
+- **Fleet type colours.** In **Administration, Fleet Types** every type can have a colour: **Automatic** (the default; the
+  colour it has now, so nothing changes after the upgrade), one of the six theme colours, or a **custom colour** (`#e67e22`;
+  `#` and 3 or 6 hexadecimal digits, checked on the server). A preview on the edit page shows the dot and a sample with black
+  or white text by the brightness of the colour, and warns when the colour is hard to see on the light or the dark theme.
+  The colour is used everywhere the type is shown with a dot: dashboard cards, fleet lists, history, statistics and the
+  running fleets.
+- **Show on dashboard.** Every fleet type has a switch that shows its PAP card on the dashboard. The cards follow the sort
+  order. More than four cards wrap onto further rows and work at phone width. The upgrade turns the switch on for the first
+  four active types (by sort order and name) and off for the rest, so the dashboard looks the same after the upgrade; a
+  type created later starts with the switch on.
+- Changes of the colour and the switch are written to the audit log (`configuration.update`, old and new values).
 
 ### Changed
 
@@ -61,6 +73,9 @@ Fixes from the second run of 0.3.0b2 on a test site, and a new setting: who may 
 
 ### Upgrade notes
 
+- One migration, `0044`, adds two columns to the fleet types: the colour (empty, so every type keeps its colour) and
+  **Show on dashboard** (on for the first four active types by sort order and name, off for the others, as the dashboard
+  showed them). No other data is read or changed.
 - One migration, `0043`, creates two empty tables (the groups per doctrine and the custom doctrine name setting). It changes
   and reads no data: after the upgrade no doctrine is restricted and the custom name is open to everybody who may start
   fleets, so every page behaves as in 0.3.0b2 until an administrator sets something. Upgrade the package, run `python manage.py migrate`, `python manage.py collectstatic --noinput` (the pages are templates; the command keeps the static files in step) and restart the web process.
@@ -74,6 +89,10 @@ Fixes from the second run of 0.3.0b2 on a test site, and a new setting: who may 
 
 ### Rollback notes
 
+- `python manage.py migrate fleetops 0043` drops the two new columns of the fleet types and runs the rollback guard first (a
+  rollback below `0035` is still refused before anything is dropped). Only the chosen colours and switches are lost: every
+  type has its automatic colour again and the dashboard shows the first four active types, as in 0.3.0b2. Without the
+  migration step 0.3.0b2 ignores the columns.
 - `python manage.py migrate fleetops 0042` drops the two new tables and runs the rollback guard first (a rollback below
   `0035` is still refused before anything is dropped). Only the doctrine restrictions and the custom name setting are
   lost: every doctrine is open to everybody who may start fleets again, and the Alliance Auth groups are not touched.

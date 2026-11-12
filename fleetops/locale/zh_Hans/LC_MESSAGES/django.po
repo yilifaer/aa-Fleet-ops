@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-12 01:30+0000\n"
+"POT-Creation-Date: 2026-11-12 05:44+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -346,6 +346,69 @@ msgstr "舰船组太多：列表最多 500 个字符。"
 #: forms_config.py views_config.py
 msgid "General"
 msgstr "常规"
+
+#: forms_config.py
+msgid "Teal"
+msgstr "青绿"
+
+#: forms_config.py
+msgid "Purple"
+msgstr "紫色"
+
+#: forms_config.py
+msgid "Orange"
+msgstr "橙色"
+
+#: forms_config.py
+msgid "Cyan"
+msgstr "青色"
+
+#: forms_config.py
+msgid "Pink"
+msgstr "粉色"
+
+#: forms_config.py
+msgid "Indigo"
+msgstr "靛蓝"
+
+#: forms_config.py models.py srp/reports.py srp/summaries.py
+#: templates/fleetops/srp/claim.html
+msgid "Automatic"
+msgstr "自动"
+
+#: forms_config.py forms_fleet.py models.py views_config.py
+msgid "Colour"
+msgstr "颜色"
+
+#: forms_config.py
+msgid "Custom colour"
+msgstr "自定义颜色"
+
+#: forms_config.py
+msgid "Automatic keeps the colour the type has always had. The theme colours follow the light and dark theme."
+msgstr "“自动”保持类型一直以来的颜色。主题颜色会随亮色和暗色主题变化。"
+
+#: forms_config.py
+msgid "Used when Colour is Custom colour. Write # and 3 or 6 hexadecimal digits, for example #e67e22."
+msgstr "颜色选“自定义颜色”时使用。写 # 加 3 位或 6 位十六进制数字，例如 #e67e22。"
+
+#: forms_config.py
+msgid "Enter a colour as # and 3 or 6 hexadecimal digits, for example #e67e22."
+msgstr "请按 # 加 3 位或 6 位十六进制数字的格式输入颜色，例如 #e67e22。"
+
+#: forms_config.py
+msgid "Choose a colour from the list."
+msgstr "请从列表中选择一种颜色。"
+
+#: forms_config.py
+#, python-format
+msgid "The colour %(color)s is hard to see on the light theme."
+msgstr "颜色 %(color)s 在亮色主题下很难看清。"
+
+#: forms_config.py
+#, python-format
+msgid "The colour %(color)s is hard to see on the dark theme."
+msgstr "颜色 %(color)s 在暗色主题下很难看清。"
 
 #: forms_config.py models.py templates/fleetops/attendance_history.html
 #: templates/fleetops/fleet_operations.html
@@ -750,10 +813,6 @@ msgstr "舰队位置"
 #: forms_fleet.py
 msgid "Members in these positions count under this function whatever they fly."
 msgstr "处于这些位置的成员，不论驾驶什么舰船，都计入此功能。"
-
-#: forms_fleet.py views_config.py
-msgid "Colour"
-msgstr "颜色"
 
 #: forms_fleet.py
 msgid "Default function"
@@ -2007,6 +2066,22 @@ msgid "Sort order"
 msgstr "排序"
 
 #: models.py
+msgid "Enter theme-1 to theme-6 or a colour as # and six lower-case hex digits, such as #e67e22."
+msgstr "请输入 theme-1 到 theme-6，或以 # 加六位小写十六进制数字表示的颜色，例如 #e67e22。"
+
+#: models.py
+msgid "Empty: the type gets one of the theme colours automatically. Otherwise one of the six theme colours (theme-1 to theme-6) or a custom colour such as #e67e22."
+msgstr "留空：类型自动使用一种主题颜色。否则填六种主题颜色之一（theme-1 到 theme-6），或自定义颜色，例如 #e67e22。"
+
+#: models.py
+msgid "Show on dashboard"
+msgstr "在总览显示"
+
+#: models.py
+msgid "Show a PAP card of this type on the dashboard. The cards follow the sort order."
+msgstr "在总览里显示这个类型的 PAP 卡片。卡片按排序排列。"
+
+#: models.py
 msgid "fleet type"
 msgstr "舰队类型"
 
@@ -2294,10 +2369,6 @@ msgstr "旧版"
 #: templates/fleetops/operation/_members.html
 msgid "Time in fleet"
 msgstr "在队时长"
-
-#: models.py srp/reports.py srp/summaries.py templates/fleetops/srp/claim.html
-msgid "Automatic"
-msgstr "自动"
 
 #: models.py templates/fleetops/operation/_stats_card.html
 msgid "Always count"
@@ -6769,6 +6840,31 @@ msgstr "EVE Ref 上的全部舰船组"
 msgctxt "FleetOps"
 msgid "Add"
 msgstr "添加"
+
+#: templates/fleetops/configuration/_fleet_type_preview.html
+msgid "New fleet type"
+msgstr "新舰队类型"
+
+#: templates/fleetops/configuration/_fleet_type_preview.html
+msgid "This colour is hard to see on the light theme."
+msgstr "这个颜色在亮色主题下很难看清。"
+
+#: templates/fleetops/configuration/_fleet_type_preview.html
+msgid "This colour is hard to see on the dark theme."
+msgstr "这个颜色在暗色主题下很难看清。"
+
+#: templates/fleetops/configuration/_fleet_type_preview.html
+msgctxt "colour preview"
+msgid "Preview"
+msgstr "预览"
+
+#: templates/fleetops/configuration/_fleet_type_preview.html
+msgid "Text on this colour"
+msgstr "这个颜色上的文字"
+
+#: templates/fleetops/configuration/_fleet_type_preview.html
+msgid "The automatic colour is chosen when the type is saved."
+msgstr "自动颜色在保存类型时确定。"
 
 #: templates/fleetops/configuration/_group_leaders.html
 msgid "Leaders from Alliance Auth"
@@ -14679,6 +14775,10 @@ msgstr "不是受支持的语音链接"
 #: views_config.py
 msgid "Fleet categories and the FC point weight attached to each type."
 msgstr "舰队分类，以及每种类型的 FC 积分权重。"
+
+#: views_config.py
+msgid "On dashboard"
+msgstr "在总览显示"
 
 #: views_config.py
 msgid "Sort"

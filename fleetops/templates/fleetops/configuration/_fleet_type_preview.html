@@ -1,0 +1,12 @@
+{% load i18n static fleetops_i18n fleetops_ui %}{% comment %}Side card of the fleet type edit page: a live preview of the chosen colour, with a warning when a custom colour is hard to see on the light or dark theme. The server checks and stores the colour; this only shows it.{% endcomment %}
+{% translate "New fleet type" as new_name %}{% translate "This colour is hard to see on the light theme." as warn_light %}{% translate "This colour is hard to see on the dark theme." as warn_dark %}
+<div class="card" id="fleet-type-preview" data-fo-type-preview data-auto-tone="{{ object|type_auto_tone }}" data-warn-light="{{ warn_light }}" data-warn-dark="{{ warn_dark }}">
+  <div class="card-header">{% translate "Preview" context "colour preview" %}</div>
+  <div class="card-body">
+    <p class="mb-2"><span class="fo-pill fo-pill-type" id="fleet-type-preview-pill">{% if object %}{{ object }}{% else %}{{ new_name }}{% endif %}</span></p>
+    <p class="mb-2"><span class="fo-pill fo-pill-icon" id="fleet-type-preview-filled">{% translate "Text on this colour" %}</span></p>
+    <p class="text-muted mb-2" id="fleet-type-preview-auto" hidden>{% translate "The automatic colour is chosen when the type is saved." %}</p>
+    <div class="alert alert-warning small mb-0" id="fleet-type-preview-warning" role="status" aria-live="polite" hidden></div>
+  </div>
+</div>
+<script src="{% static 'fleetops/fleet_type_preview.js' %}?v={% fleetops_version %}"></script>

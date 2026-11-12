@@ -635,8 +635,12 @@ class ConfigurationListRenderingTests(TestCase):
         self.assertEqual(rendered, "True True False False")
 
     def test_numbers_render_as_values_and_booleans_as_badges(self):
+        # Changed for DASH-1: the list has a "On dashboard" column; Standard shows on the dashboard, Training does not,
+        # so Yes and No are each counted twice (Active and On dashboard).
         FleetType.objects.create(name="Standard", short_name="", point_weight=Decimal("1.00"), sort_order=1)
-        FleetType.objects.create(name="Training", short_name="TR", point_weight=Decimal("0.00"), sort_order=0, is_active=False)
+        FleetType.objects.create(
+            name="Training", short_name="TR", point_weight=Decimal("0.00"), sort_order=0, is_active=False, show_on_dashboard=False
+        )
         self.client.force_login(f.create_user(perms=CONFIG_PERMS))
 
         response = self.client.get(reverse("fleetops:configuration_list", args=["fleet-types"]))
@@ -645,8 +649,8 @@ class ConfigurationListRenderingTests(TestCase):
         # Figures are right aligned; a number is never turned into a Yes or a No.
         for cell in ('<td class="text-end">1.00</td>', '<td class="text-end">0.00</td>', '<td class="text-end">1</td>', '<td class="text-end">0</td>'):
             self.assertIn(cell, content)
-        self.assertEqual(content.count('<span class="fo-pill fo-pill-ok">Yes</span>'), 1)
-        self.assertEqual(content.count('<span class="fo-pill fo-pill-neutral">No</span>'), 1)
+        self.assertEqual(content.count('<span class="fo-pill fo-pill-ok">Yes</span>'), 2)
+        self.assertEqual(content.count('<span class="fo-pill fo-pill-neutral">No</span>'), 2)
         self.assertIn('<td><span class="text-muted">—</span></td>', content)
 
 

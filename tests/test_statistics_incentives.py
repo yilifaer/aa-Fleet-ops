@@ -1007,7 +1007,9 @@ class DashboardMetricsTests(TestCase):
         FleetType.objects.create(name="Inactive", is_active=False, sort_order=0)
         FleetType.objects.create(name="Mining", sort_order=3)
         FleetType.objects.create(name="Home Defense", sort_order=4)
-        FleetType.objects.create(name="Training", sort_order=5)
+        # Changed for DASH-1: the cards are the types with "Show on dashboard" on (the migration turns it on for the
+        # first four active types); a fifth type with the switch off has no card.
+        FleetType.objects.create(name="Training", sort_order=5, show_on_dashboard=False)
 
         names = [c["fleet_type"].name for c in dashboard_metrics(self.pilot)["cards"]]
 

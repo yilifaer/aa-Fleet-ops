@@ -361,6 +361,24 @@ class FleetType(models.Model):
     )
     is_active = models.BooleanField(verbose_name=_("Is active"), default=True)
     sort_order = models.PositiveIntegerField(verbose_name=_("Sort order"), default=0)
+    color = models.CharField(
+        verbose_name=_("Colour"),
+        max_length=7,
+        blank=True,
+        default="",
+        validators=[RegexValidator(r"^(theme-[1-6]|#[0-9a-f]{6})$", _(
+            "Enter theme-1 to theme-6 or a colour as # and six lower-case hex digits, such as #e67e22."
+        ))],
+        help_text=_(
+            "Empty: the type gets one of the theme colours automatically. Otherwise one of the six theme colours "
+            "(theme-1 to theme-6) or a custom colour such as #e67e22."
+        ),
+    )
+    show_on_dashboard = models.BooleanField(
+        verbose_name=_("Show on dashboard"),
+        default=True,
+        help_text=_("Show a PAP card of this type on the dashboard. The cards follow the sort order."),
+    )
 
     class Meta:
         verbose_name = _("fleet type")

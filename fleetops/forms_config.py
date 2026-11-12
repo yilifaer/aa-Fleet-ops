@@ -19,7 +19,7 @@ from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 from django.utils.translation import pgettext_lazy
 
-from fleetops.forms_common import DoctrineNameField, keep_stored_name
+from fleetops.forms_common import DoctrineNameField, keep_stored_name, style_fields
 from fleetops.models import (
     MAX_DATABASE_ID,
     ChannelPreset,
@@ -38,6 +38,8 @@ from fleetops.models import (
     StatisticsTarget,
     validate_discord_webhook_url,
 )
+from fleetops.ui import normalize_type_color, pill_html, poor_contrast_themes, type_custom_color
+from fleetops.ui import type_tone as ui_type_tone
 from fleetops.providers import esi as esi_provider
 from fleetops.providers import esi_universe
 from fleetops.providers.doctrines import get_doctrines
@@ -299,10 +301,104 @@ class FleetOpsSettingsForm(forms.ModelForm):
         return [FieldGroup(_("General"), "", rest), *groups]
 
 
+COLOR_AUTOMATIC = "auto"
+COLOR_CUSTOM = "custom"
+THEME_COLOR_NAMES = (
+    (_("Teal")),
+    (_("Purple")),
+    (_("Orange")),
+    (_("Cyan")),
+    (_("Pink")),
+    (_("Indigo")),
+)
+
+
+def fleet_type_color_label(color):
+    """The words of a stored colour: Automatic, the name of a theme colour or the custom ``#rrggbb``."""
+    if not color:
+        return _("Automatic")
+    if color.startswith("theme-"):
+        return THEME_COLOR_NAMES[int(color[-1]) - 1]
+    return color
+
+
+def fleet_type_cell(obj, field_name):
+    """The list cells of the fleet types: the colour as a dot with its name; the rest is generic (``NotImplemented``)."""
+    if field_name != "color":
+        return NotImplemented
+    try:
+        stored = normalize_type_color(obj.color)
+    except ValueError:
+        stored = ""
+    number = ui_type_tone(obj)
+    return pill_html(f"type-{number}" if number else "type", str(fleet_type_color_label(stored)), dot=type_custom_color(obj))
+
+
 class FleetTypeForm(forms.ModelForm):
+    """A fleet type. The colour is chosen in two fields (automatic, one of the six theme colours, or custom) and
+    stored in ``FleetType.color``; a custom value must be ``#rgb`` or ``#rrggbb``, checked here on the server."""
+
+    color_choice = forms.ChoiceField(
+        label=_("Colour"),
+        required=False,
+        choices=[(COLOR_AUTOMATIC, _("Automatic"))]
+        + [(f"theme-{number}", name) for number, name in enumerate(THEME_COLOR_NAMES, start=1)]
+        + [(COLOR_CUSTOM, _("Custom colour"))],
+        help_text=_("Automatic keeps the colour the type has always had. The theme colours follow the light and dark theme."),
+    )
+    custom_color = forms.CharField(
+        label=_("Custom colour"),
+        required=False,
+        max_length=20,
+        help_text=_("Used when Colour is Custom colour. Write # and 3 or 6 hexadecimal digits, for example #e67e22."),
+        widget=forms.TextInput(attrs={"placeholder": "#e67e22", "autocomplete": "off", "spellcheck": "false"}),
+    )
+
     class Meta:
         model = FleetType
-        fields = ["name", "short_name", "point_weight", "is_active", "sort_order"]
+        fields = ["name", "short_name", "color_choice", "custom_color", "point_weight", "is_active", "sort_order", "show_on_dashboard"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.warnings = []
+        stored = self.instance.color or ""
+        if stored.startswith("#"):
+            self.initial.setdefault("color_choice", COLOR_CUSTOM)
+            self.initial.setdefault("custom_color", stored)
+        else:
+            self.initial.setdefault("color_choice", stored or COLOR_AUTOMATIC)
+        style_fields(self.fields)
+
+    def clean(self):
+        cleaned = super().clean()
+        choice = cleaned.get("color_choice") or COLOR_AUTOMATIC
+        color = ""
+        if choice == COLOR_CUSTOM:
+            try:
+                color = normalize_type_color(cleaned.get("custom_color"))
+            except ValueError:
+                color = ""
+            if not color:
+                self.add_error("custom_color", _("Enter a colour as # and 3 or 6 hexadecimal digits, for example #e67e22."))
+        elif choice != COLOR_AUTOMATIC:
+            try:
+                color = normalize_type_color(choice)
+            except ValueError:
+                self.add_error("color_choice", _("Choose a colour from the list."))
+        if not self.errors:
+            self.instance.color = color
+        return cleaned
+
+    def save(self, commit=True):
+        saved = super().save(commit=commit)
+        custom = type_custom_color(saved)
+        for theme in poor_contrast_themes(custom) if custom else ():
+            self.warnings.append(
+                _("The colour %(color)s is hard to see on the light theme.") % {"color": custom}
+                if theme == "light"
+                else _("The colour %(color)s is hard to see on the dark theme.") % {"color": custom}
+            )
+        return saved
 
 
 class StatisticsTargetForm(forms.ModelForm):

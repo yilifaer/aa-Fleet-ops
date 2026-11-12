@@ -17,6 +17,9 @@ from fleetops.ui import (
     pill_html,
     tone_class as ui_tone_class,
     tone_for,
+    type_auto_tone as ui_type_auto_tone,
+    type_css_color as ui_type_css_color,
+    type_custom_color as ui_type_custom_color,
     type_tone as ui_type_tone,
 )
 from fleetops.ui_notices import pop_notices
@@ -61,16 +64,35 @@ def step_status_pill(value):
 
 
 @register.filter
+def type_auto_tone(fleet_type):
+    """The automatic dot number (``pk % 6 + 1``) of a saved fleet type, ignoring its stored colour; 0 for a new one."""
+    return ui_type_auto_tone(fleet_type)
+
+
+@register.filter
 def type_tone(fleet_type):
     """The dot number (1-6) of a fleet type, for ``fo-type-{{ fleet_type|type_tone }}``; 0 without a type."""
     return ui_type_tone(fleet_type)
 
 
 @register.filter
+def type_color(fleet_type):
+    """The CSS colour of a fleet type (``var(--fo-type-3)`` or ``#e67e22``) for ``--fo-dot`` / ``--fo-bar``; ``""`` without."""
+    return ui_type_css_color(fleet_type)
+
+
+@register.filter
+def type_dot_style(fleet_type):
+    """``--fo-dot: #rrggbb`` for a type with a custom colour (the ``style`` of a pill); ``""`` otherwise."""
+    custom = ui_type_custom_color(fleet_type)
+    return f"--fo-dot: {custom}" if custom else ""
+
+
+@register.filter
 def type_pill(fleet_type):
     """The pill of a fleet type: its name, with the dot colour of the type."""
     number = ui_type_tone(fleet_type)
-    return pill_html(f"type-{number}" if number else "type", str(fleet_type or ""))
+    return pill_html(f"type-{number}" if number else "type", str(fleet_type or ""), dot=ui_type_custom_color(fleet_type))
 
 
 @register.filter

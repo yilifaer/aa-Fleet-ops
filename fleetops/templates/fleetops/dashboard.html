@@ -26,7 +26,7 @@
   {% for card in dashboard_cards %}
   <div class="col-6 col-xl-3">
     <div class="fo-metric">
-      <span class="fo-metric-dot" style="--fo-dot: var(--fo-type-{{ card.fleet_type|type_tone }})" aria-hidden="true"></span>
+      <span class="fo-metric-dot" style="--fo-dot: {{ card.fleet_type|type_color|default:'var(--fo-text-2)' }}" aria-hidden="true"></span>
       <div class="fo-metric-value">{{ card.month }}</div>
       <div class="fo-metric-title">{% blocktranslate trimmed with fleet_type=card.fleet_type %}{{ fleet_type }} PAP this month{% endblocktranslate %}</div>
       <div class="fo-metric-sub">{% blocktranslate trimmed with value=card.last30 %}<strong>{{ value }}</strong> last 30 days{% endblocktranslate %}</div>

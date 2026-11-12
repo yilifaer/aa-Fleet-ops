@@ -30,7 +30,7 @@
   <div class="col-xl-5">
     <div class="card h-100"><div class="card-header"><strong>{% translate "Fleet types" %}</strong></div>
       <div class="card-body">
-        {% if detail.fleet_types %}<ul class="fo-bars">{% for fleet_type, pap in detail.fleet_types %}<li><span>{{ fleet_type|type_pill }}</span><strong class="fo-num">{{ pap }}</strong><div class="fo-bar-track"><div class="fo-bar-fill" style="width:{% widthratio pap row.pap 100 %}%{% with tone=fleet_type|type_tone %}{% if tone %}; --fo-bar: var(--fo-type-{{ tone }}){% endif %}{% endwith %}"></div></div></li>{% endfor %}</ul>
+        {% if detail.fleet_types %}<ul class="fo-bars">{% for fleet_type, pap in detail.fleet_types %}<li><span>{{ fleet_type|type_pill }}</span><strong class="fo-num">{{ pap }}</strong><div class="fo-bar-track"><div class="fo-bar-fill" style="width:{% widthratio pap row.pap 100 %}%{% with color=fleet_type|type_color %}{% if color %}; --fo-bar: {{ color }}{% endif %}{% endwith %}"></div></div></li>{% endfor %}</ul>
         {% else %}<div class="fo-empty"><i class="fa-solid fa-chart-simple" aria-hidden="true"></i><span>{% translate "No PAP in this month." %}</span></div>{% endif %}
       </div>
     </div>

@@ -610,7 +610,8 @@ class GroupSectionTests(TestCase):
         self.assertEqual(response.context["edit_include"], "fleetops/configuration/_group_leaders.html")
         add = self.client.get(reverse("fleetops:configuration_add", args=["groups"]))
         self.assertEqual(add.context["edit_include"], "fleetops/configuration/_group_leaders.html")
-        other = self.client.get(reverse("fleetops:configuration_add", args=["fleet-types"]))
+        # Changed for DASH-1: fleet types have a side card (the colour preview) now; comms presets have none.
+        other = self.client.get(reverse("fleetops:configuration_add", args=["comms"]))
         self.assertEqual(other.context["edit_include"], "")
 
     def test_only_administrators_open_the_section(self):

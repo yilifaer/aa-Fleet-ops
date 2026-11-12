@@ -19,3 +19,27 @@ real_type_groups = universe.type_groups
 
 mock.patch.object(universe, "system_infos", return_value={}).start()
 mock.patch.object(universe, "type_groups", return_value={}).start()
+
+
+# MariaDB keeps every column dropped by an instant ALTER in the row layout of the table until the table is rebuilt.
+# The migration tests go back and forth over the migrations that add and drop columns of the fleet types many times
+# in one run, which fills that layout ("Row size too large") after about 15 rounds although a real upgrade or
+# rollback does it once. So after every migration run by a test, the small table is rebuilt.
+def _rebuild_fleet_type_table_after_migrate():
+    from django.db import connection
+    from django.db.migrations.executor import MigrationExecutor
+
+    original = MigrationExecutor.migrate
+
+    def migrate(self, *args, **kwargs):
+        try:
+            return original(self, *args, **kwargs)
+        finally:
+            if connection.vendor == "mysql" and "fleetops_fleettype" in connection.introspection.table_names():
+                with connection.cursor() as cursor:
+                    cursor.execute("ALTER TABLE fleetops_fleettype FORCE")
+
+    MigrationExecutor.migrate = migrate
+
+
+_rebuild_fleet_type_table_after_migrate()

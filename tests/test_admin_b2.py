@@ -525,7 +525,9 @@ class ListAndFormLookTests(TestCase):
         self.assertNotIn("btn-warning", html)
 
     def test_the_form_keeps_one_solid_button_and_limits_its_width(self):
-        html = self.client.get(reverse("fleetops:configuration_add", args=["fleet-types"])).content.decode()
+        # Changed for DASH-1: the fleet type form has a colour preview beside it now (a side card, so it is not
+        # narrowed); the comms presets form is a plain one.
+        html = self.client.get(reverse("fleetops:configuration_add", args=["comms"])).content.decode()
 
         self.assertEqual(html.split("<h2", 1)[1].count("btn btn-primary"), 1)
         self.assertIn('class="card fo-form-card"', html)

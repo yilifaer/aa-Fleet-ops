@@ -91,6 +91,7 @@ class Command(BaseCommand):
                         "point_weight": weight,
                         "is_active": True,
                         "sort_order": order,
+                        "show_on_dashboard": True,
                     },
                 )
             # No demo ping channel: a channel needs a real Discord webhook, and without one the ping is

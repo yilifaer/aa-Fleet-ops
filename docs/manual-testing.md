@@ -294,7 +294,7 @@ right actor.
   with claims, run `fleetops_srp_rollback_check` (it must pass), `migrate fleetops 0023`, put the 0.2.0b3 code back (the wheel or commit the site used before; it was never released) and start it. From a 0.2.0b2 site the target is `migrate fleetops 0021`.
   Claims, amounts and statuses are as before; the categories, standing links, batches, bans and found losses are gone.
 - [ ] With imported claims, rules of a category or standing links with claims still in place, `migrate fleetops 0023`
-  stops at `0043` (its guard runs before the doctrine access tables are dropped), so nothing is undone; without the stop, the help text of `0038` and the index of `0037` would be undone next, and `0036` runs its guard before the pruning share column is dropped.
+  stops at `0044` (its guard runs before the fleet type columns are dropped), so nothing is undone; without the stop, the help text of `0038` and the index of `0037` would be undone next, and `0036` runs its guard before the pruning share column is dropped.
 - [ ] A loss of a pilot who was in a tracked fleet, checked from My SRP as a loss outside a fleet: with the default setting the check shows the fleet and the fleet amount; **Submit as a loss outside a fleet anyway** needs a reason and the claim page shows it; with **Block** the check has no submit button and offers the link of the fleet; with **Only suggest** it only asks "Submit it as a fleet loss?". Close the fleet link after the check and submit: the claim is made outside a fleet with the closed-link warning.
 
 **Version and database matrix** (CI runs SQLite and MariaDB with the whole suite and the migration tests on PostgreSQL; the PostgreSQL job covers the migrations only, so run the rest of this list on PostgreSQL by hand for a release)
@@ -375,3 +375,17 @@ right actor.
 - [ ] Delete a doctrine in Fittings that has a record: the page lists it under **Doctrines that no longer exist** without an error.
 - [ ] Rollback: `migrate fleetops 0042` drops the two doctrine access tables (the groups stay); the doctrines are open to everybody
   who may start fleets again.
+
+## 20. Fleet type colours and dashboard cards of 0.3.0b3
+
+- [ ] Administration, Fleet Types, edit StratOps: choose **Custom colour**, type `#e67e22`. The preview shows the dot and a sample
+  with black text. Save: the dashboard card dot, the fleet lists, the history and the statistics labels of StratOps take the colour.
+- [ ] Type `#e67e2` or `red` or `#fff;}`: the page refuses it with a message and nothing is saved; **Automatic** brings back the
+  old colour, a theme colour takes that dot.
+- [ ] A custom colour such as `#ffffff` (invisible on the light theme) or `#222222` (invisible on the dark theme): the preview and
+  the message after saving warn. Check the dot in both themes (switch the Alliance Auth theme) and at phone width.
+- [ ] Turn on **Show on dashboard** for the fifth type (Alliance JOB): a fifth card appears and wraps below the first row; at
+  phone width the cards are two per row. Turn it off for another type: its card is gone.
+- [ ] The audit log has `configuration.update` entries with the old and the new colour and switch.
+- [ ] Upgrade check: after `migrate`, the dashboard shows the same four cards as before and every type has its old colour.
+- [ ] Rollback: `migrate fleetops 0043` drops the two columns (the guard runs first); the dashboard shows the first four active types again.

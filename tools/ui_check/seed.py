@@ -163,6 +163,8 @@ def build_pages():
         # admin
         Page("config", "admin", u("configuration_index")),
         Page("config-fleet-types", "admin", lambda ctx: reverse("fleetops:configuration_list", args=["fleet-types"])),
+        Page("config-fleet-type-new", "admin", lambda ctx: reverse("fleetops:configuration_add", args=["fleet-types"])),
+        Page("config-fleet-type-edit", "admin", lambda ctx: reverse("fleetops:configuration_edit", args=["fleet-types", ctx.pale_type.pk])),
         Page("config-ship-functions", "admin", lambda ctx: reverse("fleetops:configuration_list", args=["ship-functions"])),
         Page("config-srp-rules", "admin", lambda ctx: reverse("fleetops:configuration_list", args=["srp-rules"])),
         Page("config-ping-channels", "admin", lambda ctx: reverse("fleetops:configuration_list", args=["ping-channels"])),
@@ -373,6 +375,12 @@ def build_data(login_count):
     # ---- configuration -------------------------------------------------------------------------------
     types = {name: f.fleet_type(name, weight) for name, weight in
              (("StratOp", "2.00"), ("CTA", "3.00"), ("Roam", "1.00"), ("Home Defense", "1.50"))}
+    # Fleet type colours: a custom colour, a theme colour, the automatic colour, and a pale custom colour (the edit page
+    # warns about it; it has no dashboard card).
+    m.FleetType.objects.filter(name="Roam").update(color="#e67e22")
+    m.FleetType.objects.filter(name="CTA").update(color="theme-5")
+    ctx.pale_type = m.FleetType.objects.get_or_create(name="Night Watch", defaults={"point_weight": Decimal("0.50")})[0]
+    m.FleetType.objects.filter(pk=ctx.pale_type.pk).update(color="#f4f4f4", show_on_dashboard=False)
     f.multiplier_tiers((90, 2), (180, 3))
     # A target from the previous month on: the month before it has none (FB11.2).
     m.StatisticsTarget.objects.all().delete()
