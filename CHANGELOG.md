@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.3.0b3] - Unreleased
+## [0.3.0b3] - 2026-11-12
 
 Fixes from the second run of 0.3.0b2 on a test site, a new setting (who may ping which doctrine), and colours and dashboard cards for fleet types. There are two new migrations (`0043`, two small tables; `0044`, two columns of the fleet types); install them the way you installed 0.3.0b2 and read the upgrade and rollback notes below.
 

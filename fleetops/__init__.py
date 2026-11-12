@@ -2,6 +2,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 
 __title__ = "AA FleetOps"
-__version__ = "0.3.0b2"
+__version__ = "0.3.0b3"
 __url__ = "https://github.com/yilifaer/aa-Fleet-ops"
 __author__ = "yilifaer and AA FleetOps contributors"
