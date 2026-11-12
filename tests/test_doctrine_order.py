@@ -100,7 +100,8 @@ class RenderTests(MessageTestBase):
         rendered = self.render(self.operation_with_fits())
 
         self.assertIn("(Minokawa > Lif > Raven > Basilisk)", rendered.ping)
-        self.assertIn("(Minokawa > Lif > Raven > Basilisk)", rendered.motd)
+        # The MOTD is EVE markup: the marks are written as entities, or the game would drop them.
+        self.assertIn("(Minokawa &gt; Lif &gt; Raven &gt; Basilisk)", rendered.motd)
 
     def test_the_fit_names_keep_every_fit(self):
         from fleetops.services.messages import build_context
@@ -118,10 +119,9 @@ class RenderTests(MessageTestBase):
         rendered = self.render(self.operation_with_fits())
 
         self.assertIn("(Minokawa = Lif > Raven >>> Basilisk)", rendered.ping)
-        # The MOTD has always carried the plain ">" of the list; the marks are written the same way.
+        # The MOTD is EVE markup: a plain ">" would be eaten by the game, so the marks are written as entities.
         self.assertIn("Doctrine: ", rendered.motd)
-        self.assertIn("(Minokawa = Lif > Raven >>> Basilisk)", rendered.motd)
-        self.assertNotIn("&gt;", rendered.motd)
+        self.assertIn("(Minokawa = Lif &gt; Raven &gt;&gt;&gt; Basilisk)", rendered.motd)
 
     def test_an_order_with_wrong_shapes_from_the_admin_falls_back_to_the_automatic_order(self):
         operation = self.operation_with_fits()
@@ -134,7 +134,8 @@ class RenderTests(MessageTestBase):
                 finally:
                     row.delete()
                 self.assertIn(automatic, rendered.ping)
-                self.assertIn(automatic, rendered.motd)
+                # The MOTD escapes the marks (see above).
+                self.assertIn(automatic.replace(">", "&gt;"), rendered.motd)
 
     def test_a_changed_order_shows_at_the_next_render_of_an_open_fleet(self):
         operation = self.operation_with_fits()
@@ -144,8 +145,9 @@ class RenderTests(MessageTestBase):
         after = self.render(operation).motd
         row.delete()
 
-        self.assertIn("(Minokawa > Lif > Raven > Basilisk)", before)
-        self.assertIn("(Basilisk >>> Raven > Lif = Minokawa)", after)
+        # The MOTD writes the marks as entities (see above).
+        self.assertIn("(Minokawa &gt; Lif &gt; Raven &gt; Basilisk)", before)
+        self.assertIn("(Basilisk &gt;&gt;&gt; Raven &gt; Lif = Minokawa)", after)
         # The stored fits of the fleet are not touched.
         operation.refresh_from_db()
         self.assertEqual(operation.doctrine_fits, FIT_ROWS)

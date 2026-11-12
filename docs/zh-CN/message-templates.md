@@ -36,11 +36,11 @@ FleetOps 为每支舰队生成两段文字：发到 Discord 的 **Ping**，以�
 | `formup` | FC 填写的集结地。 |
 | `formup_system_id` | 集结地文字恰好是某个星系的名字时，该星系的 ID，否则为空。 |
 | `formup_link` | 集结地文字恰好是某个星系的名字时，指向该星系的游戏内链接（`<loc><a href="showinfo:5//30000142">Jita</a></loc>`），否则就是原文字。用于 MOTD。 |
-| `doctrine` | 教义名称，或 `None / Custom`（始终是英文）。要判断有没有教义，请用 `doctrine_name`，没有教义时它为空。 |
-| `doctrine_name` | 教义名称，没有则为空。 |
-| `doctrine_url` | 教义在 Fittings 中的页面链接；其他来源的教义为空。 |
-| `doctrine_ships` | Fittings 教义中的船体，每种只出现一次，按教义顺序用 ` > ` 连接（例如 `Moa > Osprey`）；或按**教义舰船顺序**中为该教义保存的顺序，用符号 `>`、`=`、`>>>` 连接（例如 `Minokawa = Lif > Raven >>> Basilisk`）。 |
-| `doctrine_fits` | Fittings 教义中每套配置的名称（每套都列出），用 ` > ` 连接。 |
+| `doctrine` | 建制名称，或 `None / Custom`（始终是英文）。要判断有没有建制，请用 `doctrine_name`，没有建制时它为空。 |
+| `doctrine_name` | 建制名称，没有则为空。 |
+| `doctrine_url` | 建制在 Fittings 中的页面链接；其他来源的建制为空。 |
+| `doctrine_ships` | Fittings 建制中的船体，每种只出现一次，按建制顺序用 ` > ` 连接（例如 `Moa > Osprey`）；或按**建制舰船顺序**中为该建制保存的顺序，用符号 `>`、`=`、`>>>` 连接（例如 `Minokawa = Lif > Raven >>> Basilisk`）。 |
+| `doctrine_fits` | Fittings 建制中每套配置的名称（每套都列出），用 ` > ` 连接。 |
 | `comms` | 语音预设名称。 |
 | `comms_channel` | 语音预设的频道名。 |
 | `comms_link` | 打开语音的链接：语音客户端链接给出加入页，`http` 和 `https` 链接直接使用。 |
@@ -71,11 +71,11 @@ FleetOps 为每支舰队生成两段文字：发到 Discord 的 **Ping**，以�
 
 - Ping：Discord Markdown（`**粗体**`、`[文字](链接)`、`-# 小字`）。Discord 最多接受 2000 个字符（按 Discord 的算法计数）。超过限制的 Ping
   在发出之前就会被拒绝；只复制的 Ping 则只给出警告。**开舰队** 页面上的计数器显示当前长度。链接预览已被关闭。
-- MOTD：模板输出不做 HTML 转义。游戏能识别一小部分类 HTML 标签（`<b>`、`<br>`、`<font color="#bfffffff">`、`<a href="…">`）。
+- MOTD：游戏读的是类 HTML 文本，所以渲染模板时，来自人或 FleetOps 的每个值都会做 HTML 转义（`<`、`>`、`&` 变成 `&lt;`、`&gt;`、`&amp;`；否则游戏会吃掉 `doctrine_ships` 里的 `>` 和 `>>>` 符号）。本身就是游戏标记的变量（`fc_link`、`formup_link`、`logi_channel_link`、`boost_channel_link`）保留标签，只转义可见文字。模板里自己已经转义的值（`{{ doctrine_ships|force_escape }}`、`|escape`）不会被转义两次。Discord Ping 不转义。游戏能识别一小部分类 HTML 标签（`<b>`、`<br>`、`<font color="#bfffffff">`、`<a href="…">`）。值里的撇号在标签之间的文字中按原样显示；在标签内部仍保持转义，所以自定义模板里单引号属性（`<font color='{{ formup }}'>`）取不到值里的撇号，请用双引号。
   `{{ additional_message|linebreaksbr }}` 会保留 FC 输入的换行。`<script` 会被转义。MOTD 超过 1000 个字符只会给出警告，因为游戏可能会截断更长的 MOTD。
 - **Retry Ping** 会先按舰队当前的数据和当前的模板重新生成 Ping 再发出，所以旧版本保存的舰队不会再把旧的存储文本发一遍。**Retry MOTD** 发送存储的 MOTD；**Regenerate & Push MOTD** 会重新生成。已结束的舰队没有这两个重试按钮。
 - 人工填写的文字在消息里一律是纯文本：建制名称、集结地点、小组和附加信息在放进模板之前，会先去掉游戏的富文本（`<font>`、`<b>`；`<a href="…">名字</a>` 只保留名字；被截断的标签直接丢弃），MOTD 和 Ping 都一样，所以一个字段不会吞掉后面的行。附加信息的换行会保留。以前保存的舰队同样适用：库里的数据不会被改动；不改建制名称直接保存赔付规则或舰队，也保留原名称（以及建制键）。只去掉游戏自己的标签，`<ABCD>` 这类联盟代号、Discord 时间戳 `<t:…>`、`x<y` 保持原样。
-- 语音和教义的链接由 `SITE_URL` 生成。没有它，链接只是站内路径，在 Alliance Auth 之外打不开，预览会对此给出警告。
+- 语音和建制的链接由 `SITE_URL` 生成。没有它，链接只是站内路径，在 Alliance Auth 之外打不开，预览会对此给出警告。
 
 ## 内置模板
 
@@ -122,7 +122,7 @@ FleetOps 为每支舰队生成两段文字：发到 Discord 的 **Ping**，以�
 
 `python manage.py fleetops_seed` 会在它们还不存在时创建 "Default Ping"、"Default MOTD" 和 "Default Ping without fleet"，不会覆盖你改过的模板。
 升级时，只有仍与上一版默认内容完全一致的 Ping 或 MOTD 模板才会被替换（不论叫什么名字）；降级会把它们改回上一版的默认内容，升级之后你改过的模板会保留。
-你改过的和你自己写的模板不会被碰：自己写的 MOTD 如果要让 FC 和集结地可以点击，需要自己加上 `{{ fc_link }}` 和 `{{ formup_link }}`，要带上 SRP 链接则加 `{{ srp_url }}`。
+你改过的和你自己写的模板不会被碰：自己写的 MOTD 如果要让 FC 和集结地可以点击，需要自己加上 `{{ fc_link }}` 和 `{{ formup_link }}`（`{{ fc }}` 和 `{{ formup }}` 只是纯文字，模板编辑页也会提示），要带上 SRP 链接则加 `{{ srp_url }}`。
 
 预约舰队被取消时，FleetOps 可以在发预 Ping 的同一个频道发一条通知。通知来自固定的英文文本（`**Cancelled:** <舰队类型> at <舰队时间> (<集结地>)`），
 不会 @ 任何人；它不是可以编辑的模板。

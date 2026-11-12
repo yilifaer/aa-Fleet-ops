@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 yilifaer and AA FleetOps contributors
 # SPDX-License-Identifier: GPL-3.0-only
 
+import math
 import uuid
 from datetime import timedelta
 
@@ -681,8 +682,11 @@ def ping_cooldown_problem(channel, *, now=None) -> str:
     times = [value for value in times if value is not None]
     if not times:
         return ""
-    seconds = max(0, int((now - max(times)).total_seconds()))
-    wait = max(1, PING_COOLDOWN_SECONDS - seconds)
+    # "0 seconds ago" is never shown; the time since the last ping is rounded to the nearest second and the wait up,
+    # so the wait is never too short.
+    elapsed = max(0.0, (now - max(times)).total_seconds())
+    seconds = max(1, round(elapsed))
+    wait = max(1, math.ceil(PING_COOLDOWN_SECONDS - elapsed))
     return texts.PING_COOLDOWN(name=channel.name, seconds=seconds, wait=wait)
 
 

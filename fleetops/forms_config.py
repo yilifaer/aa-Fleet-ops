@@ -584,6 +584,13 @@ class MessageTemplateForm(forms.ModelForm):
         fields = ["name", "template_type", "content", "is_default", "is_active"]
         widgets = {"content": forms.Textarea(attrs={"rows": 12, "class": "font-monospace form-control"})}
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["content"].help_text = _(
+            "MOTD templates: the FC and the form-up system can be clicked in the game only with {{ fc_link }} and "
+            "{{ formup_link }}; {{ fc }} and {{ formup }} are plain text."
+        )
+
 
 # --- FleetOps SRP ---------------------------------------------------------------------------------------
 

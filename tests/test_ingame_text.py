@@ -392,12 +392,15 @@ class MessageTests(TestCase):
         rendered = render_messages(operation)
         self.assertIn("<t:1700000000:R>", rendered.ping)
         self.assertIn("<ABCD>", rendered.ping)
-        self.assertIn("primary <ABCD> dreads", rendered.motd)
+        # Changed in 0.3.0b3: the MOTD is HTML-like text, so the angle brackets of a ticker are written as entities
+        # (the game shows them as typed; a bare "<ABCD>" would be eaten as a tag).
+        self.assertIn("primary &lt;ABCD&gt; dreads", rendered.motd)
 
     def test_text_that_holds_no_tags_is_left_alone(self):
         operation = self.operation(doctrine_name="Ferox & Co", formup="Jita IV", additional_message="Bring drones")
         rendered = render_messages(operation)
-        self.assertIn("Doctrine: Ferox & Co<br>", rendered.motd)
+        # Changed in 0.3.0b3: the "&" is an entity in the MOTD.
+        self.assertIn("Doctrine: Ferox &amp; Co<br>", rendered.motd)
         self.assertIn("<br><br>Bring drones</font>", rendered.motd)
 
     def test_mass_mentions_in_user_text_stay_neutralised(self):

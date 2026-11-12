@@ -6,7 +6,7 @@ FleetOps 只需要 Alliance Auth 和 django-esi。下面所有内容都是可选
 
 | 应用或服务 | 带来什么 | 没有它时 |
 |---|---|---|
-| [fittings](#fittings) | 开舰队页的教义列表，Ping 和 MOTD 里的教义链接和船体 | 只有 `None / Custom` 教义 |
+| [fittings](#fittings) | 开舰队页的建制列表，Ping 和 MOTD 里的建制链接和船体 | 只有 `None / Custom` 建制 |
 | [django-eveonline-sde](#django-eveonline-sde)（`eve_sde`） | 英文舰船与星系名称、舰船分类、可搭桥质量、三跳地图 | 编成只按舰队位置和船型规则统计；没有地图 |
 | [FleetOps SRP、aa-srp、Alliance Auth SRP](#srp-应用) | 为每支舰队创建 SRP 链接 | 没有 SRP 链接；SRP 步骤被跳过 |
 | [Discord Webhook](#discord) | 发送 Ping | 手动复制 Ping |
@@ -17,14 +17,14 @@ FleetOps 只需要 Alliance Auth 和 django-esi。下面所有内容都是可选
 
 ## fittings
 
-如果已安装的应用标签为 `fittings`，并提供了教义模型，FleetOps 会在 **开舰队** 页和 PAP 登记链接舰队页里列出它的教义。找不到受支持的教义模型时，
+如果已安装的应用标签为 `fittings`，并提供了建制模型，FleetOps 会在 **开舰队** 页和 PAP 登记链接舰队页里列出它的建制。找不到受支持的建制模型时，
 **None / Custom** 仍然可用，FleetOps 继续正常工作。
 
-- FC 看到的是 Fittings 允许其看到的教义：如果某个教义所在的分类限制在 FC 不在的用户组，就会被隐藏。拥有 `fittings.manage` 的用户能看到所有教义。
-  后台设置的表单（例如 SRP 赔付表）会列出全部教义。
-- 舰队会保存教义的名称和来源，所以教义以后被删除也不影响历史记录。对于 Fittings 教义，开队或预 Ping 时还会保存各套配置（配置名和船体，按教义顺序）。
+- FC 看到的是 Fittings 允许其看到的建制：如果某个建制所在的分类限制在 FC 不在的用户组，就会被隐藏。拥有 `fittings.manage` 的用户能看到所有建制。
+  后台设置的表单（例如 SRP 赔付表）会列出全部建制。
+- 舰队会保存建制的名称和来源，所以建制以后被删除也不影响历史记录。对于 Fittings 建制，开队或预 Ping 时还会保存各套配置（配置名和船体，按建制顺序）。
   它们用于模板变量 `doctrine_ships` 和 `doctrine_fits`；**重新生成并推送 MOTD**（Regenerate & Push MOTD）会重新读取。
-- Ping 和 MOTD 里的教义会链接到它的 Fittings 页面（`doctrine_url`）。成员需要 `fittings.access_fittings` 才能打开该页面。
+- Ping 和 MOTD 里的建制会链接到它的 Fittings 页面（`doctrine_url`）。成员需要 `fittings.access_fittings` 才能打开该页面。
 - 安装方式：`pip install "aa-fleetops[fittings]"`，或者自行安装 `fittings`。
 
 ## django-eveonline-sde

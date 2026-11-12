@@ -1403,10 +1403,34 @@ SRP_TRY_AGAIN = StoredText(gettext_noop("Try again in a minute."))
 
 # --- 0.2.0b2 lane F: group pings ---
 # Send Ping: why a ping without a fleet was not posted.
-PING_COOLDOWN = StoredText(
-    gettext_noop("%(name)s received a ping %(seconds)s seconds ago. Wait %(wait)s seconds."),
-    numbers=("seconds", "wait"),
-)
+# One message for each wording of the two counts (1 second is singular, every other number plural), so that the
+# Chinese text needs no joining of two sentences.
+_PING_COOLDOWN = {
+    (True, True): StoredText(
+        gettext_noop("%(name)s received a ping %(seconds)s second ago. Wait %(wait)s second."),
+        numbers=("seconds", "wait"),
+    ),
+    (True, False): StoredText(
+        gettext_noop("%(name)s received a ping %(seconds)s second ago. Wait %(wait)s seconds."),
+        numbers=("seconds", "wait"),
+    ),
+    (False, True): StoredText(
+        gettext_noop("%(name)s received a ping %(seconds)s seconds ago. Wait %(wait)s second."),
+        numbers=("seconds", "wait"),
+    ),
+    (False, False): StoredText(
+        gettext_noop("%(name)s received a ping %(seconds)s seconds ago. Wait %(wait)s seconds."),
+        numbers=("seconds", "wait"),
+    ),
+}
+
+
+def PING_COOLDOWN(*, name, seconds, wait):  # noqa: N802 - used like the stored messages around it
+    """The refusal of a ping to a channel that received one ``seconds`` ago; it can be sent again in ``wait``."""
+    entry = _PING_COOLDOWN[(int(seconds) == 1, int(wait) == 1)]
+    return entry(name=name, seconds=seconds, wait=wait)
+
+
 PING_CHANNEL_GONE = StoredText(gettext_noop("The ping channel %(name)s no longer exists."))
 PING_REQUEST_USED = StoredText(gettext_noop("This form was already sent. Reload the page to send another ping."))
 # The audit entry of an Alliance Auth group that was deleted while FleetOps used it.

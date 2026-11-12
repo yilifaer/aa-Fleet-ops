@@ -475,15 +475,26 @@ class ButtonVisibilityTests(IngameBase):
         self.assertIn(f'formaction="{route("srp_open_in_game", claim.uuid, "main")}"', by_player)
         self.assertNotIn("Set up opening characters in game", by_claim)
 
-    def test_others_see_a_link_to_the_setting_instead(self):
+    def test_a_payer_who_never_chose_a_character_sees_the_setup_link(self):
         self.approved(self.member)
-        # No in-game character; and a chosen one whose token lost the scope.
-        for prepare in (lambda: None, lambda: self.authorize(scopes=[])):
+        for view in ("claim", "player"):
+            html = self.page(query=f"?view={view}").content.decode()
+            self.assertNotIn("data-srp-open", html)
+            self.assertIn('href="#srp-game-character">Set up opening characters in game', html)
+            self.assertNotIn("Add the opening character again", html)
+
+    def test_a_chosen_character_whose_token_lost_the_scope_must_be_added_again(self):
+        # Changed in 0.3.0b3: this case used to show the generic setup link; the payer did choose a character, so the
+        # rows say that it has to be added again (the link still goes to the box).
+        self.approved(self.member)
+        for prepare in (lambda: self.authorize(scopes=[]), lambda: self.authorize(scopes=["esi-location.read_location.v1"])):
             prepare()
             for view in ("claim", "player"):
-                html = self.page(query=f"?view={view}").content.decode()
-                self.assertNotIn("data-srp-open", html)
-                self.assertIn('href="#srp-game-character">Set up opening characters in game', html)
+                with self.subTest(view=view):
+                    html = self.page(query=f"?view={view}").content.decode()
+                    self.assertNotIn("data-srp-open", html)
+                    self.assertIn('href="#srp-game-character">Add the opening character again', html)
+                    self.assertNotIn("Set up opening characters in game", html)
 
     def test_the_setting_area_offers_authorized_characters_and_the_authorization_link(self):
         self.approved(self.member)

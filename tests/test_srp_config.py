@@ -1452,6 +1452,71 @@ class DeadEndCategorySettingsTests(TestCase):
         self.assertNotContains(checked, "Choose a category</")
 
 
+class DeadEndAlreadyPresentTests(TestCase):
+    """A site that is already in the dead end can save its other fields; only the step into it is refused."""
+
+    def setUp(self):
+        self.admin = f.create_user("dead_end_present_admin", perms=CONFIG_PERMS + f.SRP_MEMBER_PERMS)
+        self.client.force_login(self.admin)
+        self.url = reverse("fleetops:configuration_list", args=["srp"])
+
+    def test_an_unrelated_field_can_be_saved_while_the_site_is_in_the_dead_end(self):
+        f.srp_settings(out_of_fleet_category_required=True, claim_deadline_days=7)
+
+        response = self.client.post(
+            self.url, settings_post(out_of_fleet_category_required="on", claim_deadline_days="30")
+        )
+
+        self.assertEqual(response.status_code, 302)
+        obj = SrpSettings.get_solo()
+        self.assertEqual(obj.claim_deadline_days, 30)
+        self.assertTrue(obj.out_of_fleet_category_required)
+        # The warning stays visible.
+        self.assertContains(self.client.get(self.url), 'id="srp-category-dead-end"')
+
+    def test_the_step_into_the_dead_end_is_still_refused(self):
+        f.srp_settings(out_of_fleet_category_required=False, claim_deadline_days=7)
+
+        response = self.client.post(
+            self.url, settings_post(out_of_fleet_category_required="on", claim_deadline_days="30")
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("out_of_fleet_category_required", response.context["form"].errors)
+        self.assertEqual(SrpSettings.get_solo().claim_deadline_days, 7)
+
+    def test_leaving_the_dead_end_is_accepted(self):
+        solo = f.srp_category("Solo PVP")
+        solo.is_active = False
+        solo.save()
+        f.srp_settings(out_of_fleet_category_required=True)
+
+        off = self.client.post(self.url, settings_post())
+        self.assertEqual(off.status_code, 302)
+        f.srp_settings(out_of_fleet_category_required=True)
+        solo.is_active = True
+        solo.save()
+        again = self.client.post(self.url, settings_post(out_of_fleet_category_required="on"))
+        self.assertEqual(again.status_code, 302)
+
+    def test_a_category_that_is_not_choosable_can_still_be_edited_in_the_dead_end(self):
+        solo = f.srp_category("Solo PVP")
+        f.srp_settings(out_of_fleet_category_required=True)
+        solo.is_active = False
+        solo.save()
+        edit = reverse("fleetops:configuration_edit", args=["srp-categories", solo.pk])
+
+        response = self.client.post(
+            edit,
+            {"name": "Solo PVP 2", "key": solo.key, "member_selectable": "on", "loss_cap_mode": solo.loss_cap_mode,
+             "percentage": "", "sort_order": "0", "daily_link_name": ""},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        solo.refresh_from_db()
+        self.assertEqual(solo.name, "Solo PVP 2")
+
+
 class DeadEndGuardRefinementTests(TestCase):
     """The dead-end checks only look at what a save makes worse, and only while losses outside a fleet are on."""
 

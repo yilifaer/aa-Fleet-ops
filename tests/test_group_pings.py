@@ -451,7 +451,8 @@ class SendTests(PingFixture):
         self.assertEqual(response.status_code, 200)
         shown = [str(message) for message in response.context["messages"]]
         self.assertEqual(len(shown), 1)
-        self.assertRegex(shown[0], r"^Group Pings received a ping \d+ seconds ago\. Wait \d+ seconds\.$")
+        # Changed in 0.3.0b3: the seconds are rounded up and "1 second" is singular.
+        self.assertRegex(shown[0], r"^Group Pings received a ping \d+ seconds? ago\. Wait \d+ seconds?\.$")
         # A failed ping does not hold the channel; another channel is not held either.
         StandalonePing.objects.update(status=StandalonePing.Status.FAILED)
         with mock.patch(POST, return_value=discord()) as post:

@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-10 07:02+0000\n"
+"POT-Creation-Date: 2026-11-11 23:25+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -105,11 +105,11 @@ msgstr "舰队类型"
 #: templates/fleetops/statistics/member_detail.html views_config.py
 msgctxt "FleetOps"
 msgid "Doctrine"
-msgstr "教义"
+msgstr "建制"
 
 #: forms.py forms_groups.py
 msgid "Custom Doctrine"
-msgstr "自定义教义"
+msgstr "自定义建制"
 
 #: forms.py forms_groups.py forms_operation.py
 msgid "Form Up / Staging"
@@ -172,7 +172,7 @@ msgstr "无 / 自定义"
 
 #: forms.py forms_groups.py
 msgid "Invalid doctrine selection."
-msgstr "教义选择无效。"
+msgstr "建制选择无效。"
 
 #: forms.py templates/fleetops/start_fleet.html
 msgid "Operation Mode"
@@ -480,6 +480,10 @@ msgid "Enter the numeric Discord role ID."
 msgstr "请输入数字形式的 Discord 身份组 ID。"
 
 #: forms_config.py
+msgid "MOTD templates: the FC and the form-up system can be clicked in the game only with {{ fc_link }} and {{ formup_link }}; {{ fc }} and {{ formup }} are plain text."
+msgstr "MOTD 模板：只有写成 {{ fc_link }} 和 {{ formup_link }}，FC 和集结星系才能在游戏里点击；{{ fc }} 和 {{ formup }} 只是纯文字。"
+
+#: forms_config.py
 msgid "Members can only submit claims while FleetOps SRP is enabled. The SRP provider and the automatic link creation at fleet start are set in the general settings."
 msgstr "只有启用 FleetOps SRP 时，成员才能提交申请。SRP 提供方和开队时自动创建链接在常规设置中配置。"
 
@@ -595,7 +599,7 @@ msgstr "请输入有效的船型 ID。"
 
 #: forms_config.py
 msgid "A doctrine rule only applies to losses in a fleet; choose “In fleet and out of fleet” or “In-fleet losses only”."
-msgstr "教义规则只适用于舰队内的损失；请选择“舰队内和舰队外”或“仅舰队内损失”。"
+msgstr "建制规则只适用于舰队内的损失；请选择“舰队内和舰队外”或“仅舰队内损失”。"
 
 #: forms_config.py services/export_datasets.py srp/display.py srp/reports.py
 #: templates/fleetops/operation/_members.html
@@ -610,19 +614,19 @@ msgstr "舰船"
 
 #: forms_config.py
 msgid "Ship type ID or exact English name. Leave empty for a rule on a doctrine only."
-msgstr "船型 ID 或准确的英文名称。仅按教义设置规则时留空。"
+msgstr "船型 ID 或准确的英文名称。仅按建制设置规则时留空。"
 
 #: forms_config.py
 msgid "Doctrine rules only apply to losses in a fleet that flew this doctrine."
-msgstr "教义规则只适用于使用该教义的舰队内的损失。"
+msgstr "建制规则只适用于使用该建制的舰队内的损失。"
 
 #: forms_config.py
 msgid "Custom doctrine name"
-msgstr "自定义教义名称"
+msgstr "自定义建制名称"
 
 #: forms_config.py
 msgid "For fleets with a typed doctrine name; matched ignoring case. Used with “Custom name”."
-msgstr "用于手动填写了教义名称的舰队；匹配时忽略大小写。与“自定义名称”配合使用。"
+msgstr "用于手动填写了建制名称的舰队；匹配时忽略大小写。与“自定义名称”配合使用。"
 
 #: forms_config.py
 msgid "Amount (ISK)"
@@ -650,7 +654,7 @@ msgstr "所有类别"
 
 #: forms_config.py views_config.py
 msgid "Any doctrine"
-msgstr "任意教义"
+msgstr "任意建制"
 
 #: forms_config.py
 msgid "Custom name"
@@ -668,7 +672,7 @@ msgstr "%(name)s（已停用）"
 
 #: forms_config.py
 msgid "Enter the doctrine name."
-msgstr "请输入教义名称。"
+msgstr "请输入建制名称。"
 
 #: forms_config.py
 msgid "A category with this name already exists."
@@ -948,7 +952,7 @@ msgstr "FC 角色"
 
 #: forms_links.py
 msgid "Custom doctrine"
-msgstr "自定义教义"
+msgstr "自定义建制"
 
 #: forms_links.py
 msgid "Form up"
@@ -1026,7 +1030,7 @@ msgstr "这支舰队的开始时间在一年多以前。请检查日期；如果
 
 #: forms_operation.py models.py
 msgid "Doctrine name"
-msgstr "教义名称"
+msgstr "建制名称"
 
 #: forms_operation.py
 msgid "Start Time — EVE time (UTC)"
@@ -2346,11 +2350,11 @@ msgstr "舰队积分权重快照"
 
 #: models.py
 msgid "Doctrine external ID"
-msgstr "教义外部 ID"
+msgstr "建制外部 ID"
 
 #: models.py
 msgid "Doctrine source"
-msgstr "教义来源"
+msgstr "建制来源"
 
 #: models.py
 msgid "Formup"
@@ -2374,7 +2378,7 @@ msgstr "Ping 身份组"
 
 #: models.py
 msgid "Doctrine fits"
-msgstr "教义装配"
+msgstr "建制装配"
 
 #: models.py
 msgid "Ping text"
@@ -3311,11 +3315,11 @@ msgstr "新建该类别的常驻链接时，没有输入名称所用的名称。
 
 #: models.py
 msgid "Default doctrine text"
-msgstr "默认教义文字"
+msgstr "默认建制文字"
 
 #: models.py
 msgid "Filled in as the doctrine of new standing links of this category."
-msgstr "作为该类别新建常驻链接的教义文字预填。"
+msgstr "作为该类别新建常驻链接的建制文字预填。"
 
 #: models.py
 msgid "Close links after (hours)"
@@ -3758,11 +3762,11 @@ msgstr "仅舰队外损失"
 
 #: models.py
 msgid "0 = any ship (doctrine rules only)."
-msgstr "0 表示任意舰船（仅教义规则）。"
+msgstr "0 表示任意舰船（仅建制规则）。"
 
 #: models.py
 msgid "Doctrine key"
-msgstr "教义键"
+msgstr "建制键"
 
 #: models.py
 msgid "Category key"
@@ -3782,7 +3786,7 @@ msgstr "SRP 赔付规则"
 
 #: models.py
 msgid "A rule for this ship, doctrine and scope already exists."
-msgstr "该舰船、教义和范围的规则已经存在。"
+msgstr "该舰船、建制和范围的规则已经存在。"
 
 #: models.py views_config.py
 #, python-format
@@ -3795,7 +3799,7 @@ msgstr "SRP 规则"
 
 #: models.py
 msgid "Choose a ship type, a doctrine, or both."
-msgstr "请选择船型、教义，或两者都选。"
+msgstr "请选择船型、建制，或两者都选。"
 
 #: models.py templates/fleetops/srp/_summary_table.html
 #: templates/fleetops/srp/summary.html views_config.py
@@ -4613,11 +4617,11 @@ msgstr "符号"
 
 #: models.py
 msgid "doctrine ship order"
-msgstr "教义舰船顺序"
+msgstr "建制舰船顺序"
 
 #: models.py
 msgid "doctrine ship orders"
-msgstr "教义舰船顺序"
+msgstr "建制舰船顺序"
 
 #: models.py
 msgid "Payment view"
@@ -5085,7 +5089,7 @@ msgstr "FC 奖金"
 
 #: services/export_datasets.py
 msgid "Claims count in the EVE month of the loss (killmail time). Withdrawn claims are left out. Approved counts approved and paid claims; outstanding is approved minus paid."
-msgstr "申请计入损失发生所在的 EVE 月（按 KM 时间）。已撤回的申请不计入。“已通过”包含已通过和已付款的申请；“未付”等于已通过减去已付。"
+msgstr "申请计入损失发生所在的 EVE 月（按 KM 时间）。已撤回的申请不计入。“已通过”包含已通过和已付款的申请；“未付”等于已通过减去已付款。"
 
 #: services/export_datasets.py
 msgid "Approved claims that are not paid yet, with the filters of the payments page. Only payers can export this list."
@@ -5173,7 +5177,7 @@ msgstr "申请金额（ISK）"
 
 #: services/export_datasets.py srp/reports.py
 msgid "Paid (ISK)"
-msgstr "已付（ISK）"
+msgstr "已付款（ISK）"
 
 #: services/export_datasets.py
 msgid "Outstanding (ISK)"
@@ -5358,7 +5362,7 @@ msgstr "MOTD 含标签共 %(length)s 个字符（可见 %(visible)s 个），游
 
 #: services/messages.py
 msgid "SITE_URL is not set, so the comms and doctrine links in the messages are incomplete."
-msgstr "没有设置 SITE_URL，因此消息中的语音和教义链接不完整。"
+msgstr "没有设置 SITE_URL，因此消息中的语音和建制链接不完整。"
 
 #: services/messages.py
 msgid "SITE_URL is not set, so the SRP link in the messages is incomplete."
@@ -5436,7 +5440,7 @@ msgstr "%(item)s“%(label)s”已不可用。"
 #: services/presets.py
 #, python-format
 msgid "Doctrine '%(name)s' is no longer available; it was entered as a custom doctrine."
-msgstr "教义“%(name)s”已不可用；已按自定义教义填入。"
+msgstr "建制“%(name)s”已不可用；已按自定义建制填入。"
 
 #: services/presets.py
 #, python-format
@@ -5637,7 +5641,7 @@ msgstr "类别军团月度限额"
 
 #: srp/display.py
 msgid "Doctrine and ship"
-msgstr "教义和舰船"
+msgstr "建制和舰船"
 
 #: srp/display.py texts.py
 msgid "monthly personal limit"
@@ -6779,7 +6783,7 @@ msgstr "按当前规则重新计算所有待审核申请"
 #: templates/fleetops/configuration/doctrine_orders.html
 #: templates/fleetops/configuration/index.html
 msgid "Doctrine Ship Order"
-msgstr "教义舰船顺序"
+msgstr "建制舰船顺序"
 
 #: templates/fleetops/configuration/doctrine_order.html
 msgid "Put the ships in the order you want and choose the mark between every two ships. Pings and MOTDs of open fleets show a changed order the next time they are made."
@@ -6817,7 +6821,7 @@ msgstr "预览"
 
 #: templates/fleetops/configuration/doctrine_order.html
 msgid "Ships added to the doctrine later are listed at the end with the mark “higher priority”."
-msgstr "之后加入教义的舰船会以符号“优先级更高”接在末尾。"
+msgstr "之后加入建制的舰船会以符号“优先级更高”接在末尾。"
 
 #: templates/fleetops/configuration/doctrine_order.html
 #: templates/fleetops/configuration/form.html
@@ -6856,7 +6860,7 @@ msgstr "恢复自动顺序"
 
 #: templates/fleetops/configuration/doctrine_order.html
 msgid "This doctrine has no ships yet, so there is nothing to order."
-msgstr "这个教义还没有舰船，没有可排序的内容。"
+msgstr "这个建制还没有舰船，没有可排序的内容。"
 
 #: templates/fleetops/configuration/doctrine_orders.html
 #: templates/fleetops/configuration/index.html
@@ -6868,7 +6872,7 @@ msgstr "FleetOps 后台设置"
 
 #: templates/fleetops/configuration/doctrine_orders.html
 msgid "The order in which the ships of a doctrine are listed in pings and MOTDs, with a mark between every two ships. A doctrine without a stored order lists its ships in the order of the doctrine."
-msgstr "教义的舰船在 Ping 和 MOTD 中的排列顺序，每两艘舰船之间有一个符号。没有保存顺序的教义按教义本身的顺序列出舰船。"
+msgstr "建制的舰船在 Ping 和 MOTD 中的排列顺序，每两艘舰船之间有一个符号。没有保存顺序的建制按建制本身的顺序列出舰船。"
 
 #: templates/fleetops/configuration/doctrine_orders.html
 msgid "Order"
@@ -6898,7 +6902,7 @@ msgstr "编辑"
 
 #: templates/fleetops/configuration/doctrine_orders.html
 msgid "No doctrines found. Doctrines come from a doctrine app such as Fittings; a fleet with a typed doctrine name has no ship list."
-msgstr "没有找到教义。教义来自 Fittings 这类教义应用；手动输入教义名称的舰队没有舰船列表。"
+msgstr "没有找到建制。建制来自 Fittings 这类建制应用；手动输入建制名称的舰队没有舰船列表。"
 
 #: templates/fleetops/configuration/form.html
 msgid "Nothing to choose from yet."
@@ -6952,7 +6956,7 @@ msgstr "军团限额"
 
 #: templates/fleetops/configuration/index.html
 msgid "The order of the ships of a doctrine in pings and MOTDs, with a mark between every two ships."
-msgstr "教义的舰船在 Ping 和 MOTD 中的顺序，每两艘舰船之间有一个符号。"
+msgstr "建制的舰船在 Ping 和 MOTD 中的顺序，每两艘舰船之间有一个符号。"
 
 #: templates/fleetops/configuration/index.html
 msgid "Manage"
@@ -7396,7 +7400,7 @@ msgstr "FC 名称"
 
 #: templates/fleetops/fleet_operations.html
 msgid "Form up, FC, doctrine or notes"
-msgstr "集结地、FC、教义或备注"
+msgstr "集结地、FC、建制或备注"
 
 #: templates/fleetops/fleet_operations.html templates/fleetops/srp/bans.html
 #: templates/fleetops/srp/links.html templates/fleetops/srp/payments.html
@@ -9142,7 +9146,7 @@ msgstr "这里只会修改 FleetOps 的元数据和历史。它不会重新创�
 
 #: templates/fleetops/operation_edit.html
 msgid "Changing the doctrine name turns it into a custom doctrine without its Fittings fits."
-msgstr "修改教义名称会把它变成自定义教义，不再带有 Fittings 的装配。"
+msgstr "修改建制名称会把它变成自定义建制，不再带有 Fittings 的装配。"
 
 #: templates/fleetops/operation_edit.html
 msgid "Save Changes"
@@ -9751,7 +9755,7 @@ msgstr "任意舰船"
 #: templates/fleetops/srp/_calculation.html templates/fleetops/srp/link.html
 #, python-format
 msgid "doctrine %(doctrine)s"
-msgstr "教义 %(doctrine)s"
+msgstr "建制 %(doctrine)s"
 
 #: templates/fleetops/srp/_calculation.html
 #, python-format
@@ -10837,7 +10841,7 @@ msgstr[0] "已有 %(counter)s 条申请通过这条链接提交。在这里修�
 
 #: templates/fleetops/srp/link_form.html
 msgid "This is the link of a fleet. Only the doctrine text and the report can be changed here."
-msgstr "这是一支舰队的链接。这里只能修改教义文字和报告。"
+msgstr "这是一支舰队的链接。这里只能修改建制文字和报告。"
 
 #: templates/fleetops/srp/link_form.html
 msgid "Create link"
@@ -11054,11 +11058,15 @@ msgstr "复制 %(reference)s"
 
 #: templates/fleetops/srp/payments.html
 msgid "Open in game"
-msgstr "在游戏中打开"
+msgstr "在游戏里打开"
+
+#: templates/fleetops/srp/payments.html
+msgid "Add the opening character again"
+msgstr "请重新添加在游戏里打开的角色"
 
 #: templates/fleetops/srp/payments.html
 msgid "Set up opening characters in game"
-msgstr "设置游戏内打开角色"
+msgstr "设置在游戏里打开的角色"
 
 #: templates/fleetops/srp/payments.html
 #, python-format
@@ -11109,7 +11117,7 @@ msgstr "没有待付款项。"
 
 #: templates/fleetops/srp/payments.html
 msgid "Opening characters in game"
-msgstr "游戏内打开角色"
+msgstr "在游戏里打开的角色"
 
 #: templates/fleetops/srp/payments.html
 msgid "optional"
@@ -11117,7 +11125,7 @@ msgstr "可选"
 
 #: templates/fleetops/srp/payments.html
 msgid "The Open in game button opens a character in your EVE client. Choose one of your own characters for it. It needs a one-time authorization with the scope esi-ui.open_window.v1; nothing else is requested. If nothing opens, open any character window in the game once and try again."
-msgstr "“在游戏中打开”按钮会在你的 EVE 客户端里打开一个角色的信息窗口。请选择你自己的一个角色来执行。它需要一次性授权权限范围 esi-ui.open_window.v1，不会请求其他权限。如果什么都没有打开，请先在游戏里随便打开一个角色信息窗口，再试一次。"
+msgstr "“在游戏里打开”按钮会在你的 EVE 客户端里打开一个角色的信息窗口。请选择你自己的一个角色来执行。它需要一次性授权权限范围 esi-ui.open_window.v1，不会请求其他权限。如果什么都没有打开，请先在游戏里随便打开一个角色信息窗口，再试一次。"
 
 #: templates/fleetops/srp/payments.html
 #, python-format
@@ -12178,7 +12186,7 @@ msgstr "没有找到该角色带有所需权限范围的有效 ESI 令牌。"
 #: texts.py
 #, python-format
 msgid "Could not open the window in the game: %(detail)s"
-msgstr "无法在游戏中打开窗口：%(detail)s"
+msgstr "无法在游戏里打开窗口：%(detail)s"
 
 #: texts.py
 #, python-format
@@ -14130,6 +14138,21 @@ msgstr "请一分钟后再试。"
 
 #: texts.py
 #, python-format
+msgid "%(name)s received a ping %(seconds)s second ago. Wait %(wait)s second."
+msgstr "%(name)s 在 %(seconds)s 秒前刚收到一条 Ping。请再等 %(wait)s 秒。"
+
+#: texts.py
+#, python-format
+msgid "%(name)s received a ping %(seconds)s second ago. Wait %(wait)s seconds."
+msgstr "%(name)s 在 %(seconds)s 秒前刚收到一条 Ping。请再等 %(wait)s 秒。"
+
+#: texts.py
+#, python-format
+msgid "%(name)s received a ping %(seconds)s seconds ago. Wait %(wait)s second."
+msgstr "%(name)s 在 %(seconds)s 秒前刚收到一条 Ping。请再等 %(wait)s 秒。"
+
+#: texts.py
+#, python-format
 msgid "%(name)s received a ping %(seconds)s seconds ago. Wait %(wait)s seconds."
 msgstr "%(name)s 在 %(seconds)s 秒前刚收到一条 Ping。请再等 %(wait)s 秒。"
 
@@ -14651,7 +14674,7 @@ msgstr "SRP 赔付表"
 
 #: views_config.py
 msgid "Fixed SRP amounts per ship type and/or fleet doctrine. The most specific active rule wins; ships without a rule get value × percentage."
-msgstr "按船型和/或舰队教义设定的固定 SRP 金额。最具体的已启用规则优先；没有规则的舰船按价值 × 比例赔付。"
+msgstr "按船型和/或舰队建制设定的固定 SRP 金额。最具体的已启用规则优先；没有规则的舰船按价值 × 比例赔付。"
 
 #: views_config.py
 msgid "Alliance Auth groups whose leaders may send pings to their channels or run fleets with PAP. Leaders are the group leaders set in Alliance Auth, or all members of the group when you switch that on."
@@ -14754,11 +14777,11 @@ msgstr ">>> 优先级高得多"
 
 #: views_config.py
 msgid "This doctrine already uses the automatic order."
-msgstr "这个教义已在使用自动顺序。"
+msgstr "这个建制已在使用自动顺序。"
 
 #: views_config.py
 msgid "The stored ship order was deleted. The doctrine uses the automatic order again."
-msgstr "保存的舰船顺序已删除，这个教义重新使用自动顺序。"
+msgstr "保存的舰船顺序已删除，这个建制重新使用自动顺序。"
 
 #: views_controls.py
 #, python-format
@@ -15411,7 +15434,7 @@ msgstr "%(reference)s 已修改。审核人会处理它。"
 
 #: views_srp_ingame.py
 msgid "Choose your in-game character first (Opening characters in game, on the payments page)."
-msgstr "请先选择你的游戏内角色（付款页面上的“游戏内打开角色”）。"
+msgstr "请先选择你的游戏内角色（付款页面上的“在游戏里打开的角色”）。"
 
 #: views_srp_ingame.py
 #, python-format
@@ -15430,7 +15453,7 @@ msgstr "已发送到 %(character)s 的游戏客户端。如果什么都没有打
 
 #: views_srp_ingame.py
 msgid "The character could not be authorized. If EVE reports an invalid scope, ask an administrator to add the scope esi-ui.open_window.v1 to the EVE developer application (the scope is optional and only needed for the Open in game button)."
-msgstr "无法授权这个角色。如果 EVE 提示权限范围无效，请管理员在 EVE 开发者应用里加上 esi-ui.open_window.v1（这个权限是可选的，只用于“在游戏中打开”按钮）。"
+msgstr "无法授权这个角色。如果 EVE 提示权限范围无效，请管理员在 EVE 开发者应用里加上 esi-ui.open_window.v1（这个权限是可选的，只用于“在游戏里打开”按钮）。"
 
 #: views_srp_ingame.py
 msgid "That character is not on your account. It was not added."
@@ -15438,7 +15461,7 @@ msgstr "该角色不在你的账号下，没有被添加。"
 
 #: views_srp_ingame.py
 msgid "The character is authorized. Choose it as your in-game character in the box Opening characters in game."
-msgstr "角色已授权。请在“游戏内打开角色”框里把它选为你的游戏内角色。"
+msgstr "角色已授权。请在“在游戏里打开的角色”框里把它选为你的游戏内角色。"
 
 #: views_srp_ingame.py
 msgid "The in-game character was removed. Your tokens were not touched."

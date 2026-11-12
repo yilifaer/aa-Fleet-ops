@@ -16,7 +16,7 @@
 - 从自己的 Alliance Auth 账号里选任意大号或小号作为 FC。FleetOps 会找到该角色所在的 ESI 舰队，并检查该角色是否是舰队 Boss；Boss 可以处在任何舰队位置，
   不是 Boss 的舰队指挥官会被拒绝，并提示当前 Boss 是谁。
 - 每支 ESI 舰队只有一条记录。对已经在追踪的舰队再次开队，会直接打开正在运行的记录。新的 Boss 会把上一位 FC 的记录按 Boss 移交结束，并开启新的记录。
-- 带 FC 积分权重的舰队类型，来自可选的 `fittings` 应用的教义（也可以自定义文字），自由填写的集结地，以及语音、后勤和加成频道预设。
+- 带 FC 积分权重的舰队类型，来自可选的 `fittings` 应用的建制（也可以自定义文字），自由填写的集结地，以及语音、后勤和加成频道预设。
 - 个人开队预设，以及 **预 Ping**：为之后的某个 EVE 时间预告舰队，Discord 时间戳会按每位读者自己的时区显示。预约的舰队之后由预约它的 FC 开启。
 - **PAP 仅追踪** 只追踪舰队，不发 Discord Ping、不设 MOTD、不建 SRP 链接。**PAP 登记链接舰队** 完全不需要 ESI 舰队。
 - **小组 Ping 与小组舰队。** 小组就是 Alliance Auth 的用户组。管理员在 FleetOps 自己的后台页面里决定：每个 Ping 频道允许哪些小组的组长使用，以及组长可以做什么
@@ -182,7 +182,7 @@ FC 需要授权 `esi-fleets.read_fleet.v1` 和 `esi-fleets.write_fleet.v1`。写
 
 PAP 登记链接用飞行员自己的令牌读取他在哪里、开什么船、是否在线：`esi-location.read_location.v1`、`esi-location.read_ship_type.v1` 和
 `esi-location.read_online.v1`。这些与 AFAT 点击追踪以及对应的 aa-charlink 导入项所用的权限相同，所以它们已有的令牌可以复用。FleetOps SRP 可以读取成员各角色最近的损失（`esi-killmails.read_killmails.v1`，用成员自己的令牌，仅在 **自动发现损失** 开启时）。请在你的 EVE SSO 应用里启用这六个权限范围；
-没有最后一个时无法授权损失自动发现，其余功能照常。第七个权限范围是可选的：`esi-ui.open_window.v1` 只用于 SRP 付款页的 **在游戏中打开** 按钮，使用付款人自己的游戏内角色的令牌，并且只在付款人添加该角色时才请求。EVE 应用里没有它时，只有这一步授权会失败。
+没有最后一个时无法授权损失自动发现，其余功能照常。第七个权限范围是可选的：`esi-ui.open_window.v1` 只用于 SRP 付款页的 **在游戏里打开** 按钮，使用付款人自己的游戏内角色的令牌，并且只在付款人添加该角色时才请求。EVE 应用里没有它时，只有这一步授权会失败。
 
 ## 第一步
 
@@ -214,7 +214,7 @@ PAP 登记链接用飞行员自己的令牌读取他在哪里、开什么船、�
 
 | 应用 | 带来什么 |
 |---|---|
-| fittings | 教义列表，Ping 和 MOTD 里的教义链接和船体 |
+| fittings | 建制列表，Ping 和 MOTD 里的建制链接和船体 |
 | django-eveonline-sde | 英文舰船与星系名称、舰船分类、可搭桥质量、三跳地图 |
 | aa-srp、Alliance Auth SRP | 为每支舰队创建 SRP 链接 |
 | Alliance Auth Discord 服务 | 读取服务器的身份组用于 @ |
@@ -257,7 +257,7 @@ FleetOps 是你们组织自己的工具，保留什么由你决定。它把下�
 | 审计日志 | 谁在什么时候改了什么（设置、审核、付款、PAP 修正）；不含 token、不含 webhook 地址 | FleetOps 从不删除 |
 | 设置 | Discord webhook 地址（和 Alliance Auth 里其他密钥一样，以明文存在数据库中）、SRP 和舰队设置 | 直到你删除 |
 | 名称缓存 | 从 ESI 查到的角色、军团、联盟名称和归属 | 直到下次查询；从不删除 |
-| SRP 付款人的选择 | 付款人在付款页所做的选择：视图（按玩家或按申请），以及“在游戏中打开”用的游戏内角色（其 ID 和名称） | 直到用户被删除或选择被移除；不受保留期限影响 |
+| SRP 付款人的选择 | 付款人在付款页所做的选择：视图（按玩家或按申请），以及“在游戏里打开”用的游戏内角色（其 ID 和名称） | 直到用户被删除或选择被移除；不受保留期限影响 |
 | ESI token | FleetOps 不保存。它读取 django-esi 为用户保存的 token，从不把它写进日志、审计日志、页面或导出文件 | 由 Alliance Auth 管理 |
 
 数据只会发往 Discord（你发出的 Ping）、zKillboard 和 ESI（SRP 用到的 KM ID 和角色 ID，仅在启用 SRP 时），不会发往其他地方。FleetOps 会访问的主机：ESI（通过 django-esi）、`zkillboard.com`（KM 价值，仅 SRP）、`discord.com`（你添加的 webhook），以及 Alliance Auth 自带 Discord 服务的 Discord API（读取身份组，仅在你点按钮时）。你的用户的浏览器会从 `images.evetech.net` 加载图片，并链接到 `zkillboard.com`、`evewho.com` 和 `everef.net`。没有遥测，也没有更新检查。保留期限在**管理**里的 FleetOps 设置页设置，名为**数据保留天数**（365 到 36500）。上面说的每日任务会执行它；`python manage.py fleetops_prune_history --dry-run` 可以先看效果。

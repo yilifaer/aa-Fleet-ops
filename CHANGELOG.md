@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.3.0b3] - Unreleased
+
+Fixes from the second run of 0.3.0b2 on a test site. There is no new migration: install it the way you installed 0.3.0b2.
+
+### Fixed
+
+- The fleet MOTD no longer loses the `>` and `>>>` marks of the doctrine ship order in the game. The game reads the MOTD
+  as HTML-like text and dropped every `>`; now every value of a person or of FleetOps (ship list, ship and doctrine names,
+  comms, form-up place, FC, notes) is escaped (`&lt;`, `&gt;`, `&amp;`) when the MOTD is rendered. The FC, form-up,
+  logi and boost links keep their markup, and your own MOTD templates are covered as well, not only the default one.
+  The length warning counts the escaped text. Discord pings are not changed.
+- The SRP settings page no longer refuses every save while the site is in the state in which nobody can submit a loss
+  outside a fleet (a category is required, but there is no default category and none that members can choose). Only the
+  save that turns a working configuration into that state is refused; a site that is in it already can save its other
+  settings, such as the claim deadline, and the warning stays until the state is resolved. Editing categories follows
+  the same rule.
+- The refusal of a ping to a channel that just received one never says "0 seconds ago" any more (the time is rounded
+  up) and says "1 second" instead of "1 seconds".
+- On the payments page, a payer whose chosen in-game character has an expired or revoked token, or lacks the scope, now
+  sees **Add the opening character again** on the rows instead of the general setup link. Payers who never chose a
+  character still see **Set up opening characters in game**.
+- The message template edit page tells that the FC and the form-up system are clickable in the game only with
+  `{{ fc_link }}` and `{{ formup_link }}`, and that `{{ fc }}` and `{{ formup }}` are plain text. The message template
+  document says so too.
+- Chinese interface: doctrine is 建制 everywhere (it was 教义 in 39 texts), the paid state and button are 已付款, and
+  opening a character is 在游戏里打开, one word each.
+
+### Upgrade notes
+
+- No migration and no new setting. Upgrade the package, run `python manage.py collectstatic --noinput` (the pages are templates; the command keeps the static files in step) and restart the web process.
+- A custom MOTD template that you changed to `{{ doctrine_ships|force_escape }}` (or `|escape`) to work around the lost
+  `>` marks can keep that or go back to `{{ doctrine_ships }}`: a value that the template escapes itself is not escaped
+  twice (checked by a test), so both show the marks once.
+- A custom MOTD template that builds markup out of values with `|safe` keeps working; a value that you put into the
+  template without a filter is now escaped, so a `<` or `&` of a name shows as typed.
+
+### Rollback notes
+
+- No migration: install 0.3.0b2 again. The MOTD of fleets that are already open keeps the text it was rendered with;
+  **Regenerate & Push MOTD** renders it again with the installed version.
+
 ## [0.3.0b2] - 2026-11-10
 
 Fixes from the run of 0.3.0b1 on a test site, one new SRP setting, the order of the ships of a doctrine and a payment page that is easier for the people who pay. Install it the way you installed 0.3.0b1; read the

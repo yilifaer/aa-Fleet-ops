@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from django.template import Context, Template
 from django.utils import timezone
 from django.utils.html import strip_tags
+from django.utils.safestring import mark_safe
 from django.utils.translation import gettext, gettext_lazy
 
 from fleetops import texts
@@ -266,14 +267,40 @@ class RenderedMessages:
     motd_limit: int = 0
 
 
-def _render(record, fallback: str, values: dict, label: str, errors: list[str]) -> str:
+def _render(
+    record, fallback: str, values: dict, label: str, errors: list[str], *, autoescape: bool = False
+) -> str:
+    context = Context(values, autoescape=autoescape)
     if record is not None:
         try:
-            return Template(record.content).render(Context(values, autoescape=False)).strip()
+            return Template(record.content).render(context).strip()
         except Exception as exc:
             # Admin-edited templates must never block a fleet start or the preview.
             errors.append(texts.TEMPLATE_FALLBACK(label=label, name=record.name, error_type=type(exc).__name__))
-    return Template(fallback).render(Context(values, autoescape=False)).strip()
+    return Template(fallback).render(Context(values, autoescape=autoescape)).strip()
+
+
+# The MOTD variables that are EVE markup (links whose visible text is already escaped). Every other value of the
+# MOTD is plain text and is escaped by the template engine.
+_MOTD_MARKUP_VALUES = ("fc_link", "formup_link", "logi_channel_link", "boost_channel_link")
+
+
+def _render_motd(record, fallback: str, values: dict, errors: list[str]) -> str:
+    """Render a MOTD, which the game reads as HTML-like text.
+
+    The template engine escapes every plain-text value (``<``, ``>`` and ``&`` would otherwise be taken for markup,
+    so the ``>`` of the ship order disappeared in the game); the markup variables are passed as safe strings. A
+    template that escapes a value itself (``|escape``, ``|force_escape``) is not escaped twice.
+    """
+    values = {**values}
+    for key in _MOTD_MARKUP_VALUES:
+        values[key] = mark_safe(values.get(key) or "")
+    motd = _render(record, fallback, values, "MOTD", errors, autoescape=True)
+    # The template engine writes an apostrophe as an entity; the game shows names such as O'Brien as typed. The
+    # entity is restored only in the text between the tags: inside a tag it stays, so a value cannot close a
+    # single-quoted attribute of a custom template. Values cannot hold < or >, so every tag is the template's own.
+    parts = re.split(r"(<[^<>]*>)", motd)
+    return "".join(part if index % 2 else part.replace("&#x27;", "'") for index, part in enumerate(parts))
 
 
 def _mention_placeholder() -> str:
@@ -372,9 +399,9 @@ def render_messages(operation, *, actor=None, pre_ping=False, now=None) -> Rende
         motd_record = operation.motd_template or _default_template(MessageTemplate.TemplateType.MOTD)
         rendered_ping = _render_ping(ping_record, DEFAULT_PING_TEMPLATE, values, selection, errors)
         ping, ping_display = rendered_ping.text, rendered_ping.display
-        motd = _render(motd_record, DEFAULT_MOTD_TEMPLATE, values, "MOTD", errors)
+        motd = _render_motd(motd_record, DEFAULT_MOTD_TEMPLATE, values, errors)
         if placeholder:
-            motd = motd.replace(placeholder, mention_text(selection, display=True))
+            motd = motd.replace(placeholder, eve_links.escaped(mention_text(selection, display=True)))
         # EVE MOTD is HTML-like. Strip dangerous script-ish constructs while preserving basic tags.
         motd = re.sub(r"<(/?script)", r"&lt;\1", motd, flags=re.IGNORECASE)
 

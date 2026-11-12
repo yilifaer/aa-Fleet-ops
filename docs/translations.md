@@ -156,7 +156,7 @@ The Simplified Chinese translation follows these rules, and so do the Chinese do
 | Wing commander / Squad commander / Squad member | 联队指挥官 / 中队指挥官 / 中队队员 | FC points | FC 积分 |
 | Start Fleet / End Fleet | 开舰队 / 结束舰队 | FC incentive | FC 奖金 |
 | Fleet type | 舰队类型 | Waive / Finalize / Unlock / Recalculate | 放弃领取 / 定稿 / 解锁 / 重新计算 |
-| Doctrine | 教义 | Statistics / Target | 统计 / 达标线 |
+| Doctrine | 建制 | Statistics / Target | 统计 / 达标线 |
 | Form-up | 集结地 | Leaderboard / Inactive | 排行榜 / 不活跃 |
 | Comms | 语音 | Export | 导出 |
 | Logi channel / Boost channel | 后勤频道 / 加成频道 | Kick / Kick capsules | 踢出 / 一键踢蛋 |
@@ -173,6 +173,9 @@ The Simplified Chinese translation follows these rules, and so do the Chinese do
 | Command deck | 指挥台 | PAP multiplier "%(multiplier)sx" | %(multiplier)s 倍 |
 | Ended manually | 手动结束 | Fleet boss handed over | 因 Boss 移交而结束 |
 | Fleet no longer exists or the FC left it | 舰队已解散或 FC 已离队 | Webhook / Template | Webhook / 模板 |
+
+Two choices that were not consistent before 0.3.0b3: the state and the button "Paid" are 已付款 everywhere (a short
+label such as 已付 is not used), and "Open in game" is 在游戏里打开 everywhere (never 在游戏中打开 or 游戏内打开).
 
 Ship names and solar system names stay in English. Lists are separated with "、", and relative times have no space
 before 后 and 前 ("3 小时后").

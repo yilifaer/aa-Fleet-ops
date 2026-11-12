@@ -2286,6 +2286,13 @@ class SrpSettings(models.Model):
             return False
         return not (category is not None and not deleted and usable(category))
 
+    def _stored_in_dead_end(self) -> bool:
+        """Whether the stored settings (before this save) are already a dead end."""
+        if self.pk is None:
+            return False
+        stored = type(self).objects.filter(pk=self.pk).first()
+        return stored is not None and stored.out_of_fleet_dead_end()
+
     def clean(self):
         super().clean()
         if not self.zkillboard_enabled and self.value_source != self.ValueSource.ESI_ESTIMATE:
@@ -2295,7 +2302,10 @@ class SrpSettings(models.Model):
         category = self.default_category
         if category is not None and not (category.is_active and category.member_selectable):
             raise ValidationError({"default_category": _("Choose an active category that members can choose.")})
-        if self.out_of_fleet_dead_end():
+        if self.out_of_fleet_dead_end() and not self._stored_in_dead_end():
+            # Only the save that turns a working configuration into a dead end is refused. A site that is already
+            # in one (it came from an earlier version, or a category went another way) can still save its other
+            # fields; the warning on the settings page stays until the dead end is resolved.
             raise ValidationError(
                 {
                     "out_of_fleet_category_required": _(

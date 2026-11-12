@@ -80,9 +80,13 @@ preview warns that nobody will be notified.
   characters (counted the way Discord counts them). A ping over the limit is refused before anything is posted
   to Discord; a ping that is only copied gets a warning. The counter on **Start Fleet** shows the length.
   Link previews are suppressed.
-- MOTD: template output is not HTML-escaped. The game reads a small set of HTML-like tags (`<b>`, `<br>`,
+- MOTD: the game reads HTML-like text, so every value of a person or of FleetOps is HTML-escaped when the template is
+  rendered (`<`, `>` and `&` become `&lt;`, `&gt;` and `&amp;`; otherwise the game drops the `>` and `>>>` marks of
+  `doctrine_ships`). The variables that are game markup (`fc_link`, `formup_link`, `logi_channel_link`,
+  `boost_channel_link`) keep their tags and have their visible text escaped. A template that escapes a value itself
+  (`{{ doctrine_ships|force_escape }}`, `|escape`) is not escaped twice. The Discord ping is not escaped. The game reads a small set of HTML-like tags (`<b>`, `<br>`,
   `<font color="#bfffffff">`, `<a href="…">`). `{{ additional_message|linebreaksbr }}` keeps the line breaks the
-  FC typed. `<script` is escaped. A MOTD longer than 1000 characters only gets a warning, because the game may
+  FC typed. `<script` is escaped. An apostrophe in a value is shown as typed in the text between tags; inside a tag it stays escaped, so a single-quoted attribute (`<font color='{{ formup }}'>`) of a custom template does not take apostrophes from a value: use double quotes. A MOTD longer than 1000 characters only gets a warning, because the game may
   cut a longer one.
 - Text typed by people is plain text in the messages: the doctrine name, the form-up place, the group and the
   additional message are cleaned of the game's rich text (`<font>`, `<b>`, `<a href="…">name</a>` keeps only
@@ -144,7 +148,7 @@ if they do not exist yet, and never overwrites a template you edited. An upgrade
 only while it still equals the default of the version before (whatever its name); migrating back restores that
 default, and a template you edited after the upgrade is kept. Edited and custom templates are never touched: a
 MOTD of your own needs `{{ fc_link }}` and `{{ formup_link }}` added by hand if it should make the FC and the
-form-up place clickable, and `{{ srp_url }}` if it should carry the SRP link.
+form-up place clickable (`{{ fc }}` and `{{ formup }}` are plain text; the template edit page says so), and `{{ srp_url }}` if it should carry the SRP link.
 
 When a scheduled fleet is cancelled, FleetOps can post a notice in the same channel as the pre ping. The notice
 comes from a fixed English text (`**Cancelled:** <fleet type> at <fleet time> (<form-up>)`) and mentions nobody;

@@ -341,7 +341,7 @@ class DefaultMotdTests(MessageTestBase):
         self.assertEqual(
             motd,
             f'<font color="#bfffffff"><b>StratOp</b><br>FC: {character_link(operation.fc_character_id, "Boss Alt")}'
-            f'<br>Form Up: Jita IV-4<br>Doctrine: <a href="{SITE}{DOCTRINE_PATH}">Moa Fleet</a> (Moa > Osprey)'
+            f'<br>Form Up: Jita IV-4<br>Doctrine: <a href="{SITE}{DOCTRINE_PATH}">Moa Fleet</a> (Moa &gt; Osprey)'
             f'<br>Comms: <a href="{self.join_url()}">Main Comms</a>'
             f'<br>Logi: <a href="joinChannel:{CHANNEL_ID}">Logi Chat</a>'
             "<br>Boost: Boosts"
@@ -382,12 +382,95 @@ class DefaultMotdTests(MessageTestBase):
         motd = self.render(operation).motd
 
         self.assertNotIn("<script", motd)
-        self.assertIn("&lt;script>alert(1)&lt;/script>", motd)
+        # The value is escaped completely now (the ">" as well), not only the opening of the tag.
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", motd)
 
         template = make_template("Hello <script>alert(2)</script>", MessageTemplate.TemplateType.MOTD)
         motd = self.render(self.operation(motd_template=template)).motd
 
         self.assertEqual(motd, "Hello &lt;script>alert(2)&lt;/script>")
+
+    def test_plain_text_values_are_escaped_and_the_marks_of_the_ship_list_show(self):
+        operation = self.full_operation(
+            doctrine_name="Fast & <Furious>",
+            formup="Jita > Perimeter",
+            additional_message="a < b & c > d",
+        )
+        template = make_template(
+            "{{ doctrine_name }}|{{ doctrine_ships }}|{{ formup }}|{{ additional_message }}|{{ comms }}",
+            MessageTemplate.TemplateType.MOTD,
+        )
+        operation.motd_template = template
+
+        motd = self.render(operation).motd
+
+        self.assertIn("Fast &amp; &lt;Furious&gt;|Moa &gt; Osprey|Jita &gt; Perimeter|a &lt; b &amp; c &gt; d|", motd)
+        # Whatever is not markup of FleetOps has no ">" left in it.
+        self.assertNotIn(">", motd)
+
+    def test_the_default_motd_has_no_unescaped_mark_in_its_text(self):
+        operation = self.full_operation(doctrine_name="[AA] Fleet > 1", formup="Jita")
+
+        motd = self.render(operation).motd
+
+        self.assertIn("[AA] Fleet &gt; 1", motd)
+        self.assertIn("(Moa &gt; Osprey)", motd)
+        # The links keep their markup.
+        self.assertIn("<a href=\"showinfo:", motd)
+        self.assertIn('<a href="joinChannel:', motd)
+
+    def test_the_link_variables_keep_their_markup_and_escape_their_text(self):
+        operation = self.full_operation(formup="Jita")
+        operation.fc_character_name = "Boss <&> Alt"
+        template = make_template("{{ fc_link }}|{{ formup_link }}|{{ logi_channel_link }}", MessageTemplate.TemplateType.MOTD)
+        operation.motd_template = template
+
+        motd = self.render(operation).motd
+
+        self.assertIn('">Boss &lt;&amp;&gt; Alt</a>|', motd)
+        self.assertIn(f'<a href="joinChannel:{CHANNEL_ID}">', motd)
+        self.assertNotIn("&lt;a href", motd)
+
+    def test_a_template_that_escapes_a_value_itself_is_not_escaped_twice(self):
+        # Sites added |force_escape (or |escape) as a workaround while the MOTD did not escape anything.
+        operation = self.full_operation(doctrine_name="A & B")
+        template = make_template(
+            "{{ doctrine_ships|force_escape }}|{{ doctrine_ships|escape }}|{{ doctrine_name|force_escape }}",
+            MessageTemplate.TemplateType.MOTD,
+        )
+        operation.motd_template = template
+
+        motd = self.render(operation).motd
+
+        self.assertEqual(motd, "Moa &gt; Osprey|Moa &gt; Osprey|A &amp; B")
+
+    def test_an_apostrophe_stays_as_typed_and_the_mention_is_escaped(self):
+        operation = self.operation(formup="O'Brien's Gate", ping_mention_mode=Mode.ROLES, ping_roles=TWO_ROLES)
+        template = make_template("{{ formup }} {{ ping_mention }}", MessageTemplate.TemplateType.MOTD)
+        operation.motd_template = template
+
+        self.assertEqual(self.render(operation).motd, "O'Brien's Gate @Sig A @Sig B")
+
+    def test_the_ping_is_not_escaped(self):
+        operation = self.full_operation(doctrine_name="Fast & Furious")
+
+        rendered = self.render(operation)
+
+        self.assertIn("(Moa > Osprey)", rendered.ping)
+        self.assertIn("Fast & Furious", rendered.ping)
+
+    def test_the_length_counts_the_escaped_text(self):
+        operation = self.operation()
+        template = make_template("{{ additional_message }}", MessageTemplate.TemplateType.MOTD)
+        operation.motd_template = template
+        operation.additional_message = ">>>"
+
+        rendered = self.render(operation)
+
+        self.assertEqual(rendered.motd, "&gt;&gt;&gt;")
+        self.assertEqual(rendered.motd_length, len("&gt;&gt;&gt;"))
+        # The game shows the three marks.
+        self.assertEqual(rendered.motd_visible_length, 3)
 
     def test_the_fc_and_the_form_up_place_are_printed_through_their_links(self):
         # The built-in MOTD asks for {{ fc_link }} and {{ formup_link }}.

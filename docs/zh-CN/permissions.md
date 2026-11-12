@@ -22,7 +22,7 @@ staff 或 superuser 账号。
 | `fleetops.view_all_stats` | Can view all FleetOps statistics | 查看全联盟统计：所有军团、全部成员和不活跃成员、每个成员页、FC 统计、PAP 历史、排行榜和所有统计导出。只看统计；打开舰队记录需要 `view_all_fleets` 或 `manage_fleets`。 |
 | `fleetops.manage_attendance` | Can manage attendance | 在自己可管理的舰队上补录 PAP（按名字、ID 或粘贴名单），在 FC 主管通过之前删除自己的记录，重新计算 PAP，在时长规则范围内修改已结束舰队的 PAP 倍率。与 `manage_fleets` 同时拥有时对所有舰队生效。 |
 | `fleetops.manage_incentives` | Can manage FC incentives | 审核、重新计算、放弃领取、定稿和解锁每月的 FC 奖金周期。只有在"常规设置"里勾选了"启用 FC 奖金"（Incentive enabled，默认关闭）时这些页面才存在。 |
-| `fleetops.manage_configuration` | Can manage FleetOps configuration | 使用 FleetOps 后台设置：常规设置、舰队类型、语音预设、后勤和加成频道、Ping 频道和 Ping 身份组（含"从 Discord 同步身份组"）、PAP 倍率、特殊角色、月度达标线、舰船功能及规则、结构模板、消息模板、教义舰船顺序，以及 SRP 设置、SRP 类别、赔付表和军团限额。在自己能打开的舰队里，从编成页快速归类舰船。 |
+| `fleetops.manage_configuration` | Can manage FleetOps configuration | 使用 FleetOps 后台设置：常规设置、舰队类型、语音预设、后勤和加成频道、Ping 频道和 Ping 身份组（含"从 Discord 同步身份组"）、PAP 倍率、特殊角色、月度达标线、舰船功能及规则、结构模板、消息模板、建制舰船顺序，以及 SRP 设置、SRP 类别、赔付表和军团限额。在自己能打开的舰队里，从编成页快速归类舰船。 |
 | `fleetops.view_audit_log` | Can view FleetOps audit log | 打开"操作日志"页。 |
 | `fleetops.request_srp` | Can request SRP | 在 FleetOps SRP 中提交舰船损失申请（"我的 SRP"和舰队的 SRP 链接），查看自己的申请和本月额度。需要先启用 FleetOps SRP。加入 SRP 功能的那次迁移已经把它授予所有已拥有 `basic_access` 的用户组、状态和用户；之后新建的用户组需要自己加上。如果不想让所有成员都能提交申请，请在 Alliance Auth 管理后台里打开对应的用户组、状态或用户，从权限中移除 `Can request SRP`，只把它加给应当提交申请的用户组。安装 0.3.0b1 不会把它加回来。 |
 | `fleetops.manage_srp` | Can review and pay SRP claims | `review_srp` 和 `pay_srp` 加在一起能做的所有事：审核并支付申请。这是旧版本的权限，含义不变，所以已有持有人既不会多也不会少。因为它决定付款，所以不会默认授予任何人。 |
@@ -178,12 +178,12 @@ FC 统计不受影响。
 | 创建舰队的 SRP 链接（"创建 SRP 链接"、"重试 SRP"） | 该舰队上的 `fleetops.manage_own_fleet`，或 `fleetops.manage_fleets` |
 | 关闭舰队的 SRP 链接；完成链接；SRP 链接列表及其 **关闭所选**、**完成所选** | `fleetops.manage_srp`、`fleetops.review_srp` 或 `fleetops.pay_srp`。链接上还有待审核或待付款的申请时，任何人都不能完成它。 |
 | 重新打开 SRP 链接（舰队页卡片、**打开所选**） | `fleetops.manage_srp` 或 `fleetops.review_srp`；只有 `pay_srp` 不行，因为重新打开会让成员能再次提交 |
-| 创建常驻链接（**新建常驻链接**）；编辑常驻链接的名称、类别、日期、教义文字、报告和关闭时间，或舰队链接的教义文字和报告 | `fleetops.manage_srp` 或 `fleetops.review_srp`。FC 和只有付款权限的人得到 403。 |
+| 创建常驻链接（**新建常驻链接**）；编辑常驻链接的名称、类别、日期、建制文字、报告和关闭时间，或舰队链接的建制文字和报告 | `fleetops.manage_srp` 或 `fleetops.review_srp`。FC 和只有付款权限的人得到 403。 |
 | 审核队列、对申请的各种决定（通过、修改金额、拒绝、撤销、重新打开、重新归类、更改类别）、批量通过、"重新计算"、重新检查在队情况 | `fleetops.manage_srp` 或 `fleetops.review_srp`；不能处理审核人自己的申请，除非勾选了"SRP 审核人可以处理自己的申请"（返回 403；批量操作会跳过并给出提示）。重新检查在队情况不受这条限制。 |
 | **修改申请**（修改待审核申请的备注、类别或链接、损失）及其预览和确认 | `fleetops.request_srp`，而且只有申请人本人：其他人（包括 SRP 人员）得到 404。**成员可以修改待审核的申请** 关闭时、申请不是待审核时、成员有生效的 SRP 封禁时，都会被拒绝。 |
 | 付款批次页、待付款清单导出（`srp-payable`） | `fleetops.manage_srp` 或 `fleetops.pay_srp`；只有 `review_srp` 的审核人得到 403，`view_all_stats` 也是。 |
-| 付款页（**按玩家**和**按申请**）、**在游戏中打开**、选择或移除游戏内角色、"标记已付款"（单条、一行的**已付款**按钮或勾选的几条）、"撤销付款" | `fleetops.manage_srp` 或 `fleetops.pay_srp`；不能支付付款人自己的申请，除非勾选了"SRP 付款人可以把自己的申请标记为已付款"；勾选"批准申请的人不能付款"后，也不能支付自己批准或修改过金额的申请（返回 403；批量付款会跳过并给出提示）。撤销付款不受"批准的人不能付款"限制。 |
-| 权限范围 `esi-ui.open_window.v1`（可选，只用于付款页的 **在游戏中打开**） | 仅当付款人（`fleetops.manage_srp` 或 `fleetops.pay_srp`）点 **添加并授权角色** 时才请求，且只针对自己账号下的角色；从不在登录时请求，也从不为其他用户请求。令牌由 django-esi 保存。 |
+| 付款页（**按玩家**和**按申请**）、**在游戏里打开**、选择或移除游戏内角色、"标记已付款"（单条、一行的**已付款**按钮或勾选的几条）、"撤销付款" | `fleetops.manage_srp` 或 `fleetops.pay_srp`；不能支付付款人自己的申请，除非勾选了"SRP 付款人可以把自己的申请标记为已付款"；勾选"批准申请的人不能付款"后，也不能支付自己批准或修改过金额的申请（返回 403；批量付款会跳过并给出提示）。撤销付款不受"批准的人不能付款"限制。 |
+| 权限范围 `esi-ui.open_window.v1`（可选，只用于付款页的 **在游戏里打开**） | 仅当付款人（`fleetops.manage_srp` 或 `fleetops.pay_srp`）点 **添加并授权角色** 时才请求，且只针对自己账号下的角色；从不在登录时请求，也从不为其他用户请求。令牌由 django-esi 保存。 |
 | 在“我的 SRP”授权损失读取、**立即读取我的角色**、**申请**、**忽略**和**重新显示**（损失自动发现） | `fleetops.request_srp`，只针对用户自己账号下的角色，且功能开启时。别人的损失对所有操作都返回 404。授权是一次 EVE 登录，权限范围为 `esi-killmails.read_killmails.v1`；令牌属于用户自己，只用于那个角色。 |
 | SRP 封禁列表、做出 SRP 封禁（也可以从申请页进入）和解除封禁 | `fleetops.manage_srp` 或 `fleetops.review_srp`。付款人、成员和 FC 得到 403。任何人都不能封禁自己。封禁的内部备注只在审核人的封禁页和申请页上显示；成员只看到理由，操作日志里也不会有内部备注。 |
 | 被封禁拦住 | 账号被封禁期间，拥有 `request_srp` 的所有人；仍然可以撤回待审核的申请。超级用户和其他人一样受它约束。 |

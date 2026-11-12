@@ -323,7 +323,9 @@ class DefaultTemplateUpgradeTests(TestCase):
             motd_template=MessageTemplate.objects.get(template_type="motd", name="Default MOTD"),
         )
         link = f'<a href="joinChannel:{CHANNEL_ID}">Logi &amp; Reps</a>'
-        self.assertIn(link, render_messages(operation).motd)
+        # Changed in 0.3.0b3: before the upgrade the channel name still holds the pasted markup, and a template that
+        # prints it with {{ logi_channel }} shows it as text now (it is a plain-text value like any other).
+        self.assertNotIn(link, render_messages(operation).motd)
 
         upgrade.extract_channel_links(apps, None)
         upgrade.update_untouched_default_templates(apps, None)

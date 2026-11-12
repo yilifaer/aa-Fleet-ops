@@ -312,7 +312,7 @@ right actor.
 - [ ] SRP settings: turn on **Members must choose a category for losses outside a fleet** with no default category and
   no category members can choose: saving is refused with the three ways out. With one choosable category, deactivating,
   hiding or deleting it is refused; with a second one or a default category it is allowed. On a site that is already in
-  that state, the settings page and **My SRP** show the warning.
+  that state, the settings page and **My SRP** show the warning, and the other settings (the claim deadline, for example) can still be saved.
 - [ ] Open an older fleet that was started by 0.2.x and use **Retry Ping**: the posted ping has no `fitting:` or `<font`.
   A ping without a fleet and a fleet ping to the same channel within 60 seconds: the second one is refused with the wait.
   The same for a scheduled fleet started less than a minute after its pre ping: the fleet starts, the ping step shows the wait.
@@ -337,3 +337,20 @@ right actor.
   removes the order. The audit log has the three entries. A user without the configuration permission gets 403.
 - [ ] Start a fleet with a doctrine named `[ACTIVE] Example Doctrine`: the Discord ping shows the doctrine as a link with the
   whole name, the MOTD shows the name as typed.
+
+## 18. Fixes of 0.3.0b3
+
+- [ ] Start a fleet with a doctrine that has a stored ship order with `>` and `>>>` marks and a form-up text with `<`,
+  `>` or `&`: the MOTD in the game shows the marks and the text as typed; the FC and the form-up system are still
+  clickable with the built-in MOTD template. A custom MOTD template that uses `{{ doctrine_ships|force_escape }}`
+  shows the marks once, not as `&gt;`.
+- [ ] A MOTD template that uses `{{ fc }}` and `{{ formup }}` shows plain text in the game; the template edit page says
+  that `{{ fc_link }}` and `{{ formup_link }}` make them clickable.
+- [ ] On a site in the dead end of the SRP settings (required category, no default, no choosable category) save another
+  setting such as the claim deadline: it is saved and the warning stays. Turning the requirement on in a working
+  configuration that has no way out is still refused.
+- [ ] Send two pings to the same channel quickly: the refusal says "1 second ago" or "N seconds ago" and never 0.
+- [ ] Payments page: after the token of the chosen in-game character was removed in Alliance Auth, the rows show
+  **Add the opening character again**; a payer who never chose a character sees **Set up opening characters in game**.
+- [ ] Chinese interface: doctrine, the paid state and button, and the open-in-game button each use one word everywhere (see
+  `docs/translations.md`); the old variants are gone from every page.

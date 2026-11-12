@@ -76,7 +76,7 @@
             <td>{% if claim.category_id %}{{ claim.category|srp_category_label }}{% endif %}{% if claim.link_id %}<div class="small">{{ claim.link.name|default:claim.link.code }}</div>{% elif claim.scope == "in_fleet" %}<div class="small">{{ claim.fleet_label|default:_("In fleet") }}</div>{% elif not claim.category_id %}<span class="text-muted">{% translate "Out of fleet" %}</span>{% endif %}</td>
             <td class="text-end text-nowrap">{{ claim.approved_amount|isk }} <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ claim.approved_amount|isk_plain }}" hidden>{% translate "Copy" %}</button></td>
             <td class="text-nowrap">
-              {% if game_character.ready %}<button type="submit" class="btn btn-sm btn-outline-secondary" formaction="{% url 'fleetops:srp_open_in_game' claim.uuid 'lost' %}" data-srp-open>{% translate "Open in game" %}</button>{% else %}<a class="small" href="#srp-game-character">{% translate "Set up opening characters in game" %}</a>{% endif %}
+              {% if game_character.ready %}<button type="submit" class="btn btn-sm btn-outline-secondary" formaction="{% url 'fleetops:srp_open_in_game' claim.uuid 'lost' %}" data-srp-open>{% translate "Open in game" %}</button>{% elif game_character %}<a class="small" href="#srp-game-character">{% translate "Add the opening character again" %}</a>{% else %}<a class="small" href="#srp-game-character">{% translate "Set up opening characters in game" %}</a>{% endif %}
               {% if claim.payable %}<button type="submit" class="btn btn-sm btn-outline-primary" name="only" value="{{ claim.uuid }}" aria-label="{% blocktranslate trimmed with reference=claim.reference %}Mark {{ reference }} paid{% endblocktranslate %}">{% translate "Paid" %}</button>{% endif %}
             </td>
           </tr>
@@ -99,7 +99,7 @@
         <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.total|isk_plain }}" hidden>{% translate "Copy amount" %}</button>
         <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.main_character_name }}&#9;{{ row.total|isk_plain }}" hidden>{% translate "Copy name and amount" %}</button>
         {% if row.claim_numbers %}<button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.claim_numbers }}" hidden>{% translate "Copy claim numbers" %}</button>{% endif %}
-        {% if game_character.ready %}<button type="submit" class="btn btn-sm btn-outline-secondary" formaction="{% url 'fleetops:srp_open_in_game' row.claims.0.uuid 'main' %}" data-srp-open>{% translate "Open in game" %}</button>{% else %}<a class="small" href="#srp-game-character">{% translate "Set up opening characters in game" %}</a>{% endif %}
+        {% if game_character.ready %}<button type="submit" class="btn btn-sm btn-outline-secondary" formaction="{% url 'fleetops:srp_open_in_game' row.claims.0.uuid 'main' %}" data-srp-open>{% translate "Open in game" %}</button>{% elif game_character %}<a class="small" href="#srp-game-character">{% translate "Add the opening character again" %}</a>{% else %}<a class="small" href="#srp-game-character">{% translate "Set up opening characters in game" %}</a>{% endif %}
       </div>
     </div>
     <div class="table-responsive">
