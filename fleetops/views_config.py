@@ -37,6 +37,7 @@ from fleetops.forms_pap import MultiplierTierForm
 from fleetops.forms_records import SpecialRoleForm
 from fleetops.models import (
     AuditLog,
+    DoctrineAccess,
     DoctrineShipOrder,
     ChannelPreset,
     CommsPreset,
@@ -587,7 +588,9 @@ def configuration_index(request):
             "srp_group": index_group("srp"),
             "doctrine_group": index_group("doctrine-order"),
             "doctrine_icon": INDEX_ICONS["doctrine-order"],
-            "doctrine_orders": DoctrineShipOrder.objects.count(),
+            # Doctrines with a stored ship order plus doctrines restricted to groups.
+            "doctrine_orders": DoctrineShipOrder.objects.count()
+            + DoctrineAccess.objects.filter(groups__isnull=False).distinct().count(),
             "icons": INDEX_ICONS,
             **_link_settings(),
         },
@@ -821,21 +824,6 @@ def _fittings_doctrine(doctrine_id):
         if choice.source == FITTINGS_DOCTRINE_SOURCE and choice.external_id == wanted:
             return choice
     raise Http404
-
-
-@fleetops_permission_required("fleetops.manage_configuration")
-def doctrine_orders(request):
-    """The doctrines of the doctrine app with the state of their ship order."""
-    stored = {
-        row.doctrine_external_id: row
-        for row in DoctrineShipOrder.objects.filter(doctrine_source=FITTINGS_DOCTRINE_SOURCE)
-    }
-    rows = [
-        {"doctrine": choice, "order": stored.get(choice.external_id)}
-        for choice in get_doctrines()
-        if choice.source == FITTINGS_DOCTRINE_SOURCE
-    ]
-    return _render(request, "fleetops/configuration/doctrine_orders.html", {"rows": rows})
 
 
 def _submitted_rows(post, current):

@@ -15,8 +15,9 @@ from django.db import IntegrityError, transaction
 from django.utils.translation import gettext, gettext_lazy
 
 from fleetops import texts
+from fleetops.texts import translate_stored
 from fleetops.models import FleetStartPreset
-from fleetops.services import pap_limit
+from fleetops.services import doctrine_access, pap_limit
 from fleetops.services.identity import get_owned_character
 
 # Start form fields a preset never keeps: they belong to one start.
@@ -37,6 +38,10 @@ ITEM_NAMES = {
     "motd_template": gettext_lazy("MOTD template"),
     "ping_mentions": gettext_lazy("Ping target"),
 }
+
+
+class PresetRefused(ValueError):
+    """The preset names a doctrine or a custom doctrine name the user may not use; the text is shown as it is."""
 
 
 class PresetConflict(Exception):
@@ -139,6 +144,20 @@ def _with_fc_character(values, character):
     return character.character_id if character is not None else None
 
 
+def _doctrine_refusal(form, data) -> str:
+    """Why the doctrine of the posted start form may not be saved in a preset by this user; "" when it may."""
+    choice = str(data.get(DOCTRINE) or "")
+    cleaned = {}
+    if choice:
+        parts = choice.split("|", 2)
+        cleaned = {"doctrine_source": parts[0], "doctrine_external_id": parts[1] if len(parts) > 1 else ""}
+    elif str(data.get(CUSTOM_DOCTRINE) or "").strip():
+        cleaned = {"doctrine_source": "custom", "doctrine_name": str(data[CUSTOM_DOCTRINE]).strip()}
+    return doctrine_access.refusal(
+        form.user, cleaned, scope=form.doctrine_scope, blank_allowed=getattr(form, "blank_doctrine_allowed", None)
+    )
+
+
 def save_preset(user, name, data, *, overwrite=False, remember_fc=False, make_default=False, form_class=None):
     """Save the Fleet Start values in ``data`` as the user's preset ``name``; returns the preset.
 
@@ -149,6 +168,9 @@ def save_preset(user, name, data, *, overwrite=False, remember_fc=False, make_de
     if not name:
         raise ValueError(texts.PRESET_NAME_REQUIRED())
     form = _start_form_class(form_class)(user=user)
+    refusal = _doctrine_refusal(form, data)
+    if refusal:
+        raise PresetRefused(translate_stored(refusal))
     values = values_from_data(form, data)
     character = _owned_character(user, data.get(FC_CHARACTER)) if remember_fc else None
     fc_character_id = _with_fc_character(values, character)
@@ -194,6 +216,7 @@ def load_preset(preset, form_class, user):
         else:
             initial[name] = value if isinstance(value, str) else ""
     _load_doctrine(form, stored, labels, initial, warnings)
+    _load_custom_name(form, stored, initial, warnings)
     _load_pap_limit(form, stored, user, initial, warnings)
     _load_fc_character(preset, user, labels, initial, warnings)
     return initial, warnings
@@ -236,7 +259,11 @@ def _multiple_choice(field, name, value, labels, warnings):
 
 
 def _load_doctrine(form, stored, labels, initial, warnings):
-    """A doctrine that is no longer offered comes back as a custom doctrine of the same name."""
+    """A doctrine that is no longer offered comes back as a custom doctrine of the same name.
+
+    A doctrine the user may not ping (any more) is never switched to another doctrine or turned into a typed name:
+    the choice stays empty and the preset says why.
+    """
     value = str(stored.get(DOCTRINE) or "")
     field = form.fields.get(DOCTRINE)
     if field is None:
@@ -246,10 +273,31 @@ def _load_doctrine(form, stored, labels, initial, warnings):
         return
     name = labels.get(DOCTRINE) or value
     initial[DOCTRINE] = ""
-    initial[CUSTOM_DOCTRINE] = name
+    parts = value.split("|", 2)
+    if len(parts) == 3 and not form.doctrine_scope.can_use_doctrine(parts[0], parts[1]):
+        warnings.append(
+            gettext("Doctrine '%(name)s' of this preset: %(reason)s")
+            % {"name": name, "reason": translate_stored(texts.DOCTRINE_NOT_ALLOWED())}
+        )
+    elif not form.custom_name_allowed:
+        _gone(DOCTRINE, field, name, warnings)
+    else:
+        initial[CUSTOM_DOCTRINE] = name
+        warnings.append(
+            gettext("Doctrine '%(name)s' is no longer available; it was entered as a custom doctrine.")
+            % {"name": name}
+        )
+
+
+def _load_custom_name(form, stored, initial, warnings):
+    """A typed doctrine name of the preset the user may not use (any more) is not loaded, and the preset says so."""
+    name = str(initial.get(CUSTOM_DOCTRINE) or "").strip()
+    if not name or form.custom_name_allowed:
+        return
+    initial.pop(CUSTOM_DOCTRINE, None)
     warnings.append(
-        gettext("Doctrine '%(name)s' is no longer available; it was entered as a custom doctrine.")
-        % {"name": name}
+        gettext("Custom doctrine name '%(name)s' of this preset: %(reason)s")
+        % {"name": name, "reason": translate_stored(texts.CUSTOM_DOCTRINE_NOT_ALLOWED())}
     )
 
 

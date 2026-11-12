@@ -25,7 +25,7 @@ from fleetops.providers.doctrines import doctrine_fits_snapshot
 from fleetops.providers.esi import FleetESIError, detect_character_fleet, set_fleet_motd
 from fleetops.providers.pings import send_discord_webhook
 from fleetops.providers.srp import create_srp_link
-from fleetops.services import group_access, incentives, pap_limit
+from fleetops.services import doctrine_access, group_access, incentives, pap_limit
 from fleetops.services.audit import audit
 from fleetops.services.counting import evaluate_stats_inclusion
 from fleetops.services.errors import log_failure, report_failure
@@ -514,7 +514,8 @@ def start_refusal(user, cleaned_data, *, full_mode, pre_ping=False) -> str:
         sends=full_mode,
         pre_ping=pre_ping,
     )
-    return message
+    # The doctrine rules (who may ping which doctrine, who may type a name) are checked here again as well.
+    return message or doctrine_access.refusal(user, cleaned_data)
 
 
 def start_fleet(*, user, cleaned_data: dict, request_id: uuid.UUID | None = None):

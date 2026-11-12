@@ -3,27 +3,87 @@
 {% block fleetops_content %}
 <div class="mb-3">
   <div class="small"><a href="{% url 'fleetops:configuration_index' %}">{% translate "FleetOps Administration" %}</a></div>
-  <h2 class="mb-1">{% translate "Doctrine Ship Order" %}</h2>
-  <div class="text-muted">{% translate "The order in which the ships of a doctrine are listed in pings and MOTDs, with a mark between every two ships. A doctrine without a stored order lists its ships in the order of the doctrine." %}</div>
+  <h2 class="mb-1">{% translate "Doctrine Settings" %}</h2>
+  <div class="text-muted">{% translate "Who may ping which doctrine, who may use a custom doctrine name, and the order in which the ships of a doctrine are listed in pings and MOTDs." %}</div>
 </div>
-<div class="card">
-  {% if rows %}
-  <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0 fo-admin-table fo-table-pin">
-      <thead><tr><th scope="col">{% translate "Doctrine" context "FleetOps" %}</th><th scope="col">{% translate "Order" %}</th><th scope="col" class="text-end">{% translate "Actions" %}</th></tr></thead>
-      <tbody>
-      {% for row in rows %}
-        <tr>
-          <td>{{ row.doctrine.name }}</td>
-          <td>{% if row.order %}{% translate "Stored order" as state %}{% pill "info" state %}{% else %}{% translate "Automatic order" as state %}{% pill "neutral" state %}{% endif %}</td>
-          <td class="text-end text-nowrap"><a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:doctrine_order_edit' row.doctrine.external_id %}">{% translate "Edit" %}</a></td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
+<form method="post" id="doctrine-settings-form">
+  {% csrf_token %}
+  <div class="card mb-3">
+    <div class="card-header"><strong>{% translate "Custom doctrine name" %}</strong></div>
+    <div class="card-body">
+      <p class="text-muted">{% translate "The option None / Custom of the start, scheduled fleet, ping and preset forms lets a person type a doctrine name. Administrators and superusers can always use it." %}</p>
+      <div class="form-check">
+        <input class="form-check-input" type="radio" name="custom_mode" id="custom-mode-everybody" value="everybody"{% if not custom_restricted %} checked{% endif %}>
+        <label class="form-check-label" for="custom-mode-everybody">{% translate "Everybody who may start fleets" %}</label>
+      </div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="radio" name="custom_mode" id="custom-mode-groups" value="groups"{% if custom_restricted %} checked{% endif %}>
+        <label class="form-check-label" for="custom-mode-groups">{% translate "Only the chosen groups" %}</label>
+      </div>
+      <label class="form-label" for="custom-groups">{% translate "Groups that may use a custom doctrine name" %}</label>
+      <select class="form-select" name="custom_groups" id="custom-groups" multiple size="5">
+        {% for group in groups %}<option value="{{ group.pk }}"{% if group.pk in custom_groups %} selected{% endif %}>{{ group.name }}</option>{% endfor %}
+      </select>
+      <div class="form-text">{% translate "Used only when Only the chosen groups is selected. Hold Ctrl or Command to choose several." %}</div>
+    </div>
   </div>
-  {% else %}
-  <div class="card-body">{% translate "No doctrines found. Doctrines come from a doctrine app such as Fittings; a fleet with a typed doctrine name has no ship list." %}</div>
+  <div class="card mb-3">
+    <div class="card-header"><strong>{% translate "Who may ping which doctrine" %}</strong></div>
+    {% if items %}
+    <div class="card-body pb-0"><p class="text-muted">{% translate "A doctrine without a group is open to everybody who may start fleets. With groups, only members of one of them can ping it. Administrators and superusers are never restricted. Fittings decides separately who sees a doctrine." %}</p></div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 fo-admin-table fo-table-pin">
+        <thead><tr><th scope="col">{% translate "Doctrine" context "FleetOps" %}</th><th scope="col">{% translate "Groups that may ping it" %}</th><th scope="col">{% translate "Ship order" %}</th><th scope="col" class="text-end">{% translate "Actions" %}</th></tr></thead>
+        <tbody>
+        {% for item in items %}
+          <tr>
+            <td>{{ item.name }}{% if item.selected %} {% translate "Restricted" as state %}{% pill "warn" state %}{% endif %}</td>
+            <td>
+              <input type="hidden" name="key_{{ item.index }}" value="{{ item.key }}">
+              <label class="visually-hidden" for="groups-{{ item.index }}">{% blocktranslate trimmed with name=item.name %}Groups that may ping {{ name }}{% endblocktranslate %}</label>
+              <select class="form-select form-select-sm fo-doctrine-groups" name="groups_{{ item.index }}" id="groups-{{ item.index }}" multiple size="3">
+                {% for group in groups %}<option value="{{ group.pk }}"{% if group.pk in item.selected %} selected{% endif %}>{{ group.name }}</option>{% endfor %}
+              </select>
+            </td>
+            <td>{% if item.can_order %}{% if item.has_order %}{% translate "Stored order" as state %}{% pill "info" state %}{% else %}{% translate "Automatic order" as state %}{% pill "neutral" state %}{% endif %}{% endif %}</td>
+            <td class="text-end text-nowrap">{% if item.can_order %}<a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:doctrine_order_edit' item.external_id %}">{% translate "Edit order" %}</a>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body">{% translate "No doctrines found. Doctrines come from a doctrine app such as Fittings; a fleet with a typed doctrine name has no ship list." %}</div>
+    {% endif %}
+  </div>
+  {% if gone %}
+  <div class="card mb-3">
+    <div class="card-header"><strong>{% translate "Doctrines that no longer exist" %}</strong></div>
+    <div class="card-body pb-0"><p class="text-muted">{% translate "These records belong to doctrines that are not in the doctrine app any more. They are kept; they restrict nothing. Clear the groups to remove the restriction from the record." %}</p></div>
+    <div class="table-responsive">
+      <table class="table align-middle mb-0 fo-admin-table">
+        <thead><tr><th scope="col">{% translate "Doctrine" context "FleetOps" %}</th><th scope="col">{% translate "Groups that may ping it" %}</th></tr></thead>
+        <tbody>
+        {% for item in gone %}
+          <tr>
+            <td>{{ item.name }} {% translate "Doctrine no longer exists" as state %}{% pill "neutral" state %}</td>
+            <td>
+              <input type="hidden" name="key_{{ item.index }}" value="{{ item.key }}">
+              <label class="visually-hidden" for="groups-{{ item.index }}">{% blocktranslate trimmed with name=item.name %}Groups that may ping {{ name }}{% endblocktranslate %}</label>
+              <select class="form-select form-select-sm fo-doctrine-groups" name="groups_{{ item.index }}" id="groups-{{ item.index }}" multiple size="3">
+                {% for group in groups %}<option value="{{ group.pk }}"{% if group.pk in item.selected %} selected{% endif %}>{{ group.name }}</option>{% endfor %}
+              </select>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
   {% endif %}
-</div>
+  <div class="d-flex flex-wrap gap-2">
+    <button type="submit" class="btn btn-primary">{% translate "Save" %}</button>
+    <a class="btn btn-outline-secondary" href="{% url 'fleetops:configuration_index' %}">{% translate "Cancel" %}</a>
+  </div>
+</form>
 {% endblock %}

@@ -95,7 +95,7 @@
    if(detect && pre){ detect.textContent = NOT_NEEDED; detect.className = 'form-text'; }
    else if(detect && detect.textContent === NOT_NEEDED){ detectFleet(); }
  }
- function toggleCustom(){ customWrap.style.display = doctrine.value ? 'none' : 'block'; }
+ function toggleCustom(){ if (!customWrap) { return; } customWrap.style.display = doctrine.value ? 'none' : 'block'; }
  async function detectFleet(){
    if(!detect || prePing()){ return; }
    if(!char.value){ detect.textContent = FleetOps.detection.select(); detect.className='form-text'; return; }

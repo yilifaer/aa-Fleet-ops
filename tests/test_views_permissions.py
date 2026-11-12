@@ -484,6 +484,8 @@ class PermissionMatrixTests(SrpViewTestCase):
         choice = DoctrineChoice(external_id="12", name="Example Doctrine", source=FITTINGS_DOCTRINE_SOURCE)
         for target, replacement in (
             ("fleetops.views_config.get_doctrines", lambda user=None: [choice]),
+            # Changed for the Doctrine settings page, which reads the doctrines in its own module.
+            ("fleetops.views_doctrine_settings.get_doctrines", lambda user=None: [choice]),
             (
                 "fleetops.views_config.doctrine_fits_snapshot",
                 lambda source, external_id: [{"fit": "DPS Moa", "ship_type_id": 623, "ship": "Moa"}],
@@ -574,6 +576,8 @@ class PermissionMatrixTests(SrpViewTestCase):
             Case("configuration_settings", "get", r("fleetops:configuration_settings"), None, member_only),
             Case("sync_discord_roles", "post", r("fleetops:sync_discord_roles"), None, lead_post),
             Case("doctrine_orders", "get", r("fleetops:doctrine_orders"), None, member_only),
+            # The page also saves its form by POST (groups per doctrine, custom name); that is covered in
+            # test_doctrine_access (permission, CSRF, audit), because this matrix expects POST-only routes to refuse GET.
             Case("doctrine_order_edit", "get", r("fleetops:doctrine_order_edit", args=[12]), None, member_only),
             Case("doctrine_order_reset", "post", r("fleetops:doctrine_order_reset", args=[12]), None, lead_post),
             # The translations of the page scripts need a login only (see test_js_catalog).

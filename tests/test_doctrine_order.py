@@ -213,10 +213,16 @@ class EditorTests(TestCase):
         self.choice = DoctrineChoice(external_id="12", name="[ACTIVE] Example Doctrine", source=SOURCE)
         self.fits = mock.patch("fleetops.views_config.doctrine_fits_snapshot", side_effect=lambda *a: list(FIT_ROWS))
         self.doctrines = mock.patch("fleetops.views_config.get_doctrines", side_effect=lambda user=None: [self.choice])
+        # Changed for the Doctrine settings page: the list of doctrines is read in its own module now.
+        self.list_doctrines = mock.patch(
+            "fleetops.views_doctrine_settings.get_doctrines", side_effect=lambda user=None: [self.choice]
+        )
         self.fits.start()
         self.doctrines.start()
+        self.list_doctrines.start()
         self.addCleanup(self.fits.stop)
         self.addCleanup(self.doctrines.stop)
+        self.addCleanup(self.list_doctrines.stop)
         self.url = reverse("fleetops:doctrine_order_edit", args=[12])
 
     def post(self, ships, marks, **extra):

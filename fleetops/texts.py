@@ -1326,6 +1326,21 @@ GROUP_NO_PRE_PING = StoredText(
         "Group fleets cannot be pre pinged. Send the fleet time with Send Ping and start the fleet when it is due."
     )
 )
+DOCTRINE_NOT_ALLOWED = StoredText(gettext_noop("You may not ping this doctrine, ask an administrator."))
+CUSTOM_DOCTRINE_NOT_ALLOWED = StoredText(
+    gettext_noop("You may not use a custom doctrine name, ask an administrator.")
+)
+DOCTRINE_CHOOSE_ONE = StoredText(gettext_noop("Choose a doctrine from the list."))
+SCHEDULED_DOCTRINE_REVOKED = StoredText(
+    gettext_noop(
+        "The scheduled fleet was not started: you may not ping its doctrine any more. Ask an administrator."
+    )
+)
+SCHEDULED_CUSTOM_DOCTRINE_REVOKED = StoredText(
+    gettext_noop(
+        "The scheduled fleet was not started: you may not use a custom doctrine name any more. Ask an administrator."
+    )
+)
 GROUP_NO_SRP = StoredText(gettext_noop("Group fleets of %(group)s get no SRP link."))
 # A start form sent again by another user than the one who sent it first.
 START_REQUEST_USED = StoredText(gettext_noop("This form was already sent. Reload the page to start another fleet."))

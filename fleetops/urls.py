@@ -9,6 +9,7 @@ from fleetops import (
     public_views,
     views,
     views_config,
+    views_doctrine_settings,
     views_controls,
     views_exports,
     views_fleet_actions,
@@ -82,7 +83,7 @@ urlpatterns += [
     path("configuration/", views_config.configuration_index, name="configuration_index"),
     path("configuration/settings/", views_config.configuration_settings, name="configuration_settings"),
     path("configuration/ping-roles/sync/", views_config.sync_discord_roles, name="sync_discord_roles"),
-    path("configuration/doctrine-order/", views_config.doctrine_orders, name="doctrine_orders"),
+    path("configuration/doctrine-order/", views_doctrine_settings.doctrine_settings, name="doctrine_orders"),
     path(
         "configuration/doctrine-order/<int:doctrine_id>/", views_config.doctrine_order_edit, name="doctrine_order_edit"
     ),

@@ -18,7 +18,13 @@ from django.utils.translation import gettext_lazy as _
 from django.utils.translation import pgettext, pgettext_lazy
 
 from fleetops import texts
-from fleetops.forms_common import DoctrineNameField, style_fields
+from fleetops.forms_common import (
+    DoctrineChoiceField,
+    DoctrineNameField,
+    clean_doctrine_access,
+    set_up_doctrine_fields,
+    style_fields,
+)
 from fleetops.models import CommsPreset, DiscordWebhook, FleetType, GroupAccess, MessageTemplate, PingRole
 from fleetops.providers.doctrines import get_doctrines
 from fleetops.services import group_access
@@ -331,7 +337,7 @@ class SendPingForm(forms.Form):
         widget=forms.Textarea(attrs={"rows": 5}),
     )
     formup = forms.CharField(label=_("Form Up / Staging"), max_length=255, required=False)
-    doctrine_choice = forms.ChoiceField(label=pgettext_lazy("FleetOps", "Doctrine"), required=False)
+    doctrine_choice = DoctrineChoiceField(label=pgettext_lazy("FleetOps", "Doctrine"))
     custom_doctrine = DoctrineNameField(label=_("Custom Doctrine"))
     comms = forms.ModelChoiceField(label=_("Comms"), queryset=CommsPreset.objects.none(), required=False)
     fleet_date = forms.DateField(
@@ -381,20 +387,27 @@ class SendPingForm(forms.Form):
         self.fields["ping_mentions"].choices = [(NONE, _("No ping")), (EVERYONE, "@everyone"), (HERE, "@here")] + [
             (role_choice(role), f"@{role.name}") for role in PingRole.objects.filter(is_active=True)
         ]
-        doctrines = [("", _("None / Custom"))]
-        for doctrine in get_doctrines(user):
-            doctrines.append((f"{doctrine.source}|{doctrine.external_id}|{doctrine.name}", doctrine.name))
-        self.fields["doctrine_choice"].choices = doctrines
+        doctrines = set_up_doctrine_fields(self, user, get_doctrines(user))
         choice = self.initial.get("doctrine_choice")
         if choice and choice not in dict(doctrines):
-            # A doctrine that is no longer offered keeps its name as a custom doctrine ("Use again").
             self.initial["doctrine_choice"] = ""
-            self.initial["custom_doctrine"] = choice.split("|", 2)[-1]
+            if self._refused_choice(choice):
+                # "Use again" of a doctrine this user may not ping: say so, never turn it into a typed name.
+                self.initial.pop("custom_doctrine", None)
+                self.fields["doctrine_choice"].help_text = texts.translate_stored(texts.DOCTRINE_NOT_ALLOWED())
+            elif self.custom_name_allowed:
+                # A doctrine that is no longer offered keeps its name as a custom doctrine ("Use again").
+                self.initial["custom_doctrine"] = choice.split("|", 2)[-1]
         if not self.is_bound and "ping_template" not in self.initial:
             default = next((t for t in self.fields["ping_template"].queryset if t.is_default), None)
             if default is not None:
                 self.initial["ping_template"] = default.pk
         style_fields(self.fields)
+
+    def _refused_choice(self, choice) -> bool:
+        """Whether ``choice`` (``source|id|name``) is a doctrine the doctrine rules keep from this user."""
+        parts = str(choice).split("|", 2)
+        return len(parts) == 3 and not self.doctrine_scope.can_use_doctrine(parts[0], parts[1])
 
     def _set_up_group(self):
         """The group choice: none for a pure FC, fixed for a leader of one group, a choice otherwise."""
@@ -473,6 +486,7 @@ class SendPingForm(forms.Form):
                 self.add_error("ping_channel", texts.translate_stored(refusal))
         self._clean_mentions(data, channel)
         self._clean_doctrine(data)
+        clean_doctrine_access(self, data)
         self._clean_fleet_time(data)
         return data
 

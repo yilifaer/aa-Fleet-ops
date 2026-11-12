@@ -19,7 +19,7 @@ A Simplified Chinese version of this page is in [zh-CN/configuration.md](zh-CN/c
 | [Ping Channels](#ping-channels) and [Ping Roles](#ping-roles) | Discord webhooks, allowed mentions, mentionable roles, the groups that may use a channel |
 | [Groups](#groups) | What the leaders of an Alliance Auth group may do: send pings, start fleets with PAP |
 | [Message Templates](#message-templates) | Ping, MOTD and Ping without fleet texts |
-| [Doctrine Ship Order](#doctrine-ship-order) | The order and the marks of the ships of a doctrine in pings and MOTDs |
+| [Doctrine Settings](#doctrine-settings) | Who may ping which doctrine, who may use a custom doctrine name, and the order and the marks of the ships of a doctrine in pings and MOTDs |
 | [Ship Functions](#ship-functions-and-rules), [Ship Function Rules](#ship-functions-and-rules), [Fleet Structure Templates](#fleet-structure-templates) | Composition groups and wing and squad layouts |
 | [FleetOps SRP](#fleetops-srp), [SRP Payout Table](#srp-payout-table), [SRP Corporation Limits](#srp-corporation-limits) | The ship replacement program |
 
@@ -417,11 +417,64 @@ so other `@everyone`, `@here` or `<@&id>` text in the ping notifies nobody.
 The Ping, MOTD and Ping without fleet texts. Variables, the built-in templates and the rules are in
 [message templates](message-templates.md).
 
-## Doctrine Ship Order
+## Doctrine Settings
 
-**Administration, Doctrine Ship Order** (`fleetops.manage_configuration`, no permission of its own) sets how the ships
-of a doctrine of a doctrine app such as Fittings are listed in `doctrine_ships`, the ship list of pings and MOTDs. A
-doctrine typed by name has no ships and is not affected.
+**Administration, Doctrine Settings** (`fleetops.manage_configuration`, no permission of its own) holds three things for
+the doctrines of a doctrine app such as Fittings: who may ping which doctrine, who may use a custom doctrine name, and
+the order of the ships. The page is one form with one **Save**; the Django admin lists the same records
+(**Doctrine accesses**, **Doctrine settings**) as a fallback.
+
+### Who may ping which doctrine
+
+Every doctrine has a multi-select of Alliance Auth groups.
+
+- **No group chosen (the default for every doctrine, and after an upgrade): everybody who may start fleets can ping the
+  doctrine**, as before.
+- **Groups chosen: only members of one of those groups can ping it** (one group is enough; a person in several groups
+  needs only one allowed group). Doctrines with groups carry the pill **Restricted**.
+- **Superusers and everybody with `fleetops.manage_configuration` (the permission of the FleetOps administration, the
+  same one this page needs) are never restricted.** There is no permission of its own for this.
+- The rule is one function used by every entry point: **Start Fleet** (also with a group: a group leader is checked by the
+  Alliance Auth groups they belong to, not by the group the fleet is for), **Send Ping** (a ping without a fleet),
+  **scheduled fleets** (pre ping) and **start presets**. The lists show only the doctrines the person may ping, and the
+  server checks the choice again, so a doctrine ID put into a request by hand is refused with *You may not ping this
+  doctrine, ask an administrator.* The refusal is also made by the start, schedule and send services, not only by the forms.
+- **Scheduled fleets** are checked again when the fleet starts (FleetOps has no timer that starts a fleet; the FC who
+  scheduled it starts it from the fleet page, and that start is the check). If the FC may not ping the doctrine any more,
+  the fleet is **not started** (it stays scheduled, nothing is asked from ESI), the FC gets an Alliance Auth notification
+  in their language and an audit entry `fleet.schedule_start_refused` is written. Editing a scheduled fleet keeps the doctrine
+  it already has even if the editor is not in the group (an edit of the time must not fail); changing it to another
+  doctrine is checked.
+- **Presets**: saving a preset with a doctrine the person may not ping is refused with the same text. A preset that
+  already holds such a doctrine says so when it is loaded (*Doctrine '…' of this preset: You may not ping this doctrine,
+  ask an administrator.*) and leaves the choice empty: it is never switched to another doctrine and never turned into a typed
+  name.
+- **Not restricted**: SRP links and the fleets with a PAP link (they post no ping), and **Regenerate and push MOTD** or
+  the retry of a ping of a fleet that is already running (the doctrine was checked at the start).
+- Fittings keeps deciding who sees a doctrine (the groups of its categories); this is an extra filter on top of it, and
+  the doctrines stay visible in Fittings.
+- A record of a doctrine that left the doctrine app is kept without an error and listed under **Doctrines that no longer
+  exist**; it restricts nothing. Clear its groups to empty it. Deleting an Alliance Auth group takes it out of every list; a
+  doctrine whose last group was deleted is open to everybody again.
+- Every change writes `configuration.create` or `configuration.update` (object type `DoctrineAccess`) with the doctrine
+  name and the group IDs and names before and after.
+
+### Who may use a custom doctrine name
+
+**Custom doctrine name** is the option **None / Custom** of Start Fleet, scheduled fleets, Send Ping and presets.
+
+- **Everybody who may start fleets** (the default, as before), or **Only the chosen groups** with a multi-select. Switching
+  back to everybody keeps the chosen groups for later. Superusers and administrators are never limited.
+- Without the right the option **None / Custom** and the text box are not shown, and the server refuses a typed name
+  (*You may not use a custom doctrine name, ask an administrator.*) and a request that names no doctrine. If there is no
+  doctrine at all to choose from, **None** stays so nobody is locked out, but a typed name is still refused.
+- Editing the doctrine name of a running fleet needs the same right (a record of a manual fleet does not).
+- A scheduled fleet with a typed name is checked again when it starts, like a restricted doctrine (the notice and the audit
+  entry say it was the custom name). A preset with a typed name says so when it is loaded.
+- Choosing **Only the chosen groups** without any group is allowed (only administrators can type a name; the page warns).
+- Changes write `configuration.update` (object type `DoctrineSettings`) with the groups before and after.
+
+### Ship order
 
 - Without a stored order the list is the hulls of the doctrine, each once, in the order of the doctrine, joined with
   ` > `. Two Moa fits give one Moa.
@@ -438,7 +491,7 @@ doctrine typed by name has no ships and is not affected.
   stood in front of the next ship stays.
 - The marks are written as plain text in both messages. In the MOTD `>` is written as it always was in this list,
   so the game shows `A > B`. In Discord the marks come after a ship name inside the line, where `>` is no quote.
-- Creating, changing and deleting an order write `configuration.create`, `configuration.update` and
+- The page lists every doctrine with **Edit order**. Creating, changing and deleting an order write `configuration.create`, `configuration.update` and
   `configuration.delete` entries (object type `DoctrineShipOrder`).
 
 Doctrine names with square brackets: in a Discord ping the names that are the text of a link (`doctrine`, `doctrine_name`
@@ -1123,7 +1176,7 @@ through a fleet link at 571m.
 
 Migrations `0035` and `0036` are the guard of the 0.3.0b1 chain. `0036` adds the pruning share to the
 settings; going back runs its copy of the guard before that column is dropped, and `0035` runs the same checks once more.
-`0042`, the last migration, creates the table of the payers' choices on the payments page (undoing it drops the table and runs the same guard first); `0041` creates the table of the stored doctrine ship orders (undoing it drops the table); `0040` adds the setting **Notify members when a payment is undone**, and `0039` adds **Losses inside a tracked fleet**; both run the guard before they drop their column (so a way back below `0035` is refused before anything is dropped); `0038` only changes a help text and `0037` only adds an index; they are undone next (the help text comes back, the index is dropped, nothing else changes). The
+`0043`, the last migration, creates the tables of the doctrine access (the groups that may ping a doctrine) and of the custom doctrine name setting (undoing it drops both tables and runs the same guard first; no restriction exists after an upgrade, and the groups themselves are never touched); `0042` creates the table of the payers' choices on the payments page (undoing it drops the table and runs the same guard first); `0041` creates the table of the stored doctrine ship orders (undoing it drops the table); `0040` adds the setting **Notify members when a payment is undone**, and `0039` adds **Losses inside a tracked fleet**; both run the guard before they drop their column (so a way back below `0035` is refused before anything is dropped); `0038` only changes a help text and `0037` only adds an index; they are undone next (the help text comes back, the index is dropped, nothing else changes). The
 guard checks everything that makes going back unsafe before the first change is undone: payout rules that belong to a category, links without a fleet that have claims (standing
 links) or that were imported, and claims imported from aa-srp. It stops **any** way back, a partial one included
 (`migrate fleetops 0032` is stopped too). `python manage.py fleetops_srp_rollback_check` runs the same checks, reads only and

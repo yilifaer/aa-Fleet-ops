@@ -5,15 +5,17 @@
 
 import uuid
 
+from allianceauth.notifications import notify
 from allianceauth.services.hooks import get_extension_logger
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
-from django.utils import timezone
+from django.utils import timezone, translation
+from django.utils.translation import gettext
 
 from fleetops import texts
 from fleetops.models import AuditLog, FleetOperation, OperationAction
 from fleetops.providers.doctrines import doctrine_fits_snapshot
-from fleetops.services import pap_limit
+from fleetops.services import doctrine_access, pap_limit
 from fleetops.services.audit import audit
 from fleetops.services.errors import report_failure
 from fleetops.services.messages import render_cancellation_notice, render_messages
@@ -234,6 +236,54 @@ def update_scheduled_fleet(operation, *, actor, cleaned_data, send_update: bool,
     return current
 
 
+def _stored_doctrine(operation) -> dict:
+    """The doctrine of a scheduled fleet as the forms' ``cleaned_data`` would hold it, for the doctrine rules."""
+    return {
+        "doctrine_source": operation.doctrine_source,
+        "doctrine_external_id": operation.doctrine_external_id,
+        "doctrine_name": operation.doctrine_name,
+    }
+
+
+def _report_revoked_doctrine(operation, user, refusal) -> str:
+    """Audit entry and notification for a scheduled fleet that is not started because the rules changed.
+
+    Returns the refusal text for the page. The notification is the Alliance Auth notification of the FC who
+    scheduled the fleet, in their language; a failure to send it is logged and ignored (the page and the audit
+    entry stay).
+    """
+    custom = refusal == texts.CUSTOM_DOCTRINE_NOT_ALLOWED()
+    audit(
+        user,
+        "fleet.schedule_start_refused",
+        operation,
+        None,
+        {
+            "reason": "custom_doctrine_name" if custom else "doctrine",
+            "doctrine_source": operation.doctrine_source,
+            "doctrine_external_id": operation.doctrine_external_id,
+            "doctrine_name": operation.doctrine_name,
+            "scheduled_at": format_eve(operation.scheduled_at),
+        },
+        reason=texts.SCHEDULED_CUSTOM_DOCTRINE_REVOKED() if custom else texts.SCHEDULED_DOCTRINE_REVOKED(),
+    )
+    try:
+        with translation.override(texts.user_language(user)):
+            title = gettext("Scheduled fleet not started")
+            lines = [
+                texts.translate_stored(texts.SCHEDULED_CUSTOM_DOCTRINE_REVOKED() if custom else texts.SCHEDULED_DOCTRINE_REVOKED())
+            ]
+            if operation.doctrine_name:
+                lines.insert(0, gettext("Doctrine: %(name)s") % {"name": operation.doctrine_name})
+            if operation.scheduled_at:
+                lines.insert(0, gettext("Fleet time: %(time)s EVE") % {"time": format_eve(operation.scheduled_at)})
+            message = "\n".join(lines)
+        notify.warning(user, title, message)
+    except Exception as exc:
+        logger.warning("FleetOps: notification of scheduled fleet %s failed (%s).", operation.pk, type(exc).__name__)
+    return texts.SCHEDULED_CUSTOM_DOCTRINE_REVOKED() if custom else texts.SCHEDULED_DOCTRINE_REVOKED()
+
+
 def start_scheduled_fleet(operation, *, user, character_id, send_ping: bool) -> FleetOperation:
     """Start a scheduled fleet with the ESI fleet ``character_id`` is boss of.
 
@@ -245,6 +295,10 @@ def start_scheduled_fleet(operation, *, user, character_id, send_ping: bool) -> 
         return operation
     if operation.fc_user_id != user.pk:
         raise PermissionError(ONLY_SCHEDULING_FC_MESSAGE)
+    # The doctrine rules may have changed since the fleet was scheduled: nothing is started, no ESI call is made.
+    revoked = doctrine_access.refusal(user, _stored_doctrine(operation))
+    if revoked:
+        raise PermissionError(_report_revoked_doctrine(operation, user, revoked))
     character = owned_fleet_character(user, character_id)
     detection = detect_fleet_boss(user, character)
     with transaction.atomic():

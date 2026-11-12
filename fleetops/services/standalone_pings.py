@@ -23,7 +23,7 @@ from django.utils import timezone
 from fleetops import texts
 from fleetops.models import DiscordWebhook, StandalonePing
 from fleetops.providers.pings import PingResult, send_discord_webhook
-from fleetops.services import group_access
+from fleetops.services import doctrine_access, group_access
 from fleetops.services.audit import audit
 from fleetops.services.errors import log_failure
 from fleetops.services.mentions import (
@@ -155,7 +155,7 @@ def send_standalone_ping(*, user, cleaned_data, now=None) -> StandalonePing:
     group = cleaned_data.get("group")
     channel = cleaned_data["ping_channel"]
     selection = cleaned_data.get("mention_selection") or MentionSelection()
-    refusal = ping_refusal(user, channel, group)
+    refusal = ping_refusal(user, channel, group) or doctrine_access.refusal(user, cleaned_data)
     if refusal:
         raise PingRefused(refusal)
     now = now or timezone.now()

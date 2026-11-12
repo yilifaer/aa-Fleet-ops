@@ -294,7 +294,7 @@ right actor.
   with claims, run `fleetops_srp_rollback_check` (it must pass), `migrate fleetops 0023`, put the 0.2.0b3 code back (the wheel or commit the site used before; it was never released) and start it. From a 0.2.0b2 site the target is `migrate fleetops 0021`.
   Claims, amounts and statuses are as before; the categories, standing links, batches, bans and found losses are gone.
 - [ ] With imported claims, rules of a category or standing links with claims still in place, `migrate fleetops 0023`
-  stops at `0042` (its guard runs before the table of the payers' choices is dropped), so nothing is undone; without the stop, the help text of `0038` and the index of `0037` would be undone next, and `0036` runs its guard before the pruning share column is dropped.
+  stops at `0043` (its guard runs before the doctrine access tables are dropped), so nothing is undone; without the stop, the help text of `0038` and the index of `0037` would be undone next, and `0036` runs its guard before the pruning share column is dropped.
 - [ ] A loss of a pilot who was in a tracked fleet, checked from My SRP as a loss outside a fleet: with the default setting the check shows the fleet and the fleet amount; **Submit as a loss outside a fleet anyway** needs a reason and the claim page shows it; with **Block** the check has no submit button and offers the link of the fleet; with **Only suggest** it only asks "Submit it as a fleet loss?". Close the fleet link after the check and submit: the claim is made outside a fleet with the closed-link warning.
 
 **Version and database matrix** (CI runs SQLite and MariaDB with the whole suite and the migration tests on PostgreSQL; the PostgreSQL job covers the migrations only, so run the rest of this list on PostgreSQL by hand for a release)
@@ -330,7 +330,7 @@ right actor.
 - [ ] Make the claim deadline longer: losses that were marked too old show up on **My SRP** after the next scan.
 - [ ] Turn on **Notify members when a payment is undone** (with **Notify members** on), undo a payment with a reason: the
   member gets a notification with the reason, in their language. With either switch off nothing is sent.
-- [ ] Doctrine Ship Order: open the page from the Administration index, edit a doctrine with two fits of one hull: each hull is
+- [ ] Doctrine Settings (ship order): open the page from the Administration index, edit a doctrine with two fits of one hull: each hull is
   listed once. Move a ship with the buttons (also with JavaScript off and on a phone), change a mark, watch the preview, save.
   Regenerate the MOTD of an open fleet with that doctrine: the in-game MOTD and the next ping show the stored order, the marks
   as `>`, `=` and `>>>`. Add a fit with a new hull to the doctrine: it is appended with `>`. **Back to the automatic order**
@@ -354,3 +354,24 @@ right actor.
   **Add the opening character again**; a payer who never chose a character sees **Set up opening characters in game**.
 - [ ] Chinese interface: doctrine, the paid state and button, and the open-in-game button each use one word everywhere (see
   `docs/translations.md`); the old variants are gone from every page.
+
+## 19. Doctrine access of 0.3.0b3
+
+- [ ] Doctrine Settings: restrict a flagship doctrine to the Caplead group. The doctrine shows **Restricted**; Save writes a
+  `configuration.create` entry with the group names, a second change writes `configuration.update` with the old and the new groups.
+- [ ] With an FC account that is not in Caplead: Start Fleet, Send Ping and a pre ping do not list the doctrine; the doctrine
+  ID put into the request by hand (browser developer tools) is refused with *You may not ping this doctrine, ask an
+  administrator.* (also in Chinese). Adding the account to Caplead shows the doctrine at once.
+- [ ] A group leader of a fleet group starts a group fleet: the same list, judged by the leader's own groups.
+- [ ] Schedule a fleet with the doctrine (account in Caplead), take the account out of Caplead, press **Start** on the scheduled fleet when
+  due: the fleet is not started, the FC has an Alliance Auth notification in their language and the audit log has
+  `fleet.schedule_start_refused`. Editing the time of that scheduled fleet still works.
+- [ ] A start preset with the doctrine, loaded by an account that lost the right, says so and does not pick another doctrine.
+- [ ] An administrator (with `fleetops.manage_configuration`) and a superuser can ping every doctrine without being in the group.
+- [ ] In Fittings the doctrine is still visible to a plain member.
+- [ ] Custom doctrine name: choose **Only the chosen groups** with the FC group. A Caplead-only account sees no **None / Custom**
+  and no text box in Start Fleet, scheduled fleets and Send Ping; a typed name sent by hand is refused. Back to
+  **Everybody who may start fleets** and the option is back.
+- [ ] Delete a doctrine in Fittings that has a record: the page lists it under **Doctrines that no longer exist** without an error.
+- [ ] Rollback: `migrate fleetops 0042` drops the two doctrine access tables (the groups stay); the doctrines are open to everybody
+  who may start fleets again.

@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-11 23:25+0000\n"
+"POT-Creation-Date: 2026-11-12 01:30+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -166,10 +166,6 @@ msgstr "附加消息"
 msgid "No ping"
 msgstr "不 Ping"
 
-#: forms.py forms_groups.py forms_links.py
-msgid "None / Custom"
-msgstr "无 / 自定义"
-
 #: forms.py forms_groups.py
 msgid "Invalid doctrine selection."
 msgstr "建制选择无效。"
@@ -229,6 +225,14 @@ msgstr "发布取消通知"
 #, python-format
 msgid "The doctrine name is %(length)s characters long without formatting; the limit is %(limit)s."
 msgstr "去掉格式后，建制名称有 %(length)s 个字符，上限为 %(limit)s 个。"
+
+#: forms_common.py forms_links.py
+msgid "None / Custom"
+msgstr "无 / 自定义"
+
+#: forms_common.py
+msgid "Choose a doctrine"
+msgstr "请选择建制"
 
 #: forms_config.py
 msgid "Automatic (FleetOps SRP when enabled, then aa-srp, then Alliance Auth SRP)"
@@ -620,7 +624,7 @@ msgstr "船型 ID 或准确的英文名称。仅按建制设置规则时留空�
 msgid "Doctrine rules only apply to losses in a fleet that flew this doctrine."
 msgstr "建制规则只适用于使用该建制的舰队内的损失。"
 
-#: forms_config.py
+#: forms_config.py templates/fleetops/configuration/doctrine_orders.html
 msgid "Custom doctrine name"
 msgstr "自定义建制名称"
 
@@ -4624,6 +4628,42 @@ msgid "doctrine ship orders"
 msgstr "建制舰船顺序"
 
 #: models.py
+msgid "Groups that may ping this doctrine"
+msgstr "可以 ping 这个建制的身份组"
+
+#: models.py
+msgid "Empty: everybody who may start fleets can ping this doctrine."
+msgstr "留空：所有能开舰队的人都可以 ping 这个建制。"
+
+#: models.py
+msgid "doctrine access"
+msgstr "建制权限"
+
+#: models.py
+msgid "doctrine accesses"
+msgstr "建制权限"
+
+#: models.py
+msgid "Only chosen groups may use a custom doctrine name"
+msgstr "只有指定的身份组可以使用自定义建制名"
+
+#: models.py
+msgid "Off: everybody who may start fleets can use None / Custom."
+msgstr "关闭：所有能开舰队的人都可以使用“无 / 自定义”。"
+
+#: models.py templates/fleetops/configuration/doctrine_orders.html
+msgid "Groups that may use a custom doctrine name"
+msgstr "可以使用自定义建制名的身份组"
+
+#: models.py
+msgid "doctrine settings"
+msgstr "建制设置"
+
+#: models.py
+msgid "Doctrine settings"
+msgstr "建制设置"
+
+#: models.py
 msgid "Payment view"
 msgstr "付款视图"
 
@@ -5439,8 +5479,18 @@ msgstr "%(item)s“%(label)s”已不可用。"
 
 #: services/presets.py
 #, python-format
+msgid "Doctrine '%(name)s' of this preset: %(reason)s"
+msgstr "预设的建制“%(name)s”：%(reason)s"
+
+#: services/presets.py
+#, python-format
 msgid "Doctrine '%(name)s' is no longer available; it was entered as a custom doctrine."
 msgstr "建制“%(name)s”已不可用；已按自定义建制填入。"
+
+#: services/presets.py
+#, python-format
+msgid "Custom doctrine name '%(name)s' of this preset: %(reason)s"
+msgstr "预设的自定义建制名“%(name)s”：%(reason)s"
 
 #: services/presets.py
 #, python-format
@@ -5508,6 +5558,20 @@ msgstr[0] "已跳过 %(count)s 个重复的名称。"
 msgid "Only the first %(max)s names are used, %(count)s more was ignored."
 msgid_plural "Only the first %(max)s names are used, %(count)s more were ignored."
 msgstr[0] "只使用前 %(max)s 个名称，另外 %(count)s 个已被忽略。"
+
+#: services/scheduling.py
+msgid "Scheduled fleet not started"
+msgstr "预约舰队未开队"
+
+#: services/scheduling.py
+#, python-format
+msgid "Doctrine: %(name)s"
+msgstr "建制：%(name)s"
+
+#: services/scheduling.py
+#, python-format
+msgid "Fleet time: %(time)s EVE"
+msgstr "舰队时间：%(time)s EVE"
 
 #: services/tracking.py
 #, python-format
@@ -6782,8 +6846,8 @@ msgstr "按当前规则重新计算所有待审核申请"
 #: templates/fleetops/configuration/doctrine_order.html
 #: templates/fleetops/configuration/doctrine_orders.html
 #: templates/fleetops/configuration/index.html
-msgid "Doctrine Ship Order"
-msgstr "建制舰船顺序"
+msgid "Doctrine Settings"
+msgstr "建制设置"
 
 #: templates/fleetops/configuration/doctrine_order.html
 msgid "Put the ships in the order you want and choose the mark between every two ships. Pings and MOTDs of open fleets show a changed order the next time they are made."
@@ -6824,6 +6888,7 @@ msgid "Ships added to the doctrine later are listed at the end with the mark “
 msgstr "之后加入建制的舰船会以符号“优先级更高”接在末尾。"
 
 #: templates/fleetops/configuration/doctrine_order.html
+#: templates/fleetops/configuration/doctrine_orders.html
 #: templates/fleetops/configuration/form.html
 #: templates/fleetops/incentive_review.html
 #: templates/fleetops/operation/_fleet_classify.html
@@ -6832,6 +6897,7 @@ msgid "Save"
 msgstr "保存"
 
 #: templates/fleetops/configuration/doctrine_order.html
+#: templates/fleetops/configuration/doctrine_orders.html
 #: templates/fleetops/configuration/form.html
 #: templates/fleetops/configuration/settings_form.html
 #: templates/fleetops/configuration/srp_settings.html
@@ -6871,12 +6937,40 @@ msgid "FleetOps Administration"
 msgstr "FleetOps 后台设置"
 
 #: templates/fleetops/configuration/doctrine_orders.html
-msgid "The order in which the ships of a doctrine are listed in pings and MOTDs, with a mark between every two ships. A doctrine without a stored order lists its ships in the order of the doctrine."
-msgstr "建制的舰船在 Ping 和 MOTD 中的排列顺序，每两艘舰船之间有一个符号。没有保存顺序的建制按建制本身的顺序列出舰船。"
+msgid "Who may ping which doctrine, who may use a custom doctrine name, and the order in which the ships of a doctrine are listed in pings and MOTDs."
+msgstr "谁能 ping 哪个建制、谁能使用自定义建制名，以及建制的舰船在 Ping 和 MOTD 中的排列顺序。"
 
 #: templates/fleetops/configuration/doctrine_orders.html
-msgid "Order"
-msgstr "顺序"
+msgid "The option None / Custom of the start, scheduled fleet, ping and preset forms lets a person type a doctrine name. Administrators and superusers can always use it."
+msgstr "开舰队、预约舰队、发送 Ping 和预设表单里的“无 / 自定义”选项允许手输建制名称。管理员和超级管理员始终可以使用。"
+
+#: templates/fleetops/configuration/doctrine_orders.html
+msgid "Everybody who may start fleets"
+msgstr "所有能开舰队的人"
+
+#: templates/fleetops/configuration/doctrine_orders.html
+msgid "Only the chosen groups"
+msgstr "只有指定的身份组"
+
+#: templates/fleetops/configuration/doctrine_orders.html
+msgid "Used only when Only the chosen groups is selected. Hold Ctrl or Command to choose several."
+msgstr "只有选择“只有指定的身份组”时才使用。按住 Ctrl 或 Command 可多选。"
+
+#: templates/fleetops/configuration/doctrine_orders.html
+msgid "Who may ping which doctrine"
+msgstr "谁能 ping 哪个建制"
+
+#: templates/fleetops/configuration/doctrine_orders.html
+msgid "A doctrine without a group is open to everybody who may start fleets. With groups, only members of one of them can ping it. Administrators and superusers are never restricted. Fittings decides separately who sees a doctrine."
+msgstr "没有身份组的建制对所有能开舰队的人开放。设了身份组后，只有其中任一身份组的成员能 ping。管理员和超级管理员不受限制。谁能在 Fittings 里看到建制由 Fittings 单独决定。"
+
+#: templates/fleetops/configuration/doctrine_orders.html
+msgid "Groups that may ping it"
+msgstr "可以 ping 它的身份组"
+
+#: templates/fleetops/configuration/doctrine_orders.html
+msgid "Ship order"
+msgstr "舰船顺序"
 
 #: templates/fleetops/configuration/doctrine_orders.html
 #: templates/fleetops/configuration/list.html
@@ -6884,6 +6978,15 @@ msgstr "顺序"
 #: templates/fleetops/srp/payments.html
 msgid "Actions"
 msgstr "操作"
+
+#: templates/fleetops/configuration/doctrine_orders.html
+msgid "Restricted"
+msgstr "受限"
+
+#: templates/fleetops/configuration/doctrine_orders.html
+#, python-format
+msgid "Groups that may ping %(name)s"
+msgstr "可以 ping %(name)s 的身份组"
 
 #: templates/fleetops/configuration/doctrine_orders.html
 msgid "Stored order"
@@ -6894,15 +6997,30 @@ msgid "Automatic order"
 msgstr "自动顺序"
 
 #: templates/fleetops/configuration/doctrine_orders.html
+msgid "Edit order"
+msgstr "编辑顺序"
+
+#: templates/fleetops/configuration/doctrine_orders.html
+msgid "No doctrines found. Doctrines come from a doctrine app such as Fittings; a fleet with a typed doctrine name has no ship list."
+msgstr "没有找到建制。建制来自 Fittings 这类建制应用；手动输入建制名称的舰队没有舰船列表。"
+
+#: templates/fleetops/configuration/doctrine_orders.html
+msgid "Doctrines that no longer exist"
+msgstr "已不存在的建制"
+
+#: templates/fleetops/configuration/doctrine_orders.html
+msgid "These records belong to doctrines that are not in the doctrine app any more. They are kept; they restrict nothing. Clear the groups to remove the restriction from the record."
+msgstr "这些记录对应的建制已不在建制应用里。记录会保留，它们不限制任何人。清空身份组即可去掉记录里的限制。"
+
+#: templates/fleetops/configuration/doctrine_orders.html
+msgid "Doctrine no longer exists"
+msgstr "建制已不存在"
+
 #: templates/fleetops/configuration/form.html
 #: templates/fleetops/configuration/list.html
 #: templates/fleetops/fleet_operations.html templates/fleetops/srp/links.html
 msgid "Edit"
 msgstr "编辑"
-
-#: templates/fleetops/configuration/doctrine_orders.html
-msgid "No doctrines found. Doctrines come from a doctrine app such as Fittings; a fleet with a typed doctrine name has no ship list."
-msgstr "没有找到建制。建制来自 Fittings 这类建制应用；手动输入建制名称的舰队没有舰船列表。"
 
 #: templates/fleetops/configuration/form.html
 msgid "Nothing to choose from yet."
@@ -6955,8 +7073,8 @@ msgid "Corporation Limits"
 msgstr "军团限额"
 
 #: templates/fleetops/configuration/index.html
-msgid "The order of the ships of a doctrine in pings and MOTDs, with a mark between every two ships."
-msgstr "建制的舰船在 Ping 和 MOTD 中的顺序，每两艘舰船之间有一个符号。"
+msgid "Who may ping which doctrine, who may use a custom doctrine name, and the order of the ships of a doctrine in pings and MOTDs."
+msgstr "谁能 ping 哪个建制、谁能使用自定义建制名，以及建制的舰船在 Ping 和 MOTD 中的顺序。"
 
 #: templates/fleetops/configuration/index.html
 msgid "Manage"
@@ -13900,9 +14018,9 @@ msgstr "该申请是从 aa-srp 导入的，只是一条记录，不能在这里�
 msgid "Replacing the loss of a claim is switched off."
 msgstr "替换申请的损失已关闭。"
 
-#: texts.py
+#: texts.py views_doctrine_settings.py
 msgid "Nothing was changed."
-msgstr "没有任何修改。"
+msgstr "没有任何改动。"
 
 #: texts.py
 msgid "This is the loss of the claim already."
@@ -14048,6 +14166,26 @@ msgstr "请选择这支舰队所属的小组。"
 #: texts.py
 msgid "Group fleets cannot be pre pinged. Send the fleet time with Send Ping and start the fleet when it is due."
 msgstr "小组舰队不能预 Ping。请用“发送 Ping”发布舰队时间，到点再开舰队。"
+
+#: texts.py
+msgid "You may not ping this doctrine, ask an administrator."
+msgstr "你没有权限 ping 这个建制，请联系管理员。"
+
+#: texts.py
+msgid "You may not use a custom doctrine name, ask an administrator."
+msgstr "你没有权限使用自定义建制名，请联系管理员。"
+
+#: texts.py
+msgid "Choose a doctrine from the list."
+msgstr "请从列表中选择一个建制。"
+
+#: texts.py
+msgid "The scheduled fleet was not started: you may not ping its doctrine any more. Ask an administrator."
+msgstr "预约舰队没有开队：你已不能 ping 它的建制，请联系管理员。"
+
+#: texts.py
+msgid "The scheduled fleet was not started: you may not use a custom doctrine name any more. Ask an administrator."
+msgstr "预约舰队没有开队：你已不能使用自定义建制名，请联系管理员。"
 
 #: texts.py
 #, python-format
@@ -14846,6 +14984,18 @@ msgstr "请选择成员留在舰队里的星系。"
 #: views_controls.py
 msgid "Nobody was kicked: no members were selected."
 msgstr "没有踢出任何人：没有选择成员。"
+
+#: views_doctrine_settings.py
+msgid "No group is chosen: only administrators can use a custom doctrine name."
+msgstr "没有选择身份组：只有管理员能使用自定义建制名。"
+
+#: views_doctrine_settings.py
+msgid "The settings could not be saved: choose only groups from the list."
+msgstr "设置无法保存：只能选择列表里的身份组。"
+
+#: views_doctrine_settings.py
+msgid "Doctrine settings saved."
+msgstr "建制设置已保存。"
 
 #: views_errors.py
 msgid "Your account has no access to FleetOps. Ask an administrator for the FleetOps member permission."

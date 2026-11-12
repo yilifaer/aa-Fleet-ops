@@ -41,6 +41,8 @@ from fleetops.models import (
     CharacterAffiliation,
     CommsPreset,
     DiscordWebhook,
+    DoctrineAccess,
+    DoctrineSettings,
     DoctrineShipOrder,
     SrpPayerSetting,
     EveEntityName,
@@ -1334,6 +1336,10 @@ class AdminTests(TestCase):
         DoctrineShipOrder.objects.create(
             doctrine_source="fittings:fittings.doctrine", doctrine_external_id="1", ships=["Moa", "Osprey"], marks=[">"]
         )
+        # The change page of every registered model is opened, so there must be one row of the doctrine access and the
+        # doctrine settings (a singleton, like the other settings).
+        DoctrineAccess.objects.create(doctrine_source="fittings:fittings.doctrine", doctrine_external_id="1")
+        DoctrineSettings.get_solo()
         link = f.fleet_link(cls.operation)
         claim = f.srp_claim(cls.fc, link=link)
         f.claim_event(claim, SrpClaimEvent.Action.SUBMIT, actor=cls.fc)
@@ -1392,7 +1398,8 @@ class AdminTests(TestCase):
 
     def test_add_pages_load(self):
         for model in self._fleetops_models():
-            if model in (FleetOpsSettings, SrpSettings) + READ_ONLY_ADMIN_MODELS:
+            # Changed for 0043: the doctrine settings are a singleton too (its add page is refused once the row exists).
+            if model in (FleetOpsSettings, SrpSettings, DoctrineSettings) + READ_ONLY_ADMIN_MODELS:
                 continue
             with self.subTest(model=model.__name__):
                 response = self.client.get(self._url(model, "add"))
@@ -1405,6 +1412,9 @@ class AdminTests(TestCase):
             with self.subTest(model=model.__name__):
                 response = self.client.get(self._url(model, "change", obj.pk))
                 self.assertEqual(response.status_code, 200)
+
+    def test_the_doctrine_settings_admin_is_a_singleton(self):
+        self.assertEqual(self.client.get(self._url(DoctrineSettings, "add")).status_code, 403)
 
     def test_settings_admin_is_a_singleton(self):
         self.assertEqual(self.client.get(self._url(FleetOpsSettings, "add")).status_code, 403)

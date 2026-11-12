@@ -290,10 +290,21 @@ class OperationEditForm(forms.ModelForm):
         }
 
     def clean_doctrine_name(self):
-        return keep_stored_name(self, "doctrine_name", self.cleaned_data["doctrine_name"])
+        name = keep_stored_name(self, "doctrine_name", self.cleaned_data["doctrine_name"])
+        instance = self.instance
+        # A fleet that can still be pinged (Retry ping posts this name) gets a typed name only from those who may.
+        pings = not (instance.is_manual or instance.link_only)
+        if pings and self.user is not None and name != (instance.doctrine_name or ""):
+            from fleetops.services import doctrine_access
+
+            message = doctrine_access.refusal(self.user, {"doctrine_source": "custom", "doctrine_name": name})
+            if message:
+                raise forms.ValidationError(translate_stored(message))
+        return name
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.user = user
         self.fields["fleet_type"].queryset = FleetType.objects.all()
         if group_access.is_group_fleet(self.instance) and not (
             user is not None and user.has_perm("fleetops.manage_fleets")

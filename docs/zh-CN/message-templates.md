@@ -39,7 +39,7 @@ FleetOps 为每支舰队生成两段文字：发到 Discord 的 **Ping**，以�
 | `doctrine` | 建制名称，或 `None / Custom`（始终是英文）。要判断有没有建制，请用 `doctrine_name`，没有建制时它为空。 |
 | `doctrine_name` | 建制名称，没有则为空。 |
 | `doctrine_url` | 建制在 Fittings 中的页面链接；其他来源的建制为空。 |
-| `doctrine_ships` | Fittings 建制中的船体，每种只出现一次，按建制顺序用 ` > ` 连接（例如 `Moa > Osprey`）；或按**建制舰船顺序**中为该建制保存的顺序，用符号 `>`、`=`、`>>>` 连接（例如 `Minokawa = Lif > Raven >>> Basilisk`）。 |
+| `doctrine_ships` | Fittings 建制中的船体，每种只出现一次，按建制顺序用 ` > ` 连接（例如 `Moa > Osprey`）；或按**建制设置**中为该建制保存的顺序，用符号 `>`、`=`、`>>>` 连接（例如 `Minokawa = Lif > Raven >>> Basilisk`）。 |
 | `doctrine_fits` | Fittings 建制中每套配置的名称（每套都列出），用 ` > ` 连接。 |
 | `comms` | 语音预设名称。 |
 | `comms_channel` | 语音预设的频道名。 |

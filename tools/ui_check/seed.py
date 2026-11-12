@@ -567,6 +567,20 @@ def build_data(login_count):
         loss_discovery_enabled=True,
         loss_discovery_interval_minutes=60,
     )
+    # The Doctrine settings page: one doctrine restricted to a group, a record of a doctrine that no longer exists
+    # and the custom doctrine name limited to a group.
+    caplead = f.aa_group("Example Caplead")
+    fc_group = f.aa_group("Example FC")
+    restricted = m.DoctrineAccess.objects.create(
+        doctrine_source="fittings:fittings.doctrine", doctrine_external_id="13"
+    )
+    restricted.groups.set([caplead])
+    gone = m.DoctrineAccess.objects.create(doctrine_source="fittings:fittings.doctrine", doctrine_external_id="99")
+    gone.groups.set([fc_group])
+    custom = m.DoctrineSettings.get_solo()
+    custom.custom_name_restricted = True
+    custom.save()
+    custom.custom_name_groups.set([fc_group])
     f.payout_rule(f.RIFTER, 20_000_000, ship_name="Rifter")
     f.payout_rule(623, 45_000_000, ship_name="Moa", doctrine="Example Doctrine")
     f.payout_rule(f.CAPSULE, 1_000_000, ship_name="Capsule")

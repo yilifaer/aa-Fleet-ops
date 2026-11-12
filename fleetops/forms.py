@@ -11,7 +11,15 @@ from django.utils import timezone
 from django.utils.translation import pgettext_lazy
 from django.utils.translation import gettext_lazy as _
 
-from fleetops.forms_common import DoctrineNameField, _style, _to_minute, keep_stored_name
+from fleetops.forms_common import (
+    DoctrineChoiceField,
+    DoctrineNameField,
+    _style,
+    _to_minute,
+    clean_doctrine_access,
+    keep_stored_name,
+    set_up_doctrine_fields,
+)
 from fleetops.forms_config import (  # noqa: F401 - configuration forms, re-exported
     ChannelPresetForm,
     CommsPresetForm,
@@ -50,7 +58,7 @@ from fleetops.models import (
 )
 from fleetops.providers.doctrines import get_doctrines
 from fleetops.providers.esi import fleet_token_flags
-from fleetops.services import group_access, pap_limit
+from fleetops.services import doctrine_access, group_access, pap_limit
 from fleetops.services.identity import owned_characters
 from fleetops.services.mentions import (
     EVERYONE,
@@ -123,7 +131,7 @@ class FleetSettingsForm(PapLimitForm):
     """Fleet, communication and message fields shared by the start and the scheduled fleet forms."""
 
     fleet_type = forms.ModelChoiceField(label=_("Fleet type"), queryset=FleetType.objects.none())
-    doctrine_choice = forms.ChoiceField(label=pgettext_lazy("FleetOps", "Doctrine"), required=False)
+    doctrine_choice = DoctrineChoiceField(label=pgettext_lazy("FleetOps", "Doctrine"))
     custom_doctrine = DoctrineNameField(label=_("Custom Doctrine"))
     formup = forms.CharField(label=_("Form Up / Staging"), max_length=255)
     fleet_date = forms.DateField(
@@ -193,11 +201,12 @@ class FleetSettingsForm(PapLimitForm):
             (role_choice(role), f"@{role.name}") for role in PingRole.objects.filter(is_active=True)
         ]
 
-        doctrines = [("", _("None / Custom"))]
-        for doctrine in get_doctrines(user):
-            doctrines.append((f"{doctrine.source}|{doctrine.external_id}|{doctrine.name}", doctrine.name))
-        self.fields["doctrine_choice"].choices = doctrines
+        set_up_doctrine_fields(self, user, get_doctrines(user), keep=self.kept_doctrine())
         _style(self.fields)
+
+    def kept_doctrine(self):
+        """A ``(source, external id)`` that stays in the dropdown although the user may not ping it; none here."""
+        return None
 
     @property
     def more_settings_open(self):
@@ -452,6 +461,7 @@ class StartFleetForm(FleetSettingsForm):
     def clean(self):
         data = super().clean()
         self._clean_doctrine(data)
+        clean_doctrine_access(self, data)
         full_mode = data.get("operation_mode", "full") == "full"
         pre_ping = data.get("fleet_timing") == PRE_PING
         if pre_ping and not full_mode:
@@ -480,8 +490,9 @@ class ScheduledFleetForm(FleetSettingsForm):
                     "edit_token": uuid.uuid4(),
                 },
             )
-        super().__init__(*args, user=user, **kwargs)
+        # Before the base form: it asks ``kept_doctrine`` while it builds the dropdown.
         self.operation = operation
+        super().__init__(*args, user=user, **kwargs)
         self.fields["fleet_date"].required = True
         self.fields["fleet_clock"].required = True
         # Scheduled fleets are alliance fleets and only their managers edit them (an FC lead may hold no
@@ -498,9 +509,31 @@ class ScheduledFleetForm(FleetSettingsForm):
                 self.initial["ping_channel"] = None
         doctrine = self.initial.get("doctrine_choice")
         if doctrine and doctrine not in dict(self.fields["doctrine_choice"].choices):
-            # The doctrine is no longer offered; keep its name as a custom doctrine.
+            # The doctrine is no longer offered; keep its name as a custom doctrine, for those who may type one.
+            # The others get the "Choose a doctrine" entry and must pick one (never the first of the list unasked).
             self.initial["doctrine_choice"] = ""
-            self.initial["custom_doctrine"] = operation.doctrine_name
+            if self.custom_name_allowed:
+                self.initial["custom_doctrine"] = operation.doctrine_name
+
+    def kept_doctrine(self):
+        # The doctrine the fleet was scheduled with stays in the list even if the editor may not ping it (any more).
+        return (self.operation.doctrine_source, self.operation.doctrine_external_id)
+
+    def _clean_scheduled_doctrine_access(self, data):
+        """The doctrine rules, unless the doctrine (or the typed name) is the one the fleet already has.
+
+        An edit of the time or the place must not fail because the editor is not in the doctrine's groups; the
+        starter is checked again when the fleet starts.
+        """
+        operation = self.operation
+        source = data.get("doctrine_source") or "custom"
+        unchanged = source == operation.doctrine_source and (data.get("doctrine_external_id") or "") == (
+            operation.doctrine_external_id or ""
+        )
+        if unchanged and source in doctrine_access.FREE_SOURCES:
+            unchanged = (data.get("doctrine_name") or "") == (operation.doctrine_name or "")
+        if not unchanged:
+            clean_doctrine_access(self, data)
 
     def omitted_limit(self):
         # An edit that does not carry the field keeps what the fleet was scheduled with.
@@ -509,6 +542,7 @@ class ScheduledFleetForm(FleetSettingsForm):
     def clean(self):
         data = super().clean()
         self._clean_doctrine(data)
+        self._clean_scheduled_doctrine_access(data)
         self._clean_fleet_time(data, True, stored=self.operation.scheduled_at)
         self._clean_mentions(data, sends=True)
         data["operation_mode"] = "full"

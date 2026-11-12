@@ -19,6 +19,8 @@ from fleetops.models import (
     DiscordWebhook,
     EveEntityName,
     FleetMemberEvent,
+    DoctrineAccess,
+    DoctrineSettings,
     DoctrineShipOrder,
     FleetMemberState,
     FleetOperation,
@@ -241,6 +243,25 @@ class StatisticsTargetAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
 @admin.register(DoctrineShipOrder)
 class DoctrineShipOrderAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
     list_display = ("doctrine_source", "doctrine_external_id", "updated_at")
+
+
+@admin.register(DoctrineAccess)
+class DoctrineAccessAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
+    list_display = ("doctrine_source", "doctrine_external_id", "updated_at")
+    filter_horizontal = ("groups",)
+
+
+@admin.register(DoctrineSettings)
+class DoctrineSettingsAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
+    list_display = ("custom_name_restricted", "updated_at")
+    filter_horizontal = ("custom_name_groups",)
+
+    def has_add_permission(self, request):
+        # One row (pk=1), like the other settings.
+        return not DoctrineSettings.objects.exists() and super().has_add_permission(request)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(CommsPreset)

@@ -23,7 +23,7 @@ A Simplified Chinese version is in [zh-CN/permissions.md](zh-CN/permissions.md).
 | `fleetops.view_all_stats` | Can view all FleetOps statistics | Alliance-wide statistics: every corporation, all members and inactive members, every member page, FC statistics, PAP history, the leaderboard and every statistics export. Statistics only; opening fleet records needs `view_all_fleets` or `manage_fleets`. |
 | `fleetops.manage_attendance` | Can manage attendance | Add manual PAP (by name, ID or pasted roster), delete the user's own entries until an FC lead approves them, recalculate PAP and change the PAP multiplier of closed fleets within the duration rule, on fleets the user may manage. Together with `manage_fleets` it applies to every fleet. |
 | `fleetops.manage_incentives` | Can manage FC incentives | Review, recalculate, waive, finalize and unlock monthly FC incentive periods. The pages exist only while **Incentive enabled** is ticked in the general settings (off by default). |
-| `fleetops.manage_configuration` | Can manage FleetOps configuration | Use the FleetOps Administration pages: settings, fleet types, comms presets, Logi and Boost channels, ping channels and roles (including **Sync roles from Discord**), PAP multipliers, special roles, monthly targets, ship functions and rules, structure templates, message templates, the order of the ships of a doctrine (**Doctrine Ship Order**) and the SRP settings, SRP categories, payout table and corporation limits. Classify a ship from the composition of a fleet the user can open. |
+| `fleetops.manage_configuration` | Can manage FleetOps configuration | Use the FleetOps Administration pages: settings, fleet types, comms presets, Logi and Boost channels, ping channels and roles (including **Sync roles from Discord**), PAP multipliers, special roles, monthly targets, ship functions and rules, structure templates, message templates, who may ping which doctrine and who may use a custom doctrine name, and the order of the ships of a doctrine (**Doctrine Settings**) and the SRP settings, SRP categories, payout table and corporation limits. Classify a ship from the composition of a fleet the user can open. |
 | `fleetops.view_audit_log` | Can view FleetOps audit log | Open the **Audit** page. |
 | `fleetops.request_srp` | Can request SRP | Claim ship losses in FleetOps SRP (My SRP and the SRP links of fleets) and see the user's own claims and monthly allowance. Needs FleetOps SRP to be enabled. The migration that added SRP gave it to every group, state and user that already held `basic_access`; add it to groups you create later. If you do not want every member to claim, take it away in Alliance Auth: open the group, state or user in the admin, remove `Can request SRP` from its permissions and add it only to the groups that should claim. Installing 0.3.0b1 does not give it back. |
 | `fleetops.manage_srp` | Can review and pay SRP claims | Everything `review_srp` and `pay_srp` allow together: review and pay claims. The permission of the older versions, kept as it was, so nobody who holds it loses or gains anything. Not granted to anybody by default because it decides on money. |
@@ -272,6 +272,9 @@ security status ("Jita 0.9"), because it explains the refusal.
 
 Scheduling, editing, cancelling and starting are audited as `fleet.schedule`, `fleet.schedule_edit`,
 `fleet.schedule_cancel` and `fleet.start` (once per start, with `from_schedule` when it came from a schedule).
+
+A scheduled fleet whose doctrine (or typed doctrine name) the FC may not use any more at the moment of the start is not
+started and writes `fleet.schedule_start_refused` (see [Doctrine Settings](configuration.md#doctrine-settings)).
 
 ## Running fleets
 

@@ -2,7 +2,39 @@
 
 ## [0.3.0b3] - Unreleased
 
-Fixes from the second run of 0.3.0b2 on a test site. There is no new migration: install it the way you installed 0.3.0b2.
+Fixes from the second run of 0.3.0b2 on a test site, and a new setting: who may ping which doctrine. There is one new migration (`0043`, two small tables); install it the way you installed 0.3.0b2 and read the upgrade and rollback notes below.
+
+### Added
+
+- **Who may ping which doctrine.** Under **Administration, Doctrine Settings** (the page of the doctrine ship order, now
+  with more on it) every doctrine has a choice of Alliance Auth groups. A doctrine without a group stays open to everybody
+  who may start fleets, as before; with groups, only members of one of them can ping it, and the doctrine shows the pill
+  **Restricted**. Superusers and everybody who can use the FleetOps administration (`fleetops.manage_configuration`) are
+  never restricted. The rule covers **Start Fleet** (also for group fleets: a group leader is judged by the Alliance
+  Auth groups they are in), **Send Ping**, **scheduled fleets** and **start presets**. The lists show only the doctrines
+  the person may ping, and the server checks the choice again: a doctrine put into the request by hand is refused with
+  *You may not ping this doctrine, ask an administrator.* (also in Chinese). SRP links and the PAP-link fleets are not
+  restricted, nor is the retry of the MOTD or the ping of a fleet that is already running. Fittings still decides who
+  sees a doctrine; this is an extra filter on top.
+- **A scheduled fleet is checked again when it starts.** If the FC who scheduled it may not ping its doctrine any more,
+  the fleet is not started (it stays scheduled and nothing is asked from ESI), the FC gets an Alliance Auth notification
+  in their language and the audit log gets `fleet.schedule_start_refused`. Editing a scheduled fleet keeps the doctrine it
+  already has. A start preset whose doctrine is no longer allowed says so when it is loaded and is never switched to
+  another doctrine.
+- **Who may use a custom doctrine name.** The same page has a second setting for the option **None / Custom**: everybody
+  who may start fleets (the default, as before) or only chosen groups. Without the right the option and the text box
+  are not shown and a typed name is refused on the server; scheduled fleets and presets follow the same rule. The
+  dropdown then starts on a "Choose a doctrine" entry, so no doctrine is picked unasked. Changing the doctrine name of a
+  running fleet is checked the same way, so Retry ping cannot send a name the user may not use. Administrators are not
+  limited.
+- Every change of these settings is written to the audit log as `configuration.create` or `configuration.update`
+  (object types `DoctrineAccess` and `DoctrineSettings`) with the groups before and after. A record of a doctrine that was
+  deleted in the doctrine app is kept and listed as such; it restricts nothing.
+
+### Changed
+
+- The administration page **Doctrine Ship Order** is now **Doctrine Settings**; the ship order is edited with the button
+  **Edit order** of each doctrine.
 
 ### Fixed
 
@@ -29,7 +61,11 @@ Fixes from the second run of 0.3.0b2 on a test site. There is no new migration: 
 
 ### Upgrade notes
 
-- No migration and no new setting. Upgrade the package, run `python manage.py collectstatic --noinput` (the pages are templates; the command keeps the static files in step) and restart the web process.
+- One migration, `0043`, creates two empty tables (the groups per doctrine and the custom doctrine name setting). It changes
+  and reads no data: after the upgrade no doctrine is restricted and the custom name is open to everybody who may start
+  fleets, so every page behaves as in 0.3.0b2 until an administrator sets something. Upgrade the package, run `python manage.py migrate`, `python manage.py collectstatic --noinput` (the pages are templates; the command keeps the static files in step) and restart the web process.
+- The restriction is read from Alliance Auth groups at the time of the request. Deleting a group takes it out of every
+  list, so a doctrine whose last group is deleted is open to everybody again; check **Doctrine Settings** after deleting a group.
 - A custom MOTD template that you changed to `{{ doctrine_ships|force_escape }}` (or `|escape`) to work around the lost
   `>` marks can keep that or go back to `{{ doctrine_ships }}`: a value that the template escapes itself is not escaped
   twice (checked by a test), so both show the marks once.
@@ -38,7 +74,11 @@ Fixes from the second run of 0.3.0b2 on a test site. There is no new migration: 
 
 ### Rollback notes
 
-- No migration: install 0.3.0b2 again. The MOTD of fleets that are already open keeps the text it was rendered with;
+- `python manage.py migrate fleetops 0042` drops the two new tables and runs the rollback guard first (a rollback below
+  `0035` is still refused before anything is dropped). Only the doctrine restrictions and the custom name setting are
+  lost: every doctrine is open to everybody who may start fleets again, and the Alliance Auth groups are not touched.
+  Then install 0.3.0b2 again. Without the migration step 0.3.0b2 simply ignores the tables.
+- The MOTD of fleets that are already open keeps the text it was rendered with;
   **Regenerate & Push MOTD** renders it again with the installed version.
 
 ## [0.3.0b2] - 2026-11-10

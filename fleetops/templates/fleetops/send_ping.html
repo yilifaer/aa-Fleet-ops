@@ -54,8 +54,8 @@
           <summary>{% translate "More settings" %}</summary>
           <div class="pt-3">
             <div class="mb-3"><label class="form-label" for="{{ form.formup.id_for_label }}">{{ form.formup.label }}</label>{{ form.formup }}{{ form.formup.errors }}</div>
-            <div class="mb-3"><label class="form-label" for="{{ form.doctrine_choice.id_for_label }}">{{ form.doctrine_choice.label }}</label>{{ form.doctrine_choice }}{{ form.doctrine_choice.errors }}</div>
-            <div class="mb-3" id="custom-doctrine-wrap"><label class="form-label" for="{{ form.custom_doctrine.id_for_label }}">{{ form.custom_doctrine.label }}</label>{{ form.custom_doctrine }}{{ form.custom_doctrine.errors }}</div>
+            <div class="mb-3"><label class="form-label" for="{{ form.doctrine_choice.id_for_label }}">{{ form.doctrine_choice.label }}</label>{{ form.doctrine_choice }}{% if form.doctrine_choice.help_text %}<div class="form-text">{{ form.doctrine_choice.help_text }}</div>{% endif %}{{ form.doctrine_choice.errors }}</div>
+            {% if form.custom_name_allowed %}<div class="mb-3" id="custom-doctrine-wrap"><label class="form-label" for="{{ form.custom_doctrine.id_for_label }}">{{ form.custom_doctrine.label }}</label>{{ form.custom_doctrine }}{{ form.custom_doctrine.errors }}</div>{% endif %}
             <div class="mb-3"><label class="form-label" for="{{ form.comms.id_for_label }}">{{ form.comms.label }}</label>{{ form.comms }}{{ form.comms.errors }}</div>
             <fieldset class="mb-0" id="send-ping-time">
               <legend class="form-label fs-6 mb-1">{% translate "Fleet Time" context "FleetOps" %}</legend>

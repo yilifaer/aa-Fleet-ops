@@ -14,7 +14,7 @@ from django.views.decorators.http import require_POST
 from fleetops.decorators import fleet_starter_required
 from fleetops.forms_presets import PRESET_FORM_PREFIX, PresetRenameForm, PresetSaveForm
 from fleetops.models import FleetStartPreset
-from fleetops.services.presets import FC_CHARACTER, PresetConflict, save_preset
+from fleetops.services.presets import FC_CHARACTER, PresetConflict, PresetRefused, save_preset
 from fleetops.views import _render
 
 # Labels of the stored values a preset list row shows, in this order.
@@ -80,6 +80,8 @@ def preset_save_view(request):
             remember_fc=data["remember_fc"],
             make_default=data["make_default"],
         )
+    except PresetRefused as exc:
+        return _save_result(request, ok=False, message=_("Preset not saved: %(error)s") % {"error": exc})
     except PresetConflict:
         sentences = [_("A preset named %(name)s exists.") % {"name": name}]
         if _from_page(request):

@@ -3413,6 +3413,78 @@ class DoctrineShipOrder(models.Model):
         return f"{self.doctrine_source} {self.doctrine_external_id}"
 
 
+class DoctrineAccess(models.Model):
+    """The Alliance Auth groups that may ping one doctrine; no groups means everybody who may start fleets.
+
+    One row per doctrine, keyed like the fleet record (source and external ID). Fleet administrators and
+    superusers are never restricted. A row whose doctrine left the doctrine app is kept and shown as such.
+    """
+
+    doctrine_source = models.CharField(verbose_name=_("Doctrine source"), max_length=50)
+    doctrine_external_id = models.CharField(verbose_name=_("Doctrine external ID"), max_length=100)
+    groups = models.ManyToManyField(
+        "auth.Group",
+        verbose_name=_("Groups that may ping this doctrine"),
+        blank=True,
+        related_name="fleetops_doctrine_accesses",
+        help_text=_("Empty: everybody who may start fleets can ping this doctrine."),
+    )
+    updated_at = models.DateTimeField(verbose_name=_("Updated at"), auto_now=True)
+
+    class Meta:
+        default_permissions = ()
+        verbose_name = _("doctrine access")
+        verbose_name_plural = _("doctrine accesses")
+        ordering = ["doctrine_source", "doctrine_external_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["doctrine_source", "doctrine_external_id"], name="fleetops_unique_doctrine_access"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.doctrine_source} {self.doctrine_external_id}"
+
+
+class DoctrineSettings(models.Model):
+    """Who may use a custom doctrine name ("None / Custom") when pinging; one row (pk=1).
+
+    Without a row, or with ``custom_name_restricted`` off, everybody who may start fleets may. Fleet
+    administrators and superusers are never restricted.
+    """
+
+    custom_name_restricted = models.BooleanField(
+        verbose_name=_("Only chosen groups may use a custom doctrine name"),
+        default=False,
+        help_text=_("Off: everybody who may start fleets can use None / Custom."),
+    )
+    custom_name_groups = models.ManyToManyField(
+        "auth.Group",
+        verbose_name=_("Groups that may use a custom doctrine name"),
+        blank=True,
+        related_name="fleetops_custom_name_settings",
+    )
+    updated_at = models.DateTimeField(verbose_name=_("Updated at"), auto_now=True)
+
+    class Meta:
+        default_permissions = ()
+        verbose_name = _("doctrine settings")
+        verbose_name_plural = _("doctrine settings")
+
+    def __str__(self):
+        return str(_("Doctrine settings"))
+
+    def save(self, *args, **kwargs):
+        # The one row is read by its pk: a row made after a delete must not end up beside it.
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_solo(cls):
+        obj, _created = cls.objects.get_or_create(pk=1)
+        return obj
+
+
 class SrpPayerSetting(models.Model):
     """What one payer chose on the SRP payments page: the view to open it in and the character to open windows with.
 

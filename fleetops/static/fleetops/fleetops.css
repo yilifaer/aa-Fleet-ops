@@ -751,3 +751,5 @@ button.fo-live { cursor: pointer; }
 .fo-order-buttons { display: flex; flex: none; gap: var(--fo-space-2); }
 .fo-order-mark { padding: var(--fo-space-1) 0 var(--fo-space-1) var(--fo-space-5); max-width: 18rem; }
 .fo-order-preview { padding: var(--fo-space-2) var(--fo-space-3); border-radius: var(--fo-radius-sm); background: var(--fo-surface-2); color: var(--fo-text-1); overflow-wrap: anywhere; }
+/* The group choice of a doctrine: wide enough to tap on a phone inside the scrolling table. */
+.fo-doctrine-groups { min-width: 12rem; }

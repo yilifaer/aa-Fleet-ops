@@ -91,11 +91,14 @@ class ExampleDoctrineMiddleware:
     ]
 
     def __init__(self, get_response):
-        from fleetops import views_config
+        from fleetops import views_config, views_doctrine_settings
         from fleetops.providers.doctrines import FITTINGS_DOCTRINE_SOURCE, DoctrineChoice
 
         choice = DoctrineChoice(external_id="12", name="[ACTIVE] Example Doctrine", source=FITTINGS_DOCTRINE_SOURCE)
+        second = DoctrineChoice(external_id="13", name="Example Subcap Doctrine", source=FITTINGS_DOCTRINE_SOURCE)
         views_config.get_doctrines = lambda user=None: [choice]
+        # The Doctrine settings page lists both doctrines (one restricted, see seed.py).
+        views_doctrine_settings.get_doctrines = lambda user=None: [choice, second]
         views_config.doctrine_fits_snapshot = lambda source, external_id: [dict(fit) for fit in self.FITS]
         self.get_response = get_response
 
