@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.3.0b5] - Unreleased
+## [0.3.0b5] - 2026-11-13
 
 Fixes from the re-test of 0.3.0b4 on a test site.
 
