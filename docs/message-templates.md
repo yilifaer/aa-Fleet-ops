@@ -113,6 +113,7 @@ The built-in **Default Ping**:
 {% if group %}**Group:** {{ group }}
 {% endif %}{% if comms %}**Comms:** {% if comms_link %}[{{ comms }}]({{ comms_link }}){% else %}{{ comms }}{% endif %}
 {% endif %}{% if doctrine_name %}**Doctrine:** {% if doctrine_url %}[{{ doctrine_name }}]({{ doctrine_url }}){% else %}{{ doctrine_name }}{% endif %}{% if doctrine_ships %} ({{ doctrine_ships }}){% endif %}
+{% endif %}{% if srp_url %}**SRP:** [Request SRP]({{ srp_url }})
 {% endif %}{% if is_pre_ping %}**Fleet Time:** {{ fleet_time_eve }} · {{ fleet_time_local }} ({{ fleet_time_discord }})
 {% endif %}
 -# This was a FleetOps broadcast from {{ sender }} to {{ ping_target_label }} at {{ sent_at }} EVE
@@ -142,6 +143,8 @@ The built-in **Default Ping without fleet**:
 A ping without a fleet has the same variables as a fleet. `fc`, `fc_main` and `sender` are the main character of
 the person who sends it; the variables that only describe a fleet (`fleet_type`, `operation_id`, `srp_url`, the
 Logi and Boost channels and `doctrine_fits`) are empty; `is_pre_ping` is true when the ping names a time.
+
+Since 0.3.0b5 the built-in **Default Ping** has the SRP line (`**SRP:** [Request SRP](address)`), on its own line that is there only while the fleet has an SRP link; without a link there is no line and no empty "SRP:" label. The address is written so that no character of it can end the Discord link (`(`, `)`, `<`, `>`, spaces and quotes become percent codes), and the line counts toward the 2000 characters like the rest of the ping. **Nothing stored is changed**: a Default Ping that is already in your database keeps its text, also on a new installation (the migrations create the text of 0.3.0b4), and so does every template you edited. Only a template created by `fleetops_seed` and the built-in text that is used when a stored ping cannot be rendered have the line. To get it into an existing template, add `**SRP:** [Request SRP]({{ srp_url }})` inside `{% if srp_url %}` … `{% endif %}` (or a plain `{{ srp_url }}`) where you want it. The Start Fleet preview has no SRP line, because the link is made by the start itself, after the preview (the SRP line of the MOTD is the same); the ping that is sent has it. The Default Ping without fleet has no fleet and so no SRP link.
 
 `python manage.py fleetops_seed` creates them as "Default Ping", "Default MOTD" and "Default Ping without fleet"
 if they do not exist yet, and never overwrites a template you edited. An upgrade replaces a ping or MOTD template

@@ -1166,6 +1166,12 @@ SRP_ONLY_CLAIMANT_WITHDRAWS = StoredText(gettext_noop("Only the claimant can wit
 SRP_ONLY_CLAIMANT_RESUBMITS = StoredText(gettext_noop("Only the claimant can submit this claim again."))
 SRP_ONLY_PENDING_WITHDRAWN = StoredText(gettext_noop("Only pending claims can be withdrawn."))
 SRP_ONLY_WITHDRAWN_RESUBMITTED = StoredText(gettext_noop("Only withdrawn claims can be submitted again."))
+SRP_ONLY_WITHDRAWN_OR_REJECTED_RESUBMITTED = StoredText(
+    gettext_noop("Only withdrawn or rejected claims can be submitted again.")
+)
+SRP_REJECTED_BY_BAN_REOPEN_ONLY = StoredText(
+    gettext_noop("This claim was rejected because of an SRP ban; only a reviewer can reopen it.")
+)
 SRP_ONLY_PENDING_RECALCULATED = StoredText(gettext_noop("Only pending claims can be recalculated."))
 SRP_ONLY_PENDING_APPROVED = StoredText(gettext_noop("Only pending claims can be approved."))
 SRP_ONLY_PENDING_REJECTED = StoredText(gettext_noop("Only pending claims can be rejected."))

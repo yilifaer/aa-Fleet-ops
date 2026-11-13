@@ -8,6 +8,7 @@ site changes them. The warnings next to the preview are for the person who looks
 tests replace the catalogs with small fake ones, so they do not depend on the translations that ship.
 """
 
+import re
 from datetime import datetime, timezone as dt_timezone
 from unittest import mock
 from uuid import uuid4
@@ -481,7 +482,10 @@ class SentTextTests(FakeCatalogs, StartFleetTestBase):
             with self.subTest(site=site):
                 self.assertEqual(previews[0].ping, previews[1].ping)
                 self.assertEqual(previews[0].motd, previews[1].motd)
-                self.assertEqual(previews[0].ping, sent["ping"])
+                # Changed for 0.3.0b5: the SRP link is made by the start, after the preview, so the preview has no SRP
+                # line (the same as the SRP line of the MOTD); the sent ping has it and is otherwise the preview.
+                self.assertIn("**SRP:** [Request SRP](", sent["ping"])
+                self.assertEqual(previews[0].ping, re.sub(r"\*\*SRP:\*\* [^\n]*\n", "", sent["ping"]))
                 self.assertEqual(sent["posted"][0]["content"], sent["ping"])
             pings.add(sent["ping"])
         self.assertEqual(len(pings), 1)

@@ -2218,6 +2218,15 @@ class SrpSettings(models.Model):
             "Not part of the policy snapshot."
         ),
     )
+    member_resubmit_rejected = models.BooleanField(
+        _("Members may resubmit rejected claims"),
+        default=False,
+        help_text=_(
+            "A member can submit a rejected claim again, with the current rules. It goes back to the review queue as "
+            "pending; the rejection stays in the claim history. Without this switch only withdrawn claims can be "
+            "submitted again."
+        ),
+    )
     member_swap_loss_enabled = models.BooleanField(
         _("Members can replace the loss of a pending claim"),
         default=True,

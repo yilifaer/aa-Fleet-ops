@@ -25,14 +25,21 @@ Fixes from the re-test of 0.3.0b4 on a test site.
 ### Added
 
 - The **Audit** page has a **Changes** column that shows what an entry changed (`old → new`, folded out when there is a lot). Webhook addresses, tokens and similar secrets are never shown.
+- **Members may resubmit rejected claims** (SRP settings, **Members and review**; off by default). Until now only a withdrawn claim could be submitted again by its member; a rejected one needed a reviewer to reopen it. With the setting on, the member sees **Submit again** on their own rejected claim. It works like submitting a withdrawn claim again: the claim is calculated again with the current rules and limits and goes back to the review queue as pending. The earlier rejection stays in the claim history and in the audit log. A banned member, SRP switched off, a loss past the claim deadline and the other rules of a withdrawn resubmission apply the same way; claims imported from aa-srp can never be resubmitted. The change of the setting is audited, and saving the page without a change still writes nothing. A claim a reviewer rejected carries the warning "Submitted again after a rejection" afterwards, so **Approve clean claims** skips it and the queue shows it; a claim rejected by an SRP ban (**Reject pending claims**) cannot be submitted again by the member at all, only reopened by a reviewer; and the member's rejection count on the claim page counts a resubmitted claim through its rejection events, so submitting again does not reset it. Withdrawn claims work as before.
+- The **SRP link in the default ping.** The built-in Default Ping has an `**SRP:** [Request SRP](address)` line, on its own line that is there only while the fleet has an SRP link (no empty "SRP:" label otherwise). The address is written so that no character of it can end the Discord link, and the length limit of 2000 characters counts it. **Only the built-in text changed**: a Default Ping that is stored on your site, a new installation's stored Default Ping and every template you edited stay as they are, and no migration rewrites them. The new text is used by `fleetops_seed` for a ping template that does not exist yet and when a stored ping cannot be rendered. To get the line into an existing ping template, add `**SRP:** [Request SRP]({{ srp_url }})` inside `{% if srp_url %}` … `{% endif %}` yourself (or a plain `{{ srp_url }}`). Retry SRP on an ended fleet stays as it is.
+
+### Changed
+
+- The **FC Statistics** page of the alliance shows the fleet type labels with the colour of the type (a theme colour or a custom colour with readable text), like the other statistics pages.
 
 ### Upgrade notes
 
-- No migrations. Install the new version, run `python manage.py collectstatic --noinput` and restart Alliance Auth and Celery.
+- One new migration, `0045`: it adds the setting **Members may resubmit rejected claims** to the SRP settings. Nothing changes until an administrator turns it on. Run `python manage.py migrate`, then `python manage.py collectstatic --noinput`, and restart Alliance Auth and Celery.
+- The default ping gets the SRP line only for new ping templates; stored templates are not changed (see above).
 
 ### Rollback notes
 
-- Install 0.3.0b4 again. Nothing in the database changes.
+- `python manage.py migrate fleetops 0044` removes the setting (a refused rollback, for example while claims imported from aa-srp exist, leaves the column in place; the same guard as before runs first). Then install 0.3.0b4 again. Nothing else in the database changes.
 
 ## [0.3.0b4] - 2026-11-13
 

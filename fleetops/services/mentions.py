@@ -260,6 +260,16 @@ def discord_link_text(text) -> str:
     return re.sub(r"([\\\[\]])", r"\\\1", str(text or ""))
 
 
+def discord_link_address(url) -> str:
+    """``url`` as the address of a Discord masked link ``[text](address)``, or as a plain address in a message.
+
+    The characters that would end the address or the link (``(``, ``)``, ``<``, ``>``, ``\\``, quotes, spaces and
+    control characters) are written as their percent codes, which open the same page; every other character,
+    including an existing percent code, stays as it is.
+    """
+    return re.sub(r"[\x00-\x20\x7f()<>\\\"`|{}^]", lambda m: f"%{ord(m.group()):02X}", str(url or ""))
+
+
 def limit_mass_mentions(text: str, selection) -> str:
     """``text`` as it may be sent with ``allowed_mentions(selection)``.
 

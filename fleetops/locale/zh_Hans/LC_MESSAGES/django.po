@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-13 17:00+0000\n"
+"POT-Creation-Date: 2026-11-13 18:52+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -3744,6 +3744,14 @@ msgid "A member can change the comment, the category or link and the loss of a c
 msgstr "成员可以在申请还处于待审核时修改备注、类别或链接和损失。不属于政策快照。"
 
 #: models.py
+msgid "Members may resubmit rejected claims"
+msgstr "成员可以重新提交被拒绝的申请"
+
+#: models.py
+msgid "A member can submit a rejected claim again, with the current rules. It goes back to the review queue as pending; the rejection stays in the claim history. Without this switch only withdrawn claims can be submitted again."
+msgstr "成员可以按当前规则重新提交被拒绝的申请，申请回到审核队列，状态为待审核；之前的拒绝仍保留在申请历史中。没有这个开关时，只能重新提交已撤回的申请。"
+
+#: models.py
 msgid "Members can replace the loss of a pending claim"
 msgstr "成员可以替换待审核申请的损失"
 
@@ -5845,6 +5853,16 @@ msgid "The loss happened on %(loss)s EVE; the link is for %(link)s."
 msgstr "损失发生在 %(loss)s EVE；这条链接是 %(link)s 的。"
 
 #: srp/display.py
+#, python-format
+msgid "Submitted again after a rejection by %(reviewer)s on %(when)s."
+msgstr "被 %(reviewer)s 于 %(when)s 拒绝后重新提交。"
+
+#: srp/display.py srp/notify.py
+#, python-format
+msgid "Reason: %(reason)s"
+msgstr "原因：%(reason)s"
+
+#: srp/display.py
 msgid "another ship"
 msgstr "另一艘舰船"
 
@@ -5992,11 +6010,6 @@ msgstr "损失时间：%(time)s EVE"
 #, python-format
 msgid "Amount: %(amount)s"
 msgstr "金额：%(amount)s"
-
-#: srp/notify.py
-#, python-format
-msgid "Reason: %(reason)s"
-msgstr "原因：%(reason)s"
 
 #: srp/notify.py
 msgid "The payment of this claim was undone. The claim is approved and not paid yet."
@@ -13920,6 +13933,14 @@ msgstr "只能撤回待审核的申请。"
 #: texts.py
 msgid "Only withdrawn claims can be submitted again."
 msgstr "只能重新提交已撤回的申请。"
+
+#: texts.py
+msgid "Only withdrawn or rejected claims can be submitted again."
+msgstr "只能重新提交已撤回或被拒绝的申请。"
+
+#: texts.py
+msgid "This claim was rejected because of an SRP ban; only a reviewer can reopen it."
+msgstr "该申请因 SRP 封禁被拒绝，只有审核人可以重新打开。"
 
 #: texts.py
 msgid "Only pending claims can be recalculated."

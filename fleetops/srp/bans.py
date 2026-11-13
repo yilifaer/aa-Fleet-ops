@@ -171,7 +171,7 @@ def ban_user(
                 result.skipped.append((claim_id, texts.SRP_CLAIM_GONE()))
                 continue
             try:
-                result.done.append(review.reject_claim(claim, actor=actor, reason=reject_reason))
+                result.done.append(review.reject_claim(claim, actor=actor, reason=reject_reason, by_ban=True))
             except SrpError as exc:
                 # Decided, withdrawn or moved while the ban was made.
                 result.skipped.append((claim, exc.message))

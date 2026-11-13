@@ -144,7 +144,8 @@ class FcRow:
 
     ``breakdown`` maps a fleet type name to ``{"count": int, "points": Decimal}``. ``operation_ids`` are the
     credited fleets; a fleet credited to its FC and to a special role is in two rows, so counting the fleets
-    flown takes the union.
+    flown takes the union. ``types`` is the same breakdown as ``(fleet type, entry)`` pairs, for the colour of the
+    type on the page.
     """
 
     user: object
@@ -152,6 +153,7 @@ class FcRow:
     fleets: int
     points: Decimal
     breakdown: dict[str, dict] = field(default_factory=dict)
+    types: list = field(default_factory=list)
     operation_ids: frozenset = frozenset()
 
     @property

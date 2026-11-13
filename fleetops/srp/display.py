@@ -184,6 +184,18 @@ def _text_outside_link_date(params):
     }
 
 
+def _text_resubmitted_after_rejection(params):
+    params = params or {}
+    text = gettext("Submitted again after a rejection by %(reviewer)s on %(when)s.") % {
+        "reviewer": params.get("reviewer") or "?",
+        "when": str(params.get("rejected_at") or "?")[:10],
+    }
+    reason = params.get("reason")
+    if not reason:
+        return text
+    return f"{text} " + (gettext("Reason: %(reason)s") % {"reason": reason})
+
+
 def _text_ship_mismatch(params):
     params = params or {}
     type_id = params.get("ship_type_id")
@@ -254,6 +266,7 @@ WARNING_TEXTS = {
     "external_claim": _text_external_claim,
     "outside_link_date": _text_outside_link_date,
     "ship_mismatch": _text_ship_mismatch,
+    "resubmitted_after_rejection": _text_resubmitted_after_rejection,
     "fleet_link_closed": lambda params: gettext(
         "The SRP link of the fleet was closed before this claim was submitted, so it was submitted as a loss outside a fleet."
     ),

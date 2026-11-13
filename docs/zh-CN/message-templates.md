@@ -91,6 +91,7 @@ FleetOps 为每支舰队生成两段文字：发到 Discord 的 **Ping**，以�
 {% if group %}**Group:** {{ group }}
 {% endif %}{% if comms %}**Comms:** {% if comms_link %}[{{ comms }}]({{ comms_link }}){% else %}{{ comms }}{% endif %}
 {% endif %}{% if doctrine_name %}**Doctrine:** {% if doctrine_url %}[{{ doctrine_name }}]({{ doctrine_url }}){% else %}{{ doctrine_name }}{% endif %}{% if doctrine_ships %} ({{ doctrine_ships }}){% endif %}
+{% endif %}{% if srp_url %}**SRP:** [Request SRP]({{ srp_url }})
 {% endif %}{% if is_pre_ping %}**Fleet Time:** {{ fleet_time_eve }} · {{ fleet_time_local }} ({{ fleet_time_discord }})
 {% endif %}
 -# This was a FleetOps broadcast from {{ sender }} to {{ ping_target_label }} at {{ sent_at }} EVE
@@ -119,6 +120,8 @@ FleetOps 为每支舰队生成两段文字：发到 Discord 的 **Ping**，以�
 
 无舰队 Ping 的变量与舰队的相同。`fc`、`fc_main` 和 `sender` 是发出这条 Ping 的人的大号；只描述舰队的变量（`fleet_type`、`operation_id`、`srp_url`、
 后勤和加成频道、`doctrine_fits`）为空；Ping 里写了时间时 `is_pre_ping` 为真。
+
+从 0.3.0b5 起，内置的 **Default Ping** 带有 SRP 一行（`**SRP:** [Request SRP](地址)`）：它单独占一行，只在舰队有 SRP 链接时才出现；没有链接时既没有这一行，也不会出现空的 "SRP:"。地址会被处理成不会截断 Discord 链接的写法（`(`、`)`、`<`、`>`、空格和引号变成百分号编码），这一行和 Ping 的其余部分一样计入 2000 字符的限制。**已保存的内容一律不变**：数据库里已有的 Default Ping 保持原文（新安装也一样，迁移创建的是 0.3.0b4 的文本），你改过的模板也不变。只有 `fleetops_seed` 新建的模板，以及已保存的 Ping 无法渲染时使用的内置文本才带这一行。想让已有模板带上它，请在合适的位置在 `{% if srp_url %}` … `{% endif %}` 里加上 `**SRP:** [Request SRP]({{ srp_url }})`（或直接写 `{{ srp_url }}`）。开队预览里没有这一行，因为链接是开队时才创建的，在预览之后（MOTD 里的 SRP 一行也是这样）；实际发出的 Ping 有这一行。无舰队的 Default Ping 没有舰队，也就没有 SRP 链接。
 
 `python manage.py fleetops_seed` 会在它们还不存在时创建 "Default Ping"、"Default MOTD" 和 "Default Ping without fleet"，不会覆盖你改过的模板。
 升级时，只有仍与上一版默认内容完全一致的 Ping 或 MOTD 模板才会被替换（不论叫什么名字）；降级会把它们改回上一版的默认内容，升级之后你改过的模板会保留。

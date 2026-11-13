@@ -502,7 +502,7 @@ def claim_page_context(request, claim, *, bound=None, settings_obj=None):
         "can_decide": can_decide,
         "can_withdraw": is_owner and claim.status == SrpClaim.Status.PENDING,
         "can_edit": False,
-        "can_resubmit": is_owner and claim.status == SrpClaim.Status.WITHDRAWN,
+        "can_resubmit": is_owner and not claim.is_imported and claims.can_resubmit(claim, settings_obj),
         "calculation": calculation,
         "policy": PolicySnapshot.from_json(claim.policy),
         "show_limits": show_limits,
@@ -626,7 +626,7 @@ def srp_claim_withdraw(request, claim_uuid):
 @require_POST
 @fleetops_permission_required(REQUEST_SRP, page=False)
 def srp_claim_resubmit(request, claim_uuid):
-    """Resubmit a withdrawn claim; only the claimant. A claim in another state is left as it is, with a message."""
+    """Resubmit a withdrawn claim (or a rejected one when the setting allows it); only the claimant. A claim in another state is left as it is, with a message."""
     claim = get_claim(claim_uuid)
     if claim.user_id != request.user.pk:
         raise Http404

@@ -552,6 +552,15 @@ def fc_breakdown(operations) -> dict[str, dict]:
     return breakdown
 
 
+def fc_type_entries(operations, breakdown=None) -> list[tuple]:
+    """``[(fleet type, {"count", "points"})]`` for an FC's fleets: ``fc_breakdown`` with the fleet type itself."""
+    breakdown = fc_breakdown(operations) if breakdown is None else breakdown
+    types = {}
+    for operation in operations:
+        types.setdefault(str(operation.fleet_type), operation.fleet_type)
+    return [(types[name], entry) for name, entry in breakdown.items()]
+
+
 def fc_points(operations) -> Decimal:
     """FC points of fleets: each gives its type's weight at the time times its PAP multiplier."""
     return sum((operation.fc_points for operation in operations), Decimal("0"))
@@ -571,13 +580,15 @@ def fc_rows(year: int, month: int) -> list[FcRow]:
     for user in users:
         operations = grouped[user.pk]
         main = getattr(getattr(user, "profile", None), "main_character", None)
+        breakdown = fc_breakdown(operations)
         rows.append(
             FcRow(
                 user=user,
                 main_name=main.character_name if main is not None else user.username,
                 fleets=len(operations),
                 points=fc_points(operations),
-                breakdown=fc_breakdown(operations),
+                breakdown=breakdown,
+                types=fc_type_entries(operations, breakdown),
                 operation_ids=frozenset(operation.pk for operation in operations),
             )
         )

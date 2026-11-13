@@ -23,8 +23,10 @@ OPEN_WINDOW_SCOPES = [OPEN_WINDOW_SCOPE]
 # Built-in templates, also used as the fallback when a stored template cannot be rendered.
 # Pings and MOTDs are always English (their own words are never translated). Migration 0009 keeps copies of the
 # ping and of the MOTD as they were before the SRP line, migration 0017 a copy of the MOTD with the SRP line and
-# migration 0020 copies of the 0.2.0b1 defaults and of the current ping and MOTD; the copies of the current
-# templates must stay identical to these.
+# migration 0020 copies of the 0.2.0b1 defaults and of the current ping and MOTD; the copy of the MOTD must stay
+# identical to the MOTD here. The ping here has the SRP line since 0.3.0b5; the copy in migration 0020 is the ping
+# before it and stays so: stored templates are never rewritten for it, only a template created from this default
+# (fleetops_seed) and the fallback of a template that cannot be rendered have the line.
 DEFAULT_PING_TEMPLATE = """{% if ping_mention %}{{ ping_mention }}
 {% endif %}{% if additional_message %}{{ additional_message }}
 
@@ -34,6 +36,7 @@ DEFAULT_PING_TEMPLATE = """{% if ping_mention %}{{ ping_mention }}
 {% if group %}**Group:** {{ group }}
 {% endif %}{% if comms %}**Comms:** {% if comms_link %}[{{ comms }}]({{ comms_link }}){% else %}{{ comms }}{% endif %}
 {% endif %}{% if doctrine_name %}**Doctrine:** {% if doctrine_url %}[{{ doctrine_name }}]({{ doctrine_url }}){% else %}{{ doctrine_name }}{% endif %}{% if doctrine_ships %} ({{ doctrine_ships }}){% endif %}
+{% endif %}{% if srp_url %}**SRP:** [Request SRP]({{ srp_url }})
 {% endif %}{% if is_pre_ping %}**Fleet Time:** {{ fleet_time_eve }} · {{ fleet_time_local }} ({{ fleet_time_discord }})
 {% endif %}
 -# This was a FleetOps broadcast from {{ sender }} to {{ ping_target_label }} at {{ sent_at }} EVE"""

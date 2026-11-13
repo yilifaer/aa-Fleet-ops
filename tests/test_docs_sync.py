@@ -419,6 +419,8 @@ class DefaultsInDocsTests(SimpleTestCase):
         # 0.3.0b1 (INT-13, REV-9d, REV-10): member edits, the rejection history and the insurance estimate.
         "Members can change their pending claims": "member_edit_enabled",
         "Members can replace the loss of a pending claim": "member_swap_loss_enabled",
+        # 0.3.0b5: a member can submit a rejected claim again; off by default.
+        "Members may resubmit rejected claims": "member_resubmit_rejected",
         "Days of rejection history shown to reviewers": "review_history_days",
         "Show the insurance estimate": "show_insurance",
         "Insurance level shown": "insurance_level",

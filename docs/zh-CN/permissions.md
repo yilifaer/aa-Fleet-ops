@@ -173,7 +173,7 @@ FC 统计不受影响。
 
 | 操作 | 谁可以 |
 |---|---|
-| 我的 SRP、舰队的 SRP 链接页、检查并提交损失、撤回并重新提交申请、查看自己的申请页 | `fleetops.request_srp`。申请的角色必须属于用户自己的 Alliance Auth 账号。 |
+| 我的 SRP、舰队的 SRP 链接页、检查并提交损失、撤回并重新提交申请（开启 **成员可以重新提交被拒绝的申请** 后，被拒绝的申请也可以）、查看自己的申请页 | `fleetops.request_srp`。申请的角色必须属于用户自己的 Alliance Auth 账号。 |
 | 舰队页上的 SRP 卡片 | 链接及复制按钮：舰队的管理者、FC 和 SRP 人员（`manage_srp`、`review_srp` 或 `pay_srp`）。"为本舰队申请 SRP"按钮：`request_srp`，且链接处于开启状态。 |
 | 创建舰队的 SRP 链接（"创建 SRP 链接"、"重试 SRP"） | 该舰队上的 `fleetops.manage_own_fleet`，或 `fleetops.manage_fleets` |
 | 关闭舰队的 SRP 链接；完成链接；SRP 链接列表及其 **关闭所选**、**完成所选** | `fleetops.manage_srp`、`fleetops.review_srp` 或 `fleetops.pay_srp`。链接上还有待审核或待付款的申请时，任何人都不能完成它。 |

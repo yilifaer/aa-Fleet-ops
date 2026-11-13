@@ -348,9 +348,12 @@ def approve_clean_claims(claims_, *, actor, expected_amounts=None, expected_revi
     )
 
 
-def reject_claim(claim: SrpClaim, *, actor, reason: str, expected_revision: int | None = None) -> SrpClaim:
+def reject_claim(
+    claim: SrpClaim, *, actor, reason: str, expected_revision: int | None = None, by_ban: bool = False
+) -> SrpClaim:
     """Pending to rejected; the reason is shown to the claimant. ``expected_revision`` is the ``member_revision`` the
-    page showed (a claim the claimant changed since is refused)."""
+    page showed (a claim the claimant changed since is refused). ``by_ban`` marks a rejection made because the claimant
+    was banned: the claimant cannot submit such a claim again."""
     reason = claims.clean_reason(reason, required=True, what="reason for the rejection")
     with quota.quota_lock() as srp:
         locked = claims.lock_native(claim)
@@ -372,6 +375,7 @@ def reject_claim(claim: SrpClaim, *, actor, reason: str, expected_revision: int 
             actor=actor,
             from_status=previous,
             reason=reason,
+            data={"ban": True} if by_ban else None,
             old={"status": previous},
             new={"status": locked.status},
         )

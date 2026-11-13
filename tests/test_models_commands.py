@@ -844,12 +844,15 @@ class MigrationTests(TestCase):
         # 0020 brings the untouched defaults of 0.2.0b1 up to the current built-in ones.
         data = importlib.import_module("fleetops.migrations.0020_b2_data")
         self.assertEqual(upgrade.NEW_PING, data.OLD_PING)
-        self.assertEqual(data.NEW_PING, DEFAULT_PING_TEMPLATE)
+        # Changed for 0.3.0b5: the built-in ping has the SRP line, the copy in the migration (what is stored) does not.
+        self.assertEqual(data.NEW_PING, f.DEFAULT_PING_WITHOUT_SRP_LINE)
         self.assertEqual(srp.NEW_MOTD, data.OLD_MOTD)
         self.assertEqual(data.NEW_MOTD, DEFAULT_MOTD_TEMPLATE)
 
     def test_new_installations_get_the_current_default_templates(self):
-        self.assertEqual(MessageTemplate.objects.get(name="Default Ping").content, DEFAULT_PING_TEMPLATE)
+        # Changed for 0.3.0b5: a new installation stores the ping of the migrations (without the SRP line); stored
+        # templates are never rewritten for it.
+        self.assertEqual(MessageTemplate.objects.get(name="Default Ping").content, f.DEFAULT_PING_WITHOUT_SRP_LINE)
         self.assertEqual(MessageTemplate.objects.get(name="Default MOTD").content, DEFAULT_MOTD_TEMPLATE)
 
     def test_models_and_migrations_are_in_sync(self):

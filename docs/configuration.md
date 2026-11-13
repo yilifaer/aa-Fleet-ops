@@ -614,6 +614,7 @@ history; it never moves ISK.
 | Complete SRP links automatically | off | A closed [SRP link](#srp-links) is marked completed as soon as none of its claims waits for review or payment. A completed link whose claim becomes unsettled again (payment undone, claim reopened or submitted again) goes back to closed whatever this says. |
 | Members can change their pending claims | on | A member can change the comment, the category or link and the loss of a claim while it is pending. See [Changing a pending claim](#changing-a-pending-claim). Off removes the button and refuses the request. |
 | Members can replace the loss of a pending claim | on | Only in force while the switch above is on. Off leaves members the comment and the category or link. |
+| Members may resubmit rejected claims | off | Off: only a withdrawn claim can be submitted again by its member, a rejected one has to be reopened by a reviewer. On: the member also sees **Submit again** on their own rejected claim. See [Submitting a rejected claim again](#submitting-a-rejected-claim-again). |
 | Days of rejection history shown to reviewers | 90 | The claim page tells reviewers how many of the member's claims were rejected in the last days (0 = all). Between 0 and 3650. |
 | Show the insurance estimate | on | Next to the amount of each claim FleetOps shows what the pilot would get from insurance, from the prices ESI publishes. Informational only. See [Insurance estimate](#insurance-estimate). |
 | Insurance level shown | platinum | One of basic, standard, bronze, silver, gold and platinum. |
@@ -680,7 +681,7 @@ To enable FleetOps SRP:
   member's characters; the claim belongs to the player and counts for the main character's corporation at the
   time of the claim.
 - One killmail is one claim, however often and however it is pasted. The pilot can withdraw a pending claim and
-  submit it again.
+  submit it again; a rejected claim only when **Members may resubmit rejected claims** is on.
 - A loss younger than 6 minutes is not asked about at zKillboard. The claim waits with a "value not available
   yet" warning, and the value sweep fetches it later (after 65 minutes, 3 hours, 12 hours and 24 hours). After
   the fifth try the ESI market estimate is used and the claim says so. The estimate adds the ESI average price
@@ -862,6 +863,10 @@ and the claim stays as it was. After a reviewer moved the claim between fleet an
 the member can still change the comment and the loss. A banned member can only withdraw. Each change counts a revision,
 is shown in the timeline ("Changed by the claimant") and audited as `srp.claim_member_edit`; the text of a comment stays in
 the timeline and is not copied to the audit log.
+
+### Submitting a rejected claim again
+
+By default only a withdrawn claim can be submitted again by its member; a rejected claim has to be reopened by a reviewer. When **Members may resubmit rejected claims** (SRP settings, **Members and review**; off by default) is on, the claimant also sees **Submit again** on their own rejected claim. It works exactly like submitting a withdrawn claim again: the claim is calculated again with the current rules and the monthly limits, goes back to the review queue as pending and is audited as `srp.claim_resubmit`. The rejection stays in the claim's history (the event with its reason and the audit entry), and the rejection reason is no longer shown on the claim while it is pending. A claim that a reviewer rejected carries the warning "Submitted again after a rejection" (reviewer, reason and date) after it is submitted again: it shows in the queue, and **Approve clean claims** skips it, so a reviewer has to decide it by hand. The member's rejection count on the claim page counts such a claim as before, because it is built from the claim's rejection events, not from its current status. A claim that was rejected because the member was banned (**Reject pending claims** when banning) can never be submitted again by the member, not even after the ban ends or is lifted; only a reviewer can reopen it. The same rules apply as for a withdrawn claim: SRP must be on, a banned member cannot, the loss must be within the claim deadline, a closed link or claim period does not stop a claim that exists, and a claim over the monthly limit is treated by **Over limit action** (it can be rejected again). Claims imported from aa-srp can never be resubmitted. Turning the setting off hides the button again at once; a claim that was resubmitted stays pending. The change of the setting is audited like the other SRP settings.
 
 ### Insurance estimate
 
@@ -1191,6 +1196,7 @@ on the pages named; nothing in FleetOps sets them for you.
 | | Minutes between two reads of a character | 60 |
 | | Members must authorize loss reading for all their characters | on |
 | | Members can change their pending claims, Members can replace the loss of a pending claim | on, on |
+| | Members may resubmit rejected claims | off (the example does not set it) |
 | | Complete SRP links automatically | on (a closed link completes only when all its claims are paid, rejected or withdrawn) |
 | | Show the insurance estimate, Insurance level shown | on, Platinum |
 | | SRP reviewers may decide on their own claims, SRP payers may mark their own claims paid, The approver of a claim may not pay it | left to the alliance; the example does not set them |
@@ -1207,7 +1213,7 @@ through a fleet link at 571m.
 
 Migrations `0035` and `0036` are the guard of the 0.3.0b1 chain. `0036` adds the pruning share to the
 settings; going back runs its copy of the guard before that column is dropped, and `0035` runs the same checks once more.
-`0044`, the last migration, adds the colour and the **Show on dashboard** switch to the fleet types (undoing it runs the same guard first and drops both columns; only the chosen colours and switches are lost, every type then has its automatic colour again); `0043` creates the tables of the doctrine access (the groups that may ping a doctrine) and of the custom doctrine name setting (undoing it drops both tables and runs the same guard first; no restriction exists after an upgrade, and the groups themselves are never touched); `0042` creates the table of the payers' choices on the payments page (undoing it drops the table and runs the same guard first); `0041` creates the table of the stored doctrine ship orders (undoing it drops the table); `0040` adds the setting **Notify members when a payment is undone**, and `0039` adds **Losses inside a tracked fleet**; both run the guard before they drop their column (so a way back below `0035` is refused before anything is dropped); `0038` only changes a help text and `0037` only adds an index; they are undone next (the help text comes back, the index is dropped, nothing else changes). The
+`0045`, the last migration, adds the setting **Members may resubmit rejected claims** (off; undoing it runs the same guard first and drops the column, which only loses the switch); `0044` adds the colour and the **Show on dashboard** switch to the fleet types (undoing it runs the same guard first and drops both columns; only the chosen colours and switches are lost, every type then has its automatic colour again); `0043` creates the tables of the doctrine access (the groups that may ping a doctrine) and of the custom doctrine name setting (undoing it drops both tables and runs the same guard first; no restriction exists after an upgrade, and the groups themselves are never touched); `0042` creates the table of the payers' choices on the payments page (undoing it drops the table and runs the same guard first); `0041` creates the table of the stored doctrine ship orders (undoing it drops the table); `0040` adds the setting **Notify members when a payment is undone**, and `0039` adds **Losses inside a tracked fleet**; both run the guard before they drop their column (so a way back below `0035` is refused before anything is dropped); `0038` only changes a help text and `0037` only adds an index; they are undone next (the help text comes back, the index is dropped, nothing else changes). The
 guard checks everything that makes going back unsafe before the first change is undone: payout rules that belong to a category, links without a fleet that have claims (standing
 links) or that were imported, and claims imported from aa-srp. It stops **any** way back, a partial one included
 (`migrate fleetops 0032` is stopped too). `python manage.py fleetops_srp_rollback_check` runs the same checks, reads only and

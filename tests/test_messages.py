@@ -125,7 +125,10 @@ class DefaultTemplateTests(TestCase):
 
         # Migration 0020 replaces the 0.2.0b1 defaults (the ones of 0009 and 0017) by the current ones.
         self.assertEqual(upgrade.NEW_PING.encode(), data.OLD_PING.encode())
-        self.assertEqual(data.NEW_PING.encode(), DEFAULT_PING_TEMPLATE.encode())
+        # Changed for 0.3.0b5: the built-in ping has the SRP line since then, the stored copy of the migration does not
+        # (stored templates are not rewritten); apart from that line the two are identical.
+        self.assertEqual(data.NEW_PING.encode(), f.DEFAULT_PING_WITHOUT_SRP_LINE.encode())
+        self.assertNotEqual(data.NEW_PING, DEFAULT_PING_TEMPLATE)
         # Migration 0017 added the SRP line to the MOTD; 0020 made the FC and the form-up place links.
         self.assertEqual(upgrade.NEW_MOTD.encode(), srp.OLD_MOTD.encode())
         self.assertEqual(srp.NEW_MOTD.encode(), data.OLD_MOTD.encode())

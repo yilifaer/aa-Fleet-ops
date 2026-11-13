@@ -233,6 +233,12 @@ def settings(**values) -> FleetOpsSettings:
     return obj
 
 
+# The SRP line of the built-in ping (0.3.0b5) and the ping without it: the text the migrations stored (they are never
+# rewritten for the line, so a stored Default Ping has the text of 0.3.0b4).
+SRP_PING_LINE = "{% if srp_url %}**SRP:** [Request SRP]({{ srp_url }})\n{% endif %}"
+DEFAULT_PING_WITHOUT_SRP_LINE = DEFAULT_PING_TEMPLATE.replace(SRP_PING_LINE, "")
+
+
 def builtin_default_templates():
     """Make the stored "Default Ping" and "Default MOTD" templates the built-in ones from constants.py."""
     MessageTemplate.objects.filter(template_type=MessageTemplate.TemplateType.PING, name="Default Ping").update(

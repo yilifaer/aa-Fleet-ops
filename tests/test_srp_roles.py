@@ -894,6 +894,8 @@ class SettingsPageTests(TestCase):
                 # REV-9d / INT-13 (0.3.0b1): the member edit switches and the days of rejection history joined.
                 "member_edit_enabled",
                 "member_swap_loss_enabled",
+                # 0.3.0b5: members may resubmit rejected claims (off by default) follows the member edit switches.
+                "member_resubmit_rejected",
                 "review_history_days",
                 "member_instructions",
             ],

@@ -210,7 +210,7 @@ The read-only side is the same for all three: every SRP staff user sees all SRP 
 
 | Action | Who |
 |---|---|
-| My SRP, the SRP link page of a fleet, checking and submitting a loss, withdrawing and submitting a claim again, the page of an own claim | `fleetops.request_srp`. The claim must be for a character on the user's own Alliance Auth account. |
+| My SRP, the SRP link page of a fleet, checking and submitting a loss, withdrawing and submitting a claim again (a rejected claim too when **Members may resubmit rejected claims** is on), the page of an own claim | `fleetops.request_srp`. The claim must be for a character on the user's own Alliance Auth account. |
 | SRP card on the fleet page | The link and its Copy button: the fleet's managers, its FC and SRP staff (`manage_srp`, `review_srp` or `pay_srp`). **Request SRP for this fleet**: `request_srp`, while the link is open. |
 | Create the SRP link of a fleet (**Create SRP link**, **Retry SRP**) | `fleetops.manage_own_fleet` on the fleet, or `fleetops.manage_fleets` |
 | Close a fleet's SRP link; complete a link; the SRP Links list and its **Close selected** / **Complete selected** | `fleetops.manage_srp`, `fleetops.review_srp` or `fleetops.pay_srp`. A link with a claim waiting for review or for payment cannot be completed by anybody. |

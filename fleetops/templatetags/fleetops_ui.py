@@ -95,6 +95,16 @@ def type_pill(fleet_type):
     return pill_html(f"type-{number}" if number else "type", str(fleet_type or ""), dot=ui_type_custom_color(fleet_type))
 
 
+@register.simple_tag
+def type_chip(fleet_type, text, **attrs):
+    """A pill with the colour of a fleet type and any text (the name with a count, for example): the same dot as
+    ``type_pill``. ``attrs`` are those of ``pill``."""
+    number = ui_type_tone(fleet_type)
+    return pill_html(
+        f"type-{number}" if number else "type", text, dot=ui_type_custom_color(fleet_type), **attrs
+    )
+
+
 @register.filter
 def tone_class(tone):
     """The classes of a pill for a tone name (``fo-pill fo-pill-ok``); an unknown tone is neutral."""

@@ -27,6 +27,7 @@ from fleetops.services.ingame_text import plain_text
 from fleetops.services.mentions import (
     DISCORD_MESSAGE_LIMIT,
     discord_length,
+    discord_link_address,
     discord_link_text,
     mention_text,
     neutralize_mass_mentions,
@@ -354,9 +355,13 @@ def _discord_names(values: dict) -> dict:
 
     A name such as "[ACTIVE] Doctrine" would end the link text at its first "]" and show the raw markdown; with a
     backslash in front of ``[``, ``]`` and the backslash itself Discord shows the name as typed, and a name cannot
-    close the link text or open an address ("](" or ")"). The MOTD gets the names unchanged.
+    close the link text or open an address ("](" or ")"). The SRP address is written so that it cannot end the
+    address of a masked link either (see ``discord_link_address``). The MOTD gets the values unchanged.
     """
-    return {key: discord_link_text(values[key]) for key in _LINK_TEXT_VALUES if values.get(key)}
+    names = {key: discord_link_text(values[key]) for key in _LINK_TEXT_VALUES if values.get(key)}
+    if values.get("srp_url"):
+        names["srp_url"] = discord_link_address(values["srp_url"])
+    return names
 
 
 def _render_ping(record, fallback: str, values: dict, selection, errors: list[str]) -> _Ping:
