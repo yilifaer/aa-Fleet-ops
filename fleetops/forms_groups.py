@@ -81,6 +81,9 @@ class GroupAccessForm(forms.ModelForm):
     save; ``audit_extra`` adds the group's name to the audit entry.
     """
 
+    # ``audit_extra`` only names the group; it is no change by itself.
+    audit_extra_descriptive = frozenset({"group"})
+
     class Meta:
         model = GroupAccess
         fields = ["group", "members_are_leaders", "mode", "fleet_types", "srp_enabled", "is_active", "note"]

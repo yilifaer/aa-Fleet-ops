@@ -1,0 +1,2 @@
+{# One change of an audit entry: name, old value, new value (the values are text, escaped here). #}
+{% if change.0 %}<code>{{ change.0 }}</code> {% endif %}<span class="text-muted text-break">{{ change.1 }}</span> &rarr; <span class="text-break">{{ change.2 }}</span>

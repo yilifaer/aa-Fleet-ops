@@ -676,6 +676,8 @@ def operation_srp_context(operation: FleetOperation, user) -> dict:
         "link_url": link_url(link) if link else "",
         "is_open": bool(link and link.is_open),
         "can_request": bool(link and link.is_open and wants_request and srp_settings.enabled),
+        # The right itself (a closed link still has a page with its notice); the fleet page's button asks for this.
+        "may_request": bool(wants_request),
         "can_toggle": bool(link and manager),
         "can_reopen": bool(link and access.is_reviewer(user)),
         "can_complete": bool(link and manager and link.state != SrpFleetLink.State.COMPLETED),

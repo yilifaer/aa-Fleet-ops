@@ -398,7 +398,8 @@ class FleetPageReviewTests(ApprovalTestCase):
         self.assertContains(lead_page, review_url)
         self.assertContains(lead_page, "Reject fleet")
         self.assertContains(lead_page, "With its PAP rows waiting for approval (1)")
-        self.assertContains(lead_page, "Manual PAP waiting for review")
+        # Changed in 0.3.0b5: "waiting for approval", like the other places that say a fleet or PAP row waits for approval.
+        self.assertContains(lead_page, "Manual PAP waiting for approval")
 
     def test_rejected_fleet_banner(self):
         operation = self.manual_fleet(review_status=REJECTED, review_note="Wrong date", reviewed_by=self.lead,
@@ -734,7 +735,8 @@ class ManualRowDeleteTests(ApprovalTestCase):
 
         self.assertEqual(len(response.context["recent_manual"]), 2)
         self.assertContains(response, "Never in fleet")
-        self.assertContains(response, '<span class="fo-pill fo-pill-warn">Pending</span>')
+        # Changed in 0.3.0b5: a pending manual PAP row says "Pending approval", like a pending fleet.
+        self.assertContains(response, '<span class="fo-pill fo-pill-warn">Pending approval</span>')
         self.assertContains(response, "Manual PAP you add here counts once an FC lead approves it.")
 
 

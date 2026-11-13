@@ -72,7 +72,11 @@ Rules for the entries:
   without a context, the app listed first in `INSTALLED_APPS` wins. FleetOps is listed after Alliance Auth's
   own apps, so without the context their wording would replace the FleetOps wording. Give every new
   short, common word the context too; `tests/test_i18n_catalogs.py` fails when an installed app translates a
-  FleetOps message without a context differently.
+  FleetOps message without a context differently. The SRP app of a site (aa-srp) is not installed in the test
+  project, so `tests/test_fixes_0_3_0b5.py` keeps a list of the words it is known to translate differently
+  (`COLLIDING_WORDS`: Request SRP, Registered, SRP link, Total, First, Last, Created at, Overview and more) and
+  fails when one of them is used without the context. Add a word to the list when a site shows another plugin's
+  translation for a FleetOps text.
 - Plural entries have one `msgstr[n]` per plural form of the language.
 - Remove `fuzzy` flags only after you checked the translation.
 - The header holds the project, the language and the plural rule. It has no personal names or e-mail addresses.

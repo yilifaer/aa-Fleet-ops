@@ -185,6 +185,10 @@ def pay_rows(claims):
         if row is None:
             main_id, name = rules.pay_to(claim)
             row = groups[key] = SrpPayRow(claim.user_id, main_id, name)
-        row.total += claim.approved_amount or 0
+        amount = claim.approved_amount or 0
+        row.total += amount
+        # Claims without the ``payable`` mark (batch pages, exports) are all counted.
+        if getattr(claim, "payable", True):
+            row.payable_total += amount
         row.claims.append(claim)
     return sorted(groups.values(), key=lambda row: (-row.total, row.main_character_name.casefold()))

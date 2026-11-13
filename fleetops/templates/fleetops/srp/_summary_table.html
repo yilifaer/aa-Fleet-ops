@@ -110,7 +110,7 @@
 {% elif kind == "fleets" %}
 <div class="card mb-3"><div class="card-header"><strong>{% translate "Fleets" %}</strong></div>
 <div class="table-responsive"><table class="table table-hover align-middle mb-0 fo-table-pin">
-  <thead><tr><th>{% translate "Fleet" %}</th><th>{% translate "SRP link" %}</th><th class="text-end">{% translate "Claims" %}</th><th class="text-end">{% translate "Requested" %}</th><th class="text-end">{% translate "Approved" context "FleetOps" %}</th><th class="text-end">{% translate "Paid" %}</th><th class="text-end">{% translate "Outstanding" %}</th></tr></thead>
+  <thead><tr><th>{% translate "Fleet" %}</th><th>{% translate "SRP link" context "FleetOps" %}</th><th class="text-end">{% translate "Claims" %}</th><th class="text-end">{% translate "Requested" %}</th><th class="text-end">{% translate "Approved" context "FleetOps" %}</th><th class="text-end">{% translate "Paid" %}</th><th class="text-end">{% translate "Outstanding" %}</th></tr></thead>
   <tbody>
   {% for row in fleet_rows %}
     <tr>

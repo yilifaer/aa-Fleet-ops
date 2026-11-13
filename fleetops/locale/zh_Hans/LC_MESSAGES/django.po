@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-13 08:49+0000\n"
+"POT-Creation-Date: 2026-11-13 17:00+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -1287,6 +1287,7 @@ msgstr "操作"
 
 #: forms_records.py templates/fleetops/approvals.html
 #: templates/fleetops/srp/_decision_forms.html
+msgctxt "FleetOps"
 msgid "Approve"
 msgstr "通过"
 
@@ -1379,6 +1380,7 @@ msgid "Select at least one claim."
 msgstr "请至少选择一条申请。"
 
 #: forms_srp.py models.py templates/fleetops/srp/claim.html
+msgctxt "FleetOps"
 msgid "Killmail"
 msgstr "KM"
 
@@ -1389,6 +1391,10 @@ msgstr "游戏内 KM 链接、zKillboard 链接，或 KM ID 与哈希"
 #: forms_srp.py
 msgid "Paste the in-game killmail link (works immediately) or a zKillboard link."
 msgstr "粘贴游戏内 KM 链接（立即可用）或 zKillboard 链接。"
+
+#: forms_srp.py texts.py
+msgid "Choose a category for this loss."
+msgstr "请为这笔损失选择类别。"
 
 #: forms_srp.py models.py services/export_datasets.py srp/reports.py
 #: templates/fleetops/srp/_summary_table.html templates/fleetops/srp/claim.html
@@ -1515,8 +1521,6 @@ msgid "Internal note"
 msgstr "内部备注"
 
 #: forms_srp.py models.py services/export_datasets.py
-#: templates/fleetops/manual_attendance.html
-#: templates/fleetops/operation/_review.html
 #: templates/fleetops/operation/_srp.html
 msgctxt "FleetOps"
 msgid "Pending"
@@ -1622,6 +1626,7 @@ msgid "Any corporation"
 msgstr "任意军团"
 
 #: forms_srp.py
+msgctxt "FleetOps"
 msgid "FC"
 msgstr "FC"
 
@@ -1631,6 +1636,7 @@ msgstr "任意 FC"
 
 #: forms_srp.py templates/fleetops/fleet_operations.html
 #: templates/fleetops/srp/reports.html templates/fleetops/srp/review.html
+msgctxt "FleetOps"
 msgid "Search"
 msgstr "搜索"
 
@@ -1857,9 +1863,10 @@ msgstr "请按 https://discord.com/api/webhooks/<id>/<token> 的格式输入 Dis
 msgid "Invalid template syntax: %(error)s"
 msgstr "模板语法无效：%(error)s"
 
-#: models.py services/counting.py
+#: models.py services/counting.py templates/fleetops/manual_attendance.html
 #: templates/fleetops/operation/_attendance_table.html
 #: templates/fleetops/operation/_header.html
+#: templates/fleetops/operation/_review.html
 msgid "Pending approval"
 msgstr "待审批"
 
@@ -2630,6 +2637,7 @@ msgid "End detail"
 msgstr "结束详情"
 
 #: models.py
+msgctxt "FleetOps"
 msgid "Created at"
 msgstr "创建时间"
 
@@ -2951,6 +2959,7 @@ msgid "Code"
 msgstr "代码"
 
 #: models.py
+msgctxt "FleetOps"
 msgid "Expires at"
 msgstr "过期时间"
 
@@ -4022,10 +4031,12 @@ msgstr "外部 ID"
 
 #: models.py templates/fleetops/operation/_srp.html
 #: templates/fleetops/srp/_summary_table.html texts.py
+msgctxt "FleetOps"
 msgid "SRP link"
 msgstr "SRP 链接"
 
 #: models.py
+msgctxt "FleetOps"
 msgid "SRP links"
 msgstr "SRP 链接"
 
@@ -4329,8 +4340,11 @@ msgstr "申请"
 msgid "Payees"
 msgstr "收款人数"
 
-#: models.py templates/fleetops/srp/payment_batch.html
+#
+#: models.py services/export_datasets.py srp/reports.py
+#: templates/fleetops/srp/payment_batch.html
 #: templates/fleetops/srp/payments.html
+msgctxt "FleetOps"
 msgid "Total"
 msgstr "合计"
 
@@ -5206,12 +5220,6 @@ msgstr "申请计入损失发生所在的 EVE 月（按 KM 时间）。已撤回
 msgid "Approved claims that are not paid yet, with the filters of the payments page. Only payers can export this list."
 msgstr "尚未付款的已通过申请，带付款页的筛选。只有付款人可以导出这份清单。"
 
-#
-#: services/export_datasets.py srp/reports.py
-msgctxt "FleetOps"
-msgid "Total"
-msgstr "合计"
-
 #: services/export_datasets.py
 msgid "Pay to"
 msgstr "收款人"
@@ -5223,6 +5231,15 @@ msgstr "已通过（ISK）"
 #: services/export_datasets.py srp/reports.py
 msgid "Loss time (EVE)"
 msgstr "损失时间（EVE）"
+
+#: services/export_datasets.py
+msgid "Left out"
+msgstr "未列入"
+
+#: services/export_datasets.py
+#, python-format
+msgid "%(count)s claims (%(amount)s ISK) that you may not pay"
+msgstr "%(count)s 个申请（%(amount)s ISK）你无权支付"
 
 #: services/export_datasets.py
 msgid "SRP to pay"
@@ -6378,7 +6395,7 @@ msgstr "FC 修改了这支追踪舰队的时间。"
 
 #: templates/fleetops/approvals.html
 msgid "Fleet pending"
-msgstr "舰队待审核"
+msgstr "舰队待审批"
 
 #: templates/fleetops/approvals.html
 msgid "Fleet rejected"
@@ -6464,7 +6481,7 @@ msgstr "没有等待审批的舰队。"
 msgid "Nothing waits for approval."
 msgstr "没有等待审批的内容。"
 
-#: templates/fleetops/approvals.html
+#: templates/fleetops/approvals.html templates/fleetops/operation/_review.html
 msgid "Manual PAP waiting for approval"
 msgstr "等待审批的补录 PAP"
 
@@ -6599,6 +6616,7 @@ msgstr[0] "第 %(number)s / %(pages)s 页 · %(counter)s 条记录"
 #: templates/fleetops/attendance_history.html templates/fleetops/audit_log.html
 #: templates/fleetops/operation/_attendance_table.html
 #: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/links.html
+msgctxt "FleetOps"
 msgid "First"
 msgstr "首页"
 
@@ -6607,6 +6625,7 @@ msgstr "首页"
 #: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/bans.html
 #: templates/fleetops/srp/links.html templates/fleetops/srp/reports.html
 #: templates/fleetops/statistics/members.html
+msgctxt "FleetOps"
 msgid "Previous"
 msgstr "上一页"
 
@@ -6615,12 +6634,14 @@ msgstr "上一页"
 #: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/bans.html
 #: templates/fleetops/srp/links.html templates/fleetops/srp/reports.html
 #: templates/fleetops/statistics/members.html
+msgctxt "FleetOps"
 msgid "Next"
 msgstr "下一页"
 
 #: templates/fleetops/attendance_history.html templates/fleetops/audit_log.html
 #: templates/fleetops/operation/_attendance_table.html
 #: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/links.html
+msgctxt "FleetOps"
 msgid "Last"
 msgstr "末页"
 
@@ -6646,6 +6667,17 @@ msgstr "操作人"
 #: templates/fleetops/audit_log.html
 msgid "Object"
 msgstr "对象"
+
+#: templates/fleetops/audit_log.html
+msgctxt "FleetOps"
+msgid "Changes"
+msgstr "变化"
+
+#: templates/fleetops/audit_log.html
+#, python-format
+msgid "%(counter)s change"
+msgid_plural "%(counter)s changes"
+msgstr[0] "%(counter)s 项变化"
 
 #: templates/fleetops/audit_log.html
 msgid "No audit entries."
@@ -7076,6 +7108,7 @@ msgstr "舰船顺序"
 #: templates/fleetops/configuration/list.html
 #: templates/fleetops/operation/_fleet_member_actions.html
 #: templates/fleetops/srp/payments.html
+msgctxt "FleetOps"
 msgid "Actions"
 msgstr "操作"
 
@@ -7973,12 +8006,12 @@ msgid "#%(rank)s of %(total)s"
 msgstr "第 %(rank)s 名，共 %(total)s 名"
 
 #: templates/fleetops/my_statistics.html
-msgid "Among the alliance members with PAP this month"
-msgstr "在本月有 PAP 的联盟成员中"
+msgid "Among the alliance members with PAP this month."
+msgstr "在本月有 PAP 的联盟成员中。"
 
 #: templates/fleetops/my_statistics.html
-msgid "Among the members of your corporation with PAP this month"
-msgstr "在本月有 PAP 的本军团成员中"
+msgid "Among the members of your corporation with PAP this month."
+msgstr "在本月有 PAP 的本军团成员中。"
 
 #: templates/fleetops/my_statistics.html views_config.py
 msgid "Fleet Types"
@@ -8924,6 +8957,7 @@ msgstr "这支舰队没有 ESI 舰队：飞行员只能通过 PAP 登记链接�
 
 #: templates/fleetops/operation/_links.html
 #: templates/fleetops/pap_link_register.html
+msgctxt "FleetOps"
 msgid "Registered"
 msgstr "已登记"
 
@@ -9125,10 +9159,6 @@ msgid "Resubmit for approval"
 msgstr "重新提交审批"
 
 #: templates/fleetops/operation/_review.html
-msgid "Manual PAP waiting for review"
-msgstr "等待审核的补录 PAP"
-
-#: templates/fleetops/operation/_review.html
 #, python-format
 msgid "%(counter)s manual PAP row of this fleet waits for FC lead approval."
 msgid_plural "%(counter)s manual PAP rows of this fleet wait for FC lead approval."
@@ -9269,6 +9299,7 @@ msgid "This fleet has no SRP link yet, so members cannot claim their losses of i
 msgstr "这支舰队还没有 SRP 链接，成员无法为其损失提交申请。"
 
 #: templates/fleetops/operation/_srp.html
+msgctxt "FleetOps"
 msgid "Create SRP link"
 msgstr "创建 SRP 链接"
 
@@ -9845,6 +9876,7 @@ msgid "Default MOTD"
 msgstr "默认 MOTD"
 
 #: templates/fleetops/scheduled_fleet.html
+msgctxt "FleetOps"
 msgid "Additional information"
 msgstr "附加信息"
 
@@ -10075,6 +10107,7 @@ msgid "You have no SRP claims yet."
 msgstr "你还没有 SRP 申请。"
 
 #: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/home.html
+msgctxt "FleetOps"
 msgid "Request SRP"
 msgstr "申请 SRP"
 
@@ -11214,6 +11247,11 @@ msgstr "按当前筛选"
 
 #: templates/fleetops/srp/payments.html
 #, python-format
+msgid "plus %(amount)s you may not pay"
+msgstr "另有 %(amount)s 不可由你支付"
+
+#: templates/fleetops/srp/payments.html
+#, python-format
 msgid "%(claims)s for %(players)s"
 msgstr "%(claims)s，涉及 %(players)s"
 
@@ -11845,6 +11883,7 @@ msgid "No members found."
 msgstr "没有找到成员。"
 
 #: templates/fleetops/statistics/_tabs.html
+msgctxt "FleetOps"
 msgid "Overview"
 msgstr "概览"
 
@@ -13762,10 +13801,6 @@ msgid "Reduced to the remaining monthly corporation limit of the category."
 msgstr "已削减到类别军团月度限额的剩余额度。"
 
 #: texts.py
-msgid "Choose a category for this loss."
-msgstr "请为这笔损失选择类别。"
-
-#: texts.py
 msgid "This category is not available. Check the loss again."
 msgstr "这个类别已不可用。请重新核对这笔损失。"
 
@@ -14592,6 +14627,11 @@ msgid "Scheduled fleet updated. The updated pre ping was already posted."
 msgstr "已预约的舰队已更新。更新后的预 Ping 此前已经发布。"
 
 #: views.py
+#, python-format
+msgid "Scheduled fleet updated, but the updated pre ping was not posted. %(reason)s You can retry it later."
+msgstr "已预约的舰队已更新，但更新后的预 Ping 没有发布。%(reason)s 你可以稍后重试。"
+
+#: views.py
 msgid "Scheduled fleet updated and the updated pre ping was posted."
 msgstr "已预约的舰队已更新，并已发布更新后的预 Ping。"
 
@@ -14923,6 +14963,7 @@ msgid "Leaders (from Alliance Auth)"
 msgstr "组长（来自 Alliance Auth）"
 
 #: views_config.py
+msgctxt "FleetOps"
 msgid "SRP"
 msgstr "SRP"
 

@@ -75,6 +75,7 @@ def _set_operation_review(operation, status, *, actor, note, include_attendance,
             locked,
             {"review_status": old_status},
             {"review_status": status, "note": note, "attendance_ids": [row.pk for row in rows]},
+            reason=note,
         )
     for field in ("review_status", "reviewed_by", "reviewed_at", "review_note", "review_request_note"):
         setattr(operation, field, getattr(locked, field))
@@ -206,6 +207,7 @@ def _set_attendance_review(records, status, *, actor, note, from_statuses):
                 operation,
                 {"review_status": {str(row.pk): old_statuses[str(row.pk)] for row in operation_rows}},
                 {"review_status": status, "note": note, "attendance_ids": [row.pk for row in operation_rows]},
+                reason=note,
             )
     for operation, _rows in by_operation.values():
         pap.refresh_after_change(operation, actor=actor, reason=action)

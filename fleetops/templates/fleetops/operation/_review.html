@@ -26,8 +26,8 @@
 </div>
 {% endif %}
 {% if can_review and review_rows %}
-<details class="card mb-3" id="pap-review"{% if review_rows|length <= 10 %} open{% endif %}><summary class="card-header"><strong>{% translate "Manual PAP waiting for review" %}</strong> <span class="fo-count">{{ review_rows|length }}</span></summary>
-{% translate "Pending" context "FleetOps" as pending_label %}
+<details class="card mb-3" id="pap-review"{% if review_rows|length <= 10 %} open{% endif %}><summary class="card-header"><strong>{% translate "Manual PAP waiting for approval" %}</strong> <span class="fo-count">{{ review_rows|length }}</span></summary>
+{% translate "Pending approval" as pending_label %}
 {% translate "Rejected" context "FleetOps" as rejected_label %}
 <form method="post" action="{% url 'fleetops:review_attendance' %}">{% csrf_token %}
   <input type="hidden" name="next" value="{% url 'fleetops:operation_detail' operation.uuid %}">

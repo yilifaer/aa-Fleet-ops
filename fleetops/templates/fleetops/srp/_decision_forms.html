@@ -19,7 +19,7 @@
   <input type="hidden" name="shown_suggested" value="{{ claim.suggested_amount }}">
   <input type="hidden" name="shown_limited" value="{{ claim.limited_amount }}">
   <input type="hidden" name="shown_revision" value="{{ claim.member_revision }}">
-  <h3 class="h6">{% if claim.status == "approved" %}{% translate "Change the amount" %}{% else %}{% translate "Approve" %}{% endif %}</h3>
+  <h3 class="h6">{% if claim.status == "approved" %}{% translate "Change the amount" %}{% else %}{% translate "Approve" context "FleetOps" %}{% endif %}</h3>
   {{ form.non_field_errors }}
   {% if claim.status == "pending" %}
   <div class="d-flex flex-wrap gap-2 mb-2">

@@ -233,6 +233,8 @@ def update_scheduled_fleet(operation, *, actor, cleaned_data, send_update: bool,
         # Nothing was posted, so the same page may try again.
         cache.delete(_edit_post_key(operation, edit_token))
     current.already_posted = already_posted
+    # What the post came to (None when none was tried), so the page can say when nothing was sent.
+    current.pre_ping_result = result
     return current
 
 

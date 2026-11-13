@@ -8,7 +8,7 @@
 <div class="row g-3 mb-3 fo-srp-stats">
   <div class="col-6 col-xl-3"><div class="stat-card"><span>{% translate "Claims" %}</span><strong>{{ batch.claim_count }}</strong></div></div>
   <div class="col-6 col-xl-3"><div class="stat-card"><span>{% translate "Players" %}</span><strong>{{ batch.payee_count }}</strong></div></div>
-  <div class="col-6 col-xl-3"><div class="stat-card"><span>{% translate "Total" %}</span><strong>{{ batch.total|isk }}</strong><small class="text-muted">{% translate "at the time of payment" %}</small></div></div>
+  <div class="col-6 col-xl-3"><div class="stat-card"><span>{% translate "Total" context "FleetOps" %}</span><strong>{{ batch.total|isk }}</strong><small class="text-muted">{% translate "at the time of payment" %}</small></div></div>
   {% if undone %}<div class="col-6 col-xl-3"><div class="stat-card"><span>{% translate "Undone since" %}</span><strong>{{ undone }}</strong><small class="text-muted">{% blocktranslate trimmed count counter=undone %}{{ counter }} claim of this batch was paid back to approved{% plural %}{{ counter }} claims of this batch were paid back to approved{% endblocktranslate %}</small></div></div>{% endif %}
 </div>
 {% for row in pay_rows %}

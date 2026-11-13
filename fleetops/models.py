@@ -888,7 +888,7 @@ class FleetOperation(models.Model):
     end_reason = models.CharField(verbose_name=_("End reason"), max_length=20, choices=EndReason.choices, blank=True)
     end_detail = models.CharField(verbose_name=_("End detail"), max_length=255, blank=True)
 
-    created_at = models.DateTimeField(verbose_name=_("Created at"), auto_now_add=True)
+    created_at = models.DateTimeField(verbose_name=pgettext_lazy("FleetOps", "Created at"), auto_now_add=True)
     updated_at = models.DateTimeField(verbose_name=_("Updated at"), auto_now=True)
 
     class Meta:
@@ -967,7 +967,7 @@ class OperationActionAttempt(models.Model):
     )
     status = models.CharField(verbose_name=_("Status"), max_length=20, choices=OperationAction.Status.choices)
     message = models.TextField(verbose_name=_("Message"), blank=True)
-    created_at = models.DateTimeField(verbose_name=_("Created at"), default=timezone.now, db_index=True)
+    created_at = models.DateTimeField(verbose_name=pgettext_lazy("FleetOps", "Created at"), default=timezone.now, db_index=True)
 
     class Meta:
         verbose_name = _("operation action attempt")
@@ -1071,7 +1071,7 @@ class FleetMemberEvent(models.Model):
     )
     old_value = models.CharField(verbose_name=_("Old value"), max_length=255, blank=True)
     new_value = models.CharField(verbose_name=_("New value"), max_length=255, blank=True)
-    created_at = models.DateTimeField(verbose_name=_("Created at"), auto_now_add=True, db_index=True)
+    created_at = models.DateTimeField(verbose_name=pgettext_lazy("FleetOps", "Created at"), auto_now_add=True, db_index=True)
 
     class Meta:
         verbose_name = _("fleet member event")
@@ -1179,7 +1179,7 @@ class AttendanceRecord(models.Model):
         on_delete=models.SET_NULL,
         related_name="fleetops_attendance_created",
     )
-    created_at = models.DateTimeField(verbose_name=_("Created at"), auto_now_add=True)
+    created_at = models.DateTimeField(verbose_name=pgettext_lazy("FleetOps", "Created at"), auto_now_add=True)
     updated_at = models.DateTimeField(verbose_name=_("Updated at"), auto_now=True)
 
     class Meta:
@@ -1254,8 +1254,8 @@ class PapLink(models.Model):
         on_delete=models.SET_NULL,
         related_name="fleetops_pap_links",
     )
-    created_at = models.DateTimeField(verbose_name=_("Created at"), default=timezone.now)
-    expires_at = models.DateTimeField(verbose_name=_("Expires at"), db_index=True)
+    created_at = models.DateTimeField(verbose_name=pgettext_lazy("FleetOps", "Created at"), default=timezone.now)
+    expires_at = models.DateTimeField(verbose_name=pgettext_lazy("FleetOps", "Expires at"), db_index=True)
     require_online = models.BooleanField(
         verbose_name=_("Require online"),
         default=True,
@@ -1370,7 +1370,7 @@ class OperationRoleAssignment(models.Model):
         on_delete=models.SET_NULL,
         related_name="fleetops_roles_assigned",
     )
-    created_at = models.DateTimeField(verbose_name=_("Created at"), auto_now_add=True)
+    created_at = models.DateTimeField(verbose_name=pgettext_lazy("FleetOps", "Created at"), auto_now_add=True)
     updated_at = models.DateTimeField(verbose_name=_("Updated at"), auto_now=True)
 
     class Meta:
@@ -1419,7 +1419,7 @@ class FleetStartPreset(models.Model):
     # {"fields": {field name: value or list}, "labels": {field name: text shown when the value is gone}}
     values = models.JSONField(verbose_name=_("Values"), default=dict, blank=True)
     fc_character_id = models.BigIntegerField(verbose_name=_("FC character ID"), null=True, blank=True)
-    created_at = models.DateTimeField(verbose_name=_("Created at"), auto_now_add=True)
+    created_at = models.DateTimeField(verbose_name=pgettext_lazy("FleetOps", "Created at"), auto_now_add=True)
     updated_at = models.DateTimeField(verbose_name=_("Updated at"), auto_now=True)
 
     class Meta:
@@ -1755,7 +1755,7 @@ class AuditLog(models.Model):
     old_value = models.JSONField(verbose_name=_("Old value"), null=True, blank=True)
     new_value = models.JSONField(verbose_name=_("New value"), null=True, blank=True)
     reason = models.TextField(verbose_name=_("Reason"), blank=True)
-    created_at = models.DateTimeField(verbose_name=_("Created at"), auto_now_add=True, db_index=True)
+    created_at = models.DateTimeField(verbose_name=pgettext_lazy("FleetOps", "Created at"), auto_now_add=True, db_index=True)
 
     class Meta:
         verbose_name = _("audit log")
@@ -2506,7 +2506,7 @@ class SrpBan(models.Model):
     kind = models.CharField(verbose_name=_("Kind"), max_length=20, choices=Kind.choices, default=Kind.MANUAL)
     starts_at = models.DateTimeField(verbose_name=_("Starts at"), default=timezone.now)
     expires_at = models.DateTimeField(
-        verbose_name=_("Expires at"), null=True, blank=True, help_text=_("Empty = permanent.")
+        verbose_name=pgettext_lazy("FleetOps", "Expires at"), null=True, blank=True, help_text=_("Empty = permanent.")
     )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -2516,7 +2516,7 @@ class SrpBan(models.Model):
         on_delete=models.SET_NULL,
         related_name="+",
     )
-    created_at = models.DateTimeField(verbose_name=_("Created at"), default=timezone.now)
+    created_at = models.DateTimeField(verbose_name=pgettext_lazy("FleetOps", "Created at"), default=timezone.now)
     lifted_at = models.DateTimeField(verbose_name=_("Lifted at"), null=True, blank=True)
     lifted_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -2647,11 +2647,11 @@ class SrpFleetLink(models.Model):
         on_delete=models.SET_NULL,
         related_name="+",
     )
-    created_at = models.DateTimeField(verbose_name=_("Created at"), default=timezone.now)
+    created_at = models.DateTimeField(verbose_name=pgettext_lazy("FleetOps", "Created at"), default=timezone.now)
 
     class Meta:
-        verbose_name = _("SRP link")
-        verbose_name_plural = _("SRP links")
+        verbose_name = pgettext_lazy("FleetOps", "SRP link")
+        verbose_name_plural = pgettext_lazy("FleetOps", "SRP links")
         ordering = ["-created_at"]
 
     def __str__(self):
@@ -2940,10 +2940,10 @@ class SrpPaymentBatch(models.Model):
         related_name="+",
     )
     created_by_name = models.CharField(verbose_name=_("Created by (name)"), max_length=255, blank=True)
-    created_at = models.DateTimeField(verbose_name=_("Created at"), default=timezone.now, db_index=True)
+    created_at = models.DateTimeField(verbose_name=pgettext_lazy("FleetOps", "Created at"), default=timezone.now, db_index=True)
     claim_count = models.PositiveIntegerField(verbose_name=_("Claims"), default=0)
     payee_count = models.PositiveIntegerField(verbose_name=_("Payees"), default=0)
-    total = models.PositiveBigIntegerField(verbose_name=_("Total"), default=0)
+    total = models.PositiveBigIntegerField(verbose_name=pgettext_lazy("FleetOps", "Total"), default=0)
     note = models.CharField(verbose_name=_("Note"), max_length=255, blank=True, help_text=_("Shown to the members."))
     # The filters of the payments page when the batch was made (names and values, nothing secret).
     filters = models.JSONField(verbose_name=_("Filters"), default=dict, blank=True)
@@ -3013,7 +3013,7 @@ class SrpClaim(models.Model):
     uuid = models.UUIDField(verbose_name=_("UUID"), default=uuid.uuid4, unique=True, editable=False)
     killmail = models.OneToOneField(
         SrpKillmail,
-        verbose_name=_("Killmail"),
+        verbose_name=pgettext_lazy("FleetOps", "Killmail"),
         on_delete=models.PROTECT,
         related_name="claim",
     )
@@ -3244,7 +3244,7 @@ class SrpClaimEvent(models.Model):
     internal = models.BooleanField(verbose_name=_("Internal"), default=False)
     # Old and new amounts, the previous calculation and similar details.
     data = models.JSONField(verbose_name=_("Data"), default=dict, blank=True)
-    created_at = models.DateTimeField(verbose_name=_("Created at"), default=timezone.now, db_index=True)
+    created_at = models.DateTimeField(verbose_name=pgettext_lazy("FleetOps", "Created at"), default=timezone.now, db_index=True)
 
     class Meta:
         verbose_name = _("SRP claim event")
@@ -3295,7 +3295,7 @@ class GroupAccess(models.Model):
     )
     is_active = models.BooleanField(verbose_name=_("Is active"), default=True)
     note = models.CharField(verbose_name=_("Note"), max_length=255, blank=True)
-    created_at = models.DateTimeField(verbose_name=_("Created at"), auto_now_add=True)
+    created_at = models.DateTimeField(verbose_name=pgettext_lazy("FleetOps", "Created at"), auto_now_add=True)
     updated_at = models.DateTimeField(verbose_name=_("Updated at"), auto_now=True)
 
     class Meta:
@@ -3388,7 +3388,7 @@ class StandalonePing(models.Model):
     # PingResult.message, which is already scrubbed of the webhook address.
     result_message = models.TextField(verbose_name=_("Result"), blank=True)
     http_status = models.PositiveSmallIntegerField(verbose_name=_("HTTP status"), null=True, blank=True)
-    created_at = models.DateTimeField(verbose_name=_("Created at"), default=timezone.now, db_index=True)
+    created_at = models.DateTimeField(verbose_name=pgettext_lazy("FleetOps", "Created at"), default=timezone.now, db_index=True)
     sent_at = models.DateTimeField(verbose_name=_("Sent at"), null=True, blank=True)
 
     class Meta:

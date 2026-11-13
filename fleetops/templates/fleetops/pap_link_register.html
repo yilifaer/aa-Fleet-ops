@@ -4,7 +4,7 @@
 {% translate "Main" as main_label %}
 {% translate "Ready" as ready_label %}
 {% translate "Login needed" as login_needed_label %}
-{% translate "Registered" as registered_label %}
+{% translate "Registered" context "FleetOps" as registered_label %}
 <div class="mb-3"><h2 class="mb-1">{% translate "PAP Link" %}</h2><div class="text-muted">{% blocktranslate trimmed with fleet_type=operation.fleet_type fc=operation.fc_character_name %}{{ fleet_type }} · FC {{ fc }}{% endblocktranslate %}{% if operation.formup %} · {% blocktranslate trimmed with formup=operation.formup %}Form up {{ formup }}{% endblocktranslate %}{% endif %}{% if operation.doctrine_name %} · {{ operation.doctrine_name }}{% endif %}</div></div>
 {% if pending_review %}<div class="alert alert-info" id="pap-link-review">{% translate "This fleet is waiting for FC lead approval; its PAP counts once it is approved." %}</div>
 {% elif rejected_review %}<div class="alert alert-warning" id="pap-link-review">{% translate "An FC lead rejected this fleet, so its PAP does not count." %}</div>{% endif %}

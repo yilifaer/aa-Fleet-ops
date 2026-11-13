@@ -815,7 +815,8 @@ def payments(request):
             preserve=PAYMENT_FILTERS,
             pay_rows=rows,
             claim_rows=claim_rows,
-            to_pay_total=sum(row.total for row in rows),
+            to_pay_total=sum(row.payable_total for row in rows),
+            to_pay_unpayable_total=sum(row.unpayable_total for row in rows),
             to_pay_count=len(to_pay),
             paid_claims=list(
                 paid.select_related("paid_by", "category", "link", "payment_batch").order_by("-paid_at", "-pk")[:PAID_SHOWN]

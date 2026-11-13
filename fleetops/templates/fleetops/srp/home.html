@@ -50,7 +50,7 @@
         {% for link in recent_links %}
         <div class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2">
           <div>{{ link.operation.fleet_type }} <span class="text-muted">&middot; {% blocktranslate trimmed with fc=link.fc_main_character_name|default:link.operation.fc_character_name %}FC {{ fc }}{% endblocktranslate %}</span><div class="small text-muted">{{ link.operation.started_at|eve_time }} EVE</div></div>
-          <a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:srp_link' link.code %}">{% translate "Request SRP" %}</a>
+          <a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:srp_link' link.code %}">{% translate "Request SRP" context "FleetOps" %}</a>
         </div>
         {% empty %}
         <div class="list-group-item text-muted"><i class="fa-solid fa-link-slash me-2" aria-hidden="true"></i>{% translate "No fleet of yours has an open SRP link. Use the SRP link the FC posted, or the form for a loss outside a fleet." %}</div>
@@ -85,7 +85,7 @@
     {% for standing in standing_links %}
     <div class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2">
       <div>{{ standing.name }} <span class="text-muted">&middot; {{ standing.category|srp_category_label }} &middot; {{ standing.link_date|date:"Y-m-d" }} EVE</span>{% if standing.doctrine_text %}<div class="small text-muted">{{ standing.doctrine_text }}</div>{% endif %}</div>
-      <a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:srp_link' standing.code %}">{% translate "Request SRP" %}</a>
+      <a class="btn btn-sm btn-outline-primary" href="{% url 'fleetops:srp_link' standing.code %}">{% translate "Request SRP" context "FleetOps" %}</a>
     </div>
     {% endfor %}
   </div>

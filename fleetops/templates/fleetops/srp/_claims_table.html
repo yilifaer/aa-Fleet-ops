@@ -47,7 +47,7 @@
   </table>
 </div>
 {% else %}
-{% if mine %}{% translate "You have no SRP claims yet." as empty_text %}{% translate "Request SRP" as empty_label %}{% if form_anchor %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-inbox" href=form_anchor label=empty_label %}{% else %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-inbox" %}{% endif %}
+{% if mine %}{% translate "You have no SRP claims yet." as empty_text %}{% translate "Request SRP" context "FleetOps" as empty_label %}{% if form_anchor %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-inbox" href=form_anchor label=empty_label %}{% else %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-inbox" %}{% endif %}
 {% elif filters_active %}{% translate "No claims match these filters." as empty_text %}{% translate "Reset" as empty_label %}{% url 'fleetops:srp_review' as reset_url %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-filter" href=reset_url label=empty_label %}
 {% else %}{% translate "No claims wait for review." as empty_text %}{% include "fleetops/srp/_empty.html" with text=empty_text icon="fa-circle-check" %}{% endif %}
 {% endif %}
@@ -55,9 +55,9 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2 p-2">
   <span class="small text-muted">{% blocktranslate trimmed with start=page.start_index end=page.end_index total=page.paginator.count %}Claims {{ start }}&ndash;{{ end }} of {{ total }}{% endblocktranslate %}</span>
   <div class="d-flex flex-wrap align-items-center gap-2" role="group" aria-label="{% translate 'Pages' %}">
-    {% if page.has_previous %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=1 %}">{% translate "First" %}</a><a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.previous_page_number %}">{% translate "Previous" %}</a>{% endif %}
+    {% if page.has_previous %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=1 %}">{% translate "First" context "FleetOps" %}</a><a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.previous_page_number %}">{% translate "Previous" context "FleetOps" %}</a>{% endif %}
     <span class="small text-muted">{% blocktranslate trimmed with number=page.number pages=page.paginator.num_pages %}Page {{ number }} of {{ pages }}{% endblocktranslate %}</span>
-    {% if page.has_next %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.next_page_number %}">{% translate "Next" %}</a><a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.paginator.num_pages %}">{% translate "Last" %}</a>{% endif %}
+    {% if page.has_next %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.next_page_number %}">{% translate "Next" context "FleetOps" %}</a><a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.paginator.num_pages %}">{% translate "Last" context "FleetOps" %}</a>{% endif %}
   </div>
 </div>
 {% endif %}

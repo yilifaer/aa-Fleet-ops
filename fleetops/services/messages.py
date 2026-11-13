@@ -415,14 +415,16 @@ def render_messages(operation, *, actor=None, pre_ping=False, now=None) -> Rende
         (blocking if operation.ping_channel_id else warnings).append(ping_too_long_message(ping_length))
     motd_limit = FleetOpsSettings.get_solo().motd_warning_length
     motd_visible = _visible_length(motd)
+    # Entities (``&gt;``) count as the one character they stand for; the text that is sent keeps them.
+    motd_length = len(html.unescape(motd))
     # The game's limit is not documented: the setting decides when to warn (0 never), counted with the tags.
-    if 0 < motd_limit < len(motd):
+    if 0 < motd_limit < motd_length:
         warnings.append(
             gettext(
                 "The MOTD is %(length)s characters long with its tags (%(visible)s visible); "
                 "the game may cut a MOTD longer than %(limit)s."
             )
-            % {"length": len(motd), "visible": motd_visible, "limit": motd_limit}
+            % {"length": motd_length, "visible": motd_visible, "limit": motd_limit}
         )
     if _relative_links(values, ping, motd):
         warnings.append(
@@ -438,7 +440,7 @@ def render_messages(operation, *, actor=None, pre_ping=False, now=None) -> Rende
         blocking=blocking,
         warnings=warnings,
         ping_length=ping_length,
-        motd_length=len(motd),
+        motd_length=motd_length,
         motd_visible_length=motd_visible,
         motd_limit=motd_limit,
     )

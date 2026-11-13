@@ -389,3 +389,14 @@ right actor.
 - [ ] The audit log has `configuration.update` entries with the old and the new colour and switch.
 - [ ] Upgrade check: after `migrate`, the dashboard shows the same four cards as before and every type has its old colour.
 - [ ] Rollback: `migrate fleetops 0043` drops the two columns (the guard runs first); the dashboard shows the first four active types again.
+
+## 21. Fixes of 0.3.0b5
+
+- [ ] Turn on **The approver of a claim may not pay it**. As a payer who approved one claim of a player (10 million) while another approver approved a second one (25 million): the card of that player shows 25 million, **Copy amount** and **Copy name and amount** give 25 million, the **To pay** total at the top counts 25 million, and small text says "plus 10,000,000 ISK you may not pay". A player whose claims you all approved has a card without the amount buttons.
+- [ ] Administration, Ping Roles and Ping Channels: open an entry and press save without a change. The message is *Nothing was changed.* and the audit log has no new entry. Type a new webhook address and save: one entry, which never shows the address.
+- [ ] Switch the interface to Chinese: the buttons **Request SRP**, **First**, **Previous**, **Next**, **Last**, the column **Created at** and the tab **Overview** have the FleetOps wording (with aa-srp installed on the site too).
+- [ ] Edit a scheduled fleet right after another ping went to the same channel and tick **Publish the updated pre ping**: the message is a warning that the pre ping was not posted, with the wait, and Retry Ping works later.
+- [ ] The **Audit** page has a **Changes** column with old and new values; a long entry folds out; no webhook address or token is visible.
+- [ ] Reject a manual fleet or manual PAP rows with a reason: the reason is in the **Reason** column of the audit log.
+- [ ] An FC without the SRP request right does not see **Open SRP Fleet** on the fleet page for a FleetOps link; a link of another SRP app still has the button.
+- [ ] A loss outside a fleet without a category shows *Choose a category for this loss.*; Doctrine Settings saved without a change shows *Nothing was changed.* as an information message.

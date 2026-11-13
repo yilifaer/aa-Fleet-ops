@@ -203,6 +203,9 @@ class CommsConfigurationTests(TestCase):
         return self.client.post(reverse("fleetops:configuration_edit", args=["comms", self.preset.pk]), data, follow=True)
 
     def test_saving_a_personal_link_stores_and_audits_it_without_the_user_name(self):
+        # Changed in 0.3.0b5: whether a save changed anything is decided by the stored values before and after it
+        # (not by the form), so the stored link has to differ from the cleaned one for this save to be a change.
+        CommsPreset.objects.filter(pk=self.preset.pk).update(voice_url="mumble://voice.example.com/Old")
         response = self.edit(voice_url="mumble://Pilot.Name:hunter2@voice.example.com/Ops")
 
         self.preset.refresh_from_db()
@@ -215,6 +218,16 @@ class CommsConfigurationTests(TestCase):
         self.assertEqual(entry.new_value["voice_url"], VOICE_URL)
         self.assertNotIn("hunter2", response.content.decode())
         self.assertNotIn("hunter2", json.dumps(entry.new_value))
+
+    def test_a_personal_link_that_is_cleaned_to_the_stored_link_changes_nothing(self):
+        response = self.edit(voice_url="mumble://Pilot.Name:hunter2@voice.example.com/Ops")
+
+        messages = [str(m) for m in response.context["messages"]]
+        self.assertIn("Nothing was changed.", messages)
+        self.assertIn(
+            "The personal user name 'Pilot.Name' and the password were removed from the voice link.", messages
+        )
+        self.assertFalse(AuditLog.objects.filter(action="configuration.update").exists())
 
     def test_new_join_link_replaces_the_old_one(self):
         old_token = self.preset.join_token

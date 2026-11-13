@@ -52,6 +52,7 @@ from fleetops.models import (
     GroupAccess,
     IncentivePeriod,
     MonthlyFCStatistic,
+    OperationAction,
     OperationActionAttempt,
     OperationRoleAssignment,
     ReviewStatus,
@@ -88,6 +89,7 @@ from fleetops.services.messages import render_messages
 from fleetops.services.multipliers import (
     allowed_multipliers,
     fleet_duration,
+    multiplier_list_text,
     needs_choice,
     not_allowed_message,
     tiers,
@@ -1123,7 +1125,7 @@ def end_fleet_view(request, operation_uuid):
     if request.POST.get("attendance_multiplier"):
         form = EndFleetForm(request.POST)
         if not form.is_valid():
-            choices = ", ".join(label for _value, label in form.fields["attendance_multiplier"].choices)
+            choices = multiplier_list_text(value for value, _label in form.fields["attendance_multiplier"].choices)
             messages.error(
                 request,
                 _("Choose one of the PAP multipliers (%(choices)s). The fleet was not ended.") % {"choices": choices},
@@ -1266,6 +1268,15 @@ def edit_scheduled_fleet(request, operation_uuid):
     else:
         if updated.already_posted:
             messages.info(request, _("Scheduled fleet updated. The updated pre ping was already posted."))
+        elif data["send_update"] and getattr(updated, "pre_ping_result", None) is not None and (
+            updated.pre_ping_result.status != OperationAction.Status.SUCCESS
+        ):
+            reason = translate_stored(updated.pre_ping_result.error_message or "")
+            messages.warning(
+                request,
+                _("Scheduled fleet updated, but the updated pre ping was not posted. %(reason)s You can retry it later.")
+                % {"reason": reason},
+            )
         elif data["send_update"]:
             messages.success(request, _("Scheduled fleet updated and the updated pre ping was posted."))
         else:

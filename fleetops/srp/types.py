@@ -762,7 +762,13 @@ class SrpPayRow:
     main_character_id: int | None
     main_character_name: str
     total: int = 0
+    payable_total: int = 0
     claims: list = field(default_factory=list)
+
+    @property
+    def unpayable_total(self) -> int:
+        """The part of ``total`` the viewer may not pay (for example the four-eyes rule)."""
+        return self.total - self.payable_total
 
     @property
     def claim_numbers(self) -> str:

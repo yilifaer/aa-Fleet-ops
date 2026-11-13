@@ -12,7 +12,7 @@
     {% if operation.link_only %}<div class="small text-muted mb-2">{% translate "This fleet has no ESI fleet: pilots get PAP only by registering through a PAP link." %}</div>{% endif %}
     {% if pap_links %}
     <div class="table-responsive"><table class="table table-sm align-middle">
-      <thead><tr><th>{% translate "Link" %}</th><th>{% translate "Created by" %}</th><th>{% translate "Status" %}</th><th>{% translate "Online" %}</th><th>{% translate "Registered" %}</th><th></th></tr></thead>
+      <thead><tr><th>{% translate "Link" %}</th><th>{% translate "Created by" %}</th><th>{% translate "Status" %}</th><th>{% translate "Online" %}</th><th>{% translate "Registered" context "FleetOps" %}</th><th></th></tr></thead>
       <tbody>{% for link in pap_links %}<tr>
         <td class="fleet-pap-link-cell"><div class="input-group input-group-sm"><input class="form-control" readonly value="{{ link.url }}" id="pap-link-url-{{ link.pk }}" aria-label="{% translate 'PAP link' %}"><button type="button" class="btn btn-outline-secondary copy-btn" data-copy="#pap-link-url-{{ link.pk }}">{% translate "Copy" %}</button></div></td>
         <td>{% if link.created_by %}{{ link.created_by.profile.main_character.character_name|default:link.created_by.username }}{% else %}—{% endif %}<div class="small text-muted">{{ link.created_at|eve_time }} EVE</div></td>

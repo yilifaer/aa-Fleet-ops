@@ -34,7 +34,7 @@
     <input class="form-control" type="date" id="srp-report-to" name="to" value="{% if period.kind == 'range' or period.kind == 'month' %}{{ period.last_day|date:'Y-m-d' }}{% endif %}" data-fo-period-date>
   </div>
   <div class="col-sm-auto">
-    <label class="form-label mb-1" for="srp-report-q">{% translate "Search" %}</label>
+    <label class="form-label mb-1" for="srp-report-q">{% translate "Search" context "FleetOps" %}</label>
     <input class="form-control" type="search" id="srp-report-q" name="q" value="{{ query }}" maxlength="100">
   </div>
   {% if report.slug == "trend" %}<div class="col-sm-auto"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="srp-report-split" name="split" value="category"{% if split %} checked{% endif %}><label class="form-check-label" for="srp-report-split">{% translate "Split by category" %}</label></div></div>{% endif %}
@@ -80,13 +80,13 @@
 {% if page.paginator.num_pages > 1 %}
 <nav class="mt-3 d-flex flex-wrap align-items-center gap-3" aria-label="{% translate 'Report pages' %}">
   <ul class="pagination pagination-sm mb-0 flex-wrap">
-    {% if page.has_previous %}<li class="page-item"><a class="page-link" href="{% querystring page=page.previous_page_number %}">&lsaquo; {% translate "Previous" %}</a></li>{% endif %}
+    {% if page.has_previous %}<li class="page-item"><a class="page-link" href="{% querystring page=page.previous_page_number %}">&lsaquo; {% translate "Previous" context "FleetOps" %}</a></li>{% endif %}
     {% for number in page_range %}
       {% if number == ellipsis %}<li class="page-item disabled"><span class="page-link">&hellip;</span></li>
       {% elif number == page.number %}<li class="page-item active" aria-current="page"><span class="page-link">{{ number }}</span></li>
       {% else %}<li class="page-item"><a class="page-link" href="{% querystring page=number %}">{{ number }}</a></li>{% endif %}
     {% endfor %}
-    {% if page.has_next %}<li class="page-item"><a class="page-link" href="{% querystring page=page.next_page_number %}">{% translate "Next" %} &rsaquo;</a></li>{% endif %}
+    {% if page.has_next %}<li class="page-item"><a class="page-link" href="{% querystring page=page.next_page_number %}">{% translate "Next" context "FleetOps" %} &rsaquo;</a></li>{% endif %}
   </ul>
   <span class="small text-muted">{% blocktranslate trimmed with start=page.start_index end=page.end_index total=page.paginator.count %}Rows {{ start }}&ndash;{{ end }} of {{ total }}{% endblocktranslate %}</span>
 </nav>

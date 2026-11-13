@@ -1354,7 +1354,7 @@ STEP_LABELS = {
     "pre_ping": gettext_lazy("Pre ping"),
     "motd_update": gettext_lazy("MOTD update"),
     "tracking_start": gettext_lazy("Fleet tracking"),
-    "srp_link": gettext_lazy("SRP link"),
+    "srp_link": pgettext_lazy("FleetOps", "SRP link"),
     "fleet_end": gettext_lazy("Fleet end"),
     "fleet_cancel": gettext_lazy("Fleet cancellation"),
     "cancel_notice": gettext_lazy("Cancellation notice"),

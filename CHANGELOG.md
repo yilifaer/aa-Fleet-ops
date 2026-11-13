@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.3.0b5] - Unreleased
+
+Fixes from the re-test of 0.3.0b4 on a test site.
+
+### Fixed
+
+- **The payments page counts only what you may pay.** On the **By player** cards the amount, **Copy amount**, **Copy name and amount** and the **To pay** total at the top now add up only the claims you may pay yourself (for example not the claims you approved while *The approver of a claim may not pay it* is on), so a transfer made from the copied amount is never too high. The rest is shown in small text ("plus X you may not pay"), and a card with nothing you may pay has no copy buttons for the amount.
+- **Saving without a change on every administration page.** The Ping Roles and Ping Channels edit pages still said "saved" and wrote an audit entry with identical old and new values when nothing had changed. The decision now compares the stored values before and after the save on every page, so an unchanged save shows *Nothing was changed.* and writes nothing, while a real change (a newly typed webhook address included) is still audited, with the address hidden.
+- **Words that other plugins translate differently.** A site that also runs the SRP app (aa-srp) showed its wording for some FleetOps texts, for example "Request SRP", "Registered", "SRP link", "Total", "First", "Last", "Previous", "Next", "Created at", "Expires at", "Overview", "Search" and "Killmail". These words now have their own FleetOps translation context in the Chinese catalog.
+- **Editing a scheduled fleet during the ping cooldown.** With *Publish the updated pre ping* ticked, the page said the pre ping was posted although the cooldown had held it back. It now shows a warning with the reason and says that the pre ping can be retried later.
+- **Rejection reasons in the audit log.** The reason typed when a fleet or manual PAP rows are rejected is now in the **Reason** column.
+- **The file of the claims to pay lists only what you may pay.** The `srp-payable` export now leaves out the claims you may not pay (your own, or those you approved or re-priced under the four-eyes rule), like the payments page, so its totals and the per-player amounts are the ones to transfer. The About sheet of the workbook says how many claims were left out.
+- **Open SRP Fleet** on the fleet page is hidden only for a FleetOps link when you may not request SRP (the link of another SRP app is always shown, whatever its address looks like, and a closed FleetOps link keeps its button for people who may request).
+- **Words that other plugins translate differently**, continued: "Approve", "Actions", "Additional information" and "FC" have their own FleetOps context as well.
+- **The Changes column hides login data in old voice links** (`mumble://user:password@host` is shown as `mumble://***@host`), webhook addresses with an API version, and shows the *replaced* flag of a webhook as `true`.
+- A loss outside a fleet without a category says *Choose a category for this loss.* on the form, as the server check does.
+- The rank text on **My Statistics** takes its full stop from the translation (a Chinese page no longer shows an English full stop).
+- Saving Doctrine Settings without a change shows *Nothing was changed.* as an information message like the other pages.
+- The message about an unknown PAP multiplier lists the multipliers with the separator of the language ("1 倍、2 倍、3 倍").
+- Pending manual PAP rows say "Pending approval" (待审批) like pending fleets, in English and Chinese.
+- The MOTD length counts characters such as `&gt;` as the one character they stand for; the text that is sent is unchanged.
+
+### Added
+
+- The **Audit** page has a **Changes** column that shows what an entry changed (`old → new`, folded out when there is a lot). Webhook addresses, tokens and similar secrets are never shown.
+
+### Upgrade notes
+
+- No migrations. Install the new version, run `python manage.py collectstatic --noinput` and restart Alliance Auth and Celery.
+
+### Rollback notes
+
+- Install 0.3.0b4 again. Nothing in the database changes.
+
 ## [0.3.0b4] - 2026-11-13
 
 Fixes from the re-test of 0.3.0b3 on a test site.

@@ -32,7 +32,7 @@
   {% if rows %}
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0 fo-admin-table fo-table-pin">
-      <thead><tr>{% for column in columns %}<th scope="col"{% if column.numeric %} class="text-end"{% endif %}>{{ column.label }}</th>{% endfor %}<th scope="col" class="text-end">{% translate "Actions" %}</th></tr></thead>
+      <thead><tr>{% for column in columns %}<th scope="col"{% if column.numeric %} class="text-end"{% endif %}>{{ column.label }}</th>{% endfor %}<th scope="col" class="text-end">{% translate "Actions" context "FleetOps" %}</th></tr></thead>
       <tbody>
       {% for row in rows %}
         <tr>

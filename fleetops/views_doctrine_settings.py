@@ -137,7 +137,10 @@ def doctrine_settings(request):
         if changed is None or custom is None:
             messages.error(request, _("The settings could not be saved: choose only groups from the list."))
         else:
-            messages.success(request, _("Doctrine settings saved.") if changed or custom else _("Nothing was changed."))
+            if changed or custom:
+                messages.success(request, _("Doctrine settings saved."))
+            else:
+                messages.info(request, _("Nothing was changed."))
             return redirect("fleetops:doctrine_orders")
     orders = set(
         DoctrineShipOrder.objects.filter(doctrine_source=FITTINGS_DOCTRINE_SOURCE).values_list(

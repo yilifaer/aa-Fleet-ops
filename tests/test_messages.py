@@ -468,7 +468,9 @@ class DefaultMotdTests(MessageTestBase):
         rendered = self.render(operation)
 
         self.assertEqual(rendered.motd, "&gt;&gt;&gt;")
-        self.assertEqual(rendered.motd_length, len("&gt;&gt;&gt;"))
+        # Changed in 0.3.0b5: the length counts an entity as the one character it stands for (the text that is sent
+        # keeps the entities, as asserted above).
+        self.assertEqual(rendered.motd_length, 3)
         # The game shows the three marks.
         self.assertEqual(rendered.motd_visible_length, 3)
 

@@ -14,7 +14,7 @@
     {% if not srp_card.enabled %}<div class="alert alert-info py-2">{% translate "FleetOps SRP is not enabled, so members cannot submit claims through this link." %}</div>{% endif %}
     {% if srp_card.can_copy %}
     <div class="d-flex flex-wrap align-items-center gap-2 mb-2 fleet-srp-link">
-      <span class="small text-muted">{% translate "SRP link" %}</span>
+      <span class="small text-muted">{% translate "SRP link" context "FleetOps" %}</span>
       <code class="text-break flex-grow-1" id="srp-link-url">{{ srp_card.link_url }}</code>
       <button type="button" class="btn btn-sm btn-outline-secondary copy" data-id="srp-link-url">{% translate "Copy" %}</button>
     </div>
@@ -61,7 +61,7 @@
     {% endif %}
   {% elif srp_card.can_create %}
     <div class="text-muted mb-2">{% translate "This fleet has no SRP link yet, so members cannot claim their losses of it." %}</div>
-    <form method="post" action="{% url 'fleetops:retry_srp' operation.uuid %}">{% csrf_token %}<button class="btn btn-sm btn-primary">{% translate "Create SRP link" %}</button></form>
+    <form method="post" action="{% url 'fleetops:retry_srp' operation.uuid %}">{% csrf_token %}<button class="btn btn-sm btn-primary">{% translate "Create SRP link" context "FleetOps" %}</button></form>
   {% endif %}
   </div>
 </div>

@@ -38,7 +38,7 @@ class ReviewForm(forms.Form):
     APPROVE = "approve"
     REJECT = "reject"
 
-    action = forms.ChoiceField(label=pgettext_lazy("FleetOps", "Action"), choices=[(APPROVE, _("Approve")), (REJECT, _("Reject"))])
+    action = forms.ChoiceField(label=pgettext_lazy("FleetOps", "Action"), choices=[(APPROVE, pgettext_lazy("FleetOps", "Approve")), (REJECT, _("Reject"))])
     note = forms.CharField(label=_("Note"), max_length=255, required=False)
     include_attendance = forms.BooleanField(
         label=_("With its PAP rows waiting for approval"), required=False, initial=True

@@ -35,7 +35,7 @@
 {% blocktranslate trimmed asvar to_pay_claims_text count counter=to_pay_count %}{{ counter }} claim{% plural %}{{ counter }} claims{% endblocktranslate %}
 {% blocktranslate trimmed asvar to_pay_players_text count counter=pay_rows|length %}{{ counter }} player{% plural %}{{ counter }} players{% endblocktranslate %}
 <div class="row g-3 mb-3 fo-srp-stats">
-  <div class="col-6 col-xl-3"><div class="stat-card"><span>{% translate "To pay" %}{% if payable_filtered %} <small class="text-muted">({% translate "by the current filters" %})</small>{% endif %}</span><strong>{{ to_pay_total|isk }}</strong><small class="text-muted">{% blocktranslate trimmed with claims=to_pay_claims_text players=to_pay_players_text %}{{ claims }} for {{ players }}{% endblocktranslate %}</small></div></div>
+  <div class="col-6 col-xl-3"><div class="stat-card"><span>{% translate "To pay" %}{% if payable_filtered %} <small class="text-muted">({% translate "by the current filters" %})</small>{% endif %}</span><strong>{{ to_pay_total|isk }}</strong>{% if to_pay_unpayable_total %}<small class="text-muted d-block">{% blocktranslate trimmed with amount=to_pay_unpayable_total|isk %}plus {{ amount }} you may not pay{% endblocktranslate %}</small>{% endif %}<small class="text-muted">{% blocktranslate trimmed with claims=to_pay_claims_text players=to_pay_players_text %}{{ claims }} for {{ players }}{% endblocktranslate %}</small></div></div>
   <div class="col-6 col-xl-3"><div class="stat-card"><span>{% translate "Paid in the dates below" %}</span><strong>{{ paid_total|isk }}</strong><small class="text-muted">{% blocktranslate trimmed count counter=paid_count %}{{ counter }} claim{% plural %}{{ counter }} claims{% endblocktranslate %}</small></div></div>
 </div>
 
@@ -61,7 +61,7 @@
       <table class="table table-sm align-middle mb-0 fo-table-pin">
         <thead><tr>
           <th scope="col" class="fleetops-srp-check"><label class="fo-check-cell"><input type="checkbox" class="form-check-input mt-0" data-srp-select-all aria-label="{% translate 'Select all claims' %}"></label></th>
-          <th scope="col">{% translate "Claimed (EVE)" %}</th><th scope="col">{% translate "Player" %}</th><th scope="col">{% translate "Lost by" %}</th><th scope="col">{% translate "Claim" %}</th><th scope="col">{% translate "Ship" %}</th><th scope="col" class="text-end">{% translate "Loss value" %}</th><th scope="col">{% translate "Category / link" %}</th><th scope="col" class="text-end">{% translate "Amount" %}</th><th scope="col">{% translate "Actions" %}</th>
+          <th scope="col">{% translate "Claimed (EVE)" %}</th><th scope="col">{% translate "Player" %}</th><th scope="col">{% translate "Lost by" %}</th><th scope="col">{% translate "Claim" %}</th><th scope="col">{% translate "Ship" %}</th><th scope="col" class="text-end">{% translate "Loss value" %}</th><th scope="col">{% translate "Category / link" %}</th><th scope="col" class="text-end">{% translate "Amount" %}</th><th scope="col">{% translate "Actions" context "FleetOps" %}</th>
         </tr></thead>
         <tbody>
           {% for claim in claim_rows %}
@@ -95,9 +95,9 @@
         <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.main_character_name }}" hidden>{% translate "Copy name" %}</button>
       </div>
       <div class="d-flex flex-wrap align-items-center gap-2">
-        <span class="text-end"><span class="fo-pay-total">{{ row.total|isk }}</span>{% if payable_filtered %}<br><small class="text-muted">{% translate "total of this group by the current filters" %}</small>{% endif %}</span>
-        <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.total|isk_plain }}" hidden>{% translate "Copy amount" %}</button>
-        <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.main_character_name }}&#9;{{ row.total|isk_plain }}" hidden>{% translate "Copy name and amount" %}</button>
+        <span class="text-end"><span class="fo-pay-total">{{ row.payable_total|isk }}</span>{% if row.unpayable_total %}<br><small class="text-muted">{% blocktranslate trimmed with amount=row.unpayable_total|isk %}plus {{ amount }} you may not pay{% endblocktranslate %}</small>{% endif %}{% if payable_filtered %}<br><small class="text-muted">{% translate "total of this group by the current filters" %}</small>{% endif %}</span>
+        {% if row.payable_total %}<button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.payable_total|isk_plain }}" hidden>{% translate "Copy amount" %}</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.main_character_name }}&#9;{{ row.payable_total|isk_plain }}" hidden>{% translate "Copy name and amount" %}</button>{% endif %}
         {% if row.claim_numbers %}<button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.claim_numbers }}" hidden>{% translate "Copy claim numbers" %}</button>{% endif %}
         {% if game_character.ready %}<button type="submit" class="btn btn-sm btn-outline-secondary" formaction="{% url 'fleetops:srp_open_in_game' row.claims.0.uuid 'main' %}" data-srp-open>{% translate "Open in game" %}</button>{% elif game_character %}<a class="small" href="#srp-game-character">{% translate "Add the opening character again" %}</a>{% else %}<a class="small" href="#srp-game-character">{% translate "Set up opening characters in game" %}</a>{% endif %}
       </div>
@@ -165,7 +165,7 @@
   <div class="card-header"><strong>{% translate "Recent payment batches" %}</strong> <span class="small text-muted">{% translate "last 30 days" %}</span></div>
   <div class="table-responsive">
     <table class="table table-sm align-middle mb-0 fo-table-pin">
-      <thead><tr><th scope="col">{% translate "Batch" %}</th><th scope="col">{% translate "Paid (EVE)" %}</th><th scope="col">{% translate "Paid by" %}</th><th scope="col" class="text-end">{% translate "Claims" %}</th><th scope="col" class="text-end">{% translate "Players" %}</th><th scope="col" class="text-end">{% translate "Total" %}</th><th scope="col">{% translate "Note" %}</th></tr></thead>
+      <thead><tr><th scope="col">{% translate "Batch" %}</th><th scope="col">{% translate "Paid (EVE)" %}</th><th scope="col">{% translate "Paid by" %}</th><th scope="col" class="text-end">{% translate "Claims" %}</th><th scope="col" class="text-end">{% translate "Players" %}</th><th scope="col" class="text-end">{% translate "Total" context "FleetOps" %}</th><th scope="col">{% translate "Note" %}</th></tr></thead>
       <tbody>
         {% for batch in recent_batches %}
         <tr>

@@ -45,7 +45,7 @@
 </div>
 {% if not show_composition %}<div class="small text-muted mb-2">{% translate "While the fleet is open you see the PAP of your own characters." %}</div>{% endif %}
 <div class="table-responsive"><table class="table table-sm align-middle fo-table-pin">
-  <thead><tr><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th>{% translate "Corp" context "FleetOps" %}</th><th>{% translate "Source" %}</th><th class="text-end">{% translate "Value" context "PAP value" %}</th><th>{% translate "Status" %}</th><th class="text-end">{% translate "Time in fleet" %}</th><th>{% translate "First" %}</th><th>{% translate "Last" %}</th><th></th></tr></thead>
+  <thead><tr><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th>{% translate "Corp" context "FleetOps" %}</th><th>{% translate "Source" %}</th><th class="text-end">{% translate "Value" context "PAP value" %}</th><th>{% translate "Status" %}</th><th class="text-end">{% translate "Time in fleet" %}</th><th>{% translate "First" context "FleetOps" %}</th><th>{% translate "Last" context "FleetOps" %}</th><th></th></tr></thead>
   <tbody>{% for r in attendance_rows %}<tr>
     <td>{{ r.character_name }}</td><td>{{ r.main_character_name|default:"—" }}</td><td>{{ r.corporation_name|default:"—" }}</td>
     <td>{{ r.get_source_display }}{% if r.correction != 'keep' %}<div class="small text-muted">{{ r.get_correction_display }}</div>{% endif %}</td>

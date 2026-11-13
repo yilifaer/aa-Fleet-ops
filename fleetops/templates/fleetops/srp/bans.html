@@ -60,9 +60,9 @@
   <div class="card-footer d-flex flex-wrap justify-content-between align-items-center gap-2">
     <span class="small text-muted">{% blocktranslate trimmed with start=page.start_index end=page.end_index total=page.paginator.count %}Bans {{ start }}&ndash;{{ end }} of {{ total }}{% endblocktranslate %}</span>
     <span class="d-flex align-items-center gap-2">
-      {% if page.has_previous %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.previous_page_number %}">{% translate "Previous" %}</a>{% endif %}
+      {% if page.has_previous %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.previous_page_number %}">{% translate "Previous" context "FleetOps" %}</a>{% endif %}
       <span class="small text-muted">{% blocktranslate trimmed with number=page.number pages=page.paginator.num_pages %}Page {{ number }} of {{ pages }}{% endblocktranslate %}</span>
-      {% if page.has_next %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.next_page_number %}">{% translate "Next" %}</a>{% endif %}
+      {% if page.has_next %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.next_page_number %}">{% translate "Next" context "FleetOps" %}</a>{% endif %}
     </span>
   </div>
   {% endif %}

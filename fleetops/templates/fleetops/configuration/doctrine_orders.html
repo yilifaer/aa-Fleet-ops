@@ -36,7 +36,7 @@
     <div class="card-body pb-0"><p class="text-muted">{% translate "A doctrine without a group is open to everybody who may start fleets. With groups, only members of one of them can ping it. Administrators and superusers are never restricted. Fittings decides separately who sees a doctrine." %}</p></div>
     <div class="table-responsive">
       <table class="table table-hover align-middle mb-0 fo-admin-table fo-table-pin">
-        <thead><tr><th scope="col">{% translate "Doctrine" context "FleetOps" %}</th><th scope="col">{% translate "Groups that may ping it" %}</th><th scope="col">{% translate "Ship order" %}</th><th scope="col" class="text-end">{% translate "Actions" %}</th></tr></thead>
+        <thead><tr><th scope="col">{% translate "Doctrine" context "FleetOps" %}</th><th scope="col">{% translate "Groups that may ping it" %}</th><th scope="col">{% translate "Ship order" %}</th><th scope="col" class="text-end">{% translate "Actions" context "FleetOps" %}</th></tr></thead>
         <tbody>
         {% for item in items %}
           <tr>

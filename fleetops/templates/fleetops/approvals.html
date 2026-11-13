@@ -28,7 +28,7 @@
     <td class="fo-decision"><form method="post" action="{% url 'fleetops:review_operation' op.uuid %}" class="d-flex flex-wrap gap-2 align-items-center">{% csrf_token %}
       <input class="form-control form-control-sm" name="note" maxlength="255" placeholder="{% translate 'Note (required to reject)' %}" aria-label="{% blocktranslate trimmed with fleet_type=op.fleet_type %}Note for {{ fleet_type }}{% endblocktranslate %}">
       <div class="form-check"><input class="form-check-input" type="checkbox" name="include_attendance" id="include-{{ op.pk }}" checked><label class="form-check-label small" for="include-{{ op.pk }}">{% translate "With its PAP rows" %}</label></div>
-      <button class="btn btn-sm btn-primary" name="action" value="approve">{% translate "Approve" %}</button>
+      <button class="btn btn-sm btn-primary" name="action" value="approve">{% translate "Approve" context "FleetOps" %}</button>
       <button class="btn btn-sm btn-outline-danger" name="action" value="reject" data-fo-confirm="{% translate 'Reject this fleet? The FC sees your note.' %}" data-fo-confirm-label="{% translate 'Reject' %}">{% translate "Reject" %}</button>
     </form></td>
   </tr>{% endfor %}</tbody>

@@ -330,7 +330,7 @@ CONFIG_SECTIONS = {
             (gettext_lazy("Fleet types"), "fleet_types"),
             (gettext_lazy("Ping channels"), "channels"),
             (gettext_lazy("Leaders (from Alliance Auth)"), "leaders"),
-            (gettext_lazy("SRP"), "srp_enabled"),
+            (pgettext_lazy("FleetOps", "SRP"), "srp_enabled"),
             (pgettext_lazy("enabled", "Active"), "is_active"),
         ],
         # Hooks any section may have: "prepare" gets the objects of a list page (and [obj] on the edit page of
@@ -372,7 +372,7 @@ INDEX_GROUPS = [
     ),
     (gettext_lazy("Composition"), "fa-layer-group", ["ship-functions", "ship-function-rules"]),
     (gettext_lazy("Statistics"), "fa-bullseye", ["statistics-targets"]),
-    (gettext_lazy("SRP"), "fa-shield-halved", ["srp", "srp-categories", "srp-rules", "srp-corporation-limits"]),
+    (pgettext_lazy("FleetOps", "SRP"), "fa-shield-halved", ["srp", "srp-categories", "srp-rules", "srp-corporation-limits"]),
 ]
 OTHER_GROUP = gettext_lazy("Other")
 # Font Awesome 6 icon of each card.
@@ -637,10 +637,14 @@ def configuration_settings(request):
 def _nothing_changed(form, old, saved) -> bool:
     """Whether a saved configuration form left the stored values as they were (no audit entry is written then).
 
-    The saved record is read again, so a number the form turned into a ``Decimal`` is compared the way the database
-    holds it (``80`` and ``80.00`` are the same value).
+    The decision compares the stored snapshot before and after the save, not ``form.has_changed()``: a form can
+    report a change for a value that is stored as it was (an integer shown as text, a secret field submitted empty
+    to keep the stored value). A fact the audit entry adds besides the snapshot (``audit_extra``, such as a replaced
+    webhook) is a change too. The saved record is read again, so a number the form turned into a ``Decimal`` is
+    compared the way the database holds it (``80`` and ``80.00`` are the same value).
     """
-    return not form.has_changed() and old == config_snapshot(type(saved).objects.get(pk=saved.pk))
+    extra = set(getattr(form, "audit_extra", None) or ()) - set(getattr(form, "audit_extra_descriptive", ()))
+    return not extra and old == config_snapshot(type(saved).objects.get(pk=saved.pk))
 
 
 SRP_DEAD_END_WARNING = gettext_lazy(

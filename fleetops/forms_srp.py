@@ -194,7 +194,7 @@ class ClaimInputForm(forms.Form):
     """What a member pastes to start a claim."""
 
     killmail = forms.CharField(
-        label=_("Killmail"),
+        label=pgettext_lazy("FleetOps", "Killmail"),
         max_length=KILLMAIL_INPUT_LENGTH,
         strip=True,
         widget=forms.Textarea(
@@ -229,6 +229,8 @@ class ClaimInputForm(forms.Form):
         self.fields["category"] = CategoryChoiceField(
             queryset=choices,
             required=required,
+            # The same words as the check of the service says, not Django's "This field is required."
+            error_messages={"required": _("Choose a category for this loss.")},
             label=_("Category"),
             # With a default category there is no empty choice: the default would apply to it anyway.
             empty_label=None if default is not None else (_("Choose a category") if required else _("No category (general rules)")),
@@ -522,7 +524,7 @@ class ReviewFilterForm(forms.Form):
         choices=[("", _("Any corporation"))],
     )
     fc = forms.TypedChoiceField(
-        label=_("FC"),
+        label=pgettext_lazy("FleetOps", "FC"),
         required=False,
         coerce=int,
         empty_value=None,
@@ -532,7 +534,7 @@ class ReviewFilterForm(forms.Form):
         required=False,
         max_length=100,
         strip=True,
-        label=_("Search"),
+        label=pgettext_lazy("FleetOps", "Search"),
         widget=forms.TextInput(attrs={"placeholder": _("Pilot, ship or SRP-123")}),
     )
     category = forms.ChoiceField(label=_("Category"), required=False, choices=[("", _("Any category"))])

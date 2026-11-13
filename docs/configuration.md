@@ -4,7 +4,10 @@ Administrators configure FleetOps in the web interface: **Administration** in th
 (`/fleetops/configuration/`). The page needs the permission `fleetops.manage_configuration`
 ([permissions](permissions.md)). No Django admin access is needed; the Django admin stays an emergency tool.
 Every change is written to the audit log with the old and new values. Saving a page without changing anything writes
-no audit entry and shows the message *Nothing was changed.*.
+no audit entry and shows the message *Nothing was changed.*; this holds for every page of the administration (the check
+compares the stored values before and after the save, so a secret field that is left empty to keep the stored value is no
+change either). The **Audit** page has a **Changes** column that lists what an entry changed as `old → new` (several
+changes fold out); webhook URLs, tokens and similar secrets are never shown there.
 
 A Simplified Chinese version of this page is in [zh-CN/configuration.md](zh-CN/configuration.md).
 
@@ -727,6 +730,10 @@ To enable FleetOps SRP:
   tab and the plain number, ready for the in-game window or a spreadsheet). Pay in game, tick the claims, add
   an optional note and **Mark selected paid**. **Mark paid** is refused when the approved amount is not the one
   the payer was asked to send.
+  A card, its copy buttons and the **To pay** total at the top count only the claims you may pay yourself (for
+  example not the claims you approved when **The approver of a claim may not pay it** is on). The rest is shown in
+  small text as "plus X you may not pay", and a card with nothing you may pay has no **Copy amount** buttons, so the
+  amount you transfer is never too high.
 - The queue of **SRP** > **Review** can also be filtered by category (including "No category"; a category that is
   switched off is offered too, marked "off"), by link code (the latest 100 links are suggested), by the EVE dates of the
   submission and, through `?user=<id>`, by member. The filters are kept when the month changes and combine with each
@@ -777,7 +784,9 @@ To enable FleetOps SRP:
   cleanup after an hour.
 - **Export of the claims to pay.** The payments page offers the approved claims (with the filters of the page) as a
   file, one row per claim or one row per player: whom to pay (the main character as it is now), the character ID, the
-  claim, the loss time, the ship, the category, the link and the approved amount; the last row is the total. The dataset
+  claim, the loss time, the ship, the category, the link and the approved amount; the last row is the total. Claims the
+  downloading payer may not pay (their own, or those they approved under the four-eyes rule) are left out, as on the
+  page, and the About sheet of the workbook counts them. The dataset
   `srp-payable` is for payers only (`pay_srp` or `manage_srp`) and every download is audited as `srp.export`. The file
   `srp-claims` has one more column at the end, **Payment batch**, filled in for SRP staff only.
 - **Review information.** The claim page shows SRP staff, beside the claim, the attackers (how many, players and NPCs,

@@ -904,6 +904,15 @@ def build_srp_payable(request, scope):
     rows = list(claims[: exports.MAX_EXPORT_ROWS + 1])
     cut = len(rows) > exports.MAX_EXPORT_ROWS
     rows = rows[: exports.MAX_EXPORT_ROWS]
+    # Like the payments page: what this payer may not pay (own claims, or claims they approved or re-priced under the
+    # four-eyes rule) is left out of the file and of its sums, so a transfer made from it is never too high.
+    settings_obj = SrpSettings.get_solo()
+    if settings_obj.require_different_payer:
+        srp_access.prefetch_approvers(rows)
+    blocked = [claim for claim in rows if srp_access.payment_block(request.user, claim, settings_obj=settings_obj)]
+    if blocked:
+        blocked_ids = {claim.pk for claim in blocked}
+        rows = [claim for claim in rows if claim.pk not in blocked_ids]
     total = sum(claim.approved_amount or 0 for claim in rows)
     if params.get("group") == "player":
         columns = [
@@ -913,7 +922,7 @@ def build_srp_payable(request, scope):
             Column("total", gettext("Approved (ISK)"), "int"),
         ]
         lines = [
-            [row.main_character_name, row.main_character_id, len(row.claims), row.total]
+            [row.main_character_name, row.main_character_id, len(row.claims), row.payable_total]
             for row in srp_payments.pay_rows(rows)
         ]
         footer = [str(SRP_TOTAL_ROW), None, len(rows), total]
@@ -945,6 +954,18 @@ def build_srp_payable(request, scope):
             )
         footer = [str(SRP_TOTAL_ROW), None, len(rows), None, None, None, None, total]
     filter_text = "; ".join(f"{key}: {value}" for key, value in filters.items())
+    details = [
+        (pgettext("FleetOps", "Filters"), filter_text),
+        (gettext("Counting rule"), str(SRP_PAYABLE_RULE)),
+    ]
+    if blocked:
+        details.append(
+            (
+                gettext("Left out"),
+                gettext("%(count)s claims (%(amount)s ISK) that you may not pay")
+                % {"count": len(blocked), "amount": sum(claim.approved_amount or 0 for claim in blocked)},
+            )
+        )
     table, filename = _table(
         request,
         scope,
@@ -952,10 +973,7 @@ def build_srp_payable(request, scope):
         columns,
         lines,
         scope_text=pgettext("FleetOps", "Alliance"),
-        details=[
-            (pgettext("FleetOps", "Filters"), filter_text),
-            (gettext("Counting rule"), str(SRP_PAYABLE_RULE)),
-        ],
+        details=details,
     )
     if cut:
         # A payer must not take a short list for the whole one: the note stands in the file, above the total.
