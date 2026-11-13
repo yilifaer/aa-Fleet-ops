@@ -17,7 +17,7 @@ Fixes from the re-test of 0.3.0b3 on a test site.
 
 ### Upgrade notes
 
-- No migrations. Install the new version, run `collectstatic` and restart Alliance Auth and Celery.
+- No migrations. Install the new version, run `python manage.py collectstatic --noinput` and restart Alliance Auth and Celery.
 
 ### Rollback notes
 
