@@ -357,7 +357,7 @@ right actor.
 
 ## 19. Doctrine access of 0.3.0b3
 
-- [ ] Doctrine Settings: restrict a flagship doctrine to the Caplead group. The doctrine shows **Restricted**; Save writes a
+- [ ] Administration, Doctrine Settings: restrict a flagship doctrine to the Caplead group. The doctrine shows **Restricted**; Save writes a
   `configuration.create` entry with the group names, a second change writes `configuration.update` with the old and the new groups.
 - [ ] With an FC account that is not in Caplead: Start Fleet, Send Ping and a pre ping do not list the doctrine; the doctrine
   ID put into the request by hand (browser developer tools) is refused with *You may not ping this doctrine, ask an

@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0rc1] - Unreleased
+
+Fixes from the re-test of 0.3.0b3 on a test site. There are no new migrations; install it the way you installed 0.3.0b3. To go back, install 0.3.0b3 again; nothing in the database changes.
+
+### Fixed
+
+- **Saving the SRP settings in the dead-end state.** A site that cannot take losses outside a fleet (a category is required, but there is no default category and none that members can choose) can still save its other SRP settings. The save now ends with the same warning as the settings page, so it is no longer visible only after opening the page again.
+- **The ping cooldown message** never contradicts itself: the time since the last ping is rounded down (1 to 59 seconds) and the wait up, so the wait is never too short (no more "60 seconds ago, wait 1 second").
+- **The fc_link and formup_link hint** on the message template page is shown only for MOTD templates, and follows the type when you change it in the form.
+- **Restricted doctrines and the custom doctrine name.** A custom name that is the name of a restricted doctrine the person may not ping is refused with *You may not ping this doctrine, ask an administrator.* in every place that takes a typed name: Start Fleet, group fleets, Send Ping, scheduled fleets (saving and starting), presets and the doctrine name of a running fleet. Case, spaces, rich text tags, zero-width characters and full-width letters are ignored, doctrines that no longer exist do not count, and administrators are not limited. **Doctrine Settings** also shows a warning while a doctrine is restricted and the custom name is open to everybody.
+- **A refused start of a scheduled fleet** writes one audit entry and one notification, not one per click. Pressing **Start** again for the same reason shows the message on the page only, until the fleet is edited (its doctrine or FC too) or started.
+- **Saving a configuration page without changes** (the general settings, the SRP settings and every list page edit form) writes no audit entry and shows the message *Nothing was changed.*, the same as Doctrine Settings.
+- The statistics of all corporations no longer put an unused class on the labels of fleet types with a custom colour.
+- Documentation: the Chinese pages say **在总览显示** (Dashboard is 总览 in the interface), the colour contrast warning is described as it works (live preview on the edit page, message on the list page after saving), and the menu names in the manual test list match the interface (后台设置, 建制设置).
+
 ## [0.3.0b3] - 2026-11-12
 
 Fixes from the second run of 0.3.0b2 on a test site, a new setting (who may ping which doctrine), and colours and dashboard cards for fleet types. There are two new migrations (`0043`, two small tables; `0044`, two columns of the fleet types); install them the way you installed 0.3.0b2 and read the upgrade and rollback notes below.

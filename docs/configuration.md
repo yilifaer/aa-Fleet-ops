@@ -3,7 +3,8 @@
 Administrators configure FleetOps in the web interface: **Administration** in the FleetOps menu
 (`/fleetops/configuration/`). The page needs the permission `fleetops.manage_configuration`
 ([permissions](permissions.md)). No Django admin access is needed; the Django admin stays an emergency tool.
-Every change is written to the audit log with the old and new values.
+Every change is written to the audit log with the old and new values. Saving a page without changing anything writes
+no audit entry and shows the message *Nothing was changed.*.
 
 A Simplified Chinese version of this page is in [zh-CN/configuration.md](zh-CN/configuration.md).
 
@@ -179,7 +180,8 @@ switch is remembered per browser.
 
 The colour is the dot of the type on the dashboard, the fleet lists, the history and the statistics. A custom colour is
 meant to be seen on both themes: when it is hard to see on the light theme (Flatly) or the dark theme (Darkly) (contrast
-below 2:1 against the page), the form warns while you choose it and after you save; the colour is still saved. Changes of
+below 2:1 against the page), the edit page warns in its live preview while you choose it, and after you save the list
+page shows a message; the colour is still saved. Changes of
 the colour and of the switch are audited like every other setting (`configuration.update`, old and new values).
 Migration `0044` sets **Show on dashboard** for the first four active types by sort order and name and clears it for all
 other types, so the dashboard shows the same cards after the upgrade; no colour is set, so every type keeps its colour.
@@ -451,7 +453,9 @@ Every doctrine has a multi-select of Alliance Auth groups.
 - **Scheduled fleets** are checked again when the fleet starts (FleetOps has no timer that starts a fleet; the FC who
   scheduled it starts it from the fleet page, and that start is the check). If the FC may not ping the doctrine any more,
   the fleet is **not started** (it stays scheduled, nothing is asked from ESI), the FC gets an Alliance Auth notification
-  in their language and an audit entry `fleet.schedule_start_refused` is written. Editing a scheduled fleet keeps the doctrine
+  in their language and an audit entry `fleet.schedule_start_refused` is written. Pressing **Start** again for the same
+  reason shows the message on the page only: the audit entry and the notification are written once, until the fleet is
+  edited (its doctrine or FC included) or started. Editing a scheduled fleet keeps the doctrine
   it already has even if the editor is not in the group (an edit of the time must not fail); changing it to another
   doctrine is checked.
 - **Presets**: saving a preset with a doctrine the person may not ping is refused with the same text. A preset that
@@ -480,6 +484,15 @@ Every doctrine has a multi-select of Alliance Auth groups.
 - Editing the doctrine name of a running fleet needs the same right (a record of a manual fleet does not).
 - A scheduled fleet with a typed name is checked again when it starts, like a restricted doctrine (the notice and the audit
   entry say it was the custom name). A preset with a typed name says so when it is loaded.
+- A typed name that is the name of a restricted doctrine the person may not ping is refused with the same text as that
+  doctrine (*You may not ping this doctrine, ask an administrator.*), at every place that takes a typed name: Start Fleet,
+  group fleets, Send Ping, scheduled fleets (saving and starting), presets (saving; a preset that holds such a name leaves
+  it out when loaded) and the doctrine name of a running fleet. Letter case, spaces around the name and repeated spaces
+  do not matter; doctrines that no longer exist do not count; administrators are not limited. This keeps the custom
+  name from being a way around the groups of a doctrine.
+- While at least one doctrine is restricted and the custom doctrine name is open to everybody, the page shows a warning:
+  a differently written name is still accepted, so the restriction can be worked around. Choose **Only the chosen groups**
+  to close this.
 - Choosing **Only the chosen groups** without any group is allowed (only administrators can type a name; the page warns).
 - Changes write `configuration.update` (object type `DoctrineSettings`) with the groups before and after.
 

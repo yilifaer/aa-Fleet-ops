@@ -610,15 +610,18 @@ def configuration_settings(request):
         form = FleetOpsSettingsForm(request.POST, instance=obj)
         if form.is_valid():
             obj = form.save()
-            audit(
-                request.user,
-                "configuration.update",
-                obj,
-                old,
-                config_snapshot(obj),
-                reason=texts.AUDIT_CONFIG_UPDATED(),
-            )
-            messages.success(request, _("FleetOps settings updated."))
+            if _nothing_changed(form, old, obj):
+                messages.info(request, _("Nothing was changed."))
+            else:
+                audit(
+                    request.user,
+                    "configuration.update",
+                    obj,
+                    old,
+                    config_snapshot(obj),
+                    reason=texts.AUDIT_CONFIG_UPDATED(),
+                )
+                messages.success(request, _("FleetOps settings updated."))
             for warning in form.warnings:
                 messages.warning(request, warning)
             return redirect("fleetops:configuration_index")
@@ -629,6 +632,22 @@ def configuration_settings(request):
         "fleetops/configuration/settings_form.html",
         {"form": form, "settings_obj": obj},
     )
+
+
+def _nothing_changed(form, old, saved) -> bool:
+    """Whether a saved configuration form left the stored values as they were (no audit entry is written then).
+
+    The saved record is read again, so a number the form turned into a ``Decimal`` is compared the way the database
+    holds it (``80`` and ``80.00`` are the same value).
+    """
+    return not form.has_changed() and old == config_snapshot(type(saved).objects.get(pk=saved.pk))
+
+
+SRP_DEAD_END_WARNING = gettext_lazy(
+    "Members cannot submit a loss outside a fleet right now: a category is required, but there is no default "
+    "category and no active category that members can choose. Turn off “Members must choose a category for losses "
+    "outside a fleet”, choose a default category, or make an active category choosable by members, then save."
+)
 
 
 @fleetops_permission_required("fleetops.manage_configuration")
@@ -645,24 +664,31 @@ def configuration_srp(request):
         form = SrpSettingsForm(request.POST, instance=obj)
         if form.is_valid():
             obj = form.save()
-            audit(
-                request.user,
-                "configuration.update",
-                obj,
-                old,
-                config_snapshot(obj),
-                reason=texts.AUDIT_CONFIG_UPDATED(),
-            )
-            if "claim_deadline_days" in old:
-                # A longer claim deadline brings back the losses that were marked too old.
-                srp_discovery.reopen_old_losses(old["claim_deadline_days"], obj.claim_deadline_days)
-            messages.success(request, _("SRP settings updated."))
+            if _nothing_changed(form, old, obj):
+                messages.info(request, _("Nothing was changed."))
+            else:
+                audit(
+                    request.user,
+                    "configuration.update",
+                    obj,
+                    old,
+                    config_snapshot(obj),
+                    reason=texts.AUDIT_CONFIG_UPDATED(),
+                )
+                if "claim_deadline_days" in old:
+                    # A longer claim deadline brings back the losses that were marked too old.
+                    srp_discovery.reopen_old_losses(old["claim_deadline_days"], obj.claim_deadline_days)
+                messages.success(request, _("SRP settings updated."))
             for warning in form.warnings:
                 messages.warning(request, warning)
             # Claims that wait for a decision keep the settings they were calculated with: stay on this page,
-            # where the notice offers to recalculate them.
+            # where the notice offers to recalculate them (and the page itself shows the dead-end alert).
             if srp_policy.outdated_pending_claim_count(obj):
                 return redirect("fleetops:configuration_list", section=SRP_SETTINGS_SECTION)
+            if srp_categories.has_dead_end(obj):
+                # The settings can be saved while the dead end is still there (for example a change of the claim
+                # deadline only); the configuration index would not show the warning.
+                messages.warning(request, SRP_DEAD_END_WARNING)
             return redirect("fleetops:configuration_index")
     else:
         form = SrpSettingsForm(instance=obj)
@@ -676,6 +702,7 @@ def configuration_srp(request):
             "fleetops_settings": fleetops_settings,
             # Fleets get their SRP link from another SRP app, so FleetOps SRP is not offered at their start.
             "category_dead_end": srp_categories.has_dead_end(SrpSettings.get_solo()),
+            "category_dead_end_text": SRP_DEAD_END_WARNING,
             "provider_elsewhere": fleetops_settings.srp_provider.strip() not in ("auto", "fleetops", ""),
             **_outdated_claims_context(request),
         },
@@ -735,6 +762,11 @@ def configuration_edit(request, section, pk=None):
         form = config["form"](request.POST, instance=obj)
         if form.is_valid():
             saved = form.save()
+            if obj is not None and _nothing_changed(form, old, saved):
+                messages.info(request, _("Nothing was changed."))
+                for warning in getattr(form, "warnings", ()):
+                    messages.warning(request, warning)
+                return redirect("fleetops:configuration_list", section=section)
             audit(
                 request.user,
                 "configuration.update" if obj is not None else "configuration.create",

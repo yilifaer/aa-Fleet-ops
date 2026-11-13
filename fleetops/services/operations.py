@@ -683,10 +683,10 @@ def ping_cooldown_problem(channel, *, now=None) -> str:
     times = [value for value in times if value is not None]
     if not times:
         return ""
-    # "0 seconds ago" is never shown; the time since the last ping is rounded to the nearest second and the wait up,
-    # so the wait is never too short.
+    # "0 seconds ago" is never shown. The time since the last ping is rounded down (kept between 1 and 59 seconds)
+    # and the wait up, so the wait is never shorter than the real remaining time.
     elapsed = max(0.0, (now - max(times)).total_seconds())
-    seconds = max(1, round(elapsed))
+    seconds = min(59, max(1, math.floor(elapsed)))
     wait = max(1, math.ceil(PING_COOLDOWN_SECONDS - elapsed))
     return texts.PING_COOLDOWN(name=channel.name, seconds=seconds, wait=wait)
 

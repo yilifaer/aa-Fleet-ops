@@ -31,6 +31,26 @@
 </form>
 </div></div>
 {% if edit_include %}</div><div class="col-lg-4">{% include edit_include %}</div></div>{% endif %}
+{% if section == "templates" %}
+<script>
+// The fc_link / formup_link hint is for MOTD templates only: show it for that type, hide it for the others.
+(() => {
+  const area = document.querySelector('textarea[data-motd-hint]');
+  const type = document.querySelector('select[name="template_type"]');
+  if (!area || !type) return;
+  let hint = area.parentElement.querySelector('.form-text');
+  if (!hint) {
+    hint = document.createElement('div');
+    hint.className = 'form-text';
+    hint.textContent = area.dataset.motdHint;
+    area.insertAdjacentElement('afterend', hint);
+  }
+  function show() { hint.hidden = type.value !== 'motd' && type.value !== ''; }
+  type.addEventListener('change', show);
+  show();
+})();
+</script>
+{% endif %}
 {% if section == "structure-templates" %}
 <script src="{% static 'fleetops/structure_layout.js' %}?v={% fleetops_version %}"></script>
 <script>

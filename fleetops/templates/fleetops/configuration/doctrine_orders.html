@@ -6,6 +6,9 @@
   <h2 class="mb-1">{% translate "Doctrine Settings" %}</h2>
   <div class="text-muted">{% translate "Who may ping which doctrine, who may use a custom doctrine name, and the order in which the ships of a doctrine are listed in pings and MOTDs." %}</div>
 </div>
+{% if custom_open_warning %}
+<div class="alert alert-warning" role="alert" id="doctrine-custom-open-warning">{% translate "Some doctrines are restricted to groups, but everybody who may start fleets can still use a custom doctrine name. A custom name that is not the name of a restricted doctrine is accepted, so the restriction can be worked around with a differently written name. To close this, choose Only the chosen groups under Custom doctrine name and select the groups that may use it." %}</div>
+{% endif %}
 <form method="post" id="doctrine-settings-form">
   {% csrf_token %}
   <div class="card mb-3">

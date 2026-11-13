@@ -182,5 +182,10 @@ def doctrine_settings(request):
             "groups": groups,
             "custom_restricted": bool(settings_row and settings_row.custom_name_restricted),
             "custom_groups": custom_groups,
+            # Restricted doctrines next to a custom name open to everybody: anybody can still ping a differently
+            # spelled name for the same fleet.
+            "custom_open_warning": any(item["selected"] for item in items) and not bool(
+                settings_row and settings_row.custom_name_restricted
+            ),
         },
     )

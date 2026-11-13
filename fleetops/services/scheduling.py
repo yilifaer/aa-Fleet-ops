@@ -245,6 +245,28 @@ def _stored_doctrine(operation) -> dict:
     }
 
 
+def _already_reported(operation, user, values) -> bool:
+    """Whether the last refusal of this fleet was the same one and the fleet has not changed since.
+
+    Pressing Start again must not write an audit entry and send a notification every time. A new one is written
+    when the fleet is saved again (its change time moves on, which covers a new doctrine, FC or time), when the
+    person or the reason differs, or after a start (the fleet is no longer scheduled).
+    """
+    last = (
+        AuditLog.objects.filter(
+            action="fleet.schedule_start_refused", object_type="FleetOperation", object_id=str(operation.pk)
+        )
+        .order_by("-created_at", "-pk")
+        .first()
+    )
+    return bool(
+        last is not None
+        and last.actor_id == user.pk
+        and last.new_value == values
+        and (operation.updated_at is None or last.created_at >= operation.updated_at)
+    )
+
+
 def _report_revoked_doctrine(operation, user, refusal) -> str:
     """Audit entry and notification for a scheduled fleet that is not started because the rules changed.
 
@@ -253,20 +275,18 @@ def _report_revoked_doctrine(operation, user, refusal) -> str:
     entry stay).
     """
     custom = refusal == texts.CUSTOM_DOCTRINE_NOT_ALLOWED()
-    audit(
-        user,
-        "fleet.schedule_start_refused",
-        operation,
-        None,
-        {
-            "reason": "custom_doctrine_name" if custom else "doctrine",
-            "doctrine_source": operation.doctrine_source,
-            "doctrine_external_id": operation.doctrine_external_id,
-            "doctrine_name": operation.doctrine_name,
-            "scheduled_at": format_eve(operation.scheduled_at),
-        },
-        reason=texts.SCHEDULED_CUSTOM_DOCTRINE_REVOKED() if custom else texts.SCHEDULED_DOCTRINE_REVOKED(),
-    )
+    page_text = texts.SCHEDULED_CUSTOM_DOCTRINE_REVOKED() if custom else texts.SCHEDULED_DOCTRINE_REVOKED()
+    values = {
+        "reason": "custom_doctrine_name" if custom else "doctrine",
+        "doctrine_source": operation.doctrine_source,
+        "doctrine_external_id": operation.doctrine_external_id,
+        "doctrine_name": operation.doctrine_name,
+        "scheduled_at": format_eve(operation.scheduled_at),
+    }
+    if _already_reported(operation, user, values):
+        # The same refusal of the same, unchanged fleet: the page says it again, nothing else is written or sent.
+        return page_text
+    audit(user, "fleet.schedule_start_refused", operation, None, values, reason=page_text)
     try:
         with translation.override(texts.user_language(user)):
             title = gettext("Scheduled fleet not started")
@@ -281,7 +301,7 @@ def _report_revoked_doctrine(operation, user, refusal) -> str:
         notify.warning(user, title, message)
     except Exception as exc:
         logger.warning("FleetOps: notification of scheduled fleet %s failed (%s).", operation.pk, type(exc).__name__)
-    return texts.SCHEDULED_CUSTOM_DOCTRINE_REVOKED() if custom else texts.SCHEDULED_DOCTRINE_REVOKED()
+    return page_text
 
 
 def start_scheduled_fleet(operation, *, user, character_id, send_ping: bool) -> FleetOperation:

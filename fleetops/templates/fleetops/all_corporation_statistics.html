@@ -64,7 +64,7 @@
         <td class="text-end">{% if row.is_other %}&mdash;{% else %}<strong>{{ row.average }}</strong>{% endif %}</td>
         <td class="text-end">{% if entry.target_pap is not None %}{{ overview.target.average|floatformat:2 }}<div class="small text-muted">{{ entry.target_pap|floatformat:"-2" }} PAP</div>{% else %}&mdash;{% endif %}</td>
         <td>{% include "fleetops/statistics/_status_badge.html" with status=row.status %}</td>
-        <td>{% for fleet_type, pap in entry.types %}{% if pap %}<span class="fo-pill fo-pill-type fo-type-{{ fleet_type|type_tone }} me-1"{% with dot=fleet_type|type_dot_style %}{% if dot %} style="{{ dot }}"{% endif %}{% endwith %}>{{ fleet_type }} <strong>{{ pap }}</strong></span>{% endif %}{% endfor %}</td>
+        <td>{% for fleet_type, pap in entry.types %}{% if pap %}<span class="fo-pill fo-pill-type{% with tone=fleet_type|type_tone %}{% if tone %} fo-type-{{ tone }}{% endif %}{% endwith %} me-1"{% with dot=fleet_type|type_dot_style %}{% if dot %} style="{{ dot }}"{% endif %}{% endwith %}>{{ fleet_type }} <strong>{{ pap }}</strong></span>{% endif %}{% endfor %}</td>
         <td class="text-end">{% if not row.is_other %}<div class="fo-row-buttons"><a class="btn btn-sm btn-outline-secondary" href="{% url 'fleetops:corporation_statistics_detail' row.corporation_id %}?year={{ year }}&amp;month={{ month }}">{% translate "Details" context "FleetOps" %}</a><a class="btn btn-sm btn-outline-secondary" href="{% url 'fleetops:corporation_members_detail' row.corporation_id %}?year={{ year }}&amp;month={{ month }}">{% translate "Members" %}</a></div>{% endif %}</td>
       </tr>
       {% endwith %}{% empty %}

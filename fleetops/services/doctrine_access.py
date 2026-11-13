@@ -14,17 +14,42 @@ start presets) asks this module; there is no second rule anywhere else.
 * Fittings' own visibility (the category groups) is applied first, by ``providers.doctrines.get_doctrines``; this is
   an extra filter on top of it.
 
+* A typed name that equals the name of a restricted doctrine the user may not ping is refused like that doctrine
+  (case, surrounding and repeated white space, rich text tags, zero-width and full-width look-alikes ignored), so the custom name is no way around the groups.
+
 A ``Scope`` reads the rules once (at most four queries, whatever the number of doctrines) and answers for one user.
 Build a fresh one when the answer has to be current (a start, a scheduled start); a form keeps its own for the page.
 Retrying the MOTD or ping of a running fleet and SRP links are not covered: the doctrine was checked at the start,
 and SRP links are no pings.
 """
 
+import unicodedata
+
 from fleetops.models import DoctrineAccess, DoctrineSettings
+from fleetops.services.ingame_text import plain_text
 
 MANAGE_CONFIGURATION = "fleetops.manage_configuration"
 # Sources that are no doctrine of a doctrine app: a typed name, nothing, or a manual record.
 FREE_SOURCES = frozenset({"", "custom", "none", "manual"})
+
+
+def _all_doctrines() -> list:
+    """Every doctrine of the doctrine app, whoever may see it (the names a typed name is compared with)."""
+    from fleetops.providers.doctrines import get_doctrines
+
+    return get_doctrines(None)
+
+
+def normalize_name(name) -> str:
+    """A doctrine name for comparison, as it reads in the game and in Discord.
+
+    Rich text tags are removed (the ping and MOTD show the plain text), look-alike forms (full-width letters) are
+    folded, invisible format characters (zero-width spaces and joiners) are dropped, white space is collapsed and
+    letter case is ignored.
+    """
+    text = unicodedata.normalize("NFKC", plain_text(name))
+    text = "".join(char for char in text if unicodedata.category(char) != "Cf")
+    return " ".join(text.split()).casefold()
 
 
 def is_administrator(user) -> bool:
@@ -45,6 +70,7 @@ class Scope:
         self._restricted = {}
         self._custom_groups = None
         self._group_ids = None
+        self._blocked_names = None
         if self.unrestricted:
             return
         through = DoctrineAccess.groups.through.objects.values_list(
@@ -84,6 +110,26 @@ class Scope:
         if self.unrestricted or self._custom_groups is None:
             return True
         return bool(self._custom_groups & self.group_ids)
+
+    def refuses_name(self, name) -> bool:
+        """Whether the typed ``name`` is the name of a restricted doctrine this user may not ping.
+
+        Without this a custom name that is open to everybody would get around the groups of a doctrine. Only
+        doctrines that still exist count (the names come from the doctrine app); administrators are never refused.
+        """
+        if self.unrestricted or not self._restricted:
+            return False
+        key = normalize_name(name)
+        if not key:
+            return False
+        if self._blocked_names is None:
+            self._blocked_names = {
+                normalize_name(choice.name)
+                for choice in _all_doctrines()
+                if self.restricted(choice.source, choice.external_id)
+                and not self.can_use_doctrine(choice.source, choice.external_id)
+            }
+        return key in self._blocked_names
 
     @property
     def custom_name_limited(self) -> bool:
@@ -127,6 +173,8 @@ def refusal(user, cleaned_data, *, scope=None, blank_allowed=None) -> str:
     if source not in FREE_SOURCES:
         return "" if scope.can_use_doctrine(source, cleaned_data.get("doctrine_external_id")) else texts.DOCTRINE_NOT_ALLOWED()
     if source == "custom" or (source in ("none", "") and cleaned_data.get("doctrine_name")):
+        if scope.refuses_name(cleaned_data.get("doctrine_name")):
+            return texts.DOCTRINE_NOT_ALLOWED()
         return "" if scope.can_use_custom_name() else texts.CUSTOM_DOCTRINE_NOT_ALLOWED()
     if scope.can_use_custom_name():
         return ""

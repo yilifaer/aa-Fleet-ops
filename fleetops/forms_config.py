@@ -682,10 +682,18 @@ class MessageTemplateForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["content"].help_text = _(
+        hint = _(
             "MOTD templates: the FC and the form-up system can be clicked in the game only with {{ fc_link }} and "
             "{{ formup_link }}; {{ fc }} and {{ formup }} are plain text."
         )
+        content = self.fields["content"]
+        # The hint is for MOTD templates only. It is shown without a script when the saved type is MOTD or not known
+        # yet (a new template); the page script shows and hides it when the type is changed in the form, and takes the
+        # text from this attribute.
+        content.widget.attrs["data-motd-hint"] = str(hint)
+        saved_type = self.instance.template_type if self.instance.pk else ""
+        if saved_type in ("", MessageTemplate.TemplateType.MOTD):
+            content.help_text = hint
 
 
 # --- FleetOps SRP ---------------------------------------------------------------------------------------

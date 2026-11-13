@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-12 05:44+0000\n"
+"POT-Creation-Date: 2026-11-13 08:49+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -7037,6 +7037,10 @@ msgid "Who may ping which doctrine, who may use a custom doctrine name, and the 
 msgstr "谁能 ping 哪个建制、谁能使用自定义建制名，以及建制的舰船在 Ping 和 MOTD 中的排列顺序。"
 
 #: templates/fleetops/configuration/doctrine_orders.html
+msgid "Some doctrines are restricted to groups, but everybody who may start fleets can still use a custom doctrine name. A custom name that is not the name of a restricted doctrine is accepted, so the restriction can be worked around with a differently written name. To close this, choose Only the chosen groups under Custom doctrine name and select the groups that may use it."
+msgstr "有些建制限制了身份组，但所有能开舰队的人仍然可以使用自定义建制名。只要手输的名称不是受限建制的名称就会被接受，所以换个写法就能绕过限制。要堵上这个漏洞，请在“自定义建制名称”下选择“只有指定的身份组”，并选出可以使用它的身份组。"
+
+#: templates/fleetops/configuration/doctrine_orders.html
 msgid "The option None / Custom of the start, scheduled fleet, ping and preset forms lets a person type a doctrine name. Administrators and superusers can always use it."
 msgstr "开舰队、预约舰队、发送 Ping 和预设表单里的“无 / 自定义”选项允许手输建制名称。管理员和超级管理员始终可以使用。"
 
@@ -7247,10 +7251,6 @@ msgstr "FleetOps SRP：成员可以申请什么、赔付多少以及月度限额
 #: templates/fleetops/configuration/srp_settings.html
 msgid "General settings (SRP provider, automatic SRP link)"
 msgstr "常规设置（SRP 提供方、自动创建 SRP 链接）"
-
-#: templates/fleetops/configuration/srp_settings.html
-msgid "Members cannot submit a loss outside a fleet right now: a category is required, but there is no default category and no active category that members can choose. Turn off “Members must choose a category for losses outside a fleet”, choose a default category, or make an active category choosable by members, then save."
-msgstr "目前成员无法提交舰队外损失：设置要求选择类别，但没有默认类别，也没有成员可选的启用类别。请关闭“舰队外损失必须选择类别”、选择默认类别，或让一个启用的类别可供成员选择，然后保存。"
 
 #: templates/fleetops/configuration/srp_settings.html
 #, python-format
@@ -14114,7 +14114,7 @@ msgstr "该申请是从 aa-srp 导入的，只是一条记录，不能在这里�
 msgid "Replacing the loss of a claim is switched off."
 msgstr "替换申请的损失已关闭。"
 
-#: texts.py views_doctrine_settings.py
+#: texts.py views_config.py views_doctrine_settings.py
 msgid "Nothing was changed."
 msgstr "没有任何改动。"
 
@@ -14966,6 +14966,10 @@ msgstr "所有已启用的身份组"
 #: views_config.py
 msgid "FleetOps settings updated."
 msgstr "FleetOps 设置已更新。"
+
+#: views_config.py
+msgid "Members cannot submit a loss outside a fleet right now: a category is required, but there is no default category and no active category that members can choose. Turn off “Members must choose a category for losses outside a fleet”, choose a default category, or make an active category choosable by members, then save."
+msgstr "目前成员无法提交舰队外损失：设置要求选择类别，但没有默认类别，也没有成员可选的启用类别。请关闭“舰队外损失必须选择类别”、选择默认类别，或让一个启用的类别可供成员选择，然后保存。"
 
 #: views_config.py
 msgid "The recommended lists were filled in. Check them and save."

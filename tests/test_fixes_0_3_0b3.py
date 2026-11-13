@@ -49,7 +49,7 @@ class PingCooldownWordingTests(TestCase):
                 self.assertRegex(text, r"ping [1-9]\d* seconds? ago\. Wait [1-9]\d* seconds?\.$")
         self.assertIn("1 second ago. Wait 60 seconds.", ping_cooldown_problem(channel, now=now))
 
-    def test_the_time_since_the_last_ping_is_rounded_to_the_nearest_second(self):
+    def test_the_time_since_the_last_ping_is_rounded_down_and_the_wait_up(self):
         fc = f.create_user("cool_round_fc", perms=f.FC_PERMS)
         channel = f.ping_channel("CoolRound")
         now = timezone.now()

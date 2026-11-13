@@ -274,7 +274,9 @@ def _load_doctrine(form, stored, labels, initial, warnings):
     name = labels.get(DOCTRINE) or value
     initial[DOCTRINE] = ""
     parts = value.split("|", 2)
-    if len(parts) == 3 and not form.doctrine_scope.can_use_doctrine(parts[0], parts[1]):
+    if (len(parts) == 3 and not form.doctrine_scope.can_use_doctrine(parts[0], parts[1])) or (
+        form.custom_name_allowed and form.doctrine_scope.refuses_name(name)
+    ):
         warnings.append(
             gettext("Doctrine '%(name)s' of this preset: %(reason)s")
             % {"name": name, "reason": translate_stored(texts.DOCTRINE_NOT_ALLOWED())}
@@ -292,12 +294,19 @@ def _load_doctrine(form, stored, labels, initial, warnings):
 def _load_custom_name(form, stored, initial, warnings):
     """A typed doctrine name of the preset the user may not use (any more) is not loaded, and the preset says so."""
     name = str(initial.get(CUSTOM_DOCTRINE) or "").strip()
-    if not name or form.custom_name_allowed:
+    if not name:
+        return
+    if not form.custom_name_allowed:
+        reason = texts.CUSTOM_DOCTRINE_NOT_ALLOWED()
+    elif form.doctrine_scope.refuses_name(name):
+        # The name of a doctrine this user may not ping: not a way around its groups.
+        reason = texts.DOCTRINE_NOT_ALLOWED()
+    else:
         return
     initial.pop(CUSTOM_DOCTRINE, None)
     warnings.append(
         gettext("Custom doctrine name '%(name)s' of this preset: %(reason)s")
-        % {"name": name, "reason": translate_stored(texts.CUSTOM_DOCTRINE_NOT_ALLOWED())}
+        % {"name": name, "reason": translate_stored(reason)}
     )
 
 
