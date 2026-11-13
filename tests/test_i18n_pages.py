@@ -637,7 +637,7 @@ class ChineseFlowTests(PageWorld, ChinesePageMixin, TestCase):
             elif value is not None and value is not False:
                 data[name] = value
 
-        # Changed in 0.3.0rc1: saving the unchanged values now says "Nothing was changed.", so one value is changed here.
+        # Changed in 0.3.0b4: saving the unchanged values now says "Nothing was changed.", so one value is changed here.
         data["tracking_interval"] = int(data["tracking_interval"]) + 1
 
         response = self.post(self.lead, "configuration_settings", data=data)

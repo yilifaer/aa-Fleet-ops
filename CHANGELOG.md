@@ -1,8 +1,8 @@
 # Changelog
 
-## [0.3.0rc1] - Unreleased
+## [0.3.0b4] - 2026-11-13
 
-Fixes from the re-test of 0.3.0b3 on a test site. There are no new migrations; install it the way you installed 0.3.0b3. To go back, install 0.3.0b3 again; nothing in the database changes.
+Fixes from the re-test of 0.3.0b3 on a test site.
 
 ### Fixed
 
@@ -14,6 +14,14 @@ Fixes from the re-test of 0.3.0b3 on a test site. There are no new migrations; i
 - **Saving a configuration page without changes** (the general settings, the SRP settings and every list page edit form) writes no audit entry and shows the message *Nothing was changed.*, the same as Doctrine Settings.
 - The statistics of all corporations no longer put an unused class on the labels of fleet types with a custom colour.
 - Documentation: the Chinese pages say **在总览显示** (Dashboard is 总览 in the interface), the colour contrast warning is described as it works (live preview on the edit page, message on the list page after saving), and the menu names in the manual test list match the interface (后台设置, 建制设置).
+
+### Upgrade notes
+
+- No migrations. Install the new version, run `collectstatic` and restart Alliance Auth and Celery.
+
+### Rollback notes
+
+- Install 0.3.0b3 again. Nothing in the database changes.
 
 ## [0.3.0b3] - 2026-11-12
 

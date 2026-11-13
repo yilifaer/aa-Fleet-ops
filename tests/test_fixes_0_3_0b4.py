@@ -43,7 +43,7 @@ def flashed(response):
 
 class DeadEndWarningAfterSaveTests(TestCase):
     def test_a_save_that_leaves_the_dead_end_in_place_ends_with_the_warning(self):
-        admin = f.create_user("rc1_dead_end_admin", perms=CONFIG_PERMS + f.SRP_MEMBER_PERMS)
+        admin = f.create_user("b4_dead_end_admin", perms=CONFIG_PERMS + f.SRP_MEMBER_PERMS)
         self.client.force_login(admin)
         f.srp_settings(out_of_fleet_category_required=True, claim_deadline_days=7)
         url = reverse("fleetops:configuration_list", args=["srp"])
@@ -59,7 +59,7 @@ class DeadEndWarningAfterSaveTests(TestCase):
         self.assertContains(self.client.get(url), warnings[0].split(",")[0][:40])
 
     def test_the_warning_is_not_shown_twice_when_the_redirect_lands_on_the_srp_page(self):
-        admin = f.create_user("rc1_dead_end_twice", perms=CONFIG_PERMS + f.SRP_MEMBER_PERMS)
+        admin = f.create_user("b4_dead_end_twice", perms=CONFIG_PERMS + f.SRP_MEMBER_PERMS)
         self.client.force_login(admin)
         f.srp_settings(out_of_fleet_category_required=True, claim_deadline_days=7)
         url = reverse("fleetops:configuration_list", args=["srp"])
@@ -75,7 +75,7 @@ class DeadEndWarningAfterSaveTests(TestCase):
         self.assertContains(self.client.get(url), 'id="srp-category-dead-end"')
 
     def test_a_working_configuration_gets_no_such_warning(self):
-        admin = f.create_user("rc1_ok_admin", perms=CONFIG_PERMS + f.SRP_MEMBER_PERMS)
+        admin = f.create_user("b4_ok_admin", perms=CONFIG_PERMS + f.SRP_MEMBER_PERMS)
         self.client.force_login(admin)
         f.srp_settings(out_of_fleet_category_required=False)
 
@@ -90,7 +90,7 @@ class DeadEndWarningAfterSaveTests(TestCase):
 
 class PingCooldownNumbersTests(TestCase):
     def test_the_two_numbers_never_contradict_each_other(self):
-        fc = f.create_user("rc1_cool_fc", perms=f.FC_PERMS)
+        fc = f.create_user("b4_cool_fc", perms=f.FC_PERMS)
         channel = f.ping_channel("RcCool")
         now = timezone.now()
         ping = f.standalone_ping(sender=fc, channel=channel, status=StandalonePing.Status.SENT)
@@ -109,7 +109,7 @@ class PingCooldownNumbersTests(TestCase):
 
 class TemplateHintTests(TestCase):
     def setUp(self):
-        self.admin = f.create_user("rc1_hint_admin", perms=f.MEMBER_PERMS + ["fleetops.manage_configuration"])
+        self.admin = f.create_user("b4_hint_admin", perms=f.MEMBER_PERMS + ["fleetops.manage_configuration"])
         self.client.force_login(self.admin)
 
     def page(self, template_type):
@@ -207,9 +207,9 @@ class NameRuleTests(RestrictedNameBase):
 
     def test_a_member_of_the_group_and_administrators_may(self):
         self.assertEqual(self.refused(self.join(self.fc, self.caplead), "Flagship Doctrine"), "")
-        admin = f.create_user("rc1_name_admin", perms=da.ADMIN_PERMS)
+        admin = f.create_user("b4_name_admin", perms=da.ADMIN_PERMS)
         self.assertEqual(self.refused(admin, "Flagship Doctrine"), "")
-        superuser = f.create_user("rc1_name_su")
+        superuser = f.create_user("b4_name_su")
         superuser.is_superuser = True
         superuser.save()
         self.assertEqual(self.refused(da.fresh(superuser), "Flagship Doctrine"), "")
@@ -313,7 +313,7 @@ class GroupFleetNameTests(da.DoctrineAccessBase):
     def test_a_group_leader_cannot_type_the_name_of_a_restricted_doctrine(self):
         helper = da.GroupFleetTests
         group = f.aa_group("Example Fleet Group")
-        leader = f.create_user("rc1_lead", perms=f.MEMBER_PERMS, main_name="Group Leader")
+        leader = f.create_user("b4_lead", perms=f.MEMBER_PERMS, main_name="Group Leader")
         group.authgroup.group_leaders.add(leader.pk)
         f.group_access(group, "fleets", types=[self.fleet_type])
         leader = da.fresh(leader)
@@ -358,7 +358,7 @@ class ScheduledNameTests(SchedulingTestBase):
 class SettingsPageWarningTests(da.DoctrineAccessBase):
     def setUp(self):
         super().setUp()
-        self.admin = f.create_user("rc1_settings_admin", perms=da.ADMIN_PERMS)
+        self.admin = f.create_user("b4_settings_admin", perms=da.ADMIN_PERMS)
         self.client.force_login(self.admin)
         self.url = reverse("fleetops:doctrine_orders")
 
@@ -506,7 +506,7 @@ class CustomColourClassTests(TestCase):
 
 class SavesThatChangeNothingTests(TestCase):
     def setUp(self):
-        self.admin = f.create_user("rc1_nochange_admin", perms=f.MEMBER_PERMS + ["fleetops.manage_configuration"])
+        self.admin = f.create_user("b4_nochange_admin", perms=f.MEMBER_PERMS + ["fleetops.manage_configuration"])
         self.client.force_login(self.admin)
 
     def updates(self):
