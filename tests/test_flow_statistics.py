@@ -373,7 +373,11 @@ class StatisticsFlow:
         self.assertEqual(self.page(self.a3, "my_statistics", month=MARCH).context["minimum_status"], "below")
         self.assertEqual(self.page(self.a3, "my_statistics", month=APRIL).context["minimum_status"], "below_so_far")
         self.assertIsNone(self.page(self.a3, "my_statistics", month=MARCH).context["rank_card"])
+        # Changed for 0.3.0b6: a managers-only leaderboard no longer removes the member's own rank card; "Not shown"
+        # in the rank scope does.
         f.settings(leaderboard_visibility="managers")
+        self.assertIsNotNone(self.page(self.a2, "my_statistics", month=MARCH).context["rank_card"])
+        f.settings(member_rank_scope="none")
         self.assertIsNone(self.page(self.a2, "my_statistics", month=MARCH).context["rank_card"])
 
     # Member detail and fleet links

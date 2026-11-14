@@ -108,7 +108,9 @@ class CommandBarTests(FleetTabTestCase):
             self.assertIn(text, manager)
         for text in ("Edit Operation", "End Fleet"):
             self.assertNotIn(text, member)
-        self.assertIn(">Open SRP</a>", member)
+        # Changed for 0.3.0b6: a participant gets the member view, which has no command bar and no Open SRP button.
+        self.assertNotIn("fleet-command-bar is-sticky", member)
+        self.assertNotIn(">Open SRP</a>", member)
         # No solid red or green button is left on the bar: outlines only.
         self.assertNotIn("btn-outline-success", manager)
 
@@ -122,6 +124,8 @@ class CommandBarTests(FleetTabTestCase):
         self.assertIn('href="#operation-steps"', manager)
         self.assertIn('id="operation-steps"', manager)
         self.assertNotIn('id="fleet-failed-steps"', member)
+        # Changed for 0.3.0b6: the member view has no start steps at all.
+        self.assertNotIn('id="operation-steps"', member)
 
     def test_no_callout_for_a_closed_fleet_or_for_other_steps(self):
         closed = f.create_operation(self.fc, status=Status.CLOSED)
@@ -171,17 +175,18 @@ class DefaultTabTests(FleetTabTestCase):
         self.assertEqual(response.context["default_tab"], "fleet")
         self.assertEqual(active_tab(response.content.decode()), "#fleet")
 
-    def test_members_of_a_running_fleet_open_on_pap(self):
+    def test_members_of_a_running_fleet_get_the_member_view_without_tabs(self):
+        # Changed for 0.3.0b6: a participant gets the slim page; there are no tabs to open on.
         response = self.page(self.member, self.own_active)
 
-        self.assertEqual(response.context["default_tab"], "attendance")
+        self.assertTemplateUsed(response, "fleetops/operation_detail_member.html")
         html = response.content.decode()
-        self.assertEqual(active_tab(html), "#attendance")
-        self.assertContains(response, 'class="tab-pane fade show active" id="attendance"')
-        self.assertNotContains(response, 'class="tab-pane fade show active" id="members"')
+        self.assertIsNone(active_tab(html))
+        self.assertNotIn('id="operation-tabs"', html)
 
     def test_a_closed_fleet_opens_on_pap_for_everybody(self):
-        for user in (self.fc, self.outsider, self.lead):
+        # Changed for 0.3.0b6: only the people who see the full page (the member view has no tabs).
+        for user in (self.fc, self.lead):
             with self.subTest(user=user.username):
                 response = self.page(user, self.own_closed)
                 self.assertEqual(response.context["default_tab"], "attendance")
@@ -203,7 +208,8 @@ class DefaultTabTests(FleetTabTestCase):
         self.assertEqual(active_tab(self.html(self.fc, ending)), "#fleet")
 
     def test_a_tab_named_in_the_address_still_wins(self):
-        html = self.html(self.member, self.own_active)
+        # Changed for 0.3.0b6: the viewer is the FC, because a participant gets the member view without tabs.
+        html = self.html(self.fc, self.own_active)
 
         # The page script opens the tab of the address on load and keeps the open tab in the address.
         self.assertIn("button(location.hash)", html)
@@ -259,6 +265,7 @@ class VisibilityMatrixTests(FleetTabTestCase):
 
     def test_a_tracked_member_sees_the_bar_and_their_own_rows_only(self):
         html = self.html(self.member)
+        self.assertIn('id="fleet-command-bar"', html)
 
         for text in (
             'data-bs-target="#fleet"',
@@ -275,15 +282,16 @@ class VisibilityMatrixTests(FleetTabTestCase):
             with self.subTest(hidden=text):
                 self.assertNotIn(text, html)
         self.assert_not_managing(html)
-        self.assertEqual(active_tab(html), "#attendance")
-        # K3: the PAP tab lists the member's own rows, not the FC's.
-        pap = html.split('id="pap-preview-fragment"', 1)[1].split('id="roles"', 1)[0]
+        # Changed for 0.3.0b6: a tracked participant gets the member view: no tabs, no steps and no composition, and
+        # only their own attendance rows (the earlier K3 rule, now for the whole page).
+        self.assertIsNone(active_tab(html))
+        self.assertNotIn('id="operation-tabs"', html)
+        self.assertNotIn("member-step-hidden", html)
+        self.assertNotIn("Could not kick Neutral Pod.", html)
+        self.assertNotIn('id="composition-hidden"', html)
+        pap = html.split('id="member-attendance"', 1)[1]
         self.assertIn("member Main", pap)
         self.assertNotIn("fc Main", pap)
-        # The steps keep their rule: no details of steps that name fleet members.
-        self.assertIn("member-step-hidden", html)
-        self.assertNotIn("Could not kick Neutral Pod.", html)
-        self.assertIn('id="composition-hidden"', html)
 
     def test_a_viewer_of_all_fleets_sees_the_fleet_but_cannot_change_it(self):
         html = self.html(self.other_fc)
@@ -339,8 +347,13 @@ class VisibilityMatrixTests(FleetTabTestCase):
         fresh = self.html(self.fc)
         self.assertIn('data-state="live"', fresh.split('id="fleet-live-state"', 1)[1][:80])
 
-    def test_the_closed_fleet_shows_its_composition_to_everybody_and_opens_on_pap(self):
-        for user in (self.fc, self.outsider, self.lead):
+    def test_the_closed_fleet_shows_its_composition_to_the_full_page_and_opens_on_pap(self):
+        # Changed for 0.3.0b6: only the people who see the full page get the composition; a participant (the outsider
+        # here) gets the member view, checked below.
+        html = self.html(self.outsider, self.own_closed)
+        self.assertNotIn('id="fleet-composition"', html)
+        self.assertNotIn("Composition</button>", html)
+        for user in (self.fc, self.lead):
             with self.subTest(user=user.username):
                 html = self.html(user, self.own_closed)
                 self.assertIn('id="fleet-composition"', html)

@@ -416,7 +416,9 @@ class FleetPageReviewTests(ApprovalTestCase):
         self.assertContains(lead_page, "Approve fleet")
         self.assertNotContains(lead_page, "Resubmit for approval")
         self.assertNotContains(lead_page, "Reject fleet")
-        self.assertContains(member_page, "Rejected by an FC lead")
+        # Changed for 0.3.0b6: a participant gets the member view, which has no review banner and no reason.
+        self.assertTemplateUsed(member_page, "fleetops/operation_detail_member.html")
+        self.assertNotContains(member_page, "Rejected by an FC lead")
         self.assertNotContains(member_page, "Wrong date")
 
     def test_approved_fleets_have_no_banner(self):

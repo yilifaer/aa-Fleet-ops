@@ -165,7 +165,8 @@ class MemberVisibilityTests(LiveStatusTestBase):
         page = self.detail(self.pilot)
 
         self.assertEqual(page.status_code, 200)
-        self.assertContains(page, 'id="composition-hidden"')
+        # Changed for 0.3.0b6: the member view has no tabs, so no hidden-composition notice.
+        self.assertTemplateUsed(page, "fleetops/operation_detail_member.html")
         self.assertIn(self.operation, list(self.page().context["active_operations"]))
         archive = self.page("fleetops:fleet_operations")
         self.assertIn(self.operation, list(archive.context["page"].object_list))
@@ -189,8 +190,8 @@ class MemberVisibilityTests(LiveStatusTestBase):
         member_page = self.detail(self.pilot)
         fc_page = self.detail(self.fc)
 
-        self.assertEqual([c.character_name for c in member_page.context["pap_preview"]], ["Line Pilot"])
-        self.assertEqual(member_page.context["pap_unregistered"], [])
+        # Changed for 0.3.0b6: the member view lists only the viewer's own rows (context "attendance_rows").
+        self.assertEqual([r["candidate"].character_name for r in member_page.context["attendance_rows"]], ["Line Pilot"])
         self.assertNotContains(member_page, "Other Pilot")
         self.assertNotContains(member_page, "Outside Pilot")
         self.assertEqual(

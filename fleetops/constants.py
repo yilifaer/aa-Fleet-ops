@@ -20,6 +20,11 @@ LOSS_SCOPES = [KILLMAIL_READ_SCOPE]
 OPEN_WINDOW_SCOPE = "esi-ui.open_window.v1"
 OPEN_WINDOW_SCOPES = [OPEN_WINDOW_SCOPE]
 
+# Every scope FleetOps uses, in the order of the groups above and without repeats. The one CharLink item asks for
+# all of them, and the EVE developer application of the site must have each of them; a new scope is added to
+# one of the lists above and shows up here.
+ALL_SCOPES = list(dict.fromkeys([*FLEET_SCOPES, *CLICK_SCOPES, *LOSS_SCOPES, *OPEN_WINDOW_SCOPES]))
+
 # Built-in templates, also used as the fallback when a stored template cannot be rendered.
 # Pings and MOTDs are always English (their own words are never translated). Migration 0009 keeps copies of the
 # ping and of the MOTD as they were before the SRP line, migration 0017 a copy of the MOTD with the SRP line and

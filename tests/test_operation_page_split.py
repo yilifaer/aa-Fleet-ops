@@ -101,21 +101,20 @@ class OperationPageSplitTests(FleetOpsViewTestCase):
     def test_active_fleet_for_a_member_hides_the_composition(self):
         response = self.page(self.member, self.own_active)
 
+        # Changed for 0.3.0b6: a participant gets the member view: their own rows only, and none of the parts the
+        # full page hides while the fleet is open (the tabs are not rendered at all).
         self.assertAllContained(
             response,
             [
-                'id="composition-hidden"',
-                "The map is shown once the fleet has closed.",
-                "Member events are shown once the fleet has closed.",
-                "While the fleet is open you see the PAP of your own characters.",
+                'id="member-attendance"',
                 "<td>member Main</td>",
-                'Special Roles <span class="fo-count">1</span>',
+                "PAP is granted when the fleet closes.",
             ],
         )
         self.assertNoneContained(
             response,
-            ["Neutral Pod", "fc Main</td>", "Edit Operation", "End Fleet", "Fleet Control", "Assign Role",
-             "Save Manual PAP", "Retry MOTD"],
+            ["composition-hidden", "The map is shown once", "Special Roles", "Neutral Pod", "fc Main</td>",
+             "Edit Operation", "End Fleet", "Fleet Control", "Assign Role", "Save Manual PAP", "Retry MOTD"],
         )
 
     def test_active_fleet_for_a_fleet_manager(self):
@@ -176,10 +175,13 @@ class OperationPageSplitTests(FleetOpsViewTestCase):
         )
 
     def test_closed_fleet_for_an_attendee_shows_the_composition(self):
+        # Changed for 0.3.0b6: the attendee (outsider) gets the member view with their own row only; the fleet
+        # manager sees the composition.
         response = self.page(self.outsider, self.own_closed)
 
-        self.assertAllContained(response, ["<td>fc Main</td>", "<td>outsider Main</td>"])
-        self.assertNoneContained(response, ['id="composition-hidden"', "Edit Operation", "Apply to Automatic"])
+        self.assertAllContained(response, ["<td>outsider Main</td>"])
+        self.assertNoneContained(response, ["<td>fc Main</td>", "Edit Operation", "Apply to Automatic"])
+        self.assertAllContained(self.page(self.lead, self.own_closed), ["<td>fc Main</td>", "<td>outsider Main</td>"])
 
     def test_ending_closed_manual_and_attendance_only_fleets(self):
         ending = f.create_operation(self.fc, status=FleetOperation.Status.ENDING)

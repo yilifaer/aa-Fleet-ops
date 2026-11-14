@@ -10,7 +10,7 @@
       </div>
       <div class="fo-running-fc">{{ op.fc_character_name }}</div>
       <div class="fo-running-meta">
-        <span>{% blocktranslate trimmed count counter=row.member_count %}{{ counter }} member{% plural %}{{ counter }} members{% endblocktranslate %}</span>
+        {% if not row.member_view %}<span>{% blocktranslate trimmed count counter=row.member_count %}{{ counter }} member{% plural %}{{ counter }} members{% endblocktranslate %}</span>{% endif %}
         <span title="{% translate 'Started at' %} {{ op.started_at|eve_time }} EVE"><i class="fa-regular fa-clock" aria-hidden="true"></i> <span data-since-utc="{{ op.started_at|eve_time:'%Y-%m-%dT%H:%M:%SZ' }}">{{ op.started_at|eve_time }} EVE</span></span>
         {% if row.show_system and row.fc_system_name %}<span><i class="fa-solid fa-location-dot" aria-hidden="true"></i> {{ row.fc_system_name }}</span>{% endif %}
       </div>

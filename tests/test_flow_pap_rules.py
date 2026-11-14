@@ -558,7 +558,9 @@ class PapLinkFleetFlowTests(TestCase):
         with self.at(10):
             page = self.client.get(reverse("fleetops:operation_detail", args=[operation.uuid]))
         self.assertEqual(page.status_code, 200)
-        self.assertContains(page, 'id="badge-link-only"')
+        # Changed for 0.3.0b6: the pilot who registered gets the member view, which has no PAP-link badge.
+        self.assertTemplateUsed(page, "fleetops/operation_detail_member.html")
+        self.assertNotContains(page, 'id="badge-link-only"')
 
         # Ended after 40 minutes: a plain end at 1x, no ESI call.
         self.client.force_login(self.fc)

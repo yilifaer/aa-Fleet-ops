@@ -405,3 +405,13 @@ right actor.
 - [ ] Alliance, FC statistics: the labels of the fleet types have the colour dot of the type like the other statistics pages (a custom colour too, and readable in both themes).
 - [ ] The Default Ping stored on the test site is unchanged by the upgrade (no SRP line). Create a new ping template from the built-in text in `docs/message-templates.md`, make it the default and start a fleet that has an SRP link: the ping has the line `SRP: Request SRP` (a link) after the doctrine line; a fleet without a link has no SRP line and no empty label.
 - [ ] Upgrade check: `python manage.py migrate` applies `0045` (one new column, nothing else changes); `migrate fleetops 0044` removes the setting.
+
+## 22. Owner feedback of 0.3.0b6
+
+- [ ] CharLink (aa-charlink installed): the page offers one FleetOps item, **FleetOps (PAP links, SRP, fleet control)**, ticked by default, for a member who has only `fleetops.basic_access`. The EVE login asks for all seven scopes (the list is in the README); a character authorized with 0.3.0b5 shows as not added until the item is used once. The EVE developer application has all seven scopes.
+- [ ] Member account (`basic_access` and `request_srp` only): open a closed fleet you took part in. The page shows the type, FC, status, start, end, duration, the ping text, **Request SRP for this fleet** (or "Closed ..." after the link closed) and **My attendance** with only your own characters. There are no statistic cards, tabs, member names, MOTD or buttons, and no other character name anywhere in the page source.
+- [ ] As the same member, open `operations/<uuid>/fleet/state/` of that fleet: *not found*. A fleet you did not take part in is *not found* too.
+- [ ] As the FC of the fleet, as a leader of the fleet's group and with `view_all_fleets`: the full fleet page as before.
+- [ ] My PAP history: the column is called **FC**; the name still opens the fleet (the slim page for a fleet of another FC).
+- [ ] Set **Leaderboard visibility** to statistics managers: a member's My Statistics still has the rank card ("#N of M", numbers only) and no **Leaderboard** link; `statistics/leaderboard/` is refused. Set **Rank shown to members** to the own corporation (the card ranks inside the corporation and says so) and to **Not shown** (no card). A statistics manager's page is unchanged.
+- [ ] Upgrade check: `python manage.py migrate` applies `0046` (one new column, set to the alliance); `python manage.py fleetops_srp_rollback_check` then `migrate fleetops 0045` removes it.

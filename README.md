@@ -246,11 +246,12 @@ PAP links read where a pilot is, what they fly and whether they are online, with
 `esi-location.read_location.v1`, `esi-location.read_ship_type.v1` and `esi-location.read_online.v1`. These are
 the scopes of AFAT's click tracking and of the matching aa-charlink import, so tokens they already hold are
 reused. FleetOps SRP can read the recent losses of the members' characters (`esi-killmails.read_killmails.v1`, with the
-member's own token, only while **Find losses automatically** is on). Enable these six scopes in your EVE SSO application;
-without the last one, loss discovery cannot be authorized and everything else works. A seventh scope is optional:
-`esi-ui.open_window.v1` is used only by the **Open in game** button of the SRP payments page, with the token of the payer's
-own in-game character, and is requested only when a payer adds that character. Without it on the application, only that
-authorization fails.
+member's own token, only while **Find losses automatically** is on). `esi-ui.open_window.v1` is used only by the **Open in game** button of the SRP payments page, with the token of the payer's
+own in-game character. Enable all seven scopes in your EVE SSO application: `esi-fleets.read_fleet.v1`, `esi-fleets.write_fleet.v1`,
+`esi-location.read_location.v1`, `esi-location.read_ship_type.v1`, `esi-location.read_online.v1`,
+`esi-killmails.read_killmails.v1` and `esi-ui.open_window.v1`. With aa-charlink installed its FleetOps item asks for all seven at once, so
+the CharLink login fails for everybody when one of them is missing; without CharLink a missing scope fails only the
+authorization that needs it.
 
 ## First steps
 

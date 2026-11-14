@@ -872,16 +872,19 @@ class MyStatisticsAssessmentTests(TestCase):
 
         self.assertEqual((card["rank"], card["of"]), (1, 4))
 
-    def test_managers_only_setting_hides_the_rank_from_members(self):
+    def test_managers_only_setting_keeps_the_rank_card_but_hides_the_leaderboard_link(self):
+        # Changed for 0.3.0b6: the rank card no longer depends on the leaderboard permission.
         f.settings(leaderboard_visibility="managers")
 
         response = self.page(self.bob)
 
-        self.assertIsNone(response.context["rank_card"])
-        self.assertNotContains(response, "PAP rank")
+        self.assertEqual(response.context["rank_card"]["rank"], 2)
+        self.assertContains(response, "PAP rank")
+        self.assertNotContains(response, reverse("fleetops:leaderboard"))
 
-    def test_managers_only_setting_ranks_a_corporation_manager_in_the_corporation(self):
-        f.settings(leaderboard_visibility="managers")
+    def test_the_corporation_scope_ranks_a_corporation_manager_in_the_corporation(self):
+        # Changed for 0.3.0b6: the scope comes from "Rank shown to members", not from the leaderboard permission.
+        f.settings(leaderboard_visibility="managers", member_rank_scope="corporation")
         manager = f.create_user("manager", perms=f.CORP_MANAGEMENT_PERMS)
         f.add_attendance(self.op, manager, value=4)
 
@@ -892,7 +895,7 @@ class MyStatisticsAssessmentTests(TestCase):
         self.assertEqual((card["rank"], card["of"], card["scope"]), (2, 4, "corporation"))
         self.assertContains(response, "members of your corporation")
 
-    def test_managers_only_setting_ranks_a_statistics_manager_in_the_alliance(self):
+    def test_managers_only_setting_still_ranks_a_statistics_manager_in_the_alliance(self):
         f.settings(leaderboard_visibility="managers")
         lead = f.create_user("lead", perms=f.MEMBER_PERMS + ["fleetops.view_all_stats"], corporation=f.THIRD_CORP)
         f.add_attendance(self.op, lead, value=4)

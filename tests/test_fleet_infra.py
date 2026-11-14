@@ -141,7 +141,10 @@ class AccessTests(FleetTestCase):
         FleetOperation.objects.filter(pk=self.operation.pk).update(status=Status.CLOSED)
         stranger = f.create_user("infra-stranger", perms=f.MEMBER_PERMS)
 
-        self.assertTrue(can_view_fleet_tab(self.member, self.reload()))
+        # Changed for 0.3.0b6: a member who only took part has the member view and no Fleet tab, open or closed;
+        # the people who see the full page (view_all_fleets here) see the composition of the closed fleet.
+        self.assertFalse(can_view_fleet_tab(self.member, self.reload()))
+        self.assertTrue(can_view_fleet_tab(self.lead, self.reload()))
         self.assertFalse(can_view_live_fleet(self.member, self.operation))
         self.assertFalse(can_view_fleet_tab(stranger, self.operation))
 

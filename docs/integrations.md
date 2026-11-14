@@ -103,15 +103,21 @@ templates. Details, the provider interface for other SRP apps and the aa-srp fie
 
 ## aa-charlink
 
-When aa-charlink is installed, its page offers these FleetOps imports:
+When aa-charlink is installed, its page offers one FleetOps item, **FleetOps (PAP links, SRP, fleet control)**, for users
+with `fleetops.basic_access`. It is ticked by default and asks for all seven scopes FleetOps uses in one EVE login:
+`esi-fleets.read_fleet.v1`, `esi-fleets.write_fleet.v1` (fleet control), `esi-location.read_location.v1`,
+`esi-location.read_ship_type.v1`, `esi-location.read_online.v1` (PAP links), `esi-killmails.read_killmails.v1`
+(SRP loss reading, see [SRP loss discovery](configuration.md#srp-loss-discovery)) and `esi-ui.open_window.v1`
+(**Open in game** of the SRP payments). The fleet-control and open-window permissions are used only when you are the FC of a
+fleet or a payer; a member's token is never used to change a fleet. A character counts as added only with all seven
+scopes, so after an upgrade from 0.3.0b5 every member and FC authorizes once more in CharLink (the former items
+**FleetOps FC fleet control**, **FleetOps PAP links** and **FleetOps SRP loss reading** are gone; the stored CharLink
+setting `fleetops_clickpap` of the PAP item is the one that stays). When a character is added while SRP and
+**Find losses automatically** are on, it is read in the next loss scan.
 
-- **FleetOps FC fleet control**: `esi-fleets.read_fleet.v1` and `esi-fleets.write_fleet.v1`, for users with
-  `fleetops.start_fleet`. Not ticked by default.
-- **FleetOps PAP links**: `esi-location.read_location.v1`, `esi-location.read_ship_type.v1` and
-  `esi-location.read_online.v1`, for users with `fleetops.basic_access`. Ticked by default.
-
-- **FleetOps SRP loss reading**: `esi-killmails.read_killmails.v1`, for users with `fleetops.request_srp`, shown only while
-  SRP and **Find losses automatically** are on. Ticked by default. See [SRP loss discovery](configuration.md#srp-loss-discovery).
+**The EVE developer application of the site must have all seven scopes**, otherwise the CharLink login fails for
+everybody. Every authorization that does not go through CharLink (Start Fleet, PAP links, **Authorize** on My SRP, the
+payments page) keeps asking for only its own scopes.
 
 Characters linked there are ready on Start Fleet, on PAP link pages and for the SRP loss scan. CharLink checks the app label of every
 hook, so `"fleetops"` must appear literally in `INSTALLED_APPS`. Without CharLink the hook is never loaded.

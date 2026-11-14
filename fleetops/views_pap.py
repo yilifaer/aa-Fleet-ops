@@ -83,6 +83,20 @@ def _preview(request, operation, show_all):
     }
 
 
+def member_attendance_rows(request, operation):
+    """The viewer's own characters of the fleet for the member view: name, time in fleet, first and last seen and
+    PAP status. Rows of other people are never read into the page: a closed fleet's records are filtered by the
+    viewer in the query, a running fleet's preview by the viewer's user."""
+    records = operation.attendance_records.filter(auth_user=request.user).order_by("character_name", "pk")
+    rows = []
+    if operation.status != FleetOperation.Status.CLOSED:
+        # A running fleet: the preview of the tracked and registered characters, then the viewer's own manual rows.
+        with tiers_read_once():
+            preview = _preview(request, operation, False)
+        rows = [{"candidate": candidate} for candidate in preview["pap_preview"]]
+    return rows + [{"record": record} for record in records]
+
+
 def pap_context(request, operation):
     """What the fleet page's PAP parts need."""
     with tiers_read_once():

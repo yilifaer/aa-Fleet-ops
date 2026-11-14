@@ -320,6 +320,7 @@ class DashboardTests(GroupFleetBase):
                     "show_system": False,
                     "fc_system_name": "",
                     "member_count": 0,
+                    "member_view": False,
                 }
             ],
         )

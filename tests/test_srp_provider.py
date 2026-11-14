@@ -594,7 +594,11 @@ class FleetCardTests(TestCase):
         card = self.card(self.pilot)
 
         self.assertFalse(card["can_request"])
-        self.assertContains(self.page(self.pilot), "FleetOps SRP is not enabled")
+        # Changed for 0.3.0b6: the pilot gets the member view, which has no SRP card text and no request button while
+        # SRP is off; the fleet's FC still sees the notice.
+        member_page = self.page(self.pilot)
+        self.assertNotContains(member_page, "Request SRP for this fleet")
+        self.assertContains(self.page(self.fc), "FleetOps SRP is not enabled")
 
     def test_fc_and_managers_get_the_link_to_copy(self):
         link = f.fleet_link(self.operation)

@@ -289,7 +289,8 @@ class MemberListTests(KickTestCase):
 
         page = self.detail(self.pilot)
 
-        self.assertContains(page, 'id="composition-hidden"')
+        # Changed for 0.3.0b6: the member view has no tabs; it still names no other pilot and has no kick form.
+        self.assertTemplateUsed(page, "fleetops/operation_detail_member.html")
         self.assertNotContains(page, "Podded Pilot")
         self.assertNotContains(page, "kick-member-form")
 
@@ -312,16 +313,17 @@ class MemberListTests(KickTestCase):
         FleetOperation.objects.filter(pk=self.operation.pk).update(status=Status.CLOSED)
         closed_page = self.detail(self.pilot)
 
-        for page in (member_page, registered_page):
+        # Changed for 0.3.0b6: members get the member view, which has no start steps at all, open or closed.
+        for page in (member_page, registered_page, closed_page):
             self.assertEqual(page.status_code, 200)
-            self.assertContains(page, "Details are shown once the fleet has closed.", count=2)
-        self.assertContains(member_page, 'id="composition-hidden"')
+            self.assertTemplateUsed(page, "fleetops/operation_detail_member.html")
+            self.assertNotContains(page, "Details are shown once the fleet has closed.")
         for text in ("Kicked Podded Pilot", "outside Jita"):
             with self.subTest(text=text):
                 self.assertNotContains(member_page, text)
                 self.assertNotContains(registered_page, text)
+                self.assertNotContains(closed_page, text)
                 self.assertContains(fc_page, text)
-                self.assertContains(closed_page, text)
 
 
 class OutsideSystemTests(KickTestCase):

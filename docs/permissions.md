@@ -42,7 +42,18 @@ These five groups cover most alliances. Create them as Alliance Auth groups and 
 A member sees their own PAP, history, monthly minimum and rank, the PAP leaderboard of the alliance and of
 their own corporation (the default of **Leaderboard visibility**), "PAP in running fleets", and the fleets they
 took part in. A member can register their own characters through a PAP link, and claim ship losses once FleetOps
-SRP is enabled. Of a running fleet a member sees only their own characters until the fleet closes.
+SRP is enabled. A fleet the member took part in opens in the **member view** (below), which shows nothing about other people.
+
+**Member view of a fleet.** A person who may open a fleet only because they took part in it (not `view_all_fleets` or
+`manage_fleets`, not a credited FC, not able to manage the fleet and not the leader of the fleet's group) gets a slim
+fleet page: the fleet type, doctrine, FC and status, the start, the end and the duration, the text of the ping (no
+MOTD, channels or send log), the **Request SRP for this fleet** button while the SRP link is open and they may request
+(or "Closed ..." when it is closed), and **My attendance** with their own characters: time in fleet, first and last seen,
+PAP status and multiplier. Statistics, PAP rules, start steps, composition, members, map, events, special roles, MOTD
+and every button are not rendered. Every other fleet address (for example the live state `fleet/state/`) answers 404 to
+this person. Holders of a special role who are not credited as FC count as members. Links to the fleet (fleet list, My
+PAP history, My Statistics) stay as they are, but on those rows the fleet list and the dashboard show "—" instead of
+form-up time, PAP total, tracked count, ESI fleet, member count and last ESI update.
 
 ### Corporation manager
 
@@ -182,11 +193,11 @@ statistics are not affected.
 | Action | Who |
 |---|---|
 | My Statistics, My History, the monthly minimum and the rank card | `fleetops.basic_access` |
-| Leaderboard | `fleetops.basic_access` and **Leaderboard visibility**: with **Everyone with FleetOps access** (default) every user sees the alliance board and the board of their own corporation; `view_all_stats` also any corporation's board. With **Statistics managers only**, `view_corp_stats` sees the own corporation's board and `view_all_stats` the alliance and any corporation. Without access the page answers 403 and the menu entry is hidden. The rank card on My Statistics follows the same setting. |
+| Leaderboard | `fleetops.basic_access` and **Leaderboard visibility**: with **Everyone with FleetOps access** (default) every user sees the alliance board and the board of their own corporation; `view_all_stats` also any corporation's board. With **Statistics managers only**, `view_corp_stats` sees the own corporation's board and `view_all_stats` the alliance and any corporation. Without access the page answers 403 and the menu entry is hidden. The rank card on My Statistics does not depend on it: it is shown to every member who has PAP in the month, as numbers only, with the scope of **Rank shown to members**; the **Leaderboard** link next to it appears only for those who may open the leaderboard. |
 | Own corporation: Statistics, Members, Inactive, History | `fleetops.view_corp_stats` |
 | One member's page | The member (redirected to My Statistics), `view_corp_stats` for members whose main is in the own corporation, `view_all_stats` for everybody. Users outside the statistics (no main, disabled account, left the member alliances) have no page (404). Links to fleets on it need `view_all_fleets` or `manage_fleets`. |
 | Alliance: All Corps, any corporation's page and members list, Members, Inactive, FC Stats, PAP History | `fleetops.view_all_stats` |
-| Monthly Targets, Leaderboard places, Leaderboard visibility, Member alliance IDs | `fleetops.manage_configuration`; every change is audited |
+| Monthly Targets, Leaderboard places, Leaderboard visibility, Rank shown to members, Member alliance IDs | `fleetops.manage_configuration`; every change is audited |
 
 Exports are at `/fleetops/statistics/export/<dataset>/?format=xlsx` or `format=csv`:
 
@@ -293,7 +304,7 @@ started and writes `fleet.schedule_start_refused` (see [Doctrine Settings](confi
 | Action | Who |
 |---|---|
 | See the Fleet tab of an active or ending fleet (tree and composition) | The fleet's managers (its FC and FC-credited special-role members with `manage_own_fleet`, and `manage_fleets`), and `view_all_fleets` read-only. Other members who can open the fleet page do not see it while the fleet is open. |
-| See the composition of a closed fleet | Everybody who can open the fleet page |
+| See the composition of a closed fleet | Everybody who sees the full fleet page: the managers of the fleet, `view_all_fleets`, `manage_fleets`, credited FCs and the leader of the fleet's group. A member who only took part sees the member view, without composition. |
 | Refresh the fleet from ESI, add, rename and delete wings and squads, move members, set squad, wing and fleet commanders, kick from the tree, invite characters, apply a structure template | `manage_own_fleet` on own and credited fleets, or `manage_fleets`; active ESI fleets only. ESI is always called with the FC character's token, which needs `esi-fleets.write_fleet.v1`. |
 | Invite a character | Any character registered in Alliance Auth by an active user, whether or not that user has FleetOps access. Characters outside Alliance Auth and characters of inactive users are refused. |
 | Quick classify a ship from the composition | `manage_configuration`, on a fleet the user can open |

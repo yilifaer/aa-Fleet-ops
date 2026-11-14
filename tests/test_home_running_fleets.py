@@ -346,7 +346,9 @@ class RecentFleetsTests(HomeFixture):
         html = page.content.decode()
 
         self.assertEqual(rows[0]["member_count"], 3)
-        self.assertIn("3 members", html)
+        # A participant without the right to see the fleet's data gets no count (H2); a viewer of all fleets does.
+        self.assertNotIn("3 members", html)
+        self.assertIn("3 members", self.page(self.viewer).content.decode())
         self.assertRegex(html, r'class="fo-pill fo-pill-type fo-type-\d">Roam</span>')
         self.assertIn('class="fo-pill fo-pill-neutral fo-pill-icon fo-pill-group" title="Group fleet"', html)
         self.assertIn("Example Fleet Group", html)

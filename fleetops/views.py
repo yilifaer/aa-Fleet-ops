@@ -56,9 +56,12 @@ from fleetops.models import (
     OperationActionAttempt,
     OperationRoleAssignment,
     ReviewStatus,
+    SrpFleetLink,
+    SrpSettings,
 )
 from fleetops.providers.esi import FleetESIError, detect_character_fleet
 from fleetops.services import group_access, pap
+from fleetops.services.fleet_access import member_view_only
 from fleetops.services.audit import audit
 from fleetops.services.attendance import (
     RECORDABLE_STATUSES,
@@ -140,7 +143,7 @@ from fleetops.services.stats_access import leaderboard_visible
 from fleetops.services.statistics import fc_statistics
 from fleetops.services.tracking import unreadable_fleet_warning
 from fleetops.srp import access as srp_access
-from fleetops.srp.links import link_made_at_start, operation_srp_context
+from fleetops.srp.links import CARD_STATUSES, link_made_at_start, link_path, operation_srp_context
 from fleetops.texts import translate_stored
 from fleetops.ui import PERIOD_STATUS_TONES, tone_for
 
@@ -272,7 +275,12 @@ def _can_manage_attendance_operation(user, operation):
     return user.has_perm("fleetops.manage_fleets") or _is_credited_fc(user, operation)
 
 
-def _operation_for_user(request, operation_uuid, manage=False):
+def _operation_for_user(request, operation_uuid, manage=False, member_ok=False):
+    """The fleet for the page or endpoint, 404 when the user may not use it.
+
+    A person who may open the fleet only as a participant (``fleet_access.member_view_only``) gets 404 from every
+    endpoint except the fleet page, which asks with ``member_ok=True`` and shows the slim member view.
+    """
     operation = get_object_or_404(
         FleetOperation.objects.select_related(
             "fleet_type", "comms", "logi_channel", "boost_channel",
@@ -285,6 +293,8 @@ def _operation_for_user(request, operation_uuid, manage=False):
             return operation
         raise Http404
     if _can_view_operation(request.user, operation):
+        if not member_ok and member_view_only(request.user, operation):
+            raise Http404
         return operation
     raise Http404
 
@@ -392,6 +402,10 @@ def dashboard(request):
         active_qs.select_related("fleet_type", "fc_user")
         .annotate(active_member_count=Count("member_states", filter=Q(member_states__is_active=True), distinct=True))[:20]
     )
+    active = list(active)
+    # A person who took part in a fleet sees no fleet data beyond the slim page (H2): no counts, no ESI time.
+    for operation in active:
+        operation.member_view = member_view_only(request.user, operation)
     own = (
         FleetOperation.objects.filter(
             Q(fc_user=request.user)
@@ -409,6 +423,8 @@ def dashboard(request):
     scheduled = scheduled.select_related("fleet_type", "ping_channel").order_by("scheduled_at", "pk")
     fc = fc_statistics(request.user, *current_year_month(), include_active=True)
     metrics = dashboard_metrics(request.user)
+    for row in metrics["recent"]:
+        row["member_view"] = member_view_only(request.user, row["operation"])
     # Fleets that ended without the FC's multiplier choice, such as after an automatic end.
     pending_multipliers = (
         FleetOperation.objects.filter(
@@ -807,6 +823,8 @@ def fleet_operations_view(request):
     for operation in operations:
         operation.can_edit = _can_manage_operation(request.user, operation)
         operation.is_pre_ping = is_pre_ping_record(operation)
+        # The slim member page hides these values, so the list does too (H2).
+        operation.member_view = member_view_only(request.user, operation)
         operation.count_reason = "" if operation.is_pre_ping else operation_count_reason(operation, settings)
     period = _period_choices(year, month or current_month)
     period.update(
@@ -1034,11 +1052,44 @@ def _scheduled_fleet_page(request, operation, *, start_form=None):
     )
 
 
+def _member_fleet_page(request, operation):
+    """The slim page of a member who took part in the fleet: times, ping, SRP and their own attendance only.
+
+    Nothing about other people is read or rendered: no members, composition, events, roles, MOTD, steps or
+    statistics. The template gets only the values listed here.
+    """
+    from fleetops.views_pap import member_attendance_rows
+
+    user = request.user
+    is_closed = operation.status == FleetOperation.Status.CLOSED
+    duration = fleet_duration(operation, operation.ended_at if is_closed else None)
+    link = SrpFleetLink.objects.filter(operation=operation).first() if operation.status in CARD_STATUSES else None
+    srp_on = SrpSettings.get_solo().enabled
+    may_request = bool(link and srp_on and srp_access.can_request(user))
+    context = {
+        "operation": operation,
+        "duration": duration,
+        "is_closed": is_closed,
+        "ping_text": operation.ping_text if operation.send_ping else "",
+        "srp_link": link,
+        "srp_open": bool(link and link.is_open),
+        "srp_closed_at": link.closed_at if link and not link.is_open else None,
+        "srp_request_path": link_path(link) if link and link.is_open and may_request else "",
+        # An open link the member cannot use has nothing to show: no empty card.
+        "show_srp_card": bool(link and (not link.is_open or may_request)),
+        "attendance_rows": member_attendance_rows(request, operation),
+        "attendance_is_preview": not is_closed,
+    }
+    return _render(request, "fleetops/operation_detail_member.html", context)
+
+
 @fleetops_permission_required("fleetops.basic_access")
 def operation_detail(request, operation_uuid):
-    operation = _operation_for_user(request, operation_uuid)
+    operation = _operation_for_user(request, operation_uuid, member_ok=True)
     if is_pre_ping_record(operation):
         return _scheduled_fleet_page(request, operation)
+    if member_view_only(request.user, operation):
+        return _member_fleet_page(request, operation)
     actions = _operation_steps(operation)
     is_closed = operation.status == FleetOperation.Status.CLOSED
     # A closed fleet lists everyone who was tracked in it; an open one only the current members.

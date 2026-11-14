@@ -259,7 +259,9 @@ class ResubmitPageTests(ResubmitTestCase):
         # A pilot who was in the fleet sees the banner without the reason and without a form.
         f.member_state(self.operation, f.main_of(self.pilot), user=self.pilot, active=False)
         pilot_page = self.page(self.pilot)
-        self.assertContains(pilot_page, "Rejected by an FC lead")
+        # Changed for 0.3.0b6: the pilot gets the member view, which has no review banner at all.
+        self.assertTemplateUsed(pilot_page, "fleetops/operation_detail_member.html")
+        self.assertNotContains(pilot_page, "Rejected by an FC lead")
         self.assertNotContains(pilot_page, "</strong>: Wrong date")
         self.assertNotContains(pilot_page, "Resubmit for approval")
         self.assertEqual(self.page(self.member).status_code, 404)

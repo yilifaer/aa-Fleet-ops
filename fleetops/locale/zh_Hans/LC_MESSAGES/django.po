@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-13 18:52+0000\n"
+"POT-Creation-Date: 2026-11-14 05:57+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -55,16 +55,9 @@ msgid "Fleet Operations"
 msgstr "舰队运营"
 
 #: charlink_hook.py
-msgid "FleetOps FC fleet control"
-msgstr "FleetOps FC 舰队控制"
-
-#: charlink_hook.py
-msgid "FleetOps PAP links"
-msgstr "FleetOps PAP 登记链接"
-
-#: charlink_hook.py
-msgid "FleetOps SRP loss reading"
-msgstr "FleetOps SRP 损失读取"
+msgctxt "FleetOps"
+msgid "FleetOps (PAP links, SRP, fleet control)"
+msgstr "FleetOps（PAP 登记链接、SRP、舰队控制）"
 
 #: forms.py
 msgid "A pre ping is a Discord message, so it cannot be sent in PAP tracking only mode."
@@ -1036,7 +1029,8 @@ msgid "Only FC leads can change the fleet type of a group fleet."
 msgstr "只有 FC 主管可以更改小组舰队的舰队类型。"
 
 #: forms_operation.py forms_pap.py models.py
-#: templates/fleetops/operation/_stats_card.html views_config.py
+#: templates/fleetops/operation/_stats_card.html
+#: templates/fleetops/operation_detail_member.html views_config.py
 msgid "PAP multiplier"
 msgstr "PAP 倍率"
 
@@ -1546,6 +1540,7 @@ msgstr "已付款"
 #: templates/fleetops/operation/_attendance_table.html
 #: templates/fleetops/operation/_header.html
 #: templates/fleetops/operation/_review.html
+#: templates/fleetops/operation_detail_member.html
 msgctxt "FleetOps"
 msgid "Rejected"
 msgstr "已拒绝"
@@ -1576,6 +1571,7 @@ msgstr "已在别处申请"
 #: templates/fleetops/operation/_attendance_table.html
 #: templates/fleetops/operation/_links.html
 #: templates/fleetops/operation/_srp.html
+#: templates/fleetops/operation_detail_member.html
 #: templates/fleetops/pap_link_register.html
 #: templates/fleetops/roster_import.html
 #: templates/fleetops/srp/_claims_table.html
@@ -1625,7 +1621,9 @@ msgstr "军团"
 msgid "Any corporation"
 msgstr "任意军团"
 
-#: forms_srp.py
+#: forms_srp.py templates/fleetops/attendance_history.html
+#: templates/fleetops/dashboard.html
+#: templates/fleetops/operation_detail_member.html
 msgctxt "FleetOps"
 msgid "FC"
 msgstr "FC"
@@ -1867,6 +1865,7 @@ msgstr "模板语法无效：%(error)s"
 #: templates/fleetops/operation/_attendance_table.html
 #: templates/fleetops/operation/_header.html
 #: templates/fleetops/operation/_review.html
+#: templates/fleetops/operation_detail_member.html
 msgid "Pending approval"
 msgstr "待审批"
 
@@ -1885,6 +1884,18 @@ msgstr "所有有 FleetOps 权限的人"
 #: models.py
 msgid "Statistics managers only"
 msgstr "仅统计管理者"
+
+#: models.py
+msgid "Alliance members"
+msgstr "联盟成员"
+
+#: models.py
+msgid "Members of the own corporation"
+msgstr "自己军团的成员"
+
+#: models.py
+msgid "Not shown"
+msgstr "不显示"
 
 #: models.py
 msgid "Maximum characters of one Alliance Auth user that receive PAP in one fleet. Empty = unlimited."
@@ -1981,6 +1992,14 @@ msgstr "排行榜可见范围"
 #: models.py
 msgid "Who sees the PAP leaderboard. Everyone with FleetOps access sees the alliance board and their own corporation's board; statistics managers see the boards their statistics permission covers."
 msgstr "谁能看到 PAP 排行榜。所有有 FleetOps 权限的人都能看到全联盟排行榜和自己军团的排行榜；统计管理者能看到其统计权限所覆盖的排行榜。"
+
+#: models.py
+msgid "Rank shown to members"
+msgstr "成员看到的名次"
+
+#: models.py
+msgid "The PAP rank card on My Statistics: the member's place among the alliance members with PAP in the month, among the members of their own corporation, or no card. Only numbers are shown; the leaderboard of other people's names is set by Leaderboard visibility."
+msgstr "我的统计里的 PAP 名次卡片：成员在本月有 PAP 的联盟成员中的名次、在自己军团成员中的名次，或不显示卡片。只显示数字；带别人名字的排行榜由“排行榜可见范围”设置。"
 
 #: models.py
 msgid "SRP auto create"
@@ -2253,6 +2272,7 @@ msgid "ping targets"
 msgstr "Ping 目标"
 
 #: models.py templates/fleetops/operation/_messages.html
+#: templates/fleetops/operation_detail_member.html
 #: templates/fleetops/scheduled_fleet.html templates/fleetops/send_ping.html
 msgid "Ping"
 msgstr "Ping"
@@ -2374,6 +2394,7 @@ msgstr "旧版"
 
 #: models.py templates/fleetops/operation/_attendance_table.html
 #: templates/fleetops/operation/_members.html
+#: templates/fleetops/operation_detail_member.html
 msgid "Time in fleet"
 msgstr "在队时长"
 
@@ -2572,11 +2593,12 @@ msgid "Scheduled at"
 msgstr "预约时间"
 
 #: models.py templates/fleetops/operation/_header.html
+#: templates/fleetops/operation_detail_member.html
 #: templates/fleetops/partials/running_fleets.html
 msgid "Started at"
 msgstr "开始时间"
 
-#: models.py
+#: models.py templates/fleetops/operation_detail_member.html
 msgid "Ended at"
 msgstr "结束时间"
 
@@ -2874,6 +2896,7 @@ msgid "Main character corporation at PAP time."
 msgstr "PAP 发放时大号所在的军团。"
 
 #: models.py templates/fleetops/operation/_attendance_table.html
+#: templates/fleetops/operation_detail_member.html
 msgid "Granted"
 msgstr "已发放"
 
@@ -2885,6 +2908,7 @@ msgstr "超出限制"
 #: templates/fleetops/all_corporation_statistics.html
 #: templates/fleetops/corporation_statistics.html
 #: templates/fleetops/operation/_attendance_table.html
+#: templates/fleetops/operation_detail_member.html
 msgid "Below minimum"
 msgstr "低于最低要求"
 
@@ -2893,6 +2917,7 @@ msgid "The character did not reach the PAP minimum time."
 msgstr "该角色未达到 PAP 最低在队时长。"
 
 #: models.py templates/fleetops/operation/_attendance_table.html
+#: templates/fleetops/operation_detail_member.html
 msgid "Replaced"
 msgstr "已被替换"
 
@@ -3956,8 +3981,7 @@ msgid "SRP ban of %(name)s"
 msgstr "%(name)s 的 SRP 封禁"
 
 #: models.py services/export_datasets.py templates/fleetops/approvals.html
-#: templates/fleetops/attendance_history.html templates/fleetops/dashboard.html
-#: templates/fleetops/manual_attendance.html
+#: templates/fleetops/dashboard.html templates/fleetops/manual_attendance.html
 #: templates/fleetops/operation/_fleet_tree.html
 #: templates/fleetops/operation_detail.html
 #: templates/fleetops/pap_fleet_start.html
@@ -5138,6 +5162,7 @@ msgstr "舰队结束（EVE）"
 #: templates/fleetops/operation/_members.html
 #: templates/fleetops/operation/_review.html
 #: templates/fleetops/operation/_roles.html
+#: templates/fleetops/operation_detail_member.html
 #: templates/fleetops/pap_link_register.html
 #: templates/fleetops/roster_import.html templates/fleetops/srp/_losses.html
 #: templates/fleetops/statistics/member_detail.html
@@ -6442,6 +6467,7 @@ msgid "End (EVE)"
 msgstr "结束（EVE）"
 
 #: templates/fleetops/approvals.html
+#: templates/fleetops/operation_detail_member.html
 msgctxt "FleetOps"
 msgid "Duration"
 msgstr "时长"
@@ -6628,6 +6654,7 @@ msgstr[0] "第 %(number)s / %(pages)s 页 · %(counter)s 条记录"
 
 #: templates/fleetops/attendance_history.html templates/fleetops/audit_log.html
 #: templates/fleetops/operation/_attendance_table.html
+#: templates/fleetops/operation_detail_member.html
 #: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/links.html
 msgctxt "FleetOps"
 msgid "First"
@@ -6653,6 +6680,7 @@ msgstr "下一页"
 
 #: templates/fleetops/attendance_history.html templates/fleetops/audit_log.html
 #: templates/fleetops/operation/_attendance_table.html
+#: templates/fleetops/operation_detail_member.html
 #: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/links.html
 msgctxt "FleetOps"
 msgid "Last"
@@ -8155,6 +8183,7 @@ msgid "Save Manual PAP"
 msgstr "保存补录 PAP"
 
 #: templates/fleetops/operation/_attendance_table.html
+#: templates/fleetops/operation_detail_member.html
 msgid "Capped (limit)"
 msgstr "超出限制"
 
@@ -8178,6 +8207,7 @@ msgid "Not reached"
 msgstr "未达到"
 
 #: templates/fleetops/operation/_attendance_table.html
+#: templates/fleetops/operation_detail_member.html
 msgid "Over the character limit"
 msgstr "超出角色数限制"
 
@@ -8186,6 +8216,7 @@ msgid "PAP preview"
 msgstr "PAP 预览"
 
 #: templates/fleetops/operation/_attendance_table.html
+#: templates/fleetops/operation_detail_member.html
 msgid "PAP is granted when the fleet closes."
 msgstr "PAP 在舰队结束时发放。"
 
@@ -8261,10 +8292,12 @@ msgid "Merged into tracked PAP"
 msgstr "已合并到追踪得到的 PAP"
 
 #: templates/fleetops/operation/_attendance_table.html
+#: templates/fleetops/operation_detail_member.html
 msgid "Not granted"
 msgstr "未发放"
 
 #: templates/fleetops/operation/_attendance_table.html
+#: templates/fleetops/operation_detail_member.html
 msgid "No PAP records."
 msgstr "没有 PAP 记录。"
 
@@ -9237,6 +9270,7 @@ msgid "Link open"
 msgstr "链接开放中"
 
 #: templates/fleetops/operation/_srp.html
+#: templates/fleetops/operation_detail_member.html
 msgid "Link closed"
 msgstr "链接已关闭"
 
@@ -9249,6 +9283,7 @@ msgid "FleetOps SRP is not enabled, so members cannot submit claims through this
 msgstr "FleetOps SRP 未启用，因此成员无法通过此链接提交申请。"
 
 #: templates/fleetops/operation/_srp.html
+#: templates/fleetops/operation_detail_member.html
 msgid "Request SRP for this fleet"
 msgstr "为本舰队申请 SRP"
 
@@ -9269,6 +9304,7 @@ msgid "Mark SRP link complete"
 msgstr "标记 SRP 链接为已完成"
 
 #: templates/fleetops/operation/_srp.html
+#: templates/fleetops/operation_detail_member.html
 #, python-format
 msgid "Closed %(closed)s EVE."
 msgstr "已于 %(closed)s EVE 关闭。"
@@ -9393,6 +9429,15 @@ msgstr "事件"
 #: templates/fleetops/operation_detail.html
 msgid "Ping / MOTD"
 msgstr "Ping / MOTD"
+
+#: templates/fleetops/operation_detail_member.html views_config.py
+msgctxt "FleetOps"
+msgid "SRP"
+msgstr "SRP"
+
+#: templates/fleetops/operation_detail_member.html
+msgid "My attendance"
+msgstr "我的出勤"
 
 #: templates/fleetops/operation_edit.html
 msgid "Edit Fleet Operation"
@@ -10432,6 +10477,10 @@ msgstr "没有授权损失读取的角色不会被自动发现，它的损失只
 #: templates/fleetops/srp/_losses.html
 msgid "Authorize all your characters at once with CharLink."
 msgstr "用 CharLink 一次授权你的所有角色。"
+
+#: templates/fleetops/srp/_losses.html
+msgid "CharLink asks for all FleetOps permissions at once; the fleet-control and open-window permissions are used only when you are the FC of a fleet or a payer."
+msgstr "CharLink 会一次要齐 FleetOps 的全部权限；舰队控制和打开窗口这两项权限只有在你当舰队 FC 或付款人时才会用到。"
 
 #: templates/fleetops/srp/_losses.html
 msgid "Logging in as a character moves it to your account (Alliance Auth behaviour). If EVE reports an invalid scope, ask an administrator to add esi-killmails.read_killmails.v1 to the EVE developer application."
@@ -14982,11 +15031,6 @@ msgstr "组长可以向自己频道发 Ping 或开带 PAP 舰队的 Alliance Aut
 #: views_config.py
 msgid "Leaders (from Alliance Auth)"
 msgstr "组长（来自 Alliance Auth）"
-
-#: views_config.py
-msgctxt "FleetOps"
-msgid "SRP"
-msgstr "SRP"
 
 #: views_config.py
 msgid "SRP Corporation Limits"

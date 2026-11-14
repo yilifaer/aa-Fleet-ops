@@ -60,13 +60,13 @@
       <div class="card-header d-flex justify-content-between"><strong>{% translate "Last Participations" %}</strong><a class="small" href="{% url 'fleetops:attendance_history_me' %}">{% translate "PAP history" %}</a></div>
       <div class="table-responsive">
         <table class="table table-sm table-hover mb-0 align-middle fo-table-pin">
-          <thead><tr><th>{% translate "EVE time" %}</th><th class="text-end">PAP</th><th>{% translate "Fleet" %}</th><th>{% translate "Type" context "fleet type" %}</th><th></th></tr></thead>
+          <thead><tr><th>{% translate "EVE time" %}</th><th class="text-end">PAP</th><th>{% translate "FC" context "FleetOps" %}</th><th>{% translate "Type" context "fleet type" %}</th><th></th></tr></thead>
           <tbody>
             {% for row in recent_participations %}
             <tr>
               <td class="text-nowrap">{% eve_when row.operation.started_at %}</td>
               <td class="text-end"><strong>{{ row.attendance }}</strong></td>
-              <td>{{ row.operation.fc_character_name }}{% if row.operation.doctrine_name %} · {{ row.operation.doctrine_name }}{% endif %}<div class="small text-muted">{% blocktranslate trimmed count counter=row.member_count %}{{ counter }} member{% plural %}{{ counter }} members{% endblocktranslate %}</div></td>
+              <td>{{ row.operation.fc_character_name }}{% if row.operation.doctrine_name %} · {{ row.operation.doctrine_name }}{% endif %}{% if not row.member_view %}<div class="small text-muted">{% blocktranslate trimmed count counter=row.member_count %}{{ counter }} member{% plural %}{{ counter }} members{% endblocktranslate %}</div>{% endif %}</td>
               <td>{{ row.operation.fleet_type|type_pill }}{% if row.operation.group_name %} {% pill "neutral" row.operation.group_name class="fo-pill-group" icon="users" title=group_fleet_label %}{% endif %}</td>
               <td class="text-end"><a href="{% url 'fleetops:operation_detail' row.operation.uuid %}">{% translate "Open" context "open a record" %}</a></td>
             </tr>
@@ -94,7 +94,7 @@
       <div class="card-header"><strong>{% translate "Active Fleets" %}</strong></div>
       <div class="card-body p-0">
         <div class="table-responsive"><table class="table table-hover mb-0 fo-table-pin"><thead><tr><th>{% translate "Fleet" %}</th><th>FC</th><th class="text-end">{% translate "Members" %}</th><th>{% translate "Last ESI" %}</th><th></th></tr></thead><tbody>
-        {% for op in active_operations %}<tr><td>{{ op.fleet_type|type_pill }}{% if op.group_name %} {% pill "neutral" op.group_name class="fo-pill-group" icon="users" title=group_fleet_label %}{% endif %}</td><td>{{ op.fc_character_name }}</td><td class="text-end">{{ op.active_member_count }}</td><td class="text-nowrap">{% if op.last_esi_update %}<span title="{{ op.last_esi_update|eve_time }} EVE">{{ op.last_esi_update|eve_time:"%H:%M" }} EVE</span>{% else %}—{% endif %}</td><td class="text-end"><a href="{% url 'fleetops:operation_detail' op.uuid %}">{% translate "Open" context "open a record" %}</a></td></tr>
+        {% for op in active_operations %}<tr><td>{{ op.fleet_type|type_pill }}{% if op.group_name %} {% pill "neutral" op.group_name class="fo-pill-group" icon="users" title=group_fleet_label %}{% endif %}</td><td>{{ op.fc_character_name }}</td><td class="text-end">{% if op.member_view %}—{% else %}{{ op.active_member_count }}{% endif %}</td><td class="text-nowrap">{% if op.member_view %}—{% elif op.last_esi_update %}<span title="{{ op.last_esi_update|eve_time }} EVE">{{ op.last_esi_update|eve_time:"%H:%M" }} EVE</span>{% else %}—{% endif %}</td><td class="text-end"><a href="{% url 'fleetops:operation_detail' op.uuid %}">{% translate "Open" context "open a record" %}</a></td></tr>
         {% empty %}<tr><td colspan="5"><div class="fo-empty"><i class="fa-solid fa-satellite-dish" aria-hidden="true"></i><span>{% translate "No active fleets." %}</span>{% if perms.fleetops.start_fleet or group_nav.fleets %}<a class="btn btn-outline-secondary" href="{% url 'fleetops:start_fleet' %}">{% translate "Start Fleet" %}</a>{% endif %}</div></td></tr>{% endfor %}
         </tbody></table></div>
       </div>

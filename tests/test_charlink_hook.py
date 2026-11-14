@@ -29,7 +29,14 @@ from django.test import TestCase
 from django.utils import timezone
 
 from fleetops.auth_hooks import register_charlink_hook
-from fleetops.constants import CLICK_SCOPES, FLEET_READ_SCOPE, FLEET_SCOPES, KILLMAIL_READ_SCOPE, LOSS_SCOPES
+from fleetops.constants import (
+    ALL_SCOPES,
+    CLICK_SCOPES,
+    FLEET_SCOPES,
+    LOSS_SCOPES,
+    OPEN_WINDOW_SCOPE,
+    OPEN_WINDOW_SCOPES,
+)
 from fleetops.models import SrpLossScan
 
 from . import factories as f
@@ -122,6 +129,8 @@ class HookTests(TestCase):
 
 
 class CharLinkImportTests(TestCase):
+    """0.3.0b6: FleetOps offers ONE CharLink item (unique_id "clickpap") that asks for all seven scopes."""
+
     def setUp(self):
         super().setUp()
         modules = {name: module for name, module in sys.modules.items() if name != HOOK_MODULE}
@@ -130,8 +139,7 @@ class CharLinkImportTests(TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         self.app_import = importlib.import_module(HOOK_MODULE).app_import
-        self.fleet = self.app_import.get("fcfleet")
-        self.click = self.app_import.get("clickpap")
+        self.item = self.app_import.get("clickpap")
 
         self.fc = f.create_user("fc", perms=f.FC_PERMS)
         self.member = f.create_user("member", perms=f.MEMBER_PERMS)
@@ -141,129 +149,107 @@ class CharLinkImportTests(TestCase):
         self.app_import.validate_import()
 
         self.assertEqual(self.app_import.app_label, "fleetops")
-        # 0.3.0b1 (INT-1): the third item is the loss reading of SRP.
-        self.assertEqual([i.unique_id for i in self.app_import.imports], ["fcfleet", "clickpap", "srplosses"])
-        self.assertEqual(
-            [i.get_query_id() for i in self.app_import.imports], ["fleetops_fcfleet", "fleetops_clickpap", "fleetops_srplosses"]
-        )
         self.assertIn("fleetops", settings.INSTALLED_APPS)
 
-    def test_scopes_are_the_fleet_and_the_afat_click_tracking_ones(self):
-        self.assertEqual(self.fleet.scopes, FLEET_SCOPES)
-        # The same three scopes as AFAT's click tracking, so the tokens pilots already have are used.
-        self.assertEqual(
-            sorted(self.click.scopes),
-            ["esi-location.read_location.v1", "esi-location.read_online.v1", "esi-location.read_ship_type.v1"],
-        )
-        self.assertEqual(self.click.scopes, CLICK_SCOPES)
+    def test_fleetops_has_exactly_one_item_and_keeps_the_stored_id(self):
+        # The stored CharLink setting fleetops_clickpap keeps working; fcfleet and srplosses are gone.
+        self.assertEqual([i.unique_id for i in self.app_import.imports], ["clickpap"])
+        self.assertEqual([i.get_query_id() for i in self.app_import.imports], ["fleetops_clickpap"])
+        for gone in ("fcfleet", "srplosses"):
+            with self.assertRaises(KeyError):
+                self.app_import.get(gone)
 
-    def test_fleet_control_is_offered_to_fcs_and_pap_links_to_every_pilot(self):
-        self.assertFalse(self.fleet.default_initial_selection)
-        self.assertTrue(self.click.default_initial_selection)
+    def test_the_label_is_translated_with_the_fleetops_context(self):
+        from django.utils import translation
+
+        self.assertEqual(str(self.item.field_label), "FleetOps (PAP links, SRP, fleet control)")
+        with translation.override("zh-hans"):
+            self.assertNotEqual(str(self.item.field_label), "FleetOps (PAP links, SRP, fleet control)")
+
+    def test_the_scopes_are_all_seven_in_order_without_repeats(self):
         self.assertEqual(
-            [self.fleet.check_permissions(user) for user in (self.fc, self.member, self.nobody)], [True, False, False]
+            ALL_SCOPES,
+            [
+                "esi-fleets.read_fleet.v1",
+                "esi-fleets.write_fleet.v1",
+                "esi-location.read_location.v1",
+                "esi-location.read_ship_type.v1",
+                "esi-location.read_online.v1",
+                "esi-killmails.read_killmails.v1",
+                "esi-ui.open_window.v1",
+            ],
         )
+        self.assertEqual(ALL_SCOPES, list(dict.fromkeys([*FLEET_SCOPES, *CLICK_SCOPES, *LOSS_SCOPES, *OPEN_WINDOW_SCOPES])))
+        self.assertEqual(self.item.scopes, ALL_SCOPES)
+
+    def test_the_item_is_ticked_by_default(self):
+        self.assertTrue(self.item.default_initial_selection)
+
+    def test_only_users_with_basic_access_see_it(self):
         self.assertEqual(
-            [self.click.check_permissions(user) for user in (self.fc, self.member, self.nobody)], [True, True, False]
+            [self.item.check_permissions(user) for user in (self.fc, self.member, self.nobody)], [True, True, False]
         )
         self.assertTrue(self.app_import.has_any_perms(self.member))
         self.assertFalse(self.app_import.has_any_perms(self.nobody))
+        # Independent of the loss reading switch: the item is always there for members.
+        f.srp_settings(enabled=False, loss_discovery_enabled=False)
+        self.assertTrue(self.item.check_permissions(self.member))
 
-    def test_characters_count_as_added_with_a_token_holding_every_scope(self):
+    def test_a_character_counts_as_added_only_with_all_seven_scopes(self):
         full = f.main_of(self.member)
-        partial = f.add_alt(self.member, "Partial Alt")
+        missing_one = f.add_alt(self.member, "Missing One")
+        old_click_only = f.add_alt(self.member, "Click Only")
         none = f.add_alt(self.member, "No Token Alt")
-        f.add_token(self.member, full, scopes=CLICK_SCOPES)
-        f.add_token(self.member, partial, scopes=CLICK_SCOPES[:2])
-        fc_main = f.main_of(self.fc)
-        f.add_token(self.fc, fc_main)
+        f.add_token(self.member, full, scopes=ALL_SCOPES)
+        f.add_token(self.member, missing_one, scopes=[s for s in ALL_SCOPES if s != OPEN_WINDOW_SCOPE])
+        f.add_token(self.member, old_click_only, scopes=CLICK_SCOPES)
 
-        self.assertEqual([self.click.is_character_added(c) for c in (full, partial, none)], [True, False, False])
-        self.assertTrue(self.fleet.is_character_added(fc_main))
-        self.assertFalse(self.fleet.is_character_added(full))
-        added = EveCharacter.objects.annotate(added=self.click.is_character_added_annotation).filter(added=True)
+        self.assertEqual(
+            [self.item.is_character_added(c) for c in (full, missing_one, old_click_only, none)],
+            [True, False, False, False],
+        )
+        added = EveCharacter.objects.annotate(added=self.item.is_character_added_annotation).filter(added=True)
         self.assertEqual(list(added.values_list("character_name", flat=True)), [full.character_name])
-        fleet_added = EveCharacter.objects.annotate(added=self.fleet.is_character_added_annotation).filter(added=True)
-        self.assertEqual(list(fleet_added), [fc_main])
 
-    def test_scopes_seen_after_the_import_still_count(self):
-        # The module was imported before any token held these scopes; the annotation still finds them.
-        f.add_token(self.fc, f.main_of(self.fc), scopes=[FLEET_READ_SCOPE, *CLICK_SCOPES])
-
-        added = EveCharacter.objects.annotate(added=self.click.is_character_added_annotation).filter(added=True)
-
-        self.assertEqual(list(added), [f.main_of(self.fc)])
-
-    def test_users_with_the_permission_by_any_route(self):
-        permission = Permission.objects.get(content_type__app_label="fleetops", codename="start_fleet")
+    def test_users_with_basic_access_by_any_route_are_counted(self):
+        permission = Permission.objects.get(content_type__app_label="fleetops", codename="basic_access")
         by_group = f.create_user("by_group")
-        group = Group.objects.create(name="FCs")
+        group = Group.objects.create(name="Members")
         group.permissions.add(permission)
         by_group.groups.add(group)
         by_state = f.create_user("by_state")
-        state = State.objects.create(name="FC State", priority=200)
+        state = State.objects.create(name="Member State", priority=200)
         # State permissions point to Alliance Auth's proxy of Permission, so the id is passed.
         state.permissions.add(permission.pk)
         state.member_characters.add(f.main_of(by_state))
         by_state.profile.assign_state()
         admin = User.objects.create_superuser("admin", "admin@example.com", "pw")
 
-        users = set(self.fleet.get_users_with_perms())
+        users = set(self.item.get_users_with_perms())
 
-        self.assertEqual(users, {self.fc, by_group, by_state, admin})
-        self.assertTrue({self.fc, self.member, admin} <= set(self.click.get_users_with_perms()))
-        self.assertNotIn(self.nobody, set(self.click.get_users_with_perms()))
+        self.assertEqual({self.fc, self.member, by_group, by_state, admin} - users, set())
+        self.assertNotIn(self.nobody, users)
 
-    def test_the_loss_reading_item_is_for_requesters_and_follows_the_discovery_switch(self):
-        # INT-1: the item is dropped as soon as the feature is off (CharLink asks again on each page view).
-        loss = self.app_import.get("srplosses")
-        requester = f.create_user("requester", perms=["fleetops.request_srp"])
-        self.assertEqual(loss.scopes, LOSS_SCOPES)
-        self.assertEqual(loss.scopes, [KILLMAIL_READ_SCOPE])
-        self.assertTrue(loss.default_initial_selection)
-
-        f.srp_settings(enabled=True, loss_discovery_enabled=False)
-        self.assertFalse(loss.check_permissions(requester))
-        f.srp_settings(enabled=True, loss_discovery_enabled=True)
-        self.assertEqual([loss.check_permissions(user) for user in (requester, self.member, self.nobody)], [True, False, False])
-        f.srp_settings(enabled=False, loss_discovery_enabled=True)
-        self.assertFalse(loss.check_permissions(requester))
-
-    def test_loss_reading_counts_with_a_token_that_has_the_scope(self):
-        loss = self.app_import.get("srplosses")
+    def test_adding_a_character_makes_it_due_only_with_srp_and_loss_reading_on(self):
         main = f.main_of(self.member)
-        alt = f.add_alt(self.member, "Other Alt")
-        f.add_token(self.member, main, scopes=[KILLMAIL_READ_SCOPE])
-        f.add_token(self.member, alt, scopes=CLICK_SCOPES)
-
-        self.assertEqual([loss.is_character_added(character) for character in (main, alt)], [True, False])
-        added = EveCharacter.objects.annotate(added=loss.is_character_added_annotation).filter(added=True)
-        self.assertEqual(list(added), [main])
-
-    def test_users_with_the_request_permission_are_offered_the_loss_reading(self):
-        requester = f.create_user("requester", perms=["fleetops.request_srp"])
-        admin = User.objects.create_superuser("admin2", "admin2@example.com", "pw")
-
-        users = set(self.app_import.get("srplosses").get_users_with_perms())
-
-        self.assertEqual(users, {requester, admin})
-
-    def test_adding_a_loss_character_makes_it_due(self):
-        main = f.main_of(self.member)
-        token = f.add_token(self.member, main, scopes=[KILLMAIL_READ_SCOPE])
+        token = f.add_token(self.member, main, scopes=ALL_SCOPES)
         scan = SrpLossScan.objects.create(character_id=main.character_id, next_check_at=timezone.now() + timedelta(hours=20))
 
-        self.assertIsNone(self.app_import.get("srplosses").add_character(mock.Mock(), token))
+        for enabled, discovery in ((False, True), (True, False), (False, False)):
+            f.srp_settings(enabled=enabled, loss_discovery_enabled=discovery)
+            self.assertIsNone(self.item.add_character(mock.Mock(), token))
+            scan.refresh_from_db()
+            self.assertIsNotNone(scan.next_check_at, (enabled, discovery))
+
+        f.srp_settings(enabled=True, loss_discovery_enabled=True)
+        self.assertIsNone(self.item.add_character(mock.Mock(), token))
 
         scan.refresh_from_db()
-        # Changed for L-9: a character made due has no next check, which sorts before every overdue character.
+        # A character made due has no next check, which sorts before every overdue character.
         self.assertIsNone(scan.next_check_at)
 
-    def test_adding_a_character_needs_nothing_more(self):
-        token = f.add_token(self.member, f.main_of(self.member), scopes=CLICK_SCOPES)
-
-        self.assertIsNone(self.click.add_character(mock.Mock(), token))
-        self.assertIsNone(self.fleet.add_character(mock.Mock(), token))
+    def test_the_hook_no_longer_hides_the_item_with_the_discovery_switch(self):
+        self.assertFalse(hasattr(importlib.import_module(HOOK_MODULE), "_add_loss_character"))
 
 
 @unittest.skipUnless(importlib.util.find_spec("charlink"), "aa-charlink is not installed")

@@ -130,6 +130,7 @@ Rules behind these settings:
 | Largest share of departed members to prune | 50 | Percent of the users with PAP history that one pruning of departed members may remove, 1 to 99. When more users would go (usually a wrong **Member alliance IDs**), nothing of the departed members is deleted and a warning is logged; see [History and retention](#history-and-retention). `fleetops_prune_history --force` overrides it; the daily task never does. |
 | Leaderboard places | 20 | Places shown on the leaderboards, 3 to 100. Members tied on the last place are all shown. A viewer outside the shown places sees their own rank. |
 | Leaderboard visibility | Everyone with FleetOps access | **Everyone with FleetOps access**: every user sees the alliance board and the board of their own corporation. **Statistics managers only**: `view_corp_stats` sees the own corporation, `view_all_stats` the alliance and any corporation. Without access the menu entry is hidden and the page answers 403. |
+| Rank shown to members | Alliance members | The PAP rank card on **My Statistics** ("#4 of 9", numbers only, no names). **Alliance members**: the member's place among the alliance members with PAP in the month. **Members of the own corporation**: among the members of their corporation. **Not shown**: no card. The card does not depend on the leaderboard: it is shown even when **Leaderboard visibility** is limited to statistics managers, and then has no **Leaderboard** link. |
 
 See [Statistics rules](#statistics-rules) for how the figures are counted.
 
@@ -1011,9 +1012,9 @@ switch the feature on (the same application that already has the fleet scopes). 
 member, and the page shows "Loss reading could not be authorized. If EVE reports an invalid scope, ask an administrator
 to add the scope ...". Then every member authorizes each character once: **My SRP** > **Loss reading** lists the
 characters (the main is marked) with their state, the time of the last read and an **Authorize** button for each
-character without a token. With aa-charlink installed the item **FleetOps SRP loss reading** (for users with
-`fleetops.request_srp`, while the feature is on) authorizes all characters in one go; it disappears when the feature
-is off. Logging in as a character moves it to the account that logs in (Alliance Auth behaviour); a token for a character
+character without a token. With aa-charlink installed its single FleetOps item (for users with
+`fleetops.basic_access`, ticked by default) authorizes all characters in one go, the loss reading included; the item is
+there whether the feature is on or off. Logging in as a character moves it to the account that logs in (Alliance Auth behaviour); a token for a character
 that is not on the member's account is refused and the character is never read.
 A token the member still holds for a character that has since moved to another account is left alone (it is not
 deleted; token housekeeping stays with Alliance Auth), and the scan only ever uses the token of the character's current

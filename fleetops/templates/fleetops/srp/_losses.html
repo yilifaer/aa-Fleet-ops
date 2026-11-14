@@ -100,6 +100,7 @@
   <div class="card-footer small text-muted">
     <div>{% blocktranslate trimmed with minutes=scan_interval %}Each authorized character is read about every {{ minutes }} minutes. You can refresh at most once every five minutes.{% endblocktranslate %}</div>
     <div>{% translate "A character that has not authorized loss reading is not found automatically; its losses can only be claimed with their links." %}{% if charlink_url %} <a href="{{ charlink_url }}">{% translate "Authorize all your characters at once with CharLink." %}</a>{% endif %}</div>
+    <div>{% translate "CharLink asks for all FleetOps permissions at once; the fleet-control and open-window permissions are used only when you are the FC of a fleet or a payer." %}</div>
     <div>{% translate "Logging in as a character moves it to your account (Alliance Auth behaviour). If EVE reports an invalid scope, ask an administrator to add esi-killmails.read_killmails.v1 to the EVE developer application." %}</div>
   </div>
 </div>

@@ -280,8 +280,10 @@ class FleetStateTests(FleetTabTestCase):
         self.assertEqual(self.client_for(self.other_fc).get(url).status_code, 200)
         self.assertEqual(self.client_for(self.member).get(url).status_code, 404)
         self.assertEqual(self.client_for(self.no_perms).get(url).status_code, 403)
-        # After the close everybody who can open the fleet page sees its composition.
-        self.assertEqual(self.client_for(self.outsider).get(self.url("fleet_state", self.own_closed)).status_code, 200)
+        # After the close the people who see the full page get its composition. Changed for 0.3.0b6: a member who
+        # only took part (the outsider) gets 404.
+        self.assertEqual(self.client_for(self.other_fc).get(self.url("fleet_state", self.own_closed)).status_code, 200)
+        self.assertEqual(self.client_for(self.outsider).get(self.url("fleet_state", self.own_closed)).status_code, 404)
 
     def test_unchanged_state_carries_no_html(self):
         fc = self.client_for(self.fc)
@@ -341,8 +343,9 @@ class FleetTabPageTests(FleetTabTestCase):
         self.assertNotContains(response, 'id="fleet-root"')
         self.assertNotContains(response, 'data-bs-target="#fleet"')
         self.assertNotContains(response, 'id="fleet-reload-hint"')
-        self.assertContains(response, 'class="nav-link active" data-bs-toggle="tab" data-bs-target="#attendance"')
-        self.assertContains(response, 'id="composition-hidden"')
+        # Changed for 0.3.0b6: the member view has no tabs (and so no hidden-composition notice) at all.
+        self.assertTemplateUsed(response, "fleetops/operation_detail_member.html")
+        self.assertNotContains(response, 'id="operation-tabs"')
         self.assertNotContains(response, "location.reload")
 
     def test_viewers_of_all_fleets_see_the_fleet_read_only(self):
@@ -354,7 +357,11 @@ class FleetTabPageTests(FleetTabTestCase):
         self.assertNotContains(response, self.url("fleet_wing_add", self.own_active))
 
     def test_closed_fleet_shows_its_composition(self):
-        for user in (self.fc, self.outsider):
+        # Changed for 0.3.0b6: the outsider only took part and gets the member view, without composition.
+        member_view = self.page(self.outsider, self.own_closed)
+        self.assertNotContains(member_view, 'id="fleet-composition"')
+        self.assertNotContains(member_view, "Composition</button>")
+        for user in (self.fc, self.other_fc):
             with self.subTest(user=user.username):
                 response = self.page(user, self.own_closed)
                 self.assertContains(response, 'data-bs-target="#fleet" id="fleet-tab">Composition</button>')

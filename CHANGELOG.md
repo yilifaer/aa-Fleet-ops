@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.3.0b6] - Unreleased
+
+Fixes from the hand test of 0.3.0b5 on a test site.
+
+### Changed
+
+- **One FleetOps item in CharLink.** With aa-charlink installed its page now offers a single item, **FleetOps (PAP links, SRP, fleet control)**, for everybody with `fleetops.basic_access`. It is ticked by default and asks for all seven scopes FleetOps uses in one EVE login: `esi-fleets.read_fleet.v1`, `esi-fleets.write_fleet.v1`, `esi-location.read_location.v1`, `esi-location.read_ship_type.v1`, `esi-location.read_online.v1`, `esi-killmails.read_killmails.v1` and `esi-ui.open_window.v1`. The former items for fleet control and for loss reading are gone, and the loss reading item no longer disappears while SRP loss discovery is off. The fleet-control and open-window permissions are used only when you are the FC of a fleet or a payer; a member's token is never used to change a fleet. When a character is added while SRP and **Find losses automatically** are on, it is read in the next loss scan. Every sign-in flow that does not go through CharLink (Start Fleet, PAP links, **Authorize** on My SRP, the payments page) still asks for only its own scopes, and the **Authorize all characters with CharLink** button on My SRP is unchanged.
+- **A member sees only their own part of a fleet.** A member who may open a fleet only because they took part in it (not `view_all_fleets` or `manage_fleets`, not a credited FC, not able to manage the fleet and not the leader of the fleet's group) now gets a slim fleet page: type, FC and status, start, end and duration, the text of the ping, the **Request SRP for this fleet** button while the SRP link is open (or when it closed), and **My attendance** with their own characters. Statistics, PAP rules, start steps, composition, members, map, events, special roles, MOTD and every button are no longer shown, and the live fleet state and every other fleet address answer *not found* to this member. Holders of a special role without FC credit count as members. Links to fleets stay as they are; on those rows the fleet list, the dashboard and the running-fleet cards show "—" for form-up, PAP total, tracked count, ESI fleet, member count and last ESI update.
+- The **Fleet** column of **My PAP history** (and of **Last participations** on the dashboard) is called **FC**, because it shows the name of the FC; the link still opens the fleet.
+- **The PAP rank card of My Statistics no longer depends on the leaderboard.** It is shown to every member who has PAP in the month, as numbers only. The **Leaderboard** link next to it appears only for people who may open the leaderboard, so limiting **Leaderboard visibility** to statistics managers no longer hides the member's own rank.
+
+### Added
+
+- **Rank shown to members** (Settings, **Statistics**): **Alliance members** (default), **Members of the own corporation** or **Not shown**. The sentence under the card follows the choice. Changing it is audited, and saving the page without a change still writes nothing.
+
+### Upgrade notes
+
+- **Every member and FC authorizes once more in CharLink.** A character counts as added only with all seven scopes, so the characters authorized so far show as not added until the member ticks the single FleetOps item and logs in once.
+- **Before the upgrade, check that the EVE developer application of the site has all seven scopes** (the list above). With one missing, the CharLink login fails for everybody. The install instructions in the README and the integration page list them. FleetOps cannot read the scopes of the application, so there is no system check for it.
+- One new migration, `0046`: it adds the setting **Rank shown to members**, set to the alliance. Nothing changes visibly by default, except that the rank card is also shown when **Leaderboard visibility** is limited to statistics managers. Run `python manage.py migrate`, then `python manage.py collectstatic --noinput`, and restart Alliance Auth and Celery.
+- The CharLink setting stored for the former PAP item (`fleetops_clickpap`) keeps working; the rows of the two removed items stay in CharLink's table unused.
+
+### Rollback notes
+
+- Run `python manage.py fleetops_srp_rollback_check` first, then `python manage.py migrate fleetops 0045` removes the setting **Rank shown to members**, and install 0.3.0b5 (or go on to `0044` and install 0.3.0b4). The same guard as before runs first and refuses a rollback that would lose data. Nothing else in the database changes.
+
 ## [0.3.0b5] - 2026-11-13
 
 Fixes from the re-test of 0.3.0b4 on a test site.

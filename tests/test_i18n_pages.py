@@ -727,7 +727,8 @@ class CharLinkLabelTests(TestCase):
             labels = {item.unique_id: item.field_label for item in app_import.imports}
 
             with translation.override(LANGUAGE):
-                self.assertEqual(str(labels["fcfleet"]), "FleetOps FC 舰队控制")
-                self.assertEqual(str(labels["clickpap"]), "FleetOps PAP 登记链接")
+                # Changed for 0.3.0b6: the three items became one item that keeps the id "clickpap".
+                self.assertEqual(list(labels), ["clickpap"])
+                self.assertEqual(str(labels["clickpap"]), "FleetOps（PAP 登记链接、SRP、舰队控制）")
             with translation.override("en"):
-                self.assertEqual(str(labels["fcfleet"]), "FleetOps FC fleet control")
+                self.assertEqual(str(labels["clickpap"]), "FleetOps (PAP links, SRP, fleet control)")

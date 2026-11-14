@@ -118,6 +118,8 @@ class LeaderboardSettingsTests(TestCase):
                 "history_prune_max_share",
                 "leaderboard_size",
                 "leaderboard_visibility",
+                # Changed for 0.3.0b6: the rank scope is in the same group.
+                "member_rank_scope",
             ],
         )
         self.assertNotIn("history_alliance_ids", groups["General"])

@@ -131,7 +131,7 @@ class FleetOpsSettingsForm(forms.ModelForm):
         (
             _("Statistics"),
             _("Corporation targets and the member minimum are set under Monthly Targets."),
-            ["minimum_fleet_minutes", "history_alliance_ids", "history_prune_max_share", "leaderboard_size", "leaderboard_visibility"],
+            ["minimum_fleet_minutes", "history_alliance_ids", "history_prune_max_share", "leaderboard_size", "leaderboard_visibility", "member_rank_scope"],
         ),
         (_("PAP links"), "", ["pap_link_minutes"]),
         (_("Messages"), "", ["motd_warning_length"]),
@@ -182,6 +182,7 @@ class FleetOpsSettingsForm(forms.ModelForm):
             "minimum_fleet_minutes",
             "leaderboard_size",
             "leaderboard_visibility",
+            "member_rank_scope",
             "pap_link_minutes",
             "tracking_interval",
             "stale_threshold",
@@ -217,6 +218,8 @@ class FleetOpsSettingsForm(forms.ModelForm):
         self.fields["srp_provider"].choices = srp_provider_choices(self.instance.srp_provider)
         # A submission without the share (an older form, a script) keeps the stored one.
         self.fields["history_prune_max_share"].required = False
+        # The same for the rank scope: a page opened before the upgrade posts without it.
+        self.fields["member_rank_scope"].required = False
         self._set_up_bridge_groups()
         for name, field in self.fields.items():
             if isinstance(field.widget, forms.CheckboxSelectMultiple):
@@ -229,6 +232,9 @@ class FleetOpsSettingsForm(forms.ModelForm):
     def clean_history_prune_max_share(self):
         value = self.cleaned_data.get("history_prune_max_share")
         return self.instance.history_prune_max_share if value is None else value
+
+    def clean_member_rank_scope(self):
+        return self.cleaned_data.get("member_rank_scope") or self.instance.member_rank_scope
 
     def _set_up_bridge_groups(self):
         """Offer the ship groups of the SDE (or the built-in list) and keep every stored ID reachable."""

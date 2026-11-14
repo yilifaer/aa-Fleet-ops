@@ -22,7 +22,8 @@ from fleetops.services.statistics import (
     member_rank,
     member_statistics,
 )
-from fleetops.services.stats_access import leaderboard_access, own_corporation
+from fleetops.models import FleetOpsSettings
+from fleetops.services.stats_access import leaderboard_visible, own_corporation
 from fleetops.views import _can_view_all_fleets, _period_render_context, _render, _year_month
 from fleetops.views_errors import OWN_CORPORATION_STATISTICS_REASON, not_found
 
@@ -33,19 +34,21 @@ OVERVIEW_COLUMNS = {"name": "name", "mains": "-mains", "total": "-total", "avera
 
 
 def _rank_card(user, year, month, total):
-    """Where the user stands among the members, when they may see a leaderboard.
+    """Where the user stands, as numbers only: never depends on the leaderboard permission.
 
-    The alliance board comes first; a user who may only see their own corporation's board is ranked there.
+    The scope comes from the site setting "Rank shown to members": the alliance members, the members of the user's
+    own corporation, or no card. A user without a corporation has no card in the corporation scope.
     """
     if total <= 0 or month_ref(year, month).is_future:
         return None
-    access = leaderboard_access(user)
-    if access["alliance"]:
+    scope = FleetOpsSettings.get_solo().member_rank_scope
+    if scope == FleetOpsSettings.RankScope.ALLIANCE:
         rank, ranked = member_rank(user, year, month)
-        scope = "alliance"
-    elif access["own_corporation"] is not None:
-        rank, ranked = member_rank(user, year, month, corporation_id=access["own_corporation"][0])
-        scope = "corporation"
+    elif scope == FleetOpsSettings.RankScope.CORPORATION:
+        corporation = own_corporation(user)
+        if corporation is None:
+            return None
+        rank, ranked = member_rank(user, year, month, corporation_id=corporation[0])
     else:
         return None
     if rank is None:
@@ -78,6 +81,7 @@ def my_statistics_view(request):
             registered_later=registered_later,
             no_target=target.rule is None,
             rank_card=_rank_card(request.user, year, month, stats["total"]),
+            can_open_leaderboard=leaderboard_visible(request.user),
         ),
     )
 

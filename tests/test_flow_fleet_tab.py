@@ -372,6 +372,12 @@ class VisibilityFlowTests(FleetTabFlowTestCase):
 
         FleetOperation.objects.filter(pk=self.operation.pk).update(status=Status.CLOSED, ended_at=timezone.now())
 
+        # Changed for 0.3.0b6: a member who only took part never gets the composition (member view, 404 for the
+        # state); the viewer of all fleets gets it once the fleet is closed.
+        page = member.get(detail)
+        self.assertNotContains(page, 'id="fleet-root"')
+        self.assertEqual(member.get(self.url("fleet_state"), **JSON).status_code, 404)
+        member = self.client_for(viewer)
         page = member.get(detail)
         self.assertContains(page, 'id="fleet-root"')
         self.assertContains(page, ">Composition</button>")
@@ -381,6 +387,7 @@ class VisibilityFlowTests(FleetTabFlowTestCase):
         self.assertIsNone(state["tree_html"])
         self.assertFalse(state["write"]["allowed"])
         # Closed fleets take no changes.
+        member = self.client_for(self.member)
         self.assertEqual(member.post(self.url("fleet_wing_add"), **JSON).status_code, 403)
         answer = self.post(self.client_for(self.fc), "fleet_wing_add", status=409)
         self.assertEqual(answer["message"], "Fleet management is only available while the fleet is active.")

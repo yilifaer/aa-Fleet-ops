@@ -1447,6 +1447,8 @@ class AdminTests(TestCase):
             "bridge_excluded_group_ids": "30,485",
             "leaderboard_size": 20,
             "leaderboard_visibility": "members",
+            # Changed for 0.3.0b6: the admin form of the settings also asks for the rank scope.
+            "member_rank_scope": "alliance",
             "fleet_live_refresh_seconds": 15,
             "motd_warning_length": 2000,
         }

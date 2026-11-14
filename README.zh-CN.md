@@ -181,8 +181,7 @@ FC 需要授权 `esi-fleets.read_fleet.v1` 和 `esi-fleets.write_fleet.v1`。写
 如果 MOTD 更新失败，渲染好的 MOTD 仍可复制。
 
 PAP 登记链接用飞行员自己的令牌读取他在哪里、开什么船、是否在线：`esi-location.read_location.v1`、`esi-location.read_ship_type.v1` 和
-`esi-location.read_online.v1`。这些与 AFAT 点击追踪以及对应的 aa-charlink 导入项所用的权限相同，所以它们已有的令牌可以复用。FleetOps SRP 可以读取成员各角色最近的损失（`esi-killmails.read_killmails.v1`，用成员自己的令牌，仅在 **自动发现损失** 开启时）。请在你的 EVE SSO 应用里启用这六个权限范围；
-没有最后一个时无法授权损失自动发现，其余功能照常。第七个权限范围是可选的：`esi-ui.open_window.v1` 只用于 SRP 付款页的 **在游戏里打开** 按钮，使用付款人自己的游戏内角色的令牌，并且只在付款人添加该角色时才请求。EVE 应用里没有它时，只有这一步授权会失败。
+`esi-location.read_online.v1`。这些与 AFAT 点击追踪以及对应的 aa-charlink 导入项所用的权限相同，所以它们已有的令牌可以复用。FleetOps SRP 可以读取成员各角色最近的损失（`esi-killmails.read_killmails.v1`，用成员自己的令牌，仅在 **自动发现损失** 开启时）。`esi-ui.open_window.v1` 只用于 SRP 付款页的 **在游戏里打开** 按钮，使用付款人自己的游戏内角色的令牌。请在你的 EVE SSO 应用里启用全部七个权限范围：`esi-fleets.read_fleet.v1`、`esi-fleets.write_fleet.v1`、`esi-location.read_location.v1`、`esi-location.read_ship_type.v1`、`esi-location.read_online.v1`、`esi-killmails.read_killmails.v1` 和 `esi-ui.open_window.v1`。安装了 aa-charlink 时，它的 FleetOps 项一次要齐这七个，缺任何一个都会让所有人用 CharLink 登录失败；没有 CharLink 时，缺哪个只影响需要它的那一步授权。
 
 ## 第一步
 

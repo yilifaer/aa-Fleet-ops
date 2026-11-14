@@ -82,6 +82,30 @@ def can_view_live_fleet(user, operation) -> bool:
     )
 
 
+def member_view_only(user, operation) -> bool:
+    """Whether ``user`` sees only the slim member view of the fleet page (and no other fleet endpoint).
+
+    The user may open the fleet only because they took part in it: they do not hold ``view_all_fleets`` or
+    ``manage_fleets``, are not a credited FC, cannot manage the fleet and do not lead the fleet's group.
+    Special-role holders without FC credit count as members. A scheduled fleet (pre ping) has no member view.
+    The page and every fleet endpoint use this one rule.
+    """
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
+    # Imported here: the views import the fleet services.
+    from fleetops.services import group_access
+    from fleetops.services.scheduling import is_pre_ping_record
+    from fleetops.views import _can_manage_operation, _can_view_all_fleets, _is_credited_fc
+
+    if is_pre_ping_record(operation):
+        return False
+    if _can_view_all_fleets(user) or _is_credited_fc(user, operation) or _can_manage_operation(user, operation):
+        return False
+    if operation.group_id and operation.group_id in group_access.visible_group_ids(user):
+        return False
+    return True
+
+
 def can_view_fleet_tab(user, operation) -> bool:
     """Whether the fleet page shows the Fleet tab to ``user``.
 
@@ -94,7 +118,12 @@ def can_view_fleet_tab(user, operation) -> bool:
         return can_view_live_fleet(user, operation)
     from fleetops.views import _can_view_operation
 
-    return bool(user is not None and user.is_authenticated and _can_view_operation(user, operation))
+    return bool(
+        user is not None
+        and user.is_authenticated
+        and _can_view_operation(user, operation)
+        and not member_view_only(user, operation)
+    )
 
 
 def fc_has_write_token(operation) -> bool:

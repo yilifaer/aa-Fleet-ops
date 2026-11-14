@@ -69,13 +69,14 @@ FleetOps SRP 本身在[配置参考](configuration.md#fleetops-srp)里介绍。
 
 ## aa-charlink
 
-安装了 aa-charlink 后，它的页面会提供这些 FleetOps 导入项：
+安装了 aa-charlink 后，它的页面只提供一个 FleetOps 导入项 **FleetOps (PAP links, SRP, fleet control)**，面向拥有 `fleetops.basic_access` 的用户，默认勾选，一次 EVE 登录要齐 FleetOps 用到的全部七个权限范围：
+`esi-fleets.read_fleet.v1`、`esi-fleets.write_fleet.v1`（舰队控制），`esi-location.read_location.v1`、
+`esi-location.read_ship_type.v1`、`esi-location.read_online.v1`（PAP 登记链接），`esi-killmails.read_killmails.v1`
+（SRP 损失读取，见 [SRP 损失自动发现](configuration.md#srp-损失自动发现)）和 `esi-ui.open_window.v1`（SRP 付款页的 **在游戏里打开**）。
+舰队控制和打开窗口这两项权限只有在你当 FC 或付款人时才会用到，成员的令牌永远不会用来修改舰队。角色要有全部七个权限范围才算“已添加”，所以从 0.3.0b5 升级后，所有成员和 FC 都要在 CharLink 里重新授权一次
+（原来的三项 **FleetOps FC fleet control**、**FleetOps PAP links**、**FleetOps SRP loss reading** 已取消，保留使用的是 PAP 那一项已保存的 CharLink 设置 `fleetops_clickpap`）。在 SRP 和 **自动发现损失** 开启时添加角色，它会在下一次损失扫描中被读取。
 
-- **FleetOps FC fleet control**：`esi-fleets.read_fleet.v1` 和 `esi-fleets.write_fleet.v1`，面向拥有 `fleetops.start_fleet` 的用户。默认不勾选。
-- **FleetOps PAP links**：`esi-location.read_location.v1`、`esi-location.read_ship_type.v1` 和 `esi-location.read_online.v1`，面向拥有
-  `fleetops.basic_access` 的用户。默认勾选。
-
-- **FleetOps SRP loss reading**：`esi-killmails.read_killmails.v1`，面向拥有 `fleetops.request_srp` 的用户，仅在 SRP 和 **自动发现损失** 开启时显示。默认勾选。见 [SRP 损失自动发现](configuration.md#srp-损失自动发现)。
+**站点的 EVE 开发者应用必须勾选全部七个权限范围**，否则所有人用 CharLink 登录都会失败。不经过 CharLink 的授权（开舰队、PAP 登记链接、我的 SRP 的 **授权**、付款页）仍然只要求各自需要的权限范围。
 
 在那里关联的角色，开舰队页、PAP 登记链接页和 SRP 损失扫描可以直接使用。CharLink 会检查每个钩子所属的应用标签，所以 `INSTALLED_APPS` 里必须原样写出 `"fleetops"`。
 没有 CharLink 时，这个钩子不会被加载。

@@ -144,6 +144,7 @@ def running_fleet_rows(user, operations) -> list[dict]:
                 "show_system": bool(view_all or can_manage),
                 "fc_system_name": "",
                 "member_count": getattr(operation, "active_member_count", 0),
+                "member_view": bool(getattr(operation, "member_view", False)),
             }
         )
     visible = [row["operation"].pk for row in result if row["show_system"]]

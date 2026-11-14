@@ -1,0 +1,71 @@
+{% extends "fleetops/base.html" %}
+{% load i18n fleetops_messages fleetops_pap fleetops_ui %}
+{# The slim fleet page of a member who took part in the fleet: times, the ping, SRP and the member's own attendance. Nothing about other people. #}
+{% block fleetops_content %}
+{% translate "Granted" as granted_label %}
+{% translate "Pending approval" as pending_label %}
+{% translate "Rejected" context "FleetOps" as rejected_label %}
+{% translate "Capped (limit)" as capped_label %}
+{% translate "Below minimum" as below_minimum_label %}
+{% translate "Not granted" as not_granted_label %}
+{% translate "Replaced" as replaced_label %}
+{% translate "Over the character limit" as over_limit_label %}
+<div class="fo-commandbar fleet-command-bar mb-3" id="fleet-command-bar">
+  <div class="fleet-command-main">
+    <h2 class="mb-1">{% if operation.doctrine_name %}{{ operation.doctrine_name }} · {% endif %}{{ operation.fleet_type }} {{ operation|op_status_pill }}</h2>
+    <div class="fleet-command-meta text-muted"><span>{% translate "FC" context "FleetOps" %} {{ operation.fc_character_name }}</span></div>
+  </div>
+</div>
+
+<div class="row g-3 mb-3 fleet-metrics" id="member-fleet-times">
+  <div class="col-12 col-md-4"><div class="fo-metric fo-metric-sm"><span class="fo-metric-sub">{% translate "Started at" %}</span><strong class="fo-metric-figure fleet-metric-text">{% if operation.started_at %}{% eve_when operation.started_at relative=False %}{% else %}—{% endif %}</strong></div></div>
+  <div class="col-12 col-md-4"><div class="fo-metric fo-metric-sm"><span class="fo-metric-sub">{% translate "Ended at" %}</span><strong class="fo-metric-figure fleet-metric-text">{% if operation.ended_at %}{% eve_when operation.ended_at relative=False %}{% else %}—{% endif %}</strong></div></div>
+  <div class="col-12 col-md-4"><div class="fo-metric fo-metric-sm"><span class="fo-metric-sub">{% translate "Duration" context "FleetOps" %}</span><strong class="fo-metric-figure fleet-metric-text">{% if duration %}{{ duration.total_seconds|minutes }}{% else %}—{% endif %}</strong></div></div>
+</div>
+
+{% if ping_text %}
+<div class="card mb-3" id="member-ping">
+  <div class="card-header"><strong>{% translate "Ping" %}</strong></div>
+  <div class="card-body"><pre class="preview-box mb-0">{{ ping_text|ping_display:operation }}</pre></div>
+</div>
+{% endif %}
+
+{% if show_srp_card %}
+<div class="card mb-3" id="member-srp">
+  <div class="card-header"><strong>{% translate "SRP" context "FleetOps" %}</strong></div>
+  <div class="card-body">
+    {% if srp_request_path %}<a class="btn btn-sm btn-primary" href="{{ srp_request_path }}">{% translate "Request SRP for this fleet" %}</a>
+    {% elif not srp_open and srp_closed_at %}<div class="text-muted">{% blocktranslate trimmed with closed=srp_closed_at|eve_time %}Closed {{ closed }} EVE.{% endblocktranslate %}</div>
+    {% elif not srp_open %}<div class="text-muted">{% translate "Link closed" %}</div>{% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div class="card mb-3" id="member-attendance">
+  <div class="card-header"><strong>{% translate "My attendance" %}</strong></div>
+  <div class="card-body">
+    {% if attendance_is_preview %}<div class="small text-muted mb-2">{% translate "PAP is granted when the fleet closes." %}</div>{% endif %}
+    <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+      <thead><tr><th>{% translate "Character" %}</th><th class="text-end">{% translate "Time in fleet" %}</th><th>{% translate "First" context "FleetOps" %}</th><th>{% translate "Last" context "FleetOps" %}</th><th>{% translate "Status" %}</th><th class="text-end">{% translate "PAP multiplier" %}</th></tr></thead>
+      <tbody>
+      {% for row in attendance_rows %}
+        {% if row.record %}{% with r=row.record %}<tr>
+          <td>{{ r.character_name }}</td>
+          <td class="text-end">{{ r.tracked_seconds|minutes|default:"—" }}</td>
+          <td>{{ r.first_seen|eve_time|default:"—" }}</td><td>{{ r.last_seen|eve_time|default:"—" }}</td>
+          <td>{% if r.review_status == 'pending' %}{% pill "warn" pending_label %}{% elif r.review_status == 'rejected' %}{% pill "bad" rejected_label %}{% elif r.granted %}{% pill "ok" granted_label %} <span class="small">{{ r.attendance_value }} PAP</span>{% elif r.replaced %}{% pill "neutral" replaced_label %}{% elif r.capped %}{% pill "bad" capped_label %}{% elif r.below_minimum %}{% pill "neutral" below_minimum_label %}{% else %}{% pill "neutral" not_granted_label %}{% endif %}</td>
+          <td class="text-end">{{ operation.attendance_multiplier }}x</td>
+        </tr>{% endwith %}
+        {% else %}{% with c=row.candidate %}<tr>
+          <td>{{ c.character_name }}</td>
+          <td class="text-end">{{ c.tracked_seconds|minutes|default:"—" }}</td>
+          <td>—</td><td>—</td>
+          <td>{% if c.selected %}{% pill "ok" "PAP" %}{% elif c.capped %}{% pill "bad" over_limit_label %}{% else %}{% pill "neutral" below_minimum_label %}{% endif %}</td>
+          <td class="text-end">{{ operation.attendance_multiplier }}x</td>
+        </tr>{% endwith %}{% endif %}
+      {% empty %}<tr><td colspan="6"><div class="fo-empty"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i><div>{% translate "No PAP records." %}</div></div></td></tr>{% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+</div>
+{% endblock %}

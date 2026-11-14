@@ -128,6 +128,11 @@ class FleetOpsSettings(models.Model):
         MEMBERS = "members", _("Everyone with FleetOps access")
         MANAGERS = "managers", _("Statistics managers only")
 
+    class RankScope(models.TextChoices):
+        ALLIANCE = "alliance", _("Alliance members")
+        CORPORATION = "corporation", _("Members of the own corporation")
+        NONE = "none", _("Not shown")
+
     attendance_limit = models.PositiveIntegerField(
         _("PAP characters per player"),
         null=True,
@@ -225,6 +230,17 @@ class FleetOpsSettings(models.Model):
         help_text=_(
             "Who sees the PAP leaderboard. Everyone with FleetOps access sees the alliance board and their "
             "own corporation's board; statistics managers see the boards their statistics permission covers."
+        ),
+    )
+    member_rank_scope = models.CharField(
+        _("Rank shown to members"),
+        max_length=12,
+        choices=RankScope.choices,
+        default=RankScope.ALLIANCE,
+        help_text=_(
+            "The PAP rank card on My Statistics: the member's place among the alliance members with PAP in the "
+            "month, among the members of their own corporation, or no card. Only numbers are shown; the "
+            "leaderboard of other people's names is set by Leaderboard visibility."
         ),
     )
     srp_auto_create = models.BooleanField(

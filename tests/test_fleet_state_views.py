@@ -97,10 +97,12 @@ class StateVisibilityTests(FleetStateTestCase):
                 self.assertEqual(self.client_for(user).get(self.state_url()).status_code, status)
         self.assertEqual(Client().get(self.state_url()).status_code, 302)
 
-    def test_closed_fleets_show_their_composition_to_everyone_who_opens_the_page(self):
+    def test_closed_fleets_show_their_composition_to_everyone_who_sees_the_full_page(self):
         FleetOperation.objects.filter(pk=self.operation.pk).update(status=Status.CLOSED, ended_at=timezone.now())
+        # Changed for 0.3.0b6: a member who only took part gets 404; the viewer of all fleets gets the composition.
+        self.assertEqual(self.client_for(self.member).get(self.state_url()).status_code, 404)
 
-        response = self.client_for(self.member).get(self.state_url())
+        response = self.client_for(self.viewer).get(self.state_url())
 
         self.assertEqual(response.status_code, 200)
         state = response.json()
@@ -462,7 +464,9 @@ class FleetPageTests(FleetStateTestCase):
         page = self.page(self.member)
 
         self.assertNotIn('id="fleet-root"', page)
-        self.assertIn('id="composition-hidden"', page)
+        # Changed for 0.3.0b6: the member view has no tabs, so no hidden-composition notice either.
+        self.assertNotIn('id="operation-tabs"', page)
+        self.assertIn('id="member-attendance"', page)
 
     def test_ending_fleets_keep_the_tab_without_polling(self):
         FleetOperation.objects.filter(pk=self.operation.pk).update(status=Status.ENDING)

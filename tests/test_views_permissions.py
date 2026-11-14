@@ -1432,8 +1432,10 @@ class ObjectIsolationTests(FleetOpsViewTestCase):
         f.add_attendance(operation, self.member)
         response = self.client_for(self.member).get(self.detail_url(operation))
         self.assertEqual(response.status_code, 200)
-        self.assertFalse(response.context["can_manage"])
-        self.assertFalse(response.context["can_manage_attendance"])
+        # Changed for 0.3.0b6: the member view has no management flags in its context at all.
+        self.assertTemplateUsed(response, "fleetops/operation_detail_member.html")
+        self.assertNotIn("can_manage", response.context)
+        self.assertNotIn("can_manage_attendance", response.context)
 
     def test_member_with_only_capped_attendance_cannot_open_fleet(self):
         operation = f.create_operation(self.other_fc, status=CLOSED)

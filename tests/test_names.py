@@ -759,7 +759,8 @@ class MemberListPageTests(TestCase):
     def test_members_of_an_open_fleet_are_hidden_from_other_viewers(self):
         content = self.page(self.member)
 
-        self.assertIn('id="composition-hidden"', content)
+        # Changed for 0.3.0b6: the member view has no tabs, so there is no hidden-composition notice.
+        self.assertNotIn('id="operation-tabs"', content)
         for hidden in ("Secret Doctrine Hull", "Outside Pilot", "evewho.com"):
             self.assertNotIn(hidden, content)
         # Their own attendance stays visible.
@@ -784,10 +785,16 @@ class MemberListPageTests(TestCase):
                 self.assertIn("Secret Doctrine Hull", content)
                 self.assertNotIn('id="composition-hidden"', content)
 
-    def test_everyone_sees_the_members_once_the_fleet_is_closed(self):
+    def test_a_member_never_sees_the_other_members_even_once_the_fleet_is_closed(self):
+        # Changed for 0.3.0b6: a participant gets the member view in every status; the viewer of all fleets sees
+        # the members (live while the fleet is open, in the composition once it is closed).
+        viewer = f.create_user(perms=f.MEMBER_PERMS + ["fleetops.view_all_fleets"])
         for status in (FleetOperation.Status.ENDING, FleetOperation.Status.CLOSED):
             with self.subTest(status=status):
                 FleetOperation.objects.filter(pk=self.operation.pk).update(status=status, ended_at=timezone.now())
                 content = self.page(self.member)
-                self.assertEqual("Secret Doctrine Hull" in content, status == FleetOperation.Status.CLOSED)
-                self.assertEqual("Outside Pilot" in content, status == FleetOperation.Status.CLOSED)
+                self.assertNotIn("Secret Doctrine Hull", content)
+                self.assertNotIn("Outside Pilot", content)
+                closed = self.page(viewer)
+                self.assertIn("Secret Doctrine Hull", closed)
+                self.assertIn("Outside Pilot", closed)
