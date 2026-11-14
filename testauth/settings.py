@@ -94,6 +94,7 @@ CACHES = {
         "LOCATION": os.environ.get("FLEETOPS_TEST_REDIS", "redis://localhost:6379/13"),
     }
 }
+TEST_RUNNER = "testauth.runner.FleetOpsRunner"
 SESSION_ENGINE = "django.contrib.sessions.backends.db"
 
 # Alliance Auth's Celery app reads the old-style setting names (no CELERY_ namespace),

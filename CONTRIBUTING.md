@@ -55,6 +55,13 @@ the run, so the user needs the right to create and drop databases:
 FLEETOPS_TEST_DB=mysql://user:password@127.0.0.1:3306/fleetops python runtests.py
 ```
 
+`python runtests.py --parallel 4` runs the suite in four processes. Each process gets its own copy of the test
+database and its own Redis database: the number in `FLEETOPS_TEST_REDIS` plus the worker number. Redis has 16
+databases by default, so the base plus the number of workers must stay below 16 (for example
+`FLEETOPS_TEST_REDIS=redis://localhost:6379/8` for four workers); the run stops at the start with a message if it does
+not fit. Plain `--parallel` uses every core, and `FLEETOPS_TEST_PARALLEL=4` sets the default for a shell. Without the
+option the suite runs in one process, as CI and the coverage run below do.
+
 Coverage is optional locally; this is what CI reports:
 
 ```bash
