@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-14 05:57+0000\n"
+"POT-Creation-Date: 2026-11-14 10:08+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -37,6 +37,7 @@ msgid "Groups: %(groups)s · Alliance FCs: no. Change this in FleetOps Administr
 msgstr "小组：%(groups)s · 联盟 FC：不可用。请在 FleetOps 后台设置的 Ping 频道中修改。"
 
 #: admin.py forms_config.py models.py
+msgctxt "FleetOps"
 msgid "Webhook URL"
 msgstr "Webhook 地址"
 
@@ -139,6 +140,7 @@ msgstr "不发 Discord 消息（仅复制）"
 
 #: forms.py forms_groups.py models.py services/presets.py
 #: templates/fleetops/scheduled_fleet.html
+msgctxt "FleetOps"
 msgid "Ping target"
 msgstr "Ping 目标"
 
@@ -1017,6 +1019,7 @@ msgstr "集结地"
 #: forms_links.py forms_operation.py forms_records.py models.py
 #: templates/fleetops/approvals.html templates/fleetops/operation/_review.html
 #: templates/fleetops/operation/_roles.html
+msgctxt "FleetOps"
 msgid "Notes"
 msgstr "备注"
 
@@ -2260,6 +2263,7 @@ msgid "Target value"
 msgstr "目标值"
 
 #: models.py
+msgctxt "FleetOps"
 msgid "Webhook"
 msgstr "Webhook"
 
@@ -2340,6 +2344,7 @@ msgid "Cancelled"
 msgstr "已取消"
 
 #: models.py
+msgctxt "FleetOps"
 msgid "Error"
 msgstr "出错"
 
@@ -2468,6 +2473,7 @@ msgid "Ping channel name"
 msgstr "Ping 频道名称"
 
 #: models.py
+msgctxt "FleetOps"
 msgid "Group name"
 msgstr "小组名称"
 
@@ -3058,6 +3064,7 @@ msgid "operation role assignments"
 msgstr "舰队角色指派"
 
 #: models.py
+msgctxt "FleetOps"
 msgid "Owner"
 msgstr "所有者"
 
@@ -3114,6 +3121,7 @@ msgid "The default function must be active."
 msgstr "默认功能必须处于启用状态。"
 
 #: models.py services/composition_config.py
+msgctxt "FleetOps"
 msgid "Ship type"
 msgstr "船型"
 
@@ -3255,6 +3263,7 @@ msgstr "按舰队类型细分"
 
 #: models.py services/export_datasets.py
 #: templates/fleetops/incentive_review.html
+msgctxt "FleetOps"
 msgid "Eligible"
 msgstr "符合条件"
 
@@ -5050,6 +5059,7 @@ msgid "Average PAP per main"
 msgstr "每个大号平均 PAP"
 
 #: services/export_datasets.py
+msgctxt "FleetOps"
 msgid "Target"
 msgstr "达标线"
 
@@ -5879,6 +5889,16 @@ msgstr "损失发生在 %(loss)s EVE；这条链接是 %(link)s 的。"
 
 #: srp/display.py
 #, python-format
+msgid "Submitted again after being rejected automatically by the rules on %(when)s: %(reason)s"
+msgstr "在 %(when)s 被规则自动拒绝后再次提交：%(reason)s"
+
+#: srp/display.py
+#, python-format
+msgid "Submitted again after being rejected automatically by the rules on %(when)s."
+msgstr "在 %(when)s 被规则自动拒绝后再次提交。"
+
+#: srp/display.py
+#, python-format
 msgid "Submitted again after a rejection by %(reviewer)s on %(when)s."
 msgstr "被 %(reviewer)s 于 %(when)s 拒绝后重新提交。"
 
@@ -6298,6 +6318,7 @@ msgstr "本月计入的 PAP；其中 %(member_pap)s 由现有成员获得"
 
 #: templates/fleetops/all_corporation_statistics.html
 #: templates/fleetops/corporation_statistics.html
+msgctxt "FleetOps"
 msgid "Main characters"
 msgstr "大号"
 
@@ -6778,6 +6799,7 @@ msgid_plural "%(counter)s PAP rows"
 msgstr[0] "%(counter)s 行 PAP"
 
 #: templates/fleetops/base.html templates/fleetops/statistics/_tabs.html
+msgctxt "FleetOps"
 msgid "Inactive"
 msgstr "不活跃"
 
@@ -7507,12 +7529,14 @@ msgid "Last Participations"
 msgstr "最近参加"
 
 #: templates/fleetops/dashboard.html
+msgctxt "FleetOps"
 msgid "EVE time"
 msgstr "EVE 时间"
 
 #: templates/fleetops/dashboard.html
 #: templates/fleetops/partials/running_fleets.html
 #, python-format
+msgctxt "FleetOps"
 msgid "%(counter)s member"
 msgid_plural "%(counter)s members"
 msgstr[0] "%(counter)s 名成员"
@@ -7683,6 +7707,7 @@ msgid "Alliance fleets"
 msgstr "联盟舰队"
 
 #: templates/fleetops/fleet_operations.html
+msgctxt "FleetOps"
 msgid "FC name"
 msgstr "FC 名称"
 
@@ -7730,6 +7755,7 @@ msgid "No fleets match these filters."
 msgstr "没有符合这些筛选条件的舰队。"
 
 #: templates/fleetops/fleet_operations.html
+msgctxt "FleetOps"
 msgid "Clear filters"
 msgstr "清除筛选"
 
@@ -7898,6 +7924,7 @@ msgid "Recent Manual Entries"
 msgstr "最近的补录记录"
 
 #: templates/fleetops/manual_attendance.html
+msgctxt "FleetOps"
 msgid "Created"
 msgstr "创建时间"
 
@@ -8493,6 +8520,7 @@ msgid "Highlight these pilots in the fleet"
 msgstr "在舰队中高亮这些飞行员"
 
 #: templates/fleetops/operation/_fleet_composition.html
+msgctxt "FleetOps"
 msgid "Ship types"
 msgstr "船型"
 
@@ -8509,6 +8537,7 @@ msgid "No ship function rule matches these ships; recognising ships by class nee
 msgstr "没有舰船功能规则匹配这些舰船；按舰船类别识别需要 django-eveonline-sde。"
 
 #: templates/fleetops/operation/_fleet_composition.html
+msgctxt "FleetOps"
 msgid "Ship classes"
 msgstr "舰船类别"
 
@@ -10882,6 +10911,10 @@ msgid "Withdraw claim"
 msgstr "撤回申请"
 
 #: templates/fleetops/srp/claim.html
+msgid "This claim cannot be submitted again:"
+msgstr "这条申请不能再次提交："
+
+#: templates/fleetops/srp/claim.html
 msgid "The claim is calculated again with the current rules."
 msgstr "申请会按当前规则重新计算。"
 
@@ -11316,6 +11349,12 @@ msgstr "另有 %(amount)s 不可由你支付"
 #, python-format
 msgid "%(claims)s for %(players)s"
 msgstr "%(claims)s，涉及 %(players)s"
+
+#: templates/fleetops/srp/payments.html
+#, python-format
+msgid "%(counter)s claim you may not pay"
+msgid_plural "%(counter)s claims you may not pay"
+msgstr[0] "%(counter)s 条你不能支付的申请"
 
 #: templates/fleetops/srp/payments.html
 msgid "Paid in the dates below"
@@ -12110,6 +12149,10 @@ msgstr "第 %(start)s&ndash;%(end)s 名成员，共 %(total)s 名"
 #: templates/fleetops/statistics/members.html
 msgid "Members are listed under their current corporation with all their PAP of the month; the corporation totals count PAP where it was earned."
 msgstr "成员列在其当前军团名下，显示其当月的全部 PAP；军团总计则按 PAP 获得时所在的军团统计。"
+
+#: templatetags/fleetops_config.py
+msgid "Webhook address replaced"
+msgstr "Webhook 地址已替换"
 
 #: templatetags/fleetops_fleet.py
 msgid "Kicked a member"
@@ -13735,6 +13778,7 @@ msgid "cancelled"
 msgstr "已取消"
 
 #: texts.py
+msgctxt "FleetOps"
 msgid "error"
 msgstr "出错"
 
@@ -14697,9 +14741,12 @@ msgid "Scheduled fleet updated. The updated pre ping was already posted."
 msgstr "已预约的舰队已更新。更新后的预 Ping 此前已经发布。"
 
 #: views.py
-#, python-format
-msgid "Scheduled fleet updated, but the updated pre ping was not posted. %(reason)s You can retry it later."
-msgstr "已预约的舰队已更新，但更新后的预 Ping 没有发布。%(reason)s 你可以稍后重试。"
+msgid "Scheduled fleet updated, but the updated pre ping was not posted."
+msgstr "已预约的舰队已更新，但更新后的预 Ping 没有发布。"
+
+#: views.py
+msgid "You can retry it later."
+msgstr "你可以稍后重试。"
 
 #: views.py
 msgid "Scheduled fleet updated and the updated pre ping was posted."

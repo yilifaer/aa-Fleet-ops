@@ -379,6 +379,46 @@ class EditorTests(TestCase):
     def test_the_model_has_no_default_permissions(self):
         self.assertEqual(DoctrineShipOrder._meta.default_permissions, ())
 
+    # --- 0.3.0b6: a save that changes nothing ---------------------------------------------------------
+
+    def order_audits(self):
+        return AuditLog.objects.filter(object_type="DoctrineShipOrder").count()
+
+    def test_an_unchanged_save_writes_nothing_and_says_so(self):
+        store(HULLS, [">", ">", ">"])
+        before_row = DoctrineShipOrder.objects.get()
+        before = self.order_audits()
+
+        response = self.post(HULLS, [">", ">", ">"])
+
+        self.assertRedirects(response, self.url)
+        self.assertEqual(self.texts(response), ["Nothing was changed."])
+        self.assertEqual(self.order_audits(), before)
+        after_row = DoctrineShipOrder.objects.get()
+        self.assertEqual(
+            (after_row.ships, after_row.marks, after_row.updated_at),
+            (before_row.ships, before_row.marks, before_row.updated_at),
+        )
+
+    def test_one_changed_mark_writes_one_entry(self):
+        store(HULLS, [">", ">", ">"])
+        before = self.order_audits()
+
+        response = self.post(HULLS, [">", "=", ">"])
+
+        self.assertEqual(self.texts(response), ["Ship order saved."])
+        self.assertEqual(self.order_audits(), before + 1)
+        self.assertEqual(DoctrineShipOrder.objects.get().marks, [">", "=", ">"])
+
+    def test_the_first_save_of_an_automatic_order_is_a_change(self):
+        self.assertFalse(DoctrineShipOrder.objects.exists())
+
+        response = self.post(HULLS, [">", ">", ">"])
+
+        self.assertEqual(self.texts(response), ["Ship order saved."])
+        self.assertEqual(AuditLog.objects.filter(action="configuration.create", object_type="DoctrineShipOrder").count(), 1)
+        self.assertEqual(DoctrineShipOrder.objects.count(), 1)
+
 
 class BracketNameTests(MessageTestBase):
     NAME = "[ACTIVE] Example Doctrine"

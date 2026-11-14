@@ -9,6 +9,7 @@ with ``review``, which decides on the claims created here.
 
 import copy
 from dataclasses import dataclass
+from datetime import timedelta
 from datetime import timezone as dt_timezone
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -19,7 +20,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from fleetops import texts
-from fleetops.models import MAX_DATABASE_ID, SrpCategory, SrpClaim, SrpClaimEvent, SrpFleetLink, SrpKillmail, SrpSettings
+from fleetops.models import MAX_DATABASE_ID, SrpBan, SrpCategory, SrpClaim, SrpClaimEvent, SrpFleetLink, SrpKillmail, SrpSettings
 from fleetops.providers.zkillboard import MIN_KILL_AGE
 from fleetops.services.audit import audit
 from fleetops.services.identity import character_label
@@ -1094,11 +1095,31 @@ def last_rejection(claim):
     return claim.events.filter(action__in=(Action.REJECT, Action.AUTO_REJECT)).order_by("-created_at", "-pk").first()
 
 
+# A rejection made through the ban dialog is recognised without the marker (rejections of versions before 0.3.0b5 have
+# none): the same reviewer who made the ban rejected the claim of the banned member within this window after the ban.
+BAN_REJECTION_WINDOW = timedelta(minutes=5)
+
+
 def rejected_by_ban(claim) -> bool:
-    """Whether the claim was rejected because its claimant was banned (the rejection event says so): only a
-    reviewer may reopen such a claim."""
+    """Whether the claim was rejected because its claimant was banned: only a reviewer may reopen such a claim.
+
+    The rejection event says so (``data.ban``). A rejection without the marker (made before 0.3.0b5) counts too when
+    its actor is the reviewer who created a ban of the claimant and it happened at most ``BAN_REJECTION_WINDOW`` after
+    that ban was created, whether the ban is still in force or not.
+    """
     event = last_rejection(claim) if claim.status == Status.REJECTED else None
-    return bool(event is not None and event.action == Action.REJECT and (event.data or {}).get("ban"))
+    if event is None or event.action != Action.REJECT:
+        return False
+    if (event.data or {}).get("ban"):
+        return True
+    if event.actor_id is None or claim.user_id is None:
+        return False
+    return SrpBan.objects.filter(
+        user_id=claim.user_id,
+        created_by_id=event.actor_id,
+        created_at__lte=event.created_at,
+        created_at__gte=event.created_at - BAN_REJECTION_WINDOW,
+    ).exists()
 
 
 def can_resubmit(claim, settings_obj) -> bool:
@@ -1107,21 +1128,46 @@ def can_resubmit(claim, settings_obj) -> bool:
 
 
 def resubmitted_after_rejection_warning(claim) -> ClaimWarning | None:
-    """The warning for a claim a reviewer rejected and the claimant submits again: who rejected it, why and when. It
-    keeps the claim out of batch approval and shows in the queue (a reviewer decides it, as after a reopening)."""
+    """The warning for a claim that was rejected and the claimant submits again. It keeps the claim out of batch
+    approval and shows in the queue (a reviewer decides it, as after a reopening).
+
+    A rejection by a reviewer names the reviewer, the reason and the time. A rejection by the rules
+    (``AUTO_REJECT``) says so and names the rule's reason; its actor is the claimant and is never used.
+    """
     event = last_rejection(claim)
-    if event is None or event.action != Action.REJECT:
+    if event is None:
         return None
-    reviewer = event.actor
-    main = getattr(getattr(reviewer, "profile", None), "main_character", None)
-    return ClaimWarning(
-        "resubmitted_after_rejection",
-        display.LEVEL_WARNING,
-        {
-            "reviewer": getattr(main, "character_name", "") or getattr(reviewer, "username", "") or "",
-            "reason": (event.reason or "")[:200],
-            "rejected_at": event.created_at.isoformat(),
-        },
+    params = {"reason": (event.reason or "")[:200], "rejected_at": event.created_at.isoformat()}
+    if event.action == Action.AUTO_REJECT:
+        params["auto"] = True
+    else:
+        reviewer = event.actor
+        main = getattr(getattr(reviewer, "profile", None), "main_character", None)
+        params["reviewer"] = getattr(main, "character_name", "") or getattr(reviewer, "username", "") or ""
+    return ClaimWarning("resubmitted_after_rejection", display.LEVEL_WARNING, params)
+
+
+def resubmit_blockers(claim, actor, srp, now=None, missing_alts=None) -> list[str]:
+    """Why ``actor`` cannot submit the withdrawn or rejected ``claim`` again (empty list: nothing in the way).
+
+    The claim is checked again like a new one (SRP switched on, the deadline, a ban). A claim withdrawn before its
+    link closed is not stopped by the closed link, a rejected claim is (the member may not bring back a claim the
+    reviewers decided once the link is closed). A claim under a standing link is not held back by the switch for
+    losses outside a fleet. Used by ``resubmit_claim`` and by the claim page, so the button shows only when the
+    submission can succeed.
+    """
+    return rules.eligibility(
+        km=claim.killmail,
+        user=actor,
+        scope=claim.scope,
+        link=claim.link,
+        operation=claim.operation,
+        settings_obj=srp,
+        now=now or timezone.now(),
+        category=claim.category,
+        via_standing_link=is_standing(claim.link),
+        check_link_open=claim.status == Status.REJECTED,
+        missing_alts=missing_alts,
     )
 
 
@@ -1129,8 +1175,8 @@ def resubmit_claim(claim: SrpClaim, *, actor) -> SrpClaim:
     """Withdrawn to pending, recalculated with the current policy, by the claimant. A rejected claim does the same
     while the setting "Members may resubmit rejected claims" is on; the rejection stays in the claim's history.
 
-    The claim is checked again like a new one (SRP switched on, the deadline); a closed fleet link does not
-    stop a claim that exists already. Over the monthly limit the usual rules apply, rejection included.
+    The claim is checked again like a new one (``resubmit_blockers``): a closed SRP link does not stop a withdrawn
+    claim but does stop a rejected one. Over the monthly limit the usual rules apply, rejection included.
     """
     if actor is None or claim.user_id != actor.pk:
         raise SrpError("forbidden", texts.SRP_ONLY_CLAIMANT_RESUBMITS())
@@ -1150,22 +1196,7 @@ def resubmit_claim(claim: SrpClaim, *, actor) -> SrpClaim:
                 Status.PENDING,
             )
         km = locked.killmail
-        # The claim's own link is passed but not checked for being open: a closed link does not stop a claim that
-        # exists. A claim under a standing link is not held back by the switch for losses outside a fleet; the payout
-        # rules of its fleet still apply, as they do in the calculation below.
-        blockers = rules.eligibility(
-            km=km,
-            user=actor,
-            scope=locked.scope,
-            link=locked.link,
-            operation=locked.operation,
-            settings_obj=srp,
-            now=now,
-            category=locked.category,
-            via_standing_link=is_standing(locked.link),
-            check_link_open=False,
-            missing_alts=missing_alts,
-        )
+        blockers = resubmit_blockers(locked, actor, srp, now, missing_alts)
         if blockers:
             raise SrpError("not_eligible", blockers[0])
         previous = locked.status
@@ -1184,9 +1215,12 @@ def resubmit_claim(claim: SrpClaim, *, actor) -> SrpClaim:
         )
         status, reason, rejection = decide_submission(evaluation.calculation, evaluation.policy)
         apply_evaluation(locked, evaluation, km)
-        locked.warnings = replace_warnings(
-            locked.warnings, REJECTION_WARNING_CODES, [was_rejected] if was_rejected is not None else []
-        )
+        if previous == Status.REJECTED:
+            locked.warnings = replace_warnings(
+                locked.warnings, REJECTION_WARNING_CODES, [was_rejected] if was_rejected is not None else []
+            )
+        # A withdrawn claim keeps the warning an earlier submission after a rejection stored: withdrawing and
+        # submitting again must not bring the claim back into batch approval or past a closed link unmarked.
         locked.status = status
         locked.submitted_at = now
         locked.auto_rejected = status == Status.REJECTED

@@ -77,7 +77,7 @@ class RosterPasteForm(forms.Form):
         initial=AttendanceRecord.Correction.KEEP,
     )
     notes = forms.CharField(
-        label=_("Notes"),
+        label=pgettext_lazy("FleetOps", "Notes"),
         required=False, max_length=1000, initial=roster_import_note, widget=forms.Textarea(attrs={"rows": 2})
     )
 

@@ -54,7 +54,7 @@ from django.conf import settings
 from django.core.signals import setting_changed
 from django.dispatch import receiver
 from django.utils import translation
-from django.utils.translation import gettext, gettext_lazy, gettext_noop, pgettext_lazy
+from django.utils.translation import gettext, gettext_lazy, gettext_noop, pgettext, pgettext_lazy
 
 _PLACEHOLDER = re.compile(r"%\((\w+)\)s")
 _DIGITS = re.compile(r"[0-9]+")
@@ -102,7 +102,7 @@ def _is_whole_number(value):
 class StoredText:
     """One message: calling it returns the English text to store, and the registry finds it again."""
 
-    def __init__(self, msgid, *, nested=(), numbers=(), priority=False):
+    def __init__(self, msgid, *, nested=(), numbers=(), priority=False, context=None):
         literals, names = _split(msgid)
         unknown = set(nested) - set(names)
         if unknown:
@@ -120,6 +120,8 @@ class StoredText:
         if msgid in {entry.msgid for entry in _ENTRIES}:
             raise ValueError(f"Stored text declared twice: {msgid!r}")
         self.msgid = msgid
+        # A message that other plugins translate differently is looked up with this context (``pgettext``).
+        self.context = context
         self.literals = tuple(literals)
         self.params = tuple(dict.fromkeys(names))
         self.nested = tuple(nested)
@@ -417,7 +419,7 @@ def _settings_changed(sender, setting, **kwargs):
 
 
 def _render(entry, params, fallback):
-    translated = gettext(entry.msgid)
+    translated = pgettext(entry.context, entry.msgid) if entry.context else gettext(entry.msgid)
     if not entry.params:
         # A message without parameters is not a format string; only an escaped percent sign needs undoing.
         return translated.replace("%%", "%") if "%%" in entry.msgid else translated
@@ -1048,8 +1050,11 @@ FLEET_STATUS_WORDS = {
     "starting": StoredText(gettext_noop("starting")),
     "ending": StoredText(gettext_noop("ending")),
     "cancelled": StoredText(gettext_noop("cancelled")),
-    "error": StoredText(gettext_noop("error")),
+    # Other plugins translate "error" differently: this word has the context "FleetOps" (``_ERROR_WORD`` names it for
+    # makemessages, the registry looks it up with ``pgettext``).
+    "error": StoredText("error", context="FleetOps"),
 }
+_ERROR_WORD = pgettext_lazy("FleetOps", "error")
 CLAIM_STATUS_WORDS = {
     "pending": StoredText(gettext_noop("pending")),
     "approved": StoredText(gettext_noop("approved")),

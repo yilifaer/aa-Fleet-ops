@@ -13,6 +13,7 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.utils.translation import gettext, gettext_lazy
+from django.utils.translation import pgettext_lazy
 
 from fleetops import texts
 from fleetops.texts import translate_stored
@@ -36,7 +37,7 @@ ITEM_NAMES = {
     "ping_channel": gettext_lazy("Ping channel"),
     "ping_template": gettext_lazy("Ping template"),
     "motd_template": gettext_lazy("MOTD template"),
-    "ping_mentions": gettext_lazy("Ping target"),
+    "ping_mentions": pgettext_lazy("FleetOps", "Ping target"),
 }
 
 

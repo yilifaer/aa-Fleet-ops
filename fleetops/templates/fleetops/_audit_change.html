@@ -1,2 +1,2 @@
-{# One change of an audit entry: name, old value, new value (the values are text, escaped here). #}
-{% if change.0 %}<code>{{ change.0 }}</code> {% endif %}<span class="text-muted text-break">{{ change.1 }}</span> &rarr; <span class="text-break">{{ change.2 }}</span>
+{# One change of an audit entry: name, old value, new value (the values are text, escaped here). A flag is only a statement. #}
+{% if change.0.is_flag %}{{ change.0 }}{% else %}{% if change.0 %}<code>{{ change.0 }}</code> {% endif %}<span class="text-muted text-break">{{ change.1 }}</span> &rarr; <span class="text-break">{{ change.2 }}</span>{% endif %}

@@ -10,6 +10,7 @@ built-in English list, so the configuration pages and the bridge setting can nam
 
 from django.db import IntegrityError, transaction
 from django.utils.translation import gettext_lazy
+from django.utils.translation import pgettext_lazy
 
 from fleetops import texts
 from fleetops.fleet_defaults import KNOWN_SHIP_GROUPS
@@ -20,7 +21,7 @@ from fleetops.services.fleet_manage import FleetActionResult
 from fleetops.services.fleet_rules import SHIP_CATEGORY_ID, FleetRuleError, parse_id_list
 
 TYPE, GROUP = ShipFunctionRule.Kind.TYPE, ShipFunctionRule.Kind.GROUP
-KIND_LABELS = {TYPE: gettext_lazy("Ship type"), GROUP: gettext_lazy("Ship group")}
+KIND_LABELS = {TYPE: pgettext_lazy("FleetOps", "Ship type"), GROUP: gettext_lazy("Ship group")}
 
 # Stored messages (English): the audit reason is written to the log, the answers are shown through
 # ``translate_stored``.

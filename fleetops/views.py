@@ -1323,10 +1323,18 @@ def edit_scheduled_fleet(request, operation_uuid):
             updated.pre_ping_result.status != OperationAction.Status.SUCCESS
         ):
             reason = translate_stored(updated.pre_ping_result.error_message or "")
+            # Sentences joined by one space; an empty reason leaves no gap.
             messages.warning(
                 request,
-                _("Scheduled fleet updated, but the updated pre ping was not posted. %(reason)s You can retry it later.")
-                % {"reason": reason},
+                " ".join(
+                    part
+                    for part in (
+                        _("Scheduled fleet updated, but the updated pre ping was not posted."),
+                        reason.strip(),
+                        _("You can retry it later."),
+                    )
+                    if part
+                ),
             )
         elif data["send_update"]:
             messages.success(request, _("Scheduled fleet updated and the updated pre ping was posted."))

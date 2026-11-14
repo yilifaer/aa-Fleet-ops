@@ -181,9 +181,12 @@ class ResubmitRejectedTests(ClaimBase):
             claims.resubmit_claim(claim, actor=self.user)
         self.assertEqual(caught.exception.code, "not_eligible")
 
-    def test_a_closed_link_does_not_stop_the_claim_as_for_a_withdrawn_one(self):
+    def test_a_closed_link_does_not_stop_a_withdrawn_claim(self):
+        # Changed for 0.3.0b6 (was: test_a_closed_link_does_not_stop_the_claim_as_for_a_withdrawn_one, which also
+        # covered rejected claims): a closed link stops only a rejected claim; the withdrawn one is as before.
         _operation, link = self.fleet()
-        claim = self.rejected(link=link)
+        claim = self.submit(self.killmail(), link=link)
+        claims.withdraw_claim(claim, actor=self.user)
         self.settings(member_resubmit_rejected=True)
         link.is_open = False
         link.save()
@@ -251,7 +254,9 @@ class ResubmitRejectedReviewTrailTests(ClaimBase):
         claim.refresh_from_db()
         self.assertIn("Submitted again after a rejection", display.warning_text("resubmitted_after_rejection", claim.warnings[0]["params"]))
 
-    def test_an_automatic_rejection_does_not_get_the_warning(self):
+    def test_an_automatic_rejection_gets_its_own_warning(self):
+        # Changed for 0.3.0b6: a claim the rules rejected and the member submits again is no longer waved through by
+        # batch approval; it carries a warning of its own (the tests of the warning are in test_retest_0_3_0b6).
         claim = self.submit(self.killmail())
         SrpClaim.objects.filter(pk=claim.pk).update(status=Status.REJECTED, auto_rejected=True)
         SrpClaimEvent.objects.create(claim=claim, action=Action.AUTO_REJECT, to_status="rejected", reason="Over the limit")
@@ -260,7 +265,8 @@ class ResubmitRejectedReviewTrailTests(ClaimBase):
         claims.resubmit_claim(claim, actor=self.user)
 
         claim.refresh_from_db()
-        self.assertNotIn("resubmitted_after_rejection", [item["code"] for item in claim.warnings])
+        warning = next(item for item in claim.warnings if item["code"] == "resubmitted_after_rejection")
+        self.assertTrue(warning["params"]["auto"])
 
     def test_a_claim_rejected_by_a_ban_cannot_be_submitted_again_even_after_the_ban(self):
         pending = self.submit(self.killmail())

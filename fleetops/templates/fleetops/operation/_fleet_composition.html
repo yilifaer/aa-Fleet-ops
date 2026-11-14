@@ -17,7 +17,7 @@
     {% empty %}<li class="small text-muted">{{ nobody_text }}</li>{% endfor %}
   </ul>
 
-  <h6 class="fleet-section-title">{% translate "Ship types" %}</h6>
+  <h6 class="fleet-section-title">{% translate "Ship types" context "FleetOps" %}</h6>
   <ul class="fo-bars mb-3" id="fleet-by-type">
     {% for row in composition.by_type %}<li data-type-id="{{ row.key|default_if_none:'' }}">
       <span class="fleet-bar-label">{% if row.icon_url %}<img class="fo-render" src="{{ row.icon_url }}" alt="" width="20" height="20" loading="lazy"> {% endif %}{{ row.label }}{% with color=row.extra.function_color|hex_color %}{% if row.extra.function_name %} <span class="fo-pill fo-pill-neutral fleet-function-badge"{% if color %} style="--fo-dot: {{ color }}"{% endif %}>{{ row.extra.function_name }}</span>{% endif %}{% endwith %}</span>
@@ -40,7 +40,7 @@
   </ul>
   {% endif %}
 
-  <h6 class="fleet-section-title">{% translate "Ship classes" %}</h6>
+  <h6 class="fleet-section-title">{% translate "Ship classes" context "FleetOps" %}</h6>
   {% if composition.sde_available %}
   <ul class="fo-bars mb-3" id="fleet-by-group">{% for row in composition.by_group %}<li data-group-id="{{ row.key|default_if_none:'' }}">
     <span class="fleet-bar-label">{{ row.label }}</span>

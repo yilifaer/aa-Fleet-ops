@@ -343,7 +343,7 @@ def build_corporations(request, scope):
         Column("mains_below_minimum", gettext("Mains below minimum"), "int"),
         Column("total_pap", gettext("Total PAP"), "int"),
         Column("average", gettext("Average PAP per main"), "decimal"),
-        Column("target", gettext("Target"), "decimal"),
+        Column("target", pgettext("FleetOps", "Target"), "decimal"),
         Column("status", gettext("Status")),
     ]
     rows = overview.rows
@@ -663,7 +663,7 @@ def build_incentives(request, scope):
         Column("fc", "FC"),
         Column("fleets", gettext("Fleets"), "int"),
         Column("points", gettext("FC points"), "decimal"),
-        Column("eligible", gettext("Eligible"), "bool"),
+        Column("eligible", pgettext("FleetOps", "Eligible"), "bool"),
         Column("waived", gettext("Waived"), "bool"),
         Column("calculated", gettext("Calculated payout"), "int"),
         Column("final", gettext("Final payout"), "int"),

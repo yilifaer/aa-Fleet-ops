@@ -42,7 +42,7 @@
 {% if row_groups %}
 <form method="post" action="{% url 'fleetops:review_attendance' %}">{% csrf_token %}
 <div class="table-responsive"><table class="table table-sm align-middle mb-0 fo-table-pin">
-  <thead><tr><th><label class="fo-check-cell"><input class="form-check-input" type="checkbox" id="select-all-pap" aria-label="{% translate 'Select all' %}"></label></th><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th class="text-end">{% translate "Value" context "PAP value" %}</th><th>{% translate "Correction" %}</th><th>{% translate "Source" %}</th><th>{% translate "Notes" %}</th><th>{% translate "Added by" %}</th></tr></thead>
+  <thead><tr><th><label class="fo-check-cell"><input class="form-check-input" type="checkbox" id="select-all-pap" aria-label="{% translate 'Select all' %}"></label></th><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th class="text-end">{% translate "Value" context "PAP value" %}</th><th>{% translate "Correction" %}</th><th>{% translate "Source" %}</th><th>{% translate "Notes" context "FleetOps" %}</th><th>{% translate "Added by" %}</th></tr></thead>
   {% for group in row_groups %}<tbody>
     <tr class="fo-group-row"><th colspan="8"><a href="{% url 'fleetops:operation_detail' group.operation.uuid %}">{% blocktranslate trimmed with started=group.operation.started_at|eve_time fleet_type=group.operation.fleet_type fc=group.operation.fc_character_name %}{{ started }} EVE · {{ fleet_type }} · FC {{ fc }}{% endblocktranslate %}</a>
       {% if group.operation.review_status == 'pending' %} {% pill "warn" fleet_pending_label %}{% elif group.operation.review_status == 'rejected' %} {% pill "bad" fleet_rejected_label %}{% endif %}

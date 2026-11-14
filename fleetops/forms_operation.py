@@ -11,6 +11,7 @@ from django import forms
 from django.db.models import Q
 from django.utils import timezone
 from django.utils.translation import gettext
+from django.utils.translation import pgettext_lazy
 from django.utils.translation import gettext_lazy as _
 
 from fleetops.constants import OVERRIDE_REASON_MIN_LENGTH
@@ -221,7 +222,7 @@ class ManualFleetForm(forms.Form):
         initial=1,
         help_text=_("Multipliers above 1x need a fleet that ran long enough."),
     )
-    notes = forms.CharField(label=_("Notes"), required=False, widget=forms.Textarea(attrs={"rows": 3}))
+    notes = forms.CharField(label=pgettext_lazy("FleetOps", "Notes"), required=False, widget=forms.Textarea(attrs={"rows": 3}))
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -381,7 +382,7 @@ class ManualAttendanceForm(forms.Form):
         choices=AttendanceRecord.Correction.choices,
         initial=AttendanceRecord.Correction.KEEP,
     )
-    notes = forms.CharField(label=_("Notes"), required=False, widget=forms.Textarea(attrs={"rows": 2}))
+    notes = forms.CharField(label=pgettext_lazy("FleetOps", "Notes"), required=False, widget=forms.Textarea(attrs={"rows": 2}))
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -488,7 +489,7 @@ class OperationRoleAssignmentForm(forms.Form):
         help_text=_("Roles marked FC credit count the fleet as an FC fleet for the pilot's FC points and incentives."),
     )
     character_id = forms.ChoiceField(label=_("Fleet Member"))
-    notes = forms.CharField(label=_("Notes"), required=False, widget=forms.Textarea(attrs={"rows": 2}))
+    notes = forms.CharField(label=pgettext_lazy("FleetOps", "Notes"), required=False, widget=forms.Textarea(attrs={"rows": 2}))
 
     def __init__(self, *args, operation=None, user=None, **kwargs):
         super().__init__(*args, **kwargs)

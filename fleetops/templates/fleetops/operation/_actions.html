@@ -1,4 +1,4 @@
-{% load i18n fleetops_i18n fleetops_operation fleetops_messages fleetops_ui %}
+{% load i18n fleetops_i18n fleetops_operation fleetops_messages fleetops_ui fleetops_srp %}
 {% translate "Render the MOTD again from the current templates and settings and push it to the fleet?" as regenerate_confirm %}
 {% translate "The fleet boss was handed over; only the boss can change the MOTD." as handover_text %}
 {% translate "Linked" as linked_label %}
@@ -55,7 +55,7 @@
           <div class="mb-2">{% pill "ok" linked_label %} <span class="text-muted">{{ operation.srp_provider }}</span></div>
           {% if operation.srp_reference %}<div class="small text-muted mb-2">{% blocktranslate trimmed with reference=operation.srp_reference %}Reference: {{ reference }}{% endblocktranslate %}</div>{% endif %}
           {# The page of a FleetOps link needs the right to request; the address of another SRP app is not ours to judge, whatever its shape. #}
-          {% if operation.srp_provider != "fleetops" or srp_card.may_request %}<a class="btn btn-sm btn-outline-secondary" href="{{ operation.srp_url }}" target="_blank" rel="noopener">{% translate "Open SRP Fleet" %}</a>{% endif %}
+          {% if operation.srp_provider != "fleetops" and not operation.srp_url|is_internal_srp_link or srp_card.may_request %}<a class="btn btn-sm btn-outline-secondary" href="{{ operation.srp_url }}" target="_blank" rel="noopener">{% translate "Open SRP Fleet" %}</a>{% endif %}
         {% elif operation.srp_error %}
           {% pill "warn" unavailable_label %}
           <div class="small text-muted mt-2">{{ operation.srp_error|stored_text }}</div>

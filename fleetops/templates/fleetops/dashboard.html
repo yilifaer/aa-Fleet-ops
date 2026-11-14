@@ -60,13 +60,13 @@
       <div class="card-header d-flex justify-content-between"><strong>{% translate "Last Participations" %}</strong><a class="small" href="{% url 'fleetops:attendance_history_me' %}">{% translate "PAP history" %}</a></div>
       <div class="table-responsive">
         <table class="table table-sm table-hover mb-0 align-middle fo-table-pin">
-          <thead><tr><th>{% translate "EVE time" %}</th><th class="text-end">PAP</th><th>{% translate "FC" context "FleetOps" %}</th><th>{% translate "Type" context "fleet type" %}</th><th></th></tr></thead>
+          <thead><tr><th>{% translate "EVE time" context "FleetOps" %}</th><th class="text-end">PAP</th><th>{% translate "FC" context "FleetOps" %}</th><th>{% translate "Type" context "fleet type" %}</th><th></th></tr></thead>
           <tbody>
             {% for row in recent_participations %}
             <tr>
               <td class="text-nowrap">{% eve_when row.operation.started_at %}</td>
               <td class="text-end"><strong>{{ row.attendance }}</strong></td>
-              <td>{{ row.operation.fc_character_name }}{% if row.operation.doctrine_name %} · {{ row.operation.doctrine_name }}{% endif %}{% if not row.member_view %}<div class="small text-muted">{% blocktranslate trimmed count counter=row.member_count %}{{ counter }} member{% plural %}{{ counter }} members{% endblocktranslate %}</div>{% endif %}</td>
+              <td>{{ row.operation.fc_character_name }}{% if row.operation.doctrine_name %} · {{ row.operation.doctrine_name }}{% endif %}{% if not row.member_view %}<div class="small text-muted">{% blocktranslate trimmed count counter=row.member_count context "FleetOps" %}{{ counter }} member{% plural %}{{ counter }} members{% endblocktranslate %}</div>{% endif %}</td>
               <td>{{ row.operation.fleet_type|type_pill }}{% if row.operation.group_name %} {% pill "neutral" row.operation.group_name class="fo-pill-group" icon="users" title=group_fleet_label %}{% endif %}</td>
               <td class="text-end"><a href="{% url 'fleetops:operation_detail' row.operation.uuid %}">{% translate "Open" context "open a record" %}</a></td>
             </tr>
@@ -80,7 +80,7 @@
 
 {% if scheduled_operations or perms.fleetops.start_fleet %}
 <div class="card mb-3" id="scheduled-fleets">
-  <div class="card-header d-flex justify-content-between"><strong>{% translate "Scheduled Fleets" %}</strong><span class="text-muted small">{% translate "EVE time" %}</span></div>
+  <div class="card-header d-flex justify-content-between"><strong>{% translate "Scheduled Fleets" %}</strong><span class="text-muted small">{% translate "EVE time" context "FleetOps" %}</span></div>
   <div class="table-responsive"><table class="table table-hover table-sm mb-0 align-middle fo-table-pin"><thead><tr><th>{% translate "Fleet Time" context "FleetOps" %}</th><th></th><th>{% translate "Fleet" %}</th><th>FC</th><th>{% translate "Form Up" %}</th><th>{% translate "Ping channel" %}</th><th></th></tr></thead><tbody>
   {% for op in scheduled_operations %}<tr><td class="text-nowrap">{% eve_when op.scheduled_at relative=False %}</td><td class="text-nowrap small text-muted" data-countdown-utc="{{ op.scheduled_at|eve_time:'%Y-%m-%dT%H:%M:00Z' }}"></td><td>{{ op.fleet_type }}</td><td>{{ op.fc_character_name }}</td><td>{{ op.formup }}</td><td>{{ op.ping_channel_name|default:_("Copy only") }}</td><td class="text-end"><a href="{% url 'fleetops:operation_detail' op.uuid %}">{% translate "Open" context "open a record" %}</a></td></tr>
   {% empty %}<tr><td colspan="7"><div class="fo-empty"><i class="fa-regular fa-calendar" aria-hidden="true"></i><span>{% translate "No scheduled fleets." %}</span></div></td></tr>{% endfor %}

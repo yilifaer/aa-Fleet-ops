@@ -45,6 +45,14 @@ BAND_TONES = {
 
 
 @register.filter
+def is_internal_srp_link(url):
+    """Whether the address is the page of a FleetOps SRP link on this site (it needs the right to request)."""
+    from fleetops.services.links import is_internal_srp_link as check
+
+    return check(url)
+
+
+@register.filter
 def srp_security(killmail):
     """The security status (one decimal) and the band pill of a stored killmail, or 'Security status unknown' when
     the lookup failed. The words are always shown, colour is never the only signal."""

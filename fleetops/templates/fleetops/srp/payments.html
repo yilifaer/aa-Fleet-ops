@@ -32,10 +32,10 @@
   <a class="btn btn-sm btn-outline-secondary" href="{% url 'fleetops:export' 'srp-payable' %}?format=csv{% if export_query %}&amp;{{ export_query }}{% endif %}">{% translate "One row per claim" %} (CSV)</a>
 </div>
 
-{% blocktranslate trimmed asvar to_pay_claims_text count counter=to_pay_count %}{{ counter }} claim{% plural %}{{ counter }} claims{% endblocktranslate %}
-{% blocktranslate trimmed asvar to_pay_players_text count counter=pay_rows|length %}{{ counter }} player{% plural %}{{ counter }} players{% endblocktranslate %}
+{% blocktranslate trimmed asvar to_pay_claims_text count counter=to_pay_payable_count %}{{ counter }} claim{% plural %}{{ counter }} claims{% endblocktranslate %}
+{% blocktranslate trimmed asvar to_pay_players_text count counter=to_pay_payable_players %}{{ counter }} player{% plural %}{{ counter }} players{% endblocktranslate %}
 <div class="row g-3 mb-3 fo-srp-stats">
-  <div class="col-6 col-xl-3"><div class="stat-card"><span>{% translate "To pay" %}{% if payable_filtered %} <small class="text-muted">({% translate "by the current filters" %})</small>{% endif %}</span><strong>{{ to_pay_total|isk }}</strong>{% if to_pay_unpayable_total %}<small class="text-muted d-block">{% blocktranslate trimmed with amount=to_pay_unpayable_total|isk %}plus {{ amount }} you may not pay{% endblocktranslate %}</small>{% endif %}<small class="text-muted">{% blocktranslate trimmed with claims=to_pay_claims_text players=to_pay_players_text %}{{ claims }} for {{ players }}{% endblocktranslate %}</small></div></div>
+  <div class="col-6 col-xl-3"><div class="stat-card"><span>{% translate "To pay" %}{% if payable_filtered %} <small class="text-muted">({% translate "by the current filters" %})</small>{% endif %}</span><strong>{{ to_pay_total|isk }}</strong>{% if to_pay_unpayable_total %}<small class="text-muted d-block">{% blocktranslate trimmed with amount=to_pay_unpayable_total|isk %}plus {{ amount }} you may not pay{% endblocktranslate %}</small>{% endif %}<small class="text-muted">{% blocktranslate trimmed with claims=to_pay_claims_text players=to_pay_players_text %}{{ claims }} for {{ players }}{% endblocktranslate %}{% if to_pay_unpayable_count %} ({% blocktranslate trimmed count counter=to_pay_unpayable_count %}{{ counter }} claim you may not pay{% plural %}{{ counter }} claims you may not pay{% endblocktranslate %}){% endif %}</small></div></div>
   <div class="col-6 col-xl-3"><div class="stat-card"><span>{% translate "Paid in the dates below" %}</span><strong>{{ paid_total|isk }}</strong><small class="text-muted">{% blocktranslate trimmed count counter=paid_count %}{{ counter }} claim{% plural %}{{ counter }} claims{% endblocktranslate %}</small></div></div>
 </div>
 
@@ -95,7 +95,7 @@
         <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.main_character_name }}" hidden>{% translate "Copy name" %}</button>
       </div>
       <div class="d-flex flex-wrap align-items-center gap-2">
-        <span class="text-end"><span class="fo-pay-total">{{ row.payable_total|isk }}</span>{% if row.unpayable_total %}<br><small class="text-muted">{% blocktranslate trimmed with amount=row.unpayable_total|isk %}plus {{ amount }} you may not pay{% endblocktranslate %}</small>{% endif %}{% if payable_filtered %}<br><small class="text-muted">{% translate "total of this group by the current filters" %}</small>{% endif %}</span>
+        <span class="text-end">{% if row.payable_total %}<span class="fo-pay-total">{{ row.payable_total|isk }}</span>{% else %}<span class="text-muted">&mdash;</span>{% endif %}{% if row.unpayable_total %}<br><small class="text-muted">{% blocktranslate trimmed with amount=row.unpayable_total|isk %}plus {{ amount }} you may not pay{% endblocktranslate %}</small>{% endif %}{% if payable_filtered %}<br><small class="text-muted">{% translate "total of this group by the current filters" %}</small>{% endif %}</span>
         {% if row.payable_total %}<button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.payable_total|isk_plain }}" hidden>{% translate "Copy amount" %}</button>
         <button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.main_character_name }}&#9;{{ row.payable_total|isk_plain }}" hidden>{% translate "Copy name and amount" %}</button>{% endif %}
         {% if row.claim_numbers %}<button type="button" class="btn btn-sm btn-outline-secondary" data-srp-copy="{{ row.claim_numbers }}" hidden>{% translate "Copy claim numbers" %}</button>{% endif %}

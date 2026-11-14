@@ -562,7 +562,7 @@ class DiscordWebhookForm(forms.ModelForm):
     """
 
     webhook_url = forms.CharField(
-        label=_("Webhook URL"),
+        label=pgettext_lazy("FleetOps", "Webhook URL"),
         widget=forms.PasswordInput(
             render_value=False,
             attrs={"autocomplete": "new-password", "placeholder": "https://discord.com/api/webhooks/..."},

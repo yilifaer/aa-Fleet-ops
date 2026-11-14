@@ -499,7 +499,7 @@ class DiscordWebhook(models.Model):
     """A Discord channel that receives pings through its webhook."""
 
     name = models.CharField(verbose_name=pgettext_lazy("FleetOps", "Name"), max_length=100, unique=True)
-    webhook_url = models.TextField(verbose_name=_("Webhook URL"), validators=[validate_discord_webhook_url])
+    webhook_url = models.TextField(verbose_name=pgettext_lazy("FleetOps", "Webhook URL"), validators=[validate_discord_webhook_url])
     is_active = models.BooleanField(verbose_name=_("Is active"), default=True)
     allow_everyone = models.BooleanField(
         verbose_name=_("Allow everyone"),
@@ -551,7 +551,7 @@ class PingTarget(models.Model):
     target_value = models.CharField(verbose_name=_("Target value"), max_length=255, blank=True)
     webhook = models.ForeignKey(
         DiscordWebhook,
-        verbose_name=_("Webhook"),
+        verbose_name=pgettext_lazy("FleetOps", "Webhook"),
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
@@ -623,7 +623,7 @@ class FleetOperation(models.Model):
         ENDING = "ending", _("Ending")
         CLOSED = "closed", pgettext_lazy("fleet status", "Closed")
         CANCELLED = "cancelled", _("Cancelled")
-        ERROR = "error", _("Error")
+        ERROR = "error", pgettext_lazy("FleetOps", "Error")
 
     class EndReason(models.TextChoices):
         MANUAL = "manual", _("Ended manually")
@@ -729,7 +729,7 @@ class FleetOperation(models.Model):
     # Legacy; new fleets store the ping channel and mention snapshot below.
     ping_target = models.ForeignKey(
         PingTarget,
-        verbose_name=_("Ping target"),
+        verbose_name=pgettext_lazy("FleetOps", "Ping target"),
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
@@ -753,7 +753,7 @@ class FleetOperation(models.Model):
         on_delete=models.SET_NULL,
         related_name="fleetops_operations",
     )
-    group_name = models.CharField(verbose_name=_("Group name"), max_length=150, blank=True)
+    group_name = models.CharField(verbose_name=pgettext_lazy("FleetOps", "Group name"), max_length=150, blank=True)
     ping_mention_mode = models.CharField(
         verbose_name=_("Ping mention mode"),
         max_length=10,
@@ -1169,7 +1169,7 @@ class AttendanceRecord(models.Model):
     )
     first_seen = models.DateTimeField(verbose_name=_("First seen"), null=True, blank=True)
     last_seen = models.DateTimeField(verbose_name=_("Last seen"), null=True, blank=True)
-    notes = models.TextField(verbose_name=_("Notes"), blank=True)
+    notes = models.TextField(verbose_name=pgettext_lazy("FleetOps", "Notes"), blank=True)
     review_status = models.CharField(
         verbose_name=_("Review status"),
         max_length=10,
@@ -1377,7 +1377,7 @@ class OperationRoleAssignment(models.Model):
         default=False,
         help_text=_("Snapshot: this assignment counts as an FC fleet/points credit for the assigned user."),
     )
-    notes = models.TextField(verbose_name=_("Notes"), blank=True)
+    notes = models.TextField(verbose_name=pgettext_lazy("FleetOps", "Notes"), blank=True)
     assigned_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         verbose_name=_("Assigned by"),
@@ -1425,7 +1425,7 @@ class FleetStartPreset(models.Model):
 
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        verbose_name=_("Owner"),
+        verbose_name=pgettext_lazy("FleetOps", "Owner"),
         on_delete=models.CASCADE,
         related_name="fleetops_start_presets",
     )
@@ -1534,7 +1534,7 @@ class ShipFunctionRule(models.Model):
     """Puts a ship type or a whole ship group (from the SDE) under a ship function."""
 
     class Kind(models.TextChoices):
-        TYPE = "type", _("Ship type")
+        TYPE = "type", pgettext_lazy("FleetOps", "Ship type")
         GROUP = "group", _("Ship group")
 
     function = models.ForeignKey(
@@ -1704,7 +1704,7 @@ class MonthlyFCStatistic(models.Model):
         default=Decimal("0"),
     )
     fleet_type_breakdown = models.JSONField(verbose_name=_("Fleet type breakdown"), default=dict, blank=True)
-    eligible = models.BooleanField(verbose_name=_("Eligible"), default=False)
+    eligible = models.BooleanField(verbose_name=pgettext_lazy("FleetOps", "Eligible"), default=False)
     waived = models.BooleanField(verbose_name=_("Waived"), default=False)
     calculated_payout = models.BigIntegerField(verbose_name=_("Calculated payout"), default=0)
     final_payout = models.BigIntegerField(verbose_name=_("Final payout"), default=0)
@@ -2426,7 +2426,7 @@ class SrpPayoutRule(models.Model):
         help_text=_("Whole ISK."),
     )
     is_active = models.BooleanField(verbose_name=_("Is active"), default=True)
-    notes = models.CharField(verbose_name=_("Notes"), max_length=255, blank=True)
+    notes = models.CharField(verbose_name=pgettext_lazy("FleetOps", "Notes"), max_length=255, blank=True)
     updated_at = models.DateTimeField(verbose_name=_("Updated at"), auto_now=True)
 
     class Meta:
@@ -3361,7 +3361,7 @@ class StandalonePing(models.Model):
         related_name="fleetops_pings",
     )
     # Empty for an alliance ping sent by an FC.
-    group_name = models.CharField(verbose_name=_("Group name"), max_length=150, blank=True)
+    group_name = models.CharField(verbose_name=pgettext_lazy("FleetOps", "Group name"), max_length=150, blank=True)
     channel = models.ForeignKey(
         DiscordWebhook,
         verbose_name=_("Ping channel"),

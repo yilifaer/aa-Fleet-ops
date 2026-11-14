@@ -38,6 +38,29 @@ def absolute_url(path: str) -> str:
     return f"{base}{path if path.startswith('/') else '/' + path}"
 
 
+def is_internal_srp_link(url: str) -> bool:
+    """Whether ``url`` is the page of a FleetOps SRP link (``/fleetops/srp/link/<code>/``) on this site.
+
+    A path, or an address with the host of ``SITE_URL``. The address of another SRP app, and a link on another host,
+    is not.
+    """
+    from django.urls import Resolver404, resolve
+
+    try:
+        parts = urlsplit((url or "").strip())
+    except ValueError:
+        return False
+    if parts.scheme or parts.netloc:
+        base = str(getattr(settings, "SITE_URL", "") or "").strip()
+        site = urlsplit(base) if base else None
+        if site is None or parts.scheme not in ("http", "https") or parts.netloc.lower() != site.netloc.lower():
+            return False
+    try:
+        return resolve(parts.path).url_name == "srp_link"
+    except Resolver404:
+        return False
+
+
 def strip_url_userinfo(url: str) -> tuple[str, str]:
     """Remove ``user@`` or ``user:password@`` from a link.
 

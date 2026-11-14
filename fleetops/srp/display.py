@@ -8,10 +8,13 @@ only where they are shown, so the stored rows do not depend on the language. Unk
 their code, never as an error.
 """
 
+from datetime import datetime
+from datetime import timezone as dt_timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from django.utils.translation import gettext, gettext_lazy, pgettext_lazy
 
+from fleetops.services.periods import format_eve
 from fleetops.texts import translate_stored
 
 LEVEL_INFO = "info"
@@ -184,13 +187,36 @@ def _text_outside_link_date(params):
     }
 
 
+def _eve_minute(value) -> str:
+    """"YYYY-MM-DD HH:MM EVE" for a stored ISO time; "?" without one, the first 10 characters for a text that is no
+    time."""
+    if not value:
+        return "?"
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        return str(value)[:10]
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt_timezone.utc)
+    return f"{format_eve(parsed)} EVE"
+
+
 def _text_resubmitted_after_rejection(params):
     params = params or {}
+    when = _eve_minute(params.get("rejected_at"))
+    reason = params.get("reason")
+    if params.get("auto"):
+        # Rejected by the rules: no reviewer, the reason is the rule's.
+        if reason:
+            return gettext("Submitted again after being rejected automatically by the rules on %(when)s: %(reason)s") % {
+                "when": when,
+                "reason": reason,
+            }
+        return gettext("Submitted again after being rejected automatically by the rules on %(when)s.") % {"when": when}
     text = gettext("Submitted again after a rejection by %(reviewer)s on %(when)s.") % {
         "reviewer": params.get("reviewer") or "?",
-        "when": str(params.get("rejected_at") or "?")[:10],
+        "when": when,
     }
-    reason = params.get("reason")
     if not reason:
         return text
     return f"{text} " + (gettext("Reason: %(reason)s") % {"reason": reason})

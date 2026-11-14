@@ -500,9 +500,12 @@ def claim_page_context(request, claim, *, bound=None, settings_obj=None):
         "is_reviewer": is_reviewer,
         "is_payer": is_payer,
         "can_decide": can_decide,
-        "can_withdraw": is_owner and claim.status == SrpClaim.Status.PENDING,
+        "can_withdraw": is_owner and claim.status == SrpClaim.Status.PENDING and user.has_perm(REQUEST_SRP),
         "can_edit": False,
-        "can_resubmit": is_owner and not claim.is_imported and claims.can_resubmit(claim, settings_obj),
+        "can_resubmit": is_owner
+        and not claim.is_imported
+        and user.has_perm(REQUEST_SRP)
+        and claims.can_resubmit(claim, settings_obj),
         "calculation": calculation,
         "policy": PolicySnapshot.from_json(claim.policy),
         "show_limits": show_limits,
@@ -515,6 +518,15 @@ def claim_page_context(request, claim, *, bound=None, settings_obj=None):
         # A banned member can still withdraw, but not change the claim.
         context["can_edit"] = bans.active_ban(user) is None
     context["is_imported"] = claim.is_imported
+    context["resubmit_blocked"] = ""
+    if context["can_resubmit"]:
+        # The same checks as the submission itself: a button that would only be refused is not shown, the reason is.
+        blockers = claims.resubmit_blockers(
+            claim, user, settings_obj, missing_alts=discovery.unauthorized_characters(user, settings_obj)
+        )
+        if blockers:
+            context["can_resubmit"] = False
+            context["resubmit_blocked"] = blockers[0]
     if claim.is_imported:
         # A claim imported from aa-srp is a record (IMP-6): no calculation, no insurance estimate, no buttons.
         context["insurance"] = None

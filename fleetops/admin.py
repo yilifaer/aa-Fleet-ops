@@ -7,6 +7,7 @@ from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.shortcuts import redirect
 from django.utils.translation import gettext_lazy as _
+from django.utils.translation import pgettext_lazy
 
 from fleetops.forms_config import DiscordWebhookForm, SrpCategoryForm
 from fleetops import texts
@@ -337,7 +338,7 @@ class DiscordWebhookAdmin(FleetOpsConfigAuditMixin, admin.ModelAdmin):
         # webhook token, so only whether one is stored is shown.
         return [name if name != "webhook_url" else "webhook_url_stored" for name in fields]
 
-    @admin.display(description=_("Webhook URL"))
+    @admin.display(description=pgettext_lazy("FleetOps", "Webhook URL"))
     def webhook_url_stored(self, obj):
         return _("Stored (hidden)") if obj is not None and obj.webhook_url else _("Not set")
 

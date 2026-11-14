@@ -4,6 +4,21 @@
 
 Fixes from the hand test of 0.3.0b5 on a test site.
 
+### Fixed
+
+Fixes from the re-test of 0.3.0b5.
+
+- **A rejected claim cannot be submitted again once its SRP link is closed** (a fleet link or a standing link), with *Members may resubmit rejected claims* on. A withdrawn claim still can, as before.
+- **A claim submitted again after an automatic rejection carries a warning too.** It reads "Submitted again after being rejected automatically by the rules on <time>: <reason>", so **Approve clean claims** skips it and a reviewer looks at it. The warning of a rejection by a reviewer shows the date and the time in EVE time ("2026-11-14 10:20 EVE"), not only the date.
+- **The claim page shows no Submit again button when the submission would be refused** (a banned member, SRP switched off, a loss past the claim deadline, a closed SRP link for a rejected claim). A small text says why instead.
+- **Claims rejected by an SRP ban before 0.3.0b5 are protected as well.** A rejection without the ban mark counts as a ban rejection when it was made by the reviewer who created a ban of the claimant, for that claimant, within 5 minutes after the ban was created, whether the ban is lifted or not. The member cannot submit such a claim again (a reviewer can reopen it). There is no data migration; a rejection made by another reviewer, or later than the window, is treated as an ordinary rejection.
+- **The ship order page of a doctrine** shows *Nothing was changed.* and writes nothing (no audit entry) when you save the order as it is stored. The first save of an automatic order still counts as a change.
+- **The payments page**: a card with nothing you may pay shows "—" instead of a large "0 ISK", and the line under **To pay** counts only the claims you may pay and their players, with "(N claims you may not pay)" for the rest.
+- **More words that other plugins translate differently** now have their own FleetOps translation context in the Chinese catalog, in every place they are used (pages, forms, models, exports and the stored word "error"): Clear filters, Created, Eligible, Error, EVE time, FC name, Group name, Inactive, Main characters, Notes, Owner, Ping target, Ship classes, Ship type, Ship types, Webhook, Webhook URL, Target and the member count. A new test checks that no FleetOps text without a context is a word of a list of words known from other plugins.
+- The message after editing a scheduled fleet during the ping cooldown has one space between its sentences (and none left over when the reason is empty).
+- **Open SRP Fleet** is hidden from people who may not request SRP also for a fleet that records no SRP system but whose address is a FleetOps claim page (addresses of other SRP apps are never hidden).
+- The **Changes** column of the audit log shows a replaced webhook address as "Webhook address replaced" (translated) instead of `webhook_url_replaced → true`; no address or token is shown.
+
 ### Changed
 
 - **One FleetOps item in CharLink.** With aa-charlink installed its page now offers a single item, **FleetOps (PAP links, SRP, fleet control)**, for everybody with `fleetops.basic_access`. It is ticked by default and asks for all seven scopes FleetOps uses in one EVE login: `esi-fleets.read_fleet.v1`, `esi-fleets.write_fleet.v1`, `esi-location.read_location.v1`, `esi-location.read_ship_type.v1`, `esi-location.read_online.v1`, `esi-killmails.read_killmails.v1` and `esi-ui.open_window.v1`. The former items for fleet control and for loss reading are gone, and the loss reading item no longer disappears while SRP loss discovery is off. The fleet-control and open-window permissions are used only when you are the FC of a fleet or a payer; a member's token is never used to change a fleet. When a character is added while SRP and **Find losses automatically** are on, it is read in the next loss scan. Every sign-in flow that does not go through CharLink (Start Fleet, PAP links, **Authorize** on My SRP, the payments page) still asks for only its own scopes, and the **Authorize all characters with CharLink** button on My SRP is unchanged.
@@ -20,11 +35,12 @@ Fixes from the hand test of 0.3.0b5 on a test site.
 - **Every member and FC authorizes once more in CharLink.** A character counts as added only with all seven scopes, so the characters authorized so far show as not added until the member ticks the single FleetOps item and logs in once.
 - **Before the upgrade, check that the EVE developer application of the site has all seven scopes** (the list above). With one missing, the CharLink login fails for everybody. The install instructions in the README and the integration page list them. FleetOps cannot read the scopes of the application, so there is no system check for it.
 - One new migration, `0046`: it adds the setting **Rank shown to members**, set to the alliance. Nothing changes visibly by default, except that the rank card is also shown when **Leaderboard visibility** is limited to statistics managers. Run `python manage.py migrate`, then `python manage.py collectstatic --noinput`, and restart Alliance Auth and Celery.
+- **From 0.3.0b4 or earlier:** claims an SRP ban rejected in those versions are recognised automatically (see *Fixed*); there is no data to convert. The recognition covers a rejection made within 5 minutes after the ban by the same reviewer; a claim rejected later, by someone else or by hand stays an ordinary rejection that the member may submit again when *Members may resubmit rejected claims* is on.
 - The CharLink setting stored for the former PAP item (`fleetops_clickpap`) keeps working; the rows of the two removed items stay in CharLink's table unused.
 
 ### Rollback notes
 
-- Run `python manage.py fleetops_srp_rollback_check` first, then `python manage.py migrate fleetops 0045` removes the setting **Rank shown to members**, and install 0.3.0b5 (or go on to `0044` and install 0.3.0b4). The same guard as before runs first and refuses a rollback that would lose data. Nothing else in the database changes.
+- Run `python manage.py fleetops_srp_rollback_check` first and roll back only when all checks are OK (migrations 0045 and 0046 have the same guard as 0040 to 0044: it refuses a rollback that would lose data, for example while claims imported from aa-srp or payout rules with a category exist). Then `python manage.py migrate fleetops 0045` removes the setting **Rank shown to members**, and you install 0.3.0b5 (or go on to `0044`, which removes the setting **Members may resubmit rejected claims**, and install 0.3.0b4). Nothing else in the database changes.
 
 ## [0.3.0b5] - 2026-11-13
 
@@ -65,7 +81,7 @@ Fixes from the re-test of 0.3.0b4 on a test site.
 
 ### Rollback notes
 
-- `python manage.py migrate fleetops 0044` removes the setting (a refused rollback, for example while claims imported from aa-srp exist, leaves the column in place; the same guard as before runs first). Then install 0.3.0b4 again. Nothing else in the database changes.
+- Run `python manage.py fleetops_srp_rollback_check` first and roll back only when all checks are OK. Then `python manage.py migrate fleetops 0044` removes the setting (a refused rollback, for example while claims imported from aa-srp exist, leaves the column in place; the same guard as before runs first). Then install 0.3.0b4 again. Nothing else in the database changes.
 
 ## [0.3.0b4] - 2026-11-13
 

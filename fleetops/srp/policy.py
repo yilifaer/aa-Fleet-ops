@@ -369,7 +369,8 @@ def eligibility(
 
     A claim that exists for the killmail is not a reason here; the preview and the submit step look for it.
     ``link`` is the link the claim is made through; with ``check_link_open`` only an open link accepts it (a claim
-    that exists already is checked again without that, as it may have been withdrawn before the link closed).
+    that exists already is checked again: a withdrawn claim without that, as it may have been withdrawn before the
+    link closed, a rejected claim with it).
     ``operation`` is the fleet whose payout rules apply, the one of ``link`` unless given: a claim that exists
     already is checked against the rules of its fleet. ``category`` is the claim's category, whose payout rules
     apply too. ``via_standing_link`` says the claim belongs to a standing link: such a claim is not held back by

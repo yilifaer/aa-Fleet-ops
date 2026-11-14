@@ -818,6 +818,11 @@ def payments(request):
             to_pay_total=sum(row.payable_total for row in rows),
             to_pay_unpayable_total=sum(row.unpayable_total for row in rows),
             to_pay_count=len(to_pay),
+            # The line under "To pay" counts what the amount above is made of: the claims this viewer may pay and the
+            # players who have such a claim; the rest is named as a number of claims.
+            to_pay_payable_count=sum(1 for claim in to_pay if claim.payable),
+            to_pay_unpayable_count=sum(1 for claim in to_pay if not claim.payable),
+            to_pay_payable_players=sum(1 for row in rows if row.payable_total),
             paid_claims=list(
                 paid.select_related("paid_by", "category", "link", "payment_batch").order_by("-paid_at", "-pk")[:PAID_SHOWN]
             ),

@@ -75,6 +75,22 @@ def _show(key, value) -> str:
     return text if len(text) <= CHANGE_VALUE_LENGTH else text[: CHANGE_VALUE_LENGTH - 1] + "…"
 
 
+class FlagName(str):
+    """The name of a change that is a plain statement: shown as text, without a code name and old and new value."""
+
+    is_flag = True
+
+
+# Flags the audit log shows as a statement when they became true (no secret is behind them).
+AUDIT_FLAG_TEXTS = {"webhook_url_replaced": gettext_lazy("Webhook address replaced")}
+
+
+def _change(name, old, new, has_old, has_new):
+    if name in AUDIT_FLAG_TEXTS and new is True and old is not True:
+        return (FlagName(AUDIT_FLAG_TEXTS[name]), "", "")
+    return (name, _show(name, old) if has_old else "—", _show(name, new) if has_new else "—")
+
+
 @register.filter
 def audit_changes(row):
     """The "Changes" column of the audit log: ``[(name, old, new)]`` of what an entry changed, as short text.
@@ -90,7 +106,7 @@ def audit_changes(row):
         new = new if isinstance(new, dict) else {}
         names = sorted(set(old) | set(new), key=str)
         return [
-            (name, _show(name, old.get(name)) if name in old else "—", _show(name, new.get(name)) if name in new else "—")
+            _change(name, old.get(name), new.get(name), name in old, name in new)
             for name in names
             if name not in old or name not in new or old[name] != new[name]
         ]

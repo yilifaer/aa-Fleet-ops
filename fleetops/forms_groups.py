@@ -326,7 +326,7 @@ class SendPingForm(forms.Form):
         empty_label=_("Choose a channel"),
     )
     ping_mentions = forms.MultipleChoiceField(
-        label=_("Ping target"), required=False, widget=forms.CheckboxSelectMultiple, initial=[NONE]
+        label=pgettext_lazy("FleetOps", "Ping target"), required=False, widget=forms.CheckboxSelectMultiple, initial=[NONE]
     )
     ping_template = forms.ModelChoiceField(
         label=_("Ping template"),

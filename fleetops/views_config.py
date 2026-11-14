@@ -915,6 +915,11 @@ def doctrine_order_edit(request, doctrine_id):
             except doctrine_order.OrderError:
                 messages.error(request, _("The order could not be saved: check the ships and the marks."))
             else:
+                if order is not None and list(order.ships) == list(saved_ships) and list(order.marks) == list(saved_marks):
+                    # Nothing differs from the stored order: no write, no audit entry. An automatic order (none stored)
+                    # is not compared: the first save fixes it, which is a change.
+                    messages.info(request, _("Nothing was changed."))
+                    return redirect("fleetops:doctrine_order_edit", doctrine_id=doctrine_id)
                 old = _order_audit_values(order, doctrine) if order is not None else None
                 with transaction.atomic():
                     saved, _created = DoctrineShipOrder.objects.update_or_create(

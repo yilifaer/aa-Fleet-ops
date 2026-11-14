@@ -325,6 +325,27 @@ COLLIDING_WORDS = [
     "Actions",
     "Additional information",
     "FC",
+    # The re-test of 0.3.0b5 found 20 more words that another plugin's catalog won over (0.3.0b6).
+    "Clear filters",
+    "Created",
+    "Eligible",
+    "Error",
+    "error",
+    "EVE time",
+    "FC name",
+    "Group name",
+    "Inactive",
+    "Main characters",
+    "Notes",
+    "Owner",
+    "Ping target",
+    "Ship classes",
+    "Ship type",
+    "Ship types",
+    "Webhook",
+    "Webhook URL",
+    "Target",
+    "%(counter)s member",
 ]
 CONTEXT = "FleetOps"
 
@@ -435,6 +456,39 @@ class EditDuringCooldownTests(SchedulingTestBase):
 
         self.assertEqual([level for level, _text in flashed(response)], ["success"])
 
+    # --- 0.3.0b6: the sentences of the message are joined by one space ---------------------------------
+
+    def cooldown_text(self):
+        operation = self.scheduled()
+        first = self.edit(operation, formup="Perimeter", send_update="on", edit_token=str(uuid.uuid4()))
+        self.client.get(first["Location"])
+        second = self.edit(operation, formup="Jita", send_update="on", edit_token=str(uuid.uuid4()))
+        return flashed(second)[0][1]
+
+    def test_the_sentences_are_joined_by_one_space(self):
+        text = self.cooldown_text()
+
+        self.assertNotIn("  ", text)
+        self.assertTrue(text.startswith("Scheduled fleet updated, but the updated pre ping was not posted. "))
+        self.assertTrue(text.endswith(" You can retry it later."))
+
+    def test_an_empty_reason_leaves_no_gap(self):
+        with mock.patch("fleetops.views.translate_stored", return_value=""):
+            text = self.cooldown_text()
+
+        self.assertEqual(text, "Scheduled fleet updated, but the updated pre ping was not posted. You can retry it later.")
+
+    def test_the_chinese_text_has_no_double_space_either(self):
+        # The middleware leaves the language active after the request: deactivate it again.
+        self.addCleanup(translation.deactivate)
+        self.client.cookies["django_language"] = "zh-hans"
+
+        text = self.cooldown_text()
+
+        self.assertNotIn("  ", text)
+        self.assertTrue(text.startswith("已预约的舰队已更新"))
+        self.assertTrue(text.endswith("你可以稍后重试。"))
+
 
 # --- D5: the changes on the audit log page ------------------------------------------------------------
 
@@ -526,7 +580,9 @@ class AuditChangesColumnTests(TestCase):
         self.assertNotIn("abc-123-token", content)
         self.assertNotIn("def-456-token", content)
         self.assertNotIn("/api/webhooks/", content)
-        self.assertIn("webhook_url_replaced", content)
+        # Changed for 0.3.0b6: the flag shows as the statement "Webhook address replaced", not as its key.
+        self.assertIn("Webhook address replaced", content)
+        self.assertNotIn("webhook_url_replaced", content)
         self.assertIn("***", content)
         # The stored snapshots of the real save hold no secret either.
         saved = AuditLog.objects.get(action="configuration.update", object_type="DiscordWebhook")
@@ -576,7 +632,8 @@ class AuditChangesColumnTests(TestCase):
 
         row = audit(self.auditor, "x.test", self.fleet_type, {"webhook_url_replaced": False}, {"webhook_url_replaced": True})
 
-        self.assertEqual(audit_changes(row), [("webhook_url_replaced", "false", "true")])
+        # Changed for 0.3.0b6: the statement replaces the key and the old and new value.
+        self.assertEqual(audit_changes(row), [("Webhook address replaced", "", "")])
 
     def test_the_page_costs_the_same_queries_for_more_entries(self):
         from django.db import connection

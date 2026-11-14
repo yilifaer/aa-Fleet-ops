@@ -119,7 +119,7 @@
       </div>
     </div>
 
-    {% if can_withdraw or can_resubmit %}
+    {% if can_withdraw or can_resubmit or resubmit_blocked %}
     <div class="card mb-3">
       <div class="card-header"><strong>{% translate "Your claim" %}</strong></div>
       <div class="card-body">
@@ -132,6 +132,8 @@
           {{ withdraw_form.reason }}
           <button type="submit" class="btn btn-outline-danger mt-2">{% translate "Withdraw claim" %}</button>
         </form>
+        {% elif resubmit_blocked %}
+        <div class="small text-muted" id="srp-claim-resubmit-blocked">{% translate "This claim cannot be submitted again:" %} {{ resubmit_blocked }}</div>
         {% else %}
         <form method="post" action="{% url 'fleetops:srp_claim_resubmit' claim.uuid %}" class="fleetops-srp-form" data-srp-once>
           {% csrf_token %}

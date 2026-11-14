@@ -32,7 +32,7 @@
 <form method="post" action="{% url 'fleetops:review_attendance' %}">{% csrf_token %}
   <input type="hidden" name="next" value="{% url 'fleetops:operation_detail' operation.uuid %}">
   <div class="table-responsive"><table class="table table-sm align-middle mb-0">
-    <thead><tr><th></th><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th class="text-end">{% translate "Value" context "PAP value" %}</th><th>{% translate "Correction" %}</th><th>{% translate "Source" %}</th><th>{% translate "Review" %}</th><th>{% translate "Notes" %}</th><th>{% translate "Added by" %}</th></tr></thead>
+    <thead><tr><th></th><th>{% translate "Character" %}</th><th>{% translate "Main" %}</th><th class="text-end">{% translate "Value" context "PAP value" %}</th><th>{% translate "Correction" %}</th><th>{% translate "Source" %}</th><th>{% translate "Review" %}</th><th>{% translate "Notes" context "FleetOps" %}</th><th>{% translate "Added by" %}</th></tr></thead>
     <tbody>{% for r in review_rows %}<tr>
       <td><label class="fo-check-cell"><input class="form-check-input" type="checkbox" name="ids" value="{{ r.pk }}"{% if r.review_status == 'pending' %} checked{% endif %} aria-label="{% blocktranslate trimmed with name=r.character_name %}Select {{ name }}{% endblocktranslate %}"></label></td>
       <td>{{ r.character_name }}</td><td>{{ r.main_character_name|default:"—" }}</td><td class="text-end">{{ r.attendance_value }}</td><td>{{ r.get_correction_display }}</td><td>{{ r.get_source_display }}</td>

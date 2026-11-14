@@ -57,7 +57,7 @@ class LinkOnlyFleetForm(PapLimitForm):
     doctrine_choice = forms.ChoiceField(label=pgettext_lazy("FleetOps", "Doctrine"), required=False)
     custom_doctrine = DoctrineNameField(label=_("Custom doctrine"))
     formup = forms.CharField(label=_("Form up"), max_length=255)
-    notes = forms.CharField(label=_("Notes"), required=False, widget=forms.Textarea(attrs={"rows": 2}))
+    notes = forms.CharField(label=pgettext_lazy("FleetOps", "Notes"), required=False, widget=forms.Textarea(attrs={"rows": 2}))
     link_minutes = forms.IntegerField(
         label=_("PAP link open for (minutes)"), min_value=MIN_LINK_MINUTES, max_value=MAX_LINK_MINUTES
     )

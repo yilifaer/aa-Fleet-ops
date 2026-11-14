@@ -401,7 +401,7 @@ right actor.
 - [ ] An FC without the SRP request right does not see **Open SRP Fleet** on the fleet page for a FleetOps link; a link of another SRP app still has the button.
 - [ ] A loss outside a fleet without a category shows *Choose a category for this loss.*; Doctrine Settings saved without a change shows *Nothing was changed.* as an information message.
 - [ ] SRP settings, **Members and review**: **Members may resubmit rejected claims** is off after the upgrade. As a member, open one of your rejected claims: no **Submit again** button. Turn the setting on (the audit log has a `configuration.update` entry with the old and the new value; saving the page again without a change writes nothing) and reload: **Submit again** is there. Press it: the claim is pending in the review queue with the current amount, its history still shows the rejection with its reason, and the audit log has `srp.claim_resubmit`. Turn the setting off again: a second rejected claim has no button. A withdrawn claim can be submitted again with the setting on and off.
-- [ ] With the setting on, a banned member, a claim older than the claim deadline and a claim while SRP is off cannot be submitted again (the message says why); a closed link does not stop it.
+- [ ] With the setting on, a banned member, a claim older than the claim deadline and a claim while SRP is off cannot be submitted again (the message says why); a closed link stops a rejected claim but not a withdrawn one (see section 23).
 - [ ] Alliance, FC statistics: the labels of the fleet types have the colour dot of the type like the other statistics pages (a custom colour too, and readable in both themes).
 - [ ] The Default Ping stored on the test site is unchanged by the upgrade (no SRP line). Create a new ping template from the built-in text in `docs/message-templates.md`, make it the default and start a fleet that has an SRP link: the ping has the line `SRP: Request SRP` (a link) after the doctrine line; a fleet without a link has no SRP line and no empty label.
 - [ ] Upgrade check: `python manage.py migrate` applies `0045` (one new column, nothing else changes); `migrate fleetops 0044` removes the setting.
@@ -415,3 +415,17 @@ right actor.
 - [ ] My PAP history: the column is called **FC**; the name still opens the fleet (the slim page for a fleet of another FC).
 - [ ] Set **Leaderboard visibility** to statistics managers: a member's My Statistics still has the rank card ("#N of M", numbers only) and no **Leaderboard** link; `statistics/leaderboard/` is refused. Set **Rank shown to members** to the own corporation (the card ranks inside the corporation and says so) and to **Not shown** (no card). A statistics manager's page is unchanged.
 - [ ] Upgrade check: `python manage.py migrate` applies `0046` (one new column, set to the alliance); `python manage.py fleetops_srp_rollback_check` then `migrate fleetops 0045` removes it.
+
+## 23. Fixes from the re-test of 0.3.0b5 (0.3.0b6)
+
+- [ ] With **Members may resubmit rejected claims** on: a member's rejected claim of a closed fleet link and of a closed standing link has no **Submit again** button and says why; the same claim with the link open has it. A withdrawn claim of a closed link can still be submitted again.
+- [ ] A claim an automatic rule rejected and the member submitted again shows "Submitted again after being rejected automatically by the rules on <date> <time> EVE: <reason>"; **Approve clean claims** skips it. The warning of a manual rejection shows the date and the time.
+- [ ] Ban a member with **Reject pending claims** off, reject one of their pending claims yourself within five minutes: the member cannot submit it again (a reviewer can reopen it). A rejection by another reviewer, or an hour later, can be submitted again.
+- [ ] A member with a ban, SRP switched off or a loss past the deadline sees no **Submit again** on a withdrawn or rejected claim.
+- [ ] **Configuration** > Doctrine settings > Ship order: save without a change shows *Nothing was changed.* and the audit log gets no entry.
+- [ ] Payments: a card with nothing you may pay shows "—"; the line under **To pay** counts only what you may pay.
+- [ ] Chinese: the words Clear filters, Created, Eligible, Error, EVE time, FC name, Group name, Inactive, Main characters, Notes, Owner, Ping target, Ship classes, Ship type, Ship types, Webhook, Webhook URL and the member count read as the FleetOps translation on a site that runs other plugins.
+- [ ] Edit a scheduled fleet with *Publish the updated pre ping* twice within the cooldown: the warning has single spaces.
+- [ ] The audit page shows "Webhook address replaced" for a changed webhook, no address.
+- [ ] Rollback: `python manage.py fleetops_srp_rollback_check` first, `migrate fleetops 0045` only when all checks are OK.
+
