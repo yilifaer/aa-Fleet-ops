@@ -1,17 +1,17 @@
 # Changelog
 
-## [0.3.0b6] - Unreleased
+## [0.3.0b6] - 2026-11-14
 
-Fixes from the hand test of 0.3.0b5 on a test site.
+Changes asked for after 0.3.0b5 and fixes from its re-test on a test site.
 
 ### Fixed
-
-Fixes from the re-test of 0.3.0b5.
 
 - **A rejected claim cannot be submitted again once its SRP link is closed** (a fleet link or a standing link), with *Members may resubmit rejected claims* on. A withdrawn claim still can, as before.
 - **A claim submitted again after an automatic rejection carries a warning too.** It reads "Submitted again after being rejected automatically by the rules on <time>: <reason>", so **Approve clean claims** skips it and a reviewer looks at it. The warning of a rejection by a reviewer shows the date and the time in EVE time ("2026-11-14 10:20 EVE"), not only the date.
 - **The claim page shows no Submit again button when the submission would be refused** (a banned member, SRP switched off, a loss past the claim deadline, a closed SRP link for a rejected claim). A small text says why instead.
 - **Claims rejected by an SRP ban before 0.3.0b5 are protected as well.** A rejection without the ban mark counts as a ban rejection when it was made by the reviewer who created a ban of the claimant, for that claimant, within 5 minutes after the ban was created, whether the ban is lifted or not. The member cannot submit such a claim again (a reviewer can reopen it). There is no data migration; a rejection made by another reviewer, or later than the window, is treated as an ordinary rejection.
+- **A claim that was withdrawn after a rejection and then submitted again keeps its rejection warning**, so **Approve clean claims** still skips it (for a rejection by a reviewer and for an automatic one).
+- **Submit again** and **Withdraw** are shown on the claim page only to people who may request SRP.
 - **The ship order page of a doctrine** shows *Nothing was changed.* and writes nothing (no audit entry) when you save the order as it is stored. The first save of an automatic order still counts as a change.
 - **The payments page**: a card with nothing you may pay shows "—" instead of a large "0 ISK", and the line under **To pay** counts only the claims you may pay and their players, with "(N claims you may not pay)" for the rest.
 - **More words that other plugins translate differently** now have their own FleetOps translation context in the Chinese catalog, in every place they are used (pages, forms, models, exports and the stored word "error"): Clear filters, Created, Eligible, Error, EVE time, FC name, Group name, Inactive, Main characters, Notes, Owner, Ping target, Ship classes, Ship type, Ship types, Webhook, Webhook URL, Target and the member count. A new test checks that no FleetOps text without a context is a word of a list of words known from other plugins.
