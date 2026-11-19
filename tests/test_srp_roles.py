@@ -559,7 +559,7 @@ class ActionUrlTests(RolePagesBase):
     def test_a_payer_really_pays_and_undoes(self):
         claim = f.srp_claim(self.member, status=Status.APPROVED, decided_by=self.manager, time=self.loss_time)
 
-        self.assertEqual(self.post(self.payer, claim, "paid", {"note": "Sent"}).status_code, 302)
+        self.assertEqual(self.post(self.payer, claim, "paid", {"note": "Sent", "shown_amount": claim.approved_amount}).status_code, 302)
         claim.refresh_from_db()
         self.assertEqual((claim.status, claim.paid_by), (Status.PAID, self.payer))
         self.assertEqual(self.post(self.payer, claim, "unpaid", {"reason": "Not received"}).status_code, 302)
@@ -577,8 +577,8 @@ class ActionUrlTests(RolePagesBase):
         SrpSettings.objects.filter(pk=1).update(require_different_payer=True)
         claim = f.srp_claim(self.member, status=Status.APPROVED, decided_by=self.both, time=self.loss_time)
 
-        self.assertEqual(self.post(self.both, claim, "paid", {"note": "x"}).status_code, 403)
-        self.assertEqual(self.post(self.payer, claim, "paid", {"note": "x"}).status_code, 302)
+        self.assertEqual(self.post(self.both, claim, "paid", {"note": "x", "shown_amount": claim.approved_amount}).status_code, 403)
+        self.assertEqual(self.post(self.payer, claim, "paid", {"note": "x", "shown_amount": claim.approved_amount}).status_code, 302)
         claim.refresh_from_db()
         self.assertEqual(claim.status, Status.PAID)
         # Undoing is not bound by the rule.
@@ -587,11 +587,11 @@ class ActionUrlTests(RolePagesBase):
     def test_paying_an_own_claim_needs_allow_self_payment_not_allow_self_review(self):
         own = f.srp_claim(self.both, status=Status.APPROVED, decided_by=self.manager, time=self.loss_time)
         SrpSettings.objects.filter(pk=1).update(allow_self_review=True)
-        self.assertEqual(self.post(self.both, own, "paid", {"note": "x"}).status_code, 403)
+        self.assertEqual(self.post(self.both, own, "paid", {"note": "x", "shown_amount": own.approved_amount}).status_code, 403)
 
         SrpSettings.objects.filter(pk=1).update(allow_self_payment=True)
 
-        self.assertEqual(self.post(self.both, own, "paid", {"note": "x"}).status_code, 302)
+        self.assertEqual(self.post(self.both, own, "paid", {"note": "x", "shown_amount": own.approved_amount}).status_code, 302)
 
 
 class ReviewPagesTests(RolePagesBase):
@@ -633,9 +633,15 @@ class PaymentPagesTests(RolePagesBase):
         page = client.get(route("srp_payments"))
         self.assertEqual(page.status_code, 200)
         self.assertContains(page, f'name="claim" value="{first.uuid}"')
+        # Changed for 0.3.0b7: every row posts the amount it showed (a row without it is not paid).
         response = client.post(
             route("srp_payments"),
-            {"claim": [str(first.uuid), str(second.uuid)], "note": "March", f"shown-{first.uuid}": first.approved_amount},
+            {
+                "claim": [str(first.uuid), str(second.uuid)],
+                "note": "March",
+                f"shown-{first.uuid}": first.approved_amount,
+                f"shown-{second.uuid}": second.approved_amount,
+            },
         )
 
         self.assertEqual(response.status_code, 302)
@@ -664,8 +670,14 @@ class PaymentPagesTests(RolePagesBase):
         free = self.approved(self.other, by=self.payer)
         client = self.client_for(self.both)
 
+        # Changed for 0.3.0b7: the row that can be paid posts the amount it showed.
         response = client.post(
-            route("srp_payments"), {"claim": [str(own.uuid), str(mine.uuid), str(free.uuid)], "note": ""}
+            route("srp_payments"),
+            {
+                "claim": [str(own.uuid), str(mine.uuid), str(free.uuid)],
+                "note": "",
+                f"shown-{free.uuid}": free.approved_amount,
+            },
         )
 
         text = " ".join(messages_of(response))

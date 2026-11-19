@@ -49,6 +49,7 @@ from fleetops.models import (
 from fleetops.providers.esi import FleetDetectionResult, FleetESIError, detect_character_fleet
 from fleetops.providers.srp import SRPLinkResult
 from fleetops.services.fleet_access import NO_WRITE_TOKEN
+from fleetops.services.mentions import escape_discord_markdown
 from fleetops.services.messages import render_operation_messages
 from fleetops.services.operations import start_fleet
 
@@ -315,7 +316,8 @@ class OutputEscapingTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "application/json")
         self.assertEqual(response.get("X-Content-Type-Options"), "nosniff")
-        self.assertIn(XSS_SCRIPT, response.json()["ping"])
+        # Changed for 0.3.0b7: typed text is shown with its Discord markdown escaped.
+        self.assertIn(escape_discord_markdown(XSS_SCRIPT), response.json()["ping"])
 
 
 # ---------------------------------------------------------------------------
@@ -402,9 +404,13 @@ class MessageTemplateRenderingTests(StartFleetPatchesMixin, TestCase):
             additional_message="{% now 'Y' %}{% debug %}",
         )
         ping, motd = render_operation_messages(operation)
+        # Changed for 0.3.0b7: the ping shows typed text with its Discord markdown escaped (the bar and the underscore),
+        # so the text is not evaluated and not changed in meaning; the MOTD is as before.
+        self.assertIn("{{ 6\\|add:1 }}", ping)
+        self.assertIn("{{ settings.SECRET\\_KEY }}", ping)
+        self.assertIn("{{ 6|add:1 }}", motd)
+        self.assertIn("{{ settings.SECRET_KEY }}", motd)
         for text in (ping, motd):
-            self.assertIn("{{ 6|add:1 }}", text)
-            self.assertIn("{{ settings.SECRET_KEY }}", text)
             self.assertIn("{% now 'Y' %}{% debug %}", text)
             self.assertNotIn(django_settings.SECRET_KEY, text)
 

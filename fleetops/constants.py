@@ -57,7 +57,6 @@ DEFAULT_STANDALONE_PING_TEMPLATE = """{% if ping_mention %}{{ ping_mention }}
 **Comms:** {% if comms_link %}[{{ comms }}]({{ comms_link }}){% else %}{{ comms }}{% endif %}{% endif %}{% if doctrine_name %}
 **Doctrine:** {% if doctrine_url %}[{{ doctrine_name }}]({{ doctrine_url }}){% else %}{{ doctrine_name }}{% endif %}{% if doctrine_ships %} ({{ doctrine_ships }}){% endif %}{% endif %}{% if is_pre_ping %}
 **Time:** {{ fleet_time_eve }} · {{ fleet_time_local }} ({{ fleet_time_discord }}){% endif %}
-
 -# FleetOps ping from {{ sender }} to {{ ping_target_label }} at {{ sent_at }} EVE"""
 
 # Posted without any mention in the pre-ping channel when a scheduled fleet is cancelled.

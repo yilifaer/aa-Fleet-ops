@@ -338,6 +338,15 @@ class EditorTests(TestCase):
                 page = self.post(HULLS, [">", ">", ">"], move=command).content.decode()
                 self.assertIn("Minokawa &gt; Lif &gt; Raven &gt; Basilisk", page)
 
+    def test_a_move_that_changes_nothing_says_nothing_about_an_unsaved_order(self):
+        # Added for 0.3.0b7: the first ship up and the last ship down used to say "Order changed but not saved yet".
+        for command in ("up:0", "down:3", "up:x", "down:99"):
+            with self.subTest(command=command):
+                response = self.post(HULLS, [">", ">", ">"], move=command)
+                self.assertEqual(self.texts(response), [])
+        moving = self.post(HULLS, [">", ">", ">"], move="up:1")
+        self.assertIn("not saved yet", " ".join(self.texts(moving)))
+
     def test_a_form_with_a_forged_ship_shows_only_the_doctrine_ships(self):
         page = self.post(["Lif", "<script>", "Raven"], [">", ">"], move="up:1").content.decode()
 

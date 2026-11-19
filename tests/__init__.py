@@ -49,3 +49,24 @@ def _rebuild_fleet_type_table_after_migrate():
 
 
 _rebuild_fleet_type_table_after_migrate()
+
+
+# A request with a language cookie (or a bare ``translation.activate``) leaves that language active in the thread, and
+# the next test of the process, in a run of many modules, then reads its English text in Chinese (the failures of
+# 0.3.0b6 that only showed after another module). After every test the thread goes back to the site language.
+def _reset_language_after_each_test():
+    from django.test import SimpleTestCase
+    from django.utils import translation
+
+    original = SimpleTestCase._post_teardown
+
+    def _post_teardown(self):
+        try:
+            original(self)
+        finally:
+            translation.deactivate()
+
+    SimpleTestCase._post_teardown = _post_teardown
+
+
+_reset_language_after_each_test()

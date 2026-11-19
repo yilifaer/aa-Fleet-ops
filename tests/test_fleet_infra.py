@@ -882,7 +882,8 @@ class KickLockTests(FleetTestCase):
         job = fleet_jobs.current_job(self.operation.pk)
         self.assertEqual((job["kind"], job["label"], job["state"], job["done"], job["total"]),
                          ("kick", "Kick 11 members outside Jita", "done", 11, 11))
-        self.assertEqual(job["messages"][-1]["text"], f"Kicked Far {ids[-1]} (unknown corporation).")
+        # Changed for 0.3.0b7: a member without a corporation is recorded by the name alone (no English words stored).
+        self.assertEqual(job["messages"][-1]["text"], f"Kicked Far {ids[-1]}.")
         # Kicks keep their own step and audit entry.
         self.assertTrue(self.operation.actions.filter(action="kick_outside_system").exists())
         self.assertFalse(self.operation.actions.filter(action="fleet_kick").exists())

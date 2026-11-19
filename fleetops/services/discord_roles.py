@@ -9,7 +9,7 @@ from allianceauth.services.hooks import get_extension_logger
 from django.apps import apps
 from django.db import IntegrityError, transaction
 from django.utils import timezone
-from django.utils.translation import gettext, gettext_lazy
+from django.utils.translation import gettext, gettext_lazy, pgettext
 
 from fleetops import texts
 from fleetops.models import MAX_DATABASE_ID, AuditLog, PingRole
@@ -98,7 +98,7 @@ def _summary(created, updated, missing) -> str:
     ]
     if missing:
         parts.append(gettext("%(count)s no longer on Discord (disabled)") % {"count": missing})
-    return gettext("Roles synced from Discord: %(details)s.") % {"details": ", ".join(parts)}
+    return gettext("Roles synced from Discord: %(details)s.") % {"details": pgettext("list separator", ", ").join(parts)}
 
 
 def sync_discord_roles(*, actor) -> RoleSyncResult:

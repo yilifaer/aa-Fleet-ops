@@ -770,8 +770,9 @@ def _window_scope(dataset, label, window, *, params, corporation_id=None) -> Exp
 
 
 def check_srp_claims(request) -> ExportScope:
-    window = _srp_window(request)
+    # The permission first: somebody who may not download gets 403 or 404 whatever the period says, not a 400.
     corporation_id, label = _srp_corporation(request)
+    window = _srp_window(request)
     status = request.GET.get("status", "")
     claim_scope = request.GET.get("scope", "")
     category = request.GET.get("category", "")
@@ -787,8 +788,8 @@ def check_srp_claims(request) -> ExportScope:
 
 
 def check_srp_members(request) -> ExportScope:
-    window = _srp_window(request)
     corporation_id, label = _srp_corporation(request)
+    window = _srp_window(request)
     return _window_scope(
         "srp-members", label, window, params=_params(corporation=corporation_id), corporation_id=corporation_id
     )

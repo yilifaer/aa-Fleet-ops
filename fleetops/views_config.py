@@ -905,8 +905,11 @@ def doctrine_order_edit(request, doctrine_id):
         ships, marks = _submitted_rows(request.POST, current)
         if request.POST.get("move"):
             # No JavaScript needed: the buttons post the form, the page comes back with the ship moved, not yet saved.
-            ships = _move(ships, request.POST["move"])
-            messages.info(request, _("Order changed but not saved yet. Use Save to keep it."))
+            moved = _move(ships, request.POST["move"])
+            # A move that changes nothing (the first ship up, the last one down) says nothing.
+            if list(moved) != list(ships):
+                messages.info(request, _("Order changed but not saved yet. Use Save to keep it."))
+            ships = moved
         else:
             try:
                 saved_ships, saved_marks = doctrine_order.clean_submission(

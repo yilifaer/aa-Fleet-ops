@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-14 10:08+0000\n"
+"POT-Creation-Date: 2026-11-19 08:14+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -864,6 +864,14 @@ msgstr "没有名为“%(text)s”的%(noun)s。请输入准确的英文名称�
 #, python-format
 msgid "%(rule)s is already mapped to %(function)s."
 msgstr "%(rule)s 已经对应到 %(function)s。"
+
+#: forms_fleet.py
+msgid ""
+"Main: Alpha, Bravo, Charlie\n"
+"Logi: Logi"
+msgstr ""
+"主力: 阿尔法, 布拉沃, 查理\n"
+"后勤: 后勤"
 
 #: forms_groups.py
 msgid "A group that runs fleets needs at least one fleet type."
@@ -1742,6 +1750,10 @@ msgstr "设为该类别的当日链接"
 msgid "There is one such link per category and day; the automatic daily link takes the same place."
 msgstr "每个类别每天只能有一条当日链接；自动创建的每日链接占用同一个名额。"
 
+#: forms_srp.py
+msgid "The closing time has already passed. Choose a time in the future or leave the field empty."
+msgstr "关闭时间已经过去。请选择一个将来的时间，或者留空。"
+
 #: forms_srp.py templates/fleetops/srp/bans.html
 msgid "In force"
 msgstr "生效中"
@@ -2356,7 +2368,7 @@ msgstr "手动结束"
 msgid "Fleet no longer exists or the FC left it"
 msgstr "舰队已解散或 FC 已离队"
 
-#: models.py
+#: models.py templatetags/fleetops_config.py
 msgid "Fleet boss handed over"
 msgstr "因 Boss 移交而结束"
 
@@ -4933,6 +4945,11 @@ msgstr "%(count)s 个已不在 Discord 上（已停用）"
 msgid "Roles synced from Discord: %(details)s."
 msgstr "已从 Discord 同步身份组：%(details)s。"
 
+#: services/discord_roles.py services/multipliers.py
+msgctxt "list separator"
+msgid ", "
+msgstr "、"
+
 #: services/discord_roles.py
 msgid "The roles changed while they were synced. Try again."
 msgstr "同步期间身份组发生了变化。请重试。"
@@ -5543,11 +5560,6 @@ msgstr "没有设置 SITE_URL，因此消息中的 SRP 链接不完整。"
 #, python-format
 msgid "%(multiplier)sx"
 msgstr "%(multiplier)s 倍"
-
-#: services/multipliers.py
-msgctxt "list separator"
-msgid ", "
-msgstr "、"
 
 #: services/multipliers.py
 #, python-format
@@ -6456,7 +6468,7 @@ msgstr "FC 修改了这支追踪舰队的时间。"
 msgid "Fleet pending"
 msgstr "舰队待审批"
 
-#: templates/fleetops/approvals.html
+#: templates/fleetops/approvals.html templatetags/fleetops_config.py
 msgid "Fleet rejected"
 msgstr "舰队已拒绝"
 
@@ -6674,8 +6686,6 @@ msgid_plural "Page %(number)s of %(pages)s · %(counter)s records"
 msgstr[0] "第 %(number)s / %(pages)s 页 · %(counter)s 条记录"
 
 #: templates/fleetops/attendance_history.html templates/fleetops/audit_log.html
-#: templates/fleetops/operation/_attendance_table.html
-#: templates/fleetops/operation_detail_member.html
 #: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/links.html
 msgctxt "FleetOps"
 msgid "First"
@@ -6700,8 +6710,6 @@ msgid "Next"
 msgstr "下一页"
 
 #: templates/fleetops/attendance_history.html templates/fleetops/audit_log.html
-#: templates/fleetops/operation/_attendance_table.html
-#: templates/fleetops/operation_detail_member.html
 #: templates/fleetops/srp/_claims_table.html templates/fleetops/srp/links.html
 msgctxt "FleetOps"
 msgid "Last"
@@ -8308,6 +8316,18 @@ msgstr "根据追踪的在队时间、PAP 登记链接和已通过的修正重�
 #: templates/fleetops/operation/_attendance_table.html
 msgid "Recalculate PAP"
 msgstr "重新计算 PAP"
+
+#: templates/fleetops/operation/_attendance_table.html
+#: templates/fleetops/operation_detail_member.html
+msgctxt "first seen column"
+msgid "First"
+msgstr "首次"
+
+#: templates/fleetops/operation/_attendance_table.html
+#: templates/fleetops/operation_detail_member.html
+msgctxt "last seen column"
+msgid "Last"
+msgstr "末次"
 
 #: templates/fleetops/operation/_attendance_table.html
 #, python-format
@@ -12151,6 +12171,322 @@ msgid "Members are listed under their current corporation with all their PAP of 
 msgstr "成员列在其当前军团名下，显示其当月的全部 PAP；军团总计则按 PAP 获得时所在的军团统计。"
 
 #: templatetags/fleetops_config.py
+msgid "PAP approved"
+msgstr "PAP 已通过"
+
+#: templatetags/fleetops_config.py
+msgid "PAP rejected"
+msgstr "PAP 已拒绝"
+
+#: templatetags/fleetops_config.py
+msgid "Fleet approved"
+msgstr "舰队已通过审批"
+
+#: templatetags/fleetops_config.py
+msgid "Fleet submitted again"
+msgstr "舰队重新提交审批"
+
+#: templatetags/fleetops_config.py
+msgid "PAP added by hand"
+msgstr "手工补录 PAP"
+
+#: templatetags/fleetops_config.py
+msgid "PAP removed"
+msgstr "PAP 已删除"
+
+#: templatetags/fleetops_config.py
+msgid "PAP multiplier changed"
+msgstr "PAP 倍率已修改"
+
+#: templatetags/fleetops_config.py
+msgid "Automatic PAP replaced"
+msgstr "自动 PAP 已替换"
+
+#: templatetags/fleetops_config.py
+msgid "PAP imported from a roster"
+msgstr "从名单导入 PAP"
+
+#: templatetags/fleetops_config.py
+msgid "Setting created"
+msgstr "设置已创建"
+
+#: templatetags/fleetops_config.py
+msgid "Setting changed"
+msgstr "设置已修改"
+
+#: templatetags/fleetops_config.py
+msgid "Setting deleted"
+msgstr "设置已删除"
+
+#: templatetags/fleetops_config.py
+msgid "Discord roles synced"
+msgstr "已同步 Discord 身份组"
+
+#: templatetags/fleetops_config.py
+msgid "Fleet ended automatically"
+msgstr "舰队已自动结束"
+
+#: templatetags/fleetops_config.py
+msgid "Fleet ended"
+msgstr "舰队已结束"
+
+#: templatetags/fleetops_config.py
+msgid "Fleet end requested"
+msgstr "已请求结束舰队"
+
+#: templatetags/fleetops_config.py
+msgid "Members invited"
+msgstr "已邀请成员"
+
+#: templatetags/fleetops_config.py
+msgid "Capsule pilots kicked"
+msgstr "已踢出胶囊飞行员"
+
+#: templatetags/fleetops_config.py
+msgid "Member kicked"
+msgstr "已踢出成员"
+
+#: templatetags/fleetops_config.py
+msgid "Members outside a system kicked"
+msgstr "已踢出星系外的成员"
+
+#: templatetags/fleetops_config.py
+msgid "Fleet added by hand"
+msgstr "手工补录舰队"
+
+#: templatetags/fleetops_config.py
+msgid "Fleet member moved"
+msgstr "已移动舰队成员"
+
+#: templatetags/fleetops_config.py
+msgid "MOTD made again"
+msgstr "已重新生成 MOTD"
+
+#: templatetags/fleetops_config.py
+msgid "MOTD sent again"
+msgstr "已重新发送 MOTD"
+
+#: templatetags/fleetops_config.py
+msgid "Ping sent again"
+msgstr "已重新发送 Ping"
+
+#: templatetags/fleetops_config.py
+msgid "SRP link made again"
+msgstr "已重新生成 SRP 链接"
+
+#: templatetags/fleetops_config.py
+msgid "Special role added"
+msgstr "已添加特殊角色"
+
+#: templatetags/fleetops_config.py
+msgid "Special role removed"
+msgstr "已移除特殊角色"
+
+#: templatetags/fleetops_config.py
+msgid "Special role changed"
+msgstr "已修改特殊角色"
+
+#: templatetags/fleetops_config.py
+msgid "Fleet scheduled"
+msgstr "已预约舰队"
+
+#: templatetags/fleetops_config.py
+msgid "Scheduled fleet cancelled"
+msgstr "已取消预约舰队"
+
+#: templatetags/fleetops_config.py
+msgid "Scheduled fleet changed"
+msgstr "已修改预约舰队"
+
+#: templatetags/fleetops_config.py
+msgid "Start of a scheduled fleet refused"
+msgstr "预约舰队的开队被拒绝"
+
+#: templatetags/fleetops_config.py
+msgid "Squad created"
+msgstr "已创建中队"
+
+#: templatetags/fleetops_config.py
+msgid "Squad deleted"
+msgstr "已删除中队"
+
+#: templatetags/fleetops_config.py
+msgid "Squad renamed"
+msgstr "已重命名中队"
+
+#: templatetags/fleetops_config.py
+msgid "Fleet started"
+msgstr "舰队已开始"
+
+#: templatetags/fleetops_config.py
+msgid "Fleet start abandoned"
+msgstr "已放弃开队"
+
+#: templatetags/fleetops_config.py
+msgid "Counting mode changed"
+msgstr "统计方式已修改"
+
+#: templatetags/fleetops_config.py
+msgid "Tracking stopped by an error"
+msgstr "追踪因错误停止"
+
+#: templatetags/fleetops_config.py
+msgid "Tracking recovered"
+msgstr "追踪已恢复"
+
+#: templatetags/fleetops_config.py
+msgid "Wing created"
+msgstr "已创建联队"
+
+#: templatetags/fleetops_config.py
+msgid "Wing deleted"
+msgstr "已删除联队"
+
+#: templatetags/fleetops_config.py
+msgid "Wing renamed"
+msgstr "已重命名联队"
+
+#: templatetags/fleetops_config.py
+msgid "Invitations sent"
+msgstr "邀请已发出"
+
+#: templatetags/fleetops_config.py
+msgid "Kicks carried out"
+msgstr "已执行踢人"
+
+#: templatetags/fleetops_config.py
+msgid "Members moved"
+msgstr "成员已移动"
+
+#: templatetags/fleetops_config.py
+msgid "Structure template applied"
+msgstr "已套用结构模板"
+
+#: templatetags/fleetops_config.py
+msgid "Alliance Auth group deleted"
+msgstr "Alliance Auth 用户组已删除"
+
+#: templatetags/fleetops_config.py
+msgid "Incentives recalculated automatically"
+msgstr "奖金已自动重新计算"
+
+#: templatetags/fleetops_config.py
+msgid "Incentive period finalized"
+msgstr "奖金周期已定稿"
+
+#: templatetags/fleetops_config.py
+msgid "Incentive period created"
+msgstr "奖金周期已创建"
+
+#: templatetags/fleetops_config.py
+msgid "Incentive period changed"
+msgstr "奖金周期已修改"
+
+#: templatetags/fleetops_config.py
+msgid "Incentives recalculated"
+msgstr "奖金已重新计算"
+
+#: templatetags/fleetops_config.py
+msgid "Incentive period reopened"
+msgstr "奖金周期已重新打开"
+
+#: templatetags/fleetops_config.py
+msgid "Incentive waiver changed"
+msgstr "奖金豁免已修改"
+
+#: templatetags/fleetops_config.py
+msgid "Fleet edited"
+msgstr "舰队已修改"
+
+#: templatetags/fleetops_config.py
+msgid "PAP limit changed"
+msgstr "PAP 限制已修改"
+
+#: templatetags/fleetops_config.py
+msgid "PAP recalculated"
+msgstr "PAP 已重新计算"
+
+#: templatetags/fleetops_config.py
+msgid "PAP registered"
+msgstr "PAP 已登记"
+
+#: templatetags/fleetops_config.py
+msgid "PAP link created"
+msgstr "PAP 登记链接已创建"
+
+#: templatetags/fleetops_config.py
+msgid "PAP link revoked"
+msgstr "PAP 登记链接已撤销"
+
+#: templatetags/fleetops_config.py
+msgid "Ping sent"
+msgstr "Ping 已发送"
+
+#: templatetags/fleetops_config.py
+msgid "SRP ban created"
+msgstr "SRP 封禁已创建"
+
+#: templatetags/fleetops_config.py
+msgid "SRP ban lifted"
+msgstr "SRP 封禁已解除"
+
+#: templatetags/fleetops_config.py
+msgid "SRP export downloaded"
+msgstr "已下载 SRP 导出"
+
+#: templatetags/fleetops_config.py
+msgid "aa-srp data imported"
+msgstr "已导入 aa-srp 数据"
+
+#: templatetags/fleetops_config.py
+msgid "aa-srp import undone"
+msgstr "已撤销 aa-srp 导入"
+
+#: templatetags/fleetops_config.py
+msgid "Imported claims completed"
+msgstr "已补全导入的申请"
+
+#: templatetags/fleetops_config.py
+msgid "SRP link closed"
+msgstr "SRP 链接已关闭"
+
+#: templatetags/fleetops_config.py
+msgid "SRP link completed"
+msgstr "SRP 链接已完成"
+
+#: templatetags/fleetops_config.py
+msgid "SRP link created"
+msgstr "SRP 链接已创建"
+
+#: templatetags/fleetops_config.py
+msgid "SRP link opened"
+msgstr "SRP 链接已打开"
+
+#: templatetags/fleetops_config.py
+msgid "SRP link completion undone"
+msgstr "已撤销 SRP 链接的完成状态"
+
+#: templatetags/fleetops_config.py
+msgid "SRP link changed"
+msgstr "SRP 链接已修改"
+
+#: templatetags/fleetops_config.py
+msgid "Loss hidden"
+msgstr "损失已隐藏"
+
+#: templatetags/fleetops_config.py
+msgid "Loss shown again"
+msgstr "损失已重新显示"
+
+#: templatetags/fleetops_config.py
+msgid "Payment batch made"
+msgstr "已生成付款批次"
+
+#: templatetags/fleetops_config.py
+msgid "Statistics export downloaded"
+msgstr "已下载统计导出"
+
+#: templatetags/fleetops_config.py
 msgid "Webhook address replaced"
 msgstr "Webhook 地址已替换"
 
@@ -13317,6 +13653,21 @@ msgstr "无法踢出 %(member)s：已经离开舰队。"
 
 #: texts.py
 #, python-format
+msgid "Kicked %(member)s (unknown corporation)."
+msgstr "已踢出 %(member)s（未知军团）。"
+
+#: texts.py
+#, python-format
+msgid "Could not kick %(member)s (unknown corporation): %(error)s"
+msgstr "无法踢出 %(member)s（未知军团）：%(error)s"
+
+#: texts.py
+#, python-format
+msgid "Could not kick %(member)s (unknown corporation): already left the fleet."
+msgstr "无法踢出 %(member)s（未知军团）：已经离开舰队。"
+
+#: texts.py
+#, python-format
 msgid "Kicked %(count)s capsule member(s)."
 msgstr "已踢出 %(count)s 名胶囊成员。"
 
@@ -14124,6 +14475,10 @@ msgid "The amount within the limits changed from %(shown)s to %(current)s while 
 msgstr "你查看申请期间，限额内金额从 %(shown)s 变成了 %(current)s。请核对后重新通过。"
 
 #: texts.py
+msgid "The request did not say which amount your page showed for this claim. Reload the payments page and pay again."
+msgstr "请求里没有说明您的页面为这笔申请显示的金额。请刷新付款页面后重新付款。"
+
+#: texts.py
 #, python-format
 msgid "The approved amount changed from %(expected)s to %(current)s after your page was loaded. Check it before paying, so the books show what was sent."
 msgstr "页面加载之后，已通过的金额从 %(expected)s 变成了 %(current)s。请核对后再付款，这样账目才与实际转出的一致。"
@@ -14717,7 +15072,7 @@ msgstr "请选择一个 PAP 倍率（%(choices)s）。舰队没有结束。"
 #: views.py
 #, python-format
 msgid "%(problem)s The fleet was not ended."
-msgstr "%(problem)s 舰队没有结束。"
+msgstr "%(problem)s舰队没有结束。"
 
 #: views.py
 #, python-format
@@ -16053,6 +16408,10 @@ msgstr[0] "将跳过你自己的 %(own)s 条申请：按设置你不能处理自
 msgid "No claim was recalculated. %(own)s pending claim is your own, and the settings do not let you decide your own claims; another reviewer can recalculate it."
 msgid_plural "No claim was recalculated. %(own)s pending claims are your own, and the settings do not let you decide your own claims; another reviewer can recalculate them."
 msgstr[0] "没有重新计算任何申请。有 %(own)s 条待处理申请是你自己的，按设置你不能处理自己的申请；请其他审核员重新计算。"
+
+#: views_srp_review.py
+msgid "There are no pending claims to recalculate."
+msgstr "没有需要重新计算的申请。"
 
 #: views_srp_review.py
 #, python-format

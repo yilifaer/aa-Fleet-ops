@@ -11,6 +11,7 @@ from django.conf import settings
 from django.shortcuts import resolve_url
 from django.test import TestCase, tag
 from django.urls import reverse
+from django.utils import translation
 
 import fleetops
 import fleetops.urls
@@ -25,6 +26,13 @@ class JavaScriptCatalogTests(TestCase):
     @classmethod
     def setUpTestData(cls):
         cls.member = f.create_user("member", perms=f.MEMBER_PERMS)
+
+    def setUp(self):
+        super().setUp()
+        # A request with the Chinese cookie activates Chinese in this thread and the middleware does not undo it;
+        # the next test of the run would start in Chinese. Put the language back after each test.
+        previous = translation.get_language()
+        self.addCleanup(translation.activate, previous)
 
     def test_the_route_sits_above_the_public_page(self):
         names = [pattern.name for pattern in fleetops.urls.urlpatterns]

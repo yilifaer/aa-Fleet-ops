@@ -79,7 +79,12 @@ preview warns that nobody will be notified.
 - Ping: Discord Markdown (`**bold**`, `[text](link)`, `-# small text`). Discord accepts at most 2000
   characters (counted the way Discord counts them). A ping over the limit is refused before anything is posted
   to Discord; a ping that is only copied gets a warning. The counter on **Start Fleet** shows the length.
-  Link previews are suppressed.
+  Link previews are suppressed. What a person typed (the FC name, the form-up place, the additional information, the
+  group, the comms and doctrine names, the doctrine ships and fits, the channels, the sender, the role or channel name of the footer and the fleet type) is shown as typed:
+  Discord's markdown in those values is switched off with a backslash, so an additional message that starts with
+  `>>>`, `#` or `-` does not turn the rest of the ping into a quote, a heading or a list. The markdown of the
+  template itself (bold labels, links, small text) is not touched. An address that was typed (`https://...`) is
+  left as it is, so a link that holds `_` or `~` keeps working.
 - MOTD: the game reads HTML-like text, so every value of a person or of FleetOps is HTML-escaped when the template is
   rendered (`<`, `>` and `&` become `&lt;`, `&gt;` and `&amp;`; otherwise the game drops the `>` and `>>>` marks of
   `doctrine_ships`). The variables that are game markup (`fc_link`, `formup_link`, `logi_channel_link`,
@@ -136,7 +141,6 @@ The built-in **Default Ping without fleet**:
 **Comms:** {% if comms_link %}[{{ comms }}]({{ comms_link }}){% else %}{{ comms }}{% endif %}{% endif %}{% if doctrine_name %}
 **Doctrine:** {% if doctrine_url %}[{{ doctrine_name }}]({{ doctrine_url }}){% else %}{{ doctrine_name }}{% endif %}{% if doctrine_ships %} ({{ doctrine_ships }}){% endif %}{% endif %}{% if is_pre_ping %}
 **Time:** {{ fleet_time_eve }} · {{ fleet_time_local }} ({{ fleet_time_discord }}){% endif %}
-
 -# FleetOps ping from {{ sender }} to {{ ping_target_label }} at {{ sent_at }} EVE
 ```
 

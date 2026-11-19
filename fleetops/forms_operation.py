@@ -33,7 +33,7 @@ from fleetops.models import (
 from fleetops.services import group_access, roster_import
 from fleetops.services.history import retention_cutoff
 from fleetops.services.multipliers import multiplier_label
-from fleetops.services.periods import MIN_YEAR
+from fleetops.services.periods import MIN_YEAR, format_eve
 from fleetops.services.roles import may_give_fc_credit, participant_rows
 from fleetops.services.roster_paste import clean_name, name_error
 from fleetops.texts import translate_stored
@@ -450,8 +450,16 @@ def manageable_attendance_operations(user):
     return qs.order_by("-started_at")
 
 
+class HistoricalFleetField(forms.ModelChoiceField):
+    """Shows a fleet as "type · FC · start time (EVE)", so two fleets of one type can be told apart."""
+
+    def label_from_instance(self, obj):
+        parts = [str(obj.fleet_type), obj.fc_character_name, f"{format_eve(obj.started_at)} EVE" if obj.started_at else ""]
+        return " · ".join(part for part in parts if part)
+
+
 class HistoricalManualAttendanceForm(ManualAttendanceForm):
-    operation = forms.ModelChoiceField(
+    operation = HistoricalFleetField(
         queryset=FleetOperation.objects.none(),
         label=_("Historical Fleet"),
         help_text=_(

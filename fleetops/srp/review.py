@@ -414,12 +414,15 @@ def revoke_approval(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
     return claims.sync_claim(claim, locked)
 
 
-def _mark_paid(claim, actor, note, expected_amount=None, batch=None) -> SrpClaim:
+def _mark_paid(claim, actor, note, expected_amount=None, batch=None, *, shown_required=False) -> SrpClaim:
     with quota.quota_lock() as srp:
         locked = claims.lock_native(claim)
         _require_payer(actor, locked, srp)
         if locked.status != Status.APPROVED:
             raise claims.wrong_state(locked, texts.SRP_ONLY_APPROVED_PAID(), Status.PAID)
+        if shown_required and expected_amount is None:
+            # The page always sends the amount of each row; without it nobody can tell whether the amount changed.
+            raise SrpStateError("amount_changed", texts.SRP_APPROVED_NOT_SHOWN())
         if expected_amount is not None and expected_amount != locked.approved_amount:
             raise SrpStateError(
                 "amount_changed",
@@ -448,7 +451,9 @@ def _mark_paid(claim, actor, note, expected_amount=None, batch=None) -> SrpClaim
     return claims.sync_claim(claim, locked)
 
 
-def mark_paid(claims_, *, actor, note: str = "", expected_amounts=None, filters=None) -> BulkResult:
+def mark_paid(
+    claims_, *, actor, note: str = "", expected_amounts=None, filters=None, shown_required=False
+) -> BulkResult:
     """Approved to paid, each claim under its own row lock, all in one payment batch (``SrpPaymentBatch``).
 
     The batch is made first, in a transaction of its own; the claims that could be paid point to it and their paid event
@@ -459,7 +464,9 @@ def mark_paid(claims_, *, actor, note: str = "", expected_amounts=None, filters=
     Claims that are not approved are skipped with the reason, and so are the payer's own claims and, with
     ``require_different_payer``, the ones the payer approved.
     ``expected_amounts`` maps a claim's ID to the approved amount the payer was shown and sent; a claim whose
-    approved amount is another one by now is skipped, so a payment is never booked for a different amount.
+    approved amount is another one by now is skipped, so a payment is never booked for a different amount. With
+    ``shown_required`` (the payments page) a claim without such an amount is skipped as well, so a request that leaves
+    the amount out cannot get past the check.
     """
     _require_payer_role(actor)
     note = (note or "").strip()
@@ -468,7 +475,10 @@ def mark_paid(claims_, *, actor, note: str = "", expected_amounts=None, filters=
     expected = expected_amounts or {}
     batch = payments.create_batch(actor, note, filters)
     try:
-        result = _each(_claim_list(claims_), lambda claim: _mark_paid(claim, actor, note, expected.get(claim.pk), batch))
+        result = _each(
+            _claim_list(claims_),
+            lambda claim: _mark_paid(claim, actor, note, expected.get(claim.pk), batch, shown_required=shown_required),
+        )
     except BaseException:
         # Whatever stopped the payment: claims that were paid keep their batch, with the numbers they add up to; a batch
         # nobody was paid in must not stay.

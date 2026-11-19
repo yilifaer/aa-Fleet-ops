@@ -22,6 +22,7 @@ from unittest import mock
 from allianceauth import hooks
 from allianceauth.authentication.models import State
 from allianceauth.eveonline.models import EveCharacter
+from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.models import Group, Permission, User
 from django.db.models import Exists
@@ -252,7 +253,12 @@ class CharLinkImportTests(TestCase):
         self.assertFalse(hasattr(importlib.import_module(HOOK_MODULE), "_add_loss_character"))
 
 
-@unittest.skipUnless(importlib.util.find_spec("charlink"), "aa-charlink is not installed")
+# Changed for 0.3.0b7: the package being importable is not enough, its models need the app to be installed (an
+# environment with charlink next to the test settings, which do not list it, raised an error instead of skipping).
+@unittest.skipUnless(
+    importlib.util.find_spec("charlink") and apps.is_installed("charlink"),
+    "aa-charlink is not installed in the test settings",
+)
 class RealCharLinkTests(TestCase):
     def test_the_real_package_accepts_the_imports(self):
         from charlink.app_imports.utils import AppImport

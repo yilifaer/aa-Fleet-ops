@@ -10,7 +10,7 @@
       <thead><tr><th scope="col">{% translate "When (EVE)" %}</th><th scope="col">{% translate "Who" %}</th><th scope="col">{% translate "Action" context "FleetOps" %}</th><th scope="col">{% translate "Object" %}</th><th scope="col">{% translate "Reason" %}</th><th scope="col">{% translate "Changes" context "FleetOps" %}</th></tr></thead>
       <tbody>
         {% for row in rows %}
-        <tr><td class="text-nowrap">{{ row.created_at|eve_time:"%Y-%m-%d %H:%M:%S" }}</td><td>{{ row.actor|default:system_actor }}</td><td>{{ row.action }}</td><td>{{ row|audit_object_label }}</td><td>{{ row.reason|stored_text }}</td>
+        <tr><td class="text-nowrap">{{ row.created_at|eve_time:"%Y-%m-%d %H:%M:%S" }}</td><td>{{ row.actor|default:system_actor }}</td><td title="{{ row.action }}">{{ row.action|audit_action_label }}</td><td>{{ row|audit_object_label }}</td><td>{{ row.reason|stored_text }}</td>
           <td class="small">{% with changes=row|audit_changes %}{% if changes|changes_are_short %}{% include "fleetops/_audit_change.html" with change=changes.0 %}{% elif changes %}<details><summary>{% blocktranslate trimmed count counter=changes|length %}{{ counter }} change{% plural %}{{ counter }} changes{% endblocktranslate %}</summary><ul class="list-unstyled mb-0">{% for change in changes %}<li>{% include "fleetops/_audit_change.html" %}</li>{% endfor %}</ul></details>{% endif %}{% endwith %}</td></tr>
         {% endfor %}
       </tbody>

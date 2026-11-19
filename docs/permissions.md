@@ -276,6 +276,7 @@ security status ("Jita 0.9"), because it explains the refusal.
 | Action | Who |
 |---|---|
 | Send a pre ping and schedule a fleet | `fleetops.start_fleet` |
+| See the **My FC Month** card of the dashboard (credited fleets and FC points of the month) | Users who may start fleets: `fleetops.start_fleet`, or a leader of a group that starts its own fleets. Other members do not see the card. |
 | See scheduled fleets (dashboard list, scheduled fleet page, archive) | The fleet's FC, and users with `start_fleet`, `view_all_fleets` or `manage_fleets`. Other members do not see pre pings in FleetOps, because a pre ping may have gone to a restricted channel. |
 | Start a scheduled fleet | Only the FC who scheduled it (with `start_fleet`), with one of their own characters that ESI confirms as the fleet boss. Other FCs and fleet managers cannot start it. |
 | Edit a scheduled fleet (optionally post the updated pre ping) | The fleet's FC with `manage_own_fleet`, or `manage_fleets` |

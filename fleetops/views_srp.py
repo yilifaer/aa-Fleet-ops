@@ -526,7 +526,7 @@ def claim_page_context(request, claim, *, bound=None, settings_obj=None):
         )
         if blockers:
             context["can_resubmit"] = False
-            context["resubmit_blocked"] = blockers[0]
+            context["resubmit_blocked"] = translate_stored(blockers[0])
     if claim.is_imported:
         # A claim imported from aa-srp is a record (IMP-6): no calculation, no insurance estimate, no buttons.
         context["insurance"] = None

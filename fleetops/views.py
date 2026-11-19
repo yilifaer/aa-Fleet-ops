@@ -421,7 +421,12 @@ def dashboard(request):
     if not _can_see_scheduled_fleets(request.user):
         scheduled = scheduled.filter(fc_user=request.user)
     scheduled = scheduled.select_related("fleet_type", "ping_channel").order_by("scheduled_at", "pk")
-    fc = fc_statistics(request.user, *current_year_month(), include_active=True)
+    # The FC month card is for the people who may run fleets (the permission to start fleets, or a leader of a
+    # group that runs its own); a member who only takes part in fleets has no FC statistics to look at.
+    show_fc_month = request.user.has_perm("fleetops.start_fleet") or bool(
+        group_access.leader_access(request.user).fleet_group_ids
+    )
+    fc = fc_statistics(request.user, *current_year_month(), include_active=True) if show_fc_month else None
     metrics = dashboard_metrics(request.user)
     for row in metrics["recent"]:
         row["member_view"] = member_view_only(request.user, row["operation"])
@@ -442,6 +447,7 @@ def dashboard(request):
             "scheduled_operations": scheduled[:SCHEDULED_FLEETS_SHOWN],
             "own_operations": own,
             "fc_stats": fc,
+            "show_fc_month": show_fc_month,
             "dashboard_cards": metrics["cards"],
             "top_ships": metrics["top_ships"],
             "recent_participations": metrics["recent"],

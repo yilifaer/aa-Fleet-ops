@@ -137,4 +137,6 @@ class FleetStructureTemplateForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         _style(self.fields)
         self.fields["layout"].widget.attrs["class"] = "form-control font-monospace"
-        self.fields["layout"].widget.attrs["placeholder"] = "Main: Alpha, Bravo, Charlie\nLogi: Logi"
+        self.fields["layout"].widget.attrs["placeholder"] = _(
+            "Main: Alpha, Bravo, Charlie\nLogi: Logi"
+        )

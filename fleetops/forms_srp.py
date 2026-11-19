@@ -9,6 +9,7 @@ from decimal import Decimal
 
 from django import forms
 from django.core.validators import URLValidator
+from django.utils import timezone
 from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
 from django.utils.translation import pgettext_lazy
@@ -646,14 +647,20 @@ class LinkFilterForm(forms.Form):
         _style(self.fields)
 
 
+class ReportURLField(forms.URLField):
+    """An address with http or https only. The scheme check replaces the default check of the field, so an address
+    that is refused is refused with one message (a second validator would repeat the same message)."""
+
+    default_validators = [URLValidator(schemes=["http", "https"])]
+
+
 def _report_field(**kwargs):
     """The after-action report address: http and https only (a ``javascript:`` or ``data:`` address is refused)."""
-    return forms.URLField(
+    return ReportURLField(
         label=_("After-action report"),
         required=False,
         max_length=500,
         assume_scheme="https",
-        validators=[URLValidator(schemes=["http", "https"])],
         help_text=_("A link to the after-action report. Only http and https addresses are accepted."),
         **kwargs,
     )
@@ -702,6 +709,20 @@ class StandingLinkForm(forms.Form):
         required=False,
         help_text=_("There is one such link per category and day; the automatic daily link takes the same place."),
     )
+
+    def clean_auto_close_at(self):
+        """A closing time that has passed is refused (the link would be closed by the next run and nobody would
+        know why). The unchanged time of an existing link stays allowed, so a link that closed by itself can still
+        be edited."""
+        value = self.cleaned_data.get("auto_close_at")
+        if value is None or value > timezone.now():
+            return value
+        stored = getattr(self.link, "auto_close_at", None)
+        if stored is not None and abs((value - stored).total_seconds()) < 60:
+            return value
+        raise forms.ValidationError(
+            _("The closing time has already passed. Choose a time in the future or leave the field empty.")
+        )
 
     def __init__(self, *args, link=None, **kwargs):
         super().__init__(*args, **kwargs)

@@ -725,7 +725,11 @@ class LimitFlowTests(SrpFlowBase):
         self.assertEqual(out_two.events.filter(action="revoke").count(), 1)
         # ...and a paid claim keeps counting.
         self.client.force_login(self.mgr)
-        self.post(reverse("fleetops:srp_payments"), {"claim": [str(out_one.uuid)], "note": "In game"})
+        # Changed for 0.3.0b7: the payments page needs the amount the row showed.
+        self.post(
+            reverse("fleetops:srp_payments"),
+            {"claim": [str(out_one.uuid)], "note": "In game", f"shown-{out_one.uuid}": str(out_one.approved_amount)},
+        )
         out_one.refresh_from_db()
         self.assertEqual(out_one.status, Status.PAID)
         self.assertEqual(self.usage(self.p1)["personal"][0], 30 * M)
@@ -784,7 +788,10 @@ class LimitFlowTests(SrpFlowBase):
 
         # The payments list can also be filtered by the day of payment.
         self.client.force_login(self.mgr)
-        self.post(reverse("fleetops:srp_payments"), {"claim": [str(september.uuid)], "note": ""})
+        self.post(
+            reverse("fleetops:srp_payments"),
+            {"claim": [str(september.uuid)], "note": "", f"shown-{september.uuid}": str(september.approved_amount)},
+        )
         september.refresh_from_db()
         self.assertEqual(september.paid_at, NOW)
         paid_today = self.page(self.mgr, "srp_payments", paid_from="2026-10-14", paid_to="2026-10-14")
@@ -877,7 +884,12 @@ class DecisionFlowTests(SrpFlowBase):
         self.assertContains(page, 'data-srp-copy="Alpha One"')
         response = self.post(
             reverse("fleetops:srp_payments"),
-            {"claim": [str(first.uuid), str(third.uuid)], "note": "Paid in game"},
+            {
+                "claim": [str(first.uuid), str(third.uuid)],
+                "note": "Paid in game",
+                f"shown-{first.uuid}": str(first.approved_amount),
+                f"shown-{third.uuid}": str(third.approved_amount),
+            },
         )
         self.assertEqual(response.status_code, 302)
         self.assertTrue(any("2 claims marked paid (60,000,000 ISK)." in text for text in flashed(response)))
@@ -930,12 +942,15 @@ class DecisionFlowTests(SrpFlowBase):
         self.approve(self.mgr2, own)
         self.assertEqual(own.status, Status.APPROVED)
         self.client.force_login(self.mgr)
-        paid = self.post(reverse("fleetops:srp_payments"), {"claim": [str(own.uuid)], "note": ""})
+        paid = self.post(
+            reverse("fleetops:srp_payments"),
+            {"claim": [str(own.uuid)], "note": "", f"shown-{own.uuid}": str(own.approved_amount)},
+        )
         own.refresh_from_db()
         self.assertEqual(own.status, Status.APPROVED)
         # REV-1/REV-2: paying has its own skip text.
         self.assertIn("your own claim; another payer has to pay.", " ".join(flashed(paid)))
-        self.act(self.mgr2, own, "paid")
+        self.act(self.mgr2, own, "paid", {"shown_amount": str(own.approved_amount)})
         self.assertEqual(own.status, Status.PAID)
 
         # Small alliances can allow it.
@@ -984,7 +999,10 @@ class VisibilityFlowTests(SrpFlowBase):
         self.approve(self.mgr, self.a1)
         self.approve(self.mgr, self.b1)
         self.client.force_login(self.mgr)
-        self.post(reverse("fleetops:srp_payments"), {"claim": [str(self.b1.uuid)], "note": ""})
+        self.post(
+            reverse("fleetops:srp_payments"),
+            {"claim": [str(self.b1.uuid)], "note": "", f"shown-{self.b1.uuid}": str(self.b1.approved_amount)},
+        )
         for claim in (self.a1, self.a2, self.b1):
             claim.refresh_from_db()
         self.month = {"year": 2026, "month": 10}

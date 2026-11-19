@@ -419,6 +419,10 @@ def recalculate_pending(request):
     own = review.own_pending_left_out(request.user)
     if count == 0 and own:
         return _nothing_recalculated(request, own)
+    if count == 0 and pending == 0:
+        # An empty queue is not a success to report in green.
+        messages.info(request, _("There are no pending claims to recalculate."))
+        return back(request, redirect("fleetops:srp_review"))
     text = ngettext(
         "%(count)s pending claim recalculated with the current policy.",
         "%(count)s pending claims recalculated with the current policy.",
@@ -485,6 +489,7 @@ def do_paid(request, claim, form):
         actor=request.user,
         note=form.cleaned_data["note"],
         expected_amounts=None if shown is None else {claim.pk: shown},
+        shown_required=True,
     )
     if result.skipped:
         raise SrpStateError("not_payable", result.skipped[0][1])
@@ -693,6 +698,7 @@ def mark_selected_paid(request, settings_obj):
             actor=request.user,
             note=note_form.cleaned_data["note"],
             expected_amounts=expected_amounts(form, reviewable),
+            shown_required=True,
             **({"filters": filters} if (filters := posted_filters(request)) else {}),
         )
         skipped.extend(result.skipped)

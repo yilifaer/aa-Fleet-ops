@@ -89,7 +89,7 @@
 {% endif %}
 
 <div class="row g-3">
-  <div class="col-xl-8">
+  <div class="{% if show_fc_month %}col-xl-8{% else %}col-12{% endif %}">
     <div class="card">
       <div class="card-header"><strong>{% translate "Active Fleets" %}</strong></div>
       <div class="card-body p-0">
@@ -100,6 +100,7 @@
       </div>
     </div>
   </div>
+  {% if show_fc_month %}
   <div class="col-xl-4">
     <div class="card">
       <div class="card-header d-flex justify-content-between"><strong>{% translate "My FC Month" %}</strong><span class="text-muted small">{% translate "EVE month" %}</span></div>
@@ -110,5 +111,6 @@
       </div>
     </div>
   </div>
+  {% endif %}
 </div>
 {% endblock %}

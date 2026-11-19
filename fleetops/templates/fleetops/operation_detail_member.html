@@ -46,7 +46,7 @@
   <div class="card-body">
     {% if attendance_is_preview %}<div class="small text-muted mb-2">{% translate "PAP is granted when the fleet closes." %}</div>{% endif %}
     <div class="table-responsive"><table class="table table-sm align-middle mb-0">
-      <thead><tr><th>{% translate "Character" %}</th><th class="text-end">{% translate "Time in fleet" %}</th><th>{% translate "First" context "FleetOps" %}</th><th>{% translate "Last" context "FleetOps" %}</th><th>{% translate "Status" %}</th><th class="text-end">{% translate "PAP multiplier" %}</th></tr></thead>
+      <thead><tr><th>{% translate "Character" %}</th><th class="text-end">{% translate "Time in fleet" %}</th><th>{% translate "First" context "first seen column" %}</th><th>{% translate "Last" context "last seen column" %}</th><th>{% translate "Status" %}</th><th class="text-end">{% translate "PAP multiplier" %}</th></tr></thead>
       <tbody>
       {% for row in attendance_rows %}
         {% if row.record %}{% with r=row.record %}<tr>

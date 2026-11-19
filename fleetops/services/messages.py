@@ -28,7 +28,7 @@ from fleetops.services.mentions import (
     DISCORD_MESSAGE_LIMIT,
     discord_length,
     discord_link_address,
-    discord_link_text,
+    escape_discord_markdown,
     mention_text,
     neutralize_mass_mentions,
     selection_from_operation,
@@ -346,19 +346,41 @@ def _mention_for(selection) -> str:
     return _mention_placeholder() if mention_text(selection) else ""
 
 
-# The variables that are the text of a masked link in the shipped pings: [name](address).
+# The variables FleetOps puts into a ping that a person typed (or that are names of things people made): they are
+# shown as typed. The first three are also the text of a masked link in the shipped pings: [name](address).
 _LINK_TEXT_VALUES = ("doctrine", "doctrine_name", "comms")
+_TYPED_VALUES = (
+    *_LINK_TEXT_VALUES,
+    "fc",
+    "fc_main",
+    "sender",
+    "formup",
+    "group",
+    "comms_channel",
+    "doctrine_ships",
+    "doctrine_fits",
+    "logi_channel",
+    "boost_channel",
+    "additional_message",
+    "ping_target_label",
+    "ping_target_name",
+    "ping_channel",
+    "fleet_type",
+)
 
 
 def _discord_names(values: dict) -> dict:
-    """The link-text variables of a ping with the characters that would break a Discord masked link escaped.
+    """The typed variables of a ping with their Discord markdown switched off, and the SRP address made safe.
 
-    A name such as "[ACTIVE] Doctrine" would end the link text at its first "]" and show the raw markdown; with a
-    backslash in front of ``[``, ``]`` and the backslash itself Discord shows the name as typed, and a name cannot
-    close the link text or open an address ("](" or ")"). The SRP address is written so that it cannot end the
-    address of a masked link either (see ``discord_link_address``). The MOTD gets the values unchanged.
+    What an FC types in the additional information (or any other free text of the fleet) is shown as typed: a
+    line that starts with ``>>>``, ``#`` or ``-`` would otherwise turn the rest of the ping into a quote, a heading
+    or a list. A name such as "[ACTIVE] Doctrine" would end the text of a masked link at its first "]"; with
+    a backslash in front of ``[``, ``]`` and the backslash itself Discord shows the name as typed, and a name cannot
+    close the link text or open an address ("](" or ")"). The markdown written in the template (bold labels,
+    links, small text) is not touched. The SRP address is written so that it cannot end the address of a masked link
+    either (see ``discord_link_address``). The MOTD gets the values unchanged.
     """
-    names = {key: discord_link_text(values[key]) for key in _LINK_TEXT_VALUES if values.get(key)}
+    names = {key: escape_discord_markdown(values[key]) for key in _TYPED_VALUES if values.get(key)}
     if values.get("srp_url"):
         names["srp_url"] = discord_link_address(values["srp_url"])
     return names
@@ -508,7 +530,8 @@ def render_cancellation_notice(operation, *, actor=None, now=None) -> str:
     with texts.outgoing_language():
         values = build_context(operation, actor=actor, now=now, display=True)
         text = (
-            f"**Cancelled:** {values['fleet_type']} at {values['fleet_time_eve']} ({values['formup']})\n"
+            f"**Cancelled:** {values['fleet_type']} at {values['fleet_time_eve']} "
+            f"({escape_discord_markdown(values['formup'])})\n"
             f"-# FleetOps notice from {values['sender']} at {values['sent_at']} EVE"
         )
     return neutralize_mass_mentions(text.strip())

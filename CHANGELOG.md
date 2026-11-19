@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.3.0b7] - Unreleased
+
+Fixes from the full regression run of 0.3.0b6 on a test site: wording, translations and small checks. This version changes no data and has no migration.
+
+### Fixed
+
+- **My attendance** (on the slim fleet page of a member and on the full page of an FC) now reads **First** and **Last** as **首次** and **末次** in Chinese. The page links of the lists keep **首页** and **末页**.
+- **The reason a claim cannot be submitted again** is shown in the language of the page, for every kind of reason (for example the request to authorize loss reading for all characters first).
+- **Kick records** no longer contain the English words "unknown corporation". A member without a known corporation is recorded with the name alone, and older records that contain those words are shown translated.
+- **Fleet menu of a manual PAP entry:** each fleet reads "type · FC · start time (EVE)", so two fleets of one type can be told apart.
+- **Discord pings show what a person typed as typed.** The additional information, the FC name, the form-up place, the group, the comms and doctrine names, the channels, the sender, the role or channel name of the footer and the fleet type have their Discord markdown switched off, so an additional message that starts with `>>>`, `#` or `-` no longer turns the rest of the ping into a quote, a heading or a list. An address that was typed (`https://...`) is left untouched, so a link with `_` or `~` still works. The markdown of the template (bold labels, links, small text) is unchanged, and so is the MOTD.
+- **A ping without a fleet** has no blank line between its text and the footer in the built-in template. A site that already has the template stored keeps its text; remove the empty line before the footer in **Message templates** to match.
+- **A payment request that leaves out the amount a row showed** (or sends something that is not a number) no longer skips the check for a changed amount: that row is not paid and the message tells why, like a changed amount. This applies to the **Paid** button of the payments page, of a single row and of the claim page (a post to the claim page without the shown amount is refused too).
+- **A standing SRP link cannot be given a closing time in the past.** The form says so; the unchanged time of a link that already closed by itself can still be saved.
+- **An address in the after-action report field** that is refused (`javascript:`, `data:`, text that is no address) now shows its message once, not twice.
+- **Audit log:** the **Action** column shows the name of the action (hover for the code), the **Object** column the translated name, and the **Changes** column shows known stored words (statuses such as pending and approved, error texts of FleetOps, empty values) in your language. Texts FleetOps does not know stay as they were stored.
+- **The dashboard card of the FC month** (credited fleets and FC points) is shown only to people who may start fleets (the permission to start fleets, or a leader of a group that runs fleets of its own).
+- **Ship order of a doctrine:** a move that changes nothing (the first ship up, the last one down) no longer says that the order was changed but not saved.
+- **Structure templates:** the grey example in the layout field is translated, in a form the field accepts.
+- **Recalculating an empty queue** shows a blue note that there is nothing to recalculate instead of a green success message.
+- **SRP exports** check the permission before the period: somebody who may not download gets the same refusal whatever the period says.
+- The sentence after a refused fleet end ("... The fleet was not ended.") has no stray space in Chinese, and the summary of the Discord role sync uses the separator of the language.
+- Two unstable tests of the plugin itself were fixed (one depended on the language the previous test left, one ran against an installed CharLink that the test settings do not load).
+
+### Upgrade notes
+
+- No migration and no change to settings. Run `python manage.py collectstatic --noinput`, then restart Alliance Auth and Celery so the new translations load.
+- The additional information of a ping is now shown exactly as the FC types it. An FC who used Discord markdown there on purpose (bold, a quote) will see the characters instead; the template itself can still use markdown.
+- The payments page sends the amount of each row as before; only scripts or bookmarks that post to it without the amounts are refused now.
+
+### Rollback notes
+
+- Nothing was stored differently, so going back to 0.3.0b6 needs no step. Records written in this version are plain text (a kick of a member without a known corporation has the name alone) and read fine in 0.3.0b6.
+
 ## [0.3.0b6] - 2026-11-14
 
 Changes asked for after 0.3.0b5 and fixes from its re-test on a test site.

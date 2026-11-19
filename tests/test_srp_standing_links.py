@@ -1180,12 +1180,15 @@ class LinkFormPageTests(LinkPageBase):
         self.assertEqual(SrpFleetLink.objects.filter(kind="standing").count(), 1)
 
     def test_the_close_time_is_read_as_eve_time(self):
+        # Changed for 0.3.0b7: a closing time in the past is refused, so the test uses a day well ahead (it used a
+        # fixed date that has passed since).
+        day = (timezone.now() + timedelta(days=30)).date()
         self.client_for(self.reviewer).post(
-            route("srp_link_new"), self.form_values(name="Timed", auto_close_at="2026-11-07T00:00")
+            route("srp_link_new"), self.form_values(name="Timed", auto_close_at=f"{day.isoformat()}T00:00")
         )
 
         link = SrpFleetLink.objects.get(name="Timed")
-        self.assertEqual(link.auto_close_at.isoformat(), "2026-11-07T00:00:00+00:00")
+        self.assertEqual(link.auto_close_at.isoformat(), f"{day.isoformat()}T00:00:00+00:00")
 
     def test_the_form_asks_for_the_defaults_of_the_category(self):
         response = self.client_for(self.reviewer).get(route("srp_link_new"), {"category": self.category.pk})

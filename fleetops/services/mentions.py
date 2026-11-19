@@ -260,6 +260,34 @@ def discord_link_text(text) -> str:
     return re.sub(r"([\\\[\]])", r"\\\1", str(text or ""))
 
 
+_MARKDOWN_INLINE = re.compile(r"([\\*_~`|\[\]<])")
+_BARE_URL = re.compile(r"(https?://[^\s<]+)", re.IGNORECASE)
+_MARKDOWN_LINE_START = re.compile(r"^(\s*)([>#+\-])")
+_MARKDOWN_LIST_NUMBER = re.compile(r"^(\s*\d+)([.)])")
+
+
+def escape_discord_markdown(text) -> str:
+    """``text`` with the Discord markdown it holds switched off: Discord shows the text exactly as typed.
+
+    Each of ``\\ * _ ~ ` | [ ] <`` gets a backslash in front, wherever it stands (so a name cannot close the text of
+    a masked link or open a mention), and so does the first character of a line when it would start a quote
+    (``>``, ``>>>``), a heading, a list or a small text (``#``, ``-``, ``+``, ``-#``), or the dot of a numbered
+    list. A bare ``http(s)://`` address is left as typed. Discord removes a backslash in front of any punctuation
+    mark and shows the mark. Only the values FleetOps puts into a message are escaped; the markdown of the template
+    itself is not touched.
+    """
+    # An address an FC pasted is copied through unchanged: Discord makes a link of it from the raw text and would keep
+    # a backslash in the address, which then opens another page. This opens no bypass: a masked link needs ``[``, and
+    # that is still escaped in the text around the address.
+    parts = _BARE_URL.split(str(text or ""))
+    text = "".join(part if index % 2 else _MARKDOWN_INLINE.sub(r"\\\1", part) for index, part in enumerate(parts))
+    lines = []
+    for line in text.split("\n"):
+        line = _MARKDOWN_LINE_START.sub(r"\1\\\2", line, count=1)
+        lines.append(_MARKDOWN_LIST_NUMBER.sub(r"\1\\\2", line, count=1))
+    return "\n".join(lines)
+
+
 def discord_link_address(url) -> str:
     """``url`` as the address of a Discord masked link ``[text](address)``, or as a plain address in a message.
 

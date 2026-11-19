@@ -798,7 +798,8 @@ class ExactMentionTests(MessageTestBase):
         rendered = self.render(operation)
 
         self.assertEqual(rendered.ping.count("@everyone"), 1)
-        self.assertIn("{{ ping_mention }} \x02000000000000\x03", rendered.ping)
+        # Changed for 0.3.0b7: what the FC typed is shown as typed, so Discord markdown in it is escaped (the underscore).
+        self.assertIn("{{ ping\\_mention }} \x02000000000000\x03", rendered.ping)
 
     def test_motd_shows_the_mention_by_name(self):
         template = make_template("{{ ping_mention }} {{ formup }}", MessageTemplate.TemplateType.MOTD)
@@ -1109,7 +1110,7 @@ class StandalonePingTests(MessageTestBase):
             f"**Comms:** [Main Comms]({self.join_url()})\n"
             "**Doctrine:** Moa Fleet\n"
             "**Time:** 2026-10-12 19:00 EVE · <t:1791831600:t> (<t:1791831600:R>)\n"
-            "\n"
+            # Changed for 0.3.0b7: no blank line between the text and the footer (as in the ping of a fleet).
             "-# FleetOps ping from Boss Main to all at 2026-10-12 18:30 EVE",
         )
         self.assertEqual(rendered.motd, "")

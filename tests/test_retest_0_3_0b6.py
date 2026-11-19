@@ -102,6 +102,14 @@ class RejectedClaimClosedLinkTests(StandingBase):
 class AutomaticRejectionResubmittedTests(ClaimBase):
     REJECTED_AT = datetime(2026, 3, 9, 14, 5, 9, tzinfo=dt_timezone.utc)
 
+    def setUp(self):
+        super().setUp()
+        # Changed for 0.3.0b7: these tests compare English text, so they set their own language. Before, they relied
+        # on the language the thread was left in by the test before (test_js_catalog left it on Chinese).
+        override = translation.override("en")
+        override.__enter__()
+        self.addCleanup(override.__exit__, None, None, None)
+
     def auto_rejected(self):
         claim = self.submit(self.killmail())
         SrpClaim.objects.filter(pk=claim.pk).update(status=Status.REJECTED, auto_rejected=True)

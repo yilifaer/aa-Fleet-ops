@@ -844,7 +844,10 @@ class ClaimActionTests(ManagerPagesTestCase):
 
         args, kwargs = paid.call_args
         self.assertEqual([item.pk for item in args[0]], [claim.pk])
-        self.assertEqual(kwargs, {"actor": self.manager, "note": "Sent 12:05", "expected_amounts": None})
+        self.assertEqual(
+            kwargs,
+            {"actor": self.manager, "note": "Sent 12:05", "expected_amounts": None, "shown_required": True},
+        )
         # A single payment is announced as a notice with a way back (D11), not as a message of Alliance Auth.
         self.assertEqual(messages_of(response), [])
         (notice,) = self.client.session["fleetops_notices"]
@@ -1512,7 +1515,10 @@ class MarkPaidTests(ManagerPagesTestCase):
         self.assertRedirects(response, route("srp_payments"), fetch_redirect_response=False)
         (claims_arg,), kwargs = self.mark.call_args
         self.assertEqual({claim.pk for claim in claims_arg}, {first.pk, second.pk})
-        self.assertEqual(kwargs, {"actor": self.manager, "note": "Sent 20:15", "expected_amounts": {}})
+        # Changed for 0.3.0b7: the payments page asks the service to require the shown amount of every row.
+        self.assertEqual(
+            kwargs, {"actor": self.manager, "note": "Sent 20:15", "expected_amounts": {}, "shown_required": True}
+        )
         self.assertIn("2 claims marked paid (100,000,000 ISK).", messages_of(response))
 
     def test_the_amounts_the_payer_was_shown_go_to_the_service(self):

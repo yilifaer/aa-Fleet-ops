@@ -98,7 +98,8 @@ def kickable_pod_members(operation):
 
 
 def member_label(member):
-    return f"{member.character_name} ({member.corporation_name or 'unknown corporation'})"
+    """The name with the corporation in brackets; a member without a known corporation is the bare name."""
+    return f"{member.character_name} ({member.corporation_name})" if member.corporation_name else member.character_name
 
 
 def _check_fleet(operation):

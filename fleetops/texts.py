@@ -878,6 +878,15 @@ KICK_NO_WRITE_TOKEN = StoredText(gettext_noop("The FC character has no ESI token
 KICKED_MEMBER = StoredText(gettext_noop("Kicked %(member)s."))
 KICK_FAILED = StoredText(gettext_noop("Could not kick %(member)s: %(error)s"), nested=("error",))
 KICK_ALREADY_LEFT = StoredText(gettext_noop("Could not kick %(member)s: already left the fleet."))
+# Messages written by 0.3.0b6 and earlier for a member without a known corporation: the English words
+# "unknown corporation" were stored in the text. They are recognised so that old records read translated.
+KICKED_MEMBER_NO_CORPORATION = StoredText(gettext_noop("Kicked %(member)s (unknown corporation)."))
+KICK_FAILED_NO_CORPORATION = StoredText(
+    gettext_noop("Could not kick %(member)s (unknown corporation): %(error)s"), nested=("error",)
+)
+KICK_ALREADY_LEFT_NO_CORPORATION = StoredText(
+    gettext_noop("Could not kick %(member)s (unknown corporation): already left the fleet.")
+)
 KICKED_CAPSULES = StoredText(gettext_noop("Kicked %(count)s capsule member(s)."))
 KICKED_OUTSIDE = StoredText(gettext_noop("Kicked %(count)s member(s) outside %(system)s."))
 KICK_FAILURES = StoredText(gettext_noop("%(count)s failed. %(details)s"), nested=("details",))
@@ -1211,6 +1220,11 @@ SRP_LIMITED_CHANGED = StoredText(
     gettext_noop(
         "The amount within the limits changed from %(shown)s to %(current)s while you were looking at the claim. "
         "Check it and approve again."
+    )
+)
+SRP_APPROVED_NOT_SHOWN = StoredText(
+    gettext_noop(
+        "The request did not say which amount your page showed for this claim. Reload the payments page and pay again."
     )
 )
 SRP_APPROVED_CHANGED = StoredText(

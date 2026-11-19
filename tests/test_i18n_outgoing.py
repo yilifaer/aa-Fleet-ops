@@ -361,7 +361,8 @@ class StandalonePingTextTests(FakeCatalogs, MessageTestBase):
 
     def test_the_text_is_the_same_whatever_the_languages(self):
         expected = (
-            "@everyone\nGate camp now\n\n**Group:** Sig A group\n\n"
+            # Changed for 0.3.0b7: one line break before the footer, not a blank line.
+            "@everyone\nGate camp now\n\n**Group:** Sig A group\n"
             "-# FleetOps ping from Boss Main to all at 2026-10-12 18:30 EVE"
         )
 

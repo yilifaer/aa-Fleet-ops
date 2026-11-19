@@ -670,7 +670,11 @@ class UndoPaymentNoticeTests(ManagerPagesTestCase):
     def test_the_notice_is_shown_once_on_the_claim_page_with_the_link_to_the_form(self):
         claim = f.srp_claim(self.member, status=Status.APPROVED, decided_by=self.manager2, time=self.loss_time)
 
-        response = self.client.post(route("srp_claim_action", claim.uuid, "paid"), {"note": "Sent"}, follow=True)
+        response = self.client.post(
+            route("srp_claim_action", claim.uuid, "paid"),
+            {"note": "Sent", "shown_amount": str(claim.approved_amount)},
+            follow=True,
+        )
 
         html = response.content.decode()
         self.assertIn('id="fo-notices"', html)

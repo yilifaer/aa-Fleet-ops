@@ -70,7 +70,7 @@ FleetOps 为每支舰队生成两段文字：发到 Discord 的 **Ping**，以�
 ## 格式与限制
 
 - Ping：Discord Markdown（`**粗体**`、`[文字](链接)`、`-# 小字`）。Discord 最多接受 2000 个字符（按 Discord 的算法计数）。超过限制的 Ping
-  在发出之前就会被拒绝；只复制的 Ping 则只给出警告。**开舰队** 页面上的计数器显示当前长度。链接预览已被关闭。
+  在发出之前就会被拒绝；只复制的 Ping 则只给出警告。**开舰队** 页面上的计数器显示当前长度。链接预览已被关闭。人输入的文字（FC 名、集结地点、附加信息、小组、语音和建制名称、建制舰船与配置、频道、发送人、页脚里的身份组或频道名和舰队类型）按原样显示：这些值里的 Discord Markdown 会用反斜杠关掉，所以以 `>>>`、`#` 或 `-` 开头的附加信息不会把后面整条 Ping 变成引用、标题或列表。输入的网址（`https://...`）保持原样，所以含 `_` 或 `~` 的链接仍然可用。模板自己写的 Markdown（粗体标签、链接、小字）不受影响。
 - MOTD：游戏读的是类 HTML 文本，所以渲染模板时，来自人或 FleetOps 的每个值都会做 HTML 转义（`<`、`>`、`&` 变成 `&lt;`、`&gt;`、`&amp;`；否则游戏会吃掉 `doctrine_ships` 里的 `>` 和 `>>>` 符号）。本身就是游戏标记的变量（`fc_link`、`formup_link`、`logi_channel_link`、`boost_channel_link`）保留标签，只转义可见文字。模板里自己已经转义的值（`{{ doctrine_ships|force_escape }}`、`|escape`）不会被转义两次。Discord Ping 不转义。游戏能识别一小部分类 HTML 标签（`<b>`、`<br>`、`<font color="#bfffffff">`、`<a href="…">`）。值里的撇号在标签之间的文字中按原样显示；在标签内部仍保持转义，所以自定义模板里单引号属性（`<font color='{{ formup }}'>`）取不到值里的撇号，请用双引号。
   `{{ additional_message|linebreaksbr }}` 会保留 FC 输入的换行。`<script` 会被转义。MOTD 超过 1000 个字符只会给出警告，因为游戏可能会截断更长的 MOTD。
 - **Retry Ping** 会先按舰队当前的数据和当前的模板重新生成 Ping 再发出，所以旧版本保存的舰队不会再把旧的存储文本发一遍。**Retry MOTD** 发送存储的 MOTD；**Regenerate & Push MOTD** 会重新生成。已结束的舰队没有这两个重试按钮。
@@ -114,7 +114,6 @@ FleetOps 为每支舰队生成两段文字：发到 Discord 的 **Ping**，以�
 **Comms:** {% if comms_link %}[{{ comms }}]({{ comms_link }}){% else %}{{ comms }}{% endif %}{% endif %}{% if doctrine_name %}
 **Doctrine:** {% if doctrine_url %}[{{ doctrine_name }}]({{ doctrine_url }}){% else %}{{ doctrine_name }}{% endif %}{% if doctrine_ships %} ({{ doctrine_ships }}){% endif %}{% endif %}{% if is_pre_ping %}
 **Time:** {{ fleet_time_eve }} · {{ fleet_time_local }} ({{ fleet_time_discord }}){% endif %}
-
 -# FleetOps ping from {{ sender }} to {{ ping_target_label }} at {{ sent_at }} EVE
 ```
 
