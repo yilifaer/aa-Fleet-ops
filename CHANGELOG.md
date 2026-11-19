@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.3.0b7] - Unreleased
+## [0.3.0b7] - 2026-11-19
 
 Fixes from the full regression run of 0.3.0b6 on a test site: wording, translations, small checks and continuous payment batch numbers. One new migration, `0047`, numbers the payment batches; it changes nothing else.
 
