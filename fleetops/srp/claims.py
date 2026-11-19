@@ -1095,17 +1095,42 @@ def last_rejection(claim):
     return claim.events.filter(action__in=(Action.REJECT, Action.AUTO_REJECT)).order_by("-created_at", "-pk").first()
 
 
-# A rejection made through the ban dialog is recognised without the marker (rejections of versions before 0.3.0b5 have
-# none): the same reviewer who made the ban rejected the claim of the banned member within this window after the ban.
+# Every rejection made through the ban dialog since 0.3.0b5 carries the marker ``data.ban``. Older rejections have none:
+# for those that were made before the site got 0.3.0b5, the rejection counts as a ban rejection when the same reviewer
+# made a ban of the claimant within this window before it. A rejection without the marker made after the upgrade is
+# an ordinary rejection, whatever bans exist.
 BAN_REJECTION_WINDOW = timedelta(minutes=5)
+MARKER_MIGRATION = "0045_srp_member_resubmit_rejected"
+_marker_upgrade = {}
+
+
+def marker_upgrade_time():
+    """When this site applied the migration that started marking ban rejections (the upgrade to 0.3.0b5), or None
+    when it cannot be read (then no rejection counts as an unmarked old one: a member may submit again, which carries
+    a warning and is skipped by batch approval)."""
+    if "time" in _marker_upgrade:
+        return _marker_upgrade["time"]
+    try:
+        from django.db.migrations.recorder import MigrationRecorder
+
+        applied = (
+            MigrationRecorder.Migration.objects.filter(app="fleetops", name=MARKER_MIGRATION)
+            .values_list("applied", flat=True)
+            .first()
+        )
+    except Exception:
+        return None
+    if applied is not None:
+        _marker_upgrade["time"] = applied
+    return applied
 
 
 def rejected_by_ban(claim) -> bool:
     """Whether the claim was rejected because its claimant was banned: only a reviewer may reopen such a claim.
 
-    The rejection event says so (``data.ban``). A rejection without the marker (made before 0.3.0b5) counts too when
-    its actor is the reviewer who created a ban of the claimant and it happened at most ``BAN_REJECTION_WINDOW`` after
-    that ban was created, whether the ban is still in force or not.
+    The rejection event says so (``data.ban``). A rejection without the marker counts only when it is older than the
+    upgrade to 0.3.0b5 (``marker_upgrade_time``) and its actor is the reviewer who created a ban of the claimant at
+    most ``BAN_REJECTION_WINDOW`` before it, whether the ban is still in force or not.
     """
     event = last_rejection(claim) if claim.status == Status.REJECTED else None
     if event is None or event.action != Action.REJECT:
@@ -1113,6 +1138,9 @@ def rejected_by_ban(claim) -> bool:
     if (event.data or {}).get("ban"):
         return True
     if event.actor_id is None or claim.user_id is None:
+        return False
+    upgraded = marker_upgrade_time()
+    if upgraded is None or event.created_at >= upgraded:
         return False
     return SrpBan.objects.filter(
         user_id=claim.user_id,

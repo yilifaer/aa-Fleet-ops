@@ -799,7 +799,12 @@ class ReviewOnCreateTests(TestCase):
         self.client.force_login(self.fc)
         response = self.client.post(url, payload)
         self.client.force_login(self.lead)
-        self.client.post(url, payload)
+        # Changed for 0.3.0b7: the pilot already has a manual row of the FC on this fleet, so the lead's entry is held
+        # back once with a warning; sending the same entry with the acknowledgement saves it (a second record).
+        held = self.client.post(url, payload)
+        self.assertEqual(operation.attendance_records.filter(source=MANUAL).count(), 1)
+        self.assertTrue(any("already has manual PAP" in text for text in message_texts(held)))
+        self.client.post(url, {**payload, "confirm_second": str(payload["character_id"])})
 
         rows = list(operation.attendance_records.filter(source=MANUAL).order_by("pk"))
         self.assertEqual([(row.created_by, row.review_status) for row in rows], [(self.fc, PENDING), (self.lead, APPROVED)])

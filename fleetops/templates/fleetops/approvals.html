@@ -29,7 +29,7 @@
       <input class="form-control form-control-sm" name="note" maxlength="255" placeholder="{% translate 'Note (required to reject)' %}" aria-label="{% blocktranslate trimmed with fleet_type=op.fleet_type %}Note for {{ fleet_type }}{% endblocktranslate %}">
       <div class="form-check"><input class="form-check-input" type="checkbox" name="include_attendance" id="include-{{ op.pk }}" checked><label class="form-check-label small" for="include-{{ op.pk }}">{% translate "With its PAP rows" %}</label></div>
       <button class="btn btn-sm btn-primary" name="action" value="approve">{% translate "Approve" context "FleetOps" %}</button>
-      <button class="btn btn-sm btn-outline-danger" name="action" value="reject" data-fo-confirm="{% translate 'Reject this fleet? The FC sees your note.' %}" data-fo-confirm-label="{% translate 'Reject' %}">{% translate "Reject" %}</button>
+      <button class="btn btn-sm btn-outline-danger" name="action" value="reject" data-fo-need="note" data-fo-need-message="{% translate 'Give a reason for the rejection.' %}" data-fo-confirm="{% translate 'Reject this fleet? The FC sees your note.' %}" data-fo-confirm-label="{% translate 'Reject' %}">{% translate "Reject" %}</button>
     </form></td>
   </tr>{% endfor %}</tbody>
 </table></div>
@@ -58,7 +58,7 @@
 {% if rows_truncated %}<div class="card-body small text-muted">{% blocktranslate trimmed with shown=rows_shown %}Only the first {{ shown }} rows are listed; the others follow once these are reviewed.{% endblocktranslate %}</div>{% endif %}
 <div class="card-body row g-2 align-items-center">
   <div class="col-lg-5"><input class="form-control form-control-sm" name="note" maxlength="255" placeholder="{% translate 'Note (required to reject)' %}" aria-label="{% translate 'Review note' %}"></div>
-  <div class="col-auto d-flex gap-2"><button class="btn btn-sm btn-primary" name="action" value="approve">{% translate "Approve selected" %}</button> <button class="btn btn-sm btn-outline-danger" name="action" value="reject" data-fo-confirm="{% translate 'Reject the selected PAP rows?' %}" data-fo-confirm-label="{% translate 'Reject' %}">{% translate "Reject selected" %}</button></div>
+  <div class="col-auto d-flex gap-2"><button class="btn btn-sm btn-primary" name="action" value="approve">{% translate "Approve selected" %}</button> <button class="btn btn-sm btn-outline-danger" name="action" value="reject" data-fo-need="note" data-fo-need-message="{% translate 'Give a reason for the rejection.' %}" data-fo-confirm="{% translate 'Reject the selected PAP rows?' %}" data-fo-confirm-label="{% translate 'Reject' %}">{% translate "Reject selected" %}</button></div>
 </div>
 </form>
 <script>

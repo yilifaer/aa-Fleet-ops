@@ -3,13 +3,15 @@
 
 import csv
 import os
+from contextlib import nullcontext
 from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 
 from fleetops.forms_config import lookup_ship
-from fleetops.models import SrpCategory, SrpPayoutRule
+from fleetops.models import MAX_DATABASE_ID, SrpCategory, SrpPayoutRule
 from fleetops.services.audit import audit, config_snapshot
 
 MAX_LISTED = 20
@@ -50,7 +52,8 @@ class Command(BaseCommand):
     @staticmethod
     def _type_id(text):
         text = (text or "").strip()
-        if not text.isascii() or not text.isdigit() or int(text) <= 0:
+        # The column holds a signed 64 bit number: a larger value is reported here, not by the database on --apply.
+        if not text.isascii() or not text.isdigit() or not 0 < int(text) <= MAX_DATABASE_ID:
             raise ValueError("type_id is not a ship type ID")
         return int(text)
 
@@ -83,66 +86,75 @@ class Command(BaseCommand):
         bad = []
         unresolved = []
         seen = set()
-        with handle:
-            reader = csv.DictReader(handle)
-            fields = reader.fieldnames or []
-            if "type_id" not in fields:
-                raise CommandError("The file has no type_id column.")
-            if column not in fields:
-                raise CommandError(f"The file has no column called \"{column}\".")
-            field = SrpPayoutRule._meta.get_field("amount")
-            for row in reader:
-                line = reader.line_num
-                try:
-                    amount = self._amount(row.get(column))
-                    if not amount:
-                        skipped += 1
-                        continue
-                    field.run_validators(amount)
-                    type_id = self._type_id(row.get("type_id"))
-                    if type_id in seen:
-                        raise ValueError("the ship appears twice")
-                    seen.add(type_id)
-                    rule = SrpPayoutRule.objects.filter(
-                        ship_type_id=type_id, doctrine_key="", scope=scope, category_key=category.pk
-                    ).first()
-                    if rule is not None and rule.amount == amount:
-                        unchanged += 1
-                        continue
-                    # The name comes from the file or from a lookup, in a dry run too (a lookup only reads), so an ID
-                    # that is no ship is reported before --apply.
-                    name = (
-                        rule.ship_type_name
-                        if rule is not None and rule.ship_type_name
-                        else self._name(row, name_column, type_id, unresolved)
-                    )
-                except (ValueError, ValidationError) as exc:
-                    message = "; ".join(exc.messages) if isinstance(exc, ValidationError) else str(exc)
-                    bad.append((line, message))
-                    continue
-                if rule is None:
-                    created += 1
-                else:
-                    updated += 1
-                if not options["apply"]:
-                    continue
-                before = config_snapshot(rule) if rule is not None else None
-                if rule is None:
-                    rule = SrpPayoutRule(
-                        ship_type_id=type_id, ship_type_name=name, scope=scope, category=category, amount=amount
-                    )
-                else:
-                    rule.amount = amount
-                    rule.ship_type_name = name
-                rule.save()
-                audit(
-                    None,
-                    "configuration.create" if before is None else "configuration.update",
-                    rule,
-                    before,
-                    config_snapshot(rule),
-                    f"Imported from {source}",
-                )
+        # The whole --apply is one transaction: a file that fails half way (an unreadable line, a crash) leaves no rule
+        # and no audit entry behind.
+        try:
+            with transaction.atomic() if options["apply"] else nullcontext():
+                with handle:
+                    reader = csv.DictReader(handle)
+                    fields = reader.fieldnames or []
+                    if "type_id" not in fields:
+                        raise CommandError("The file has no type_id column.")
+                    if column not in fields:
+                        raise CommandError(f"The file has no column called \"{column}\".")
+                    field = SrpPayoutRule._meta.get_field("amount")
+                    for row in reader:
+                        line = reader.line_num
+                        try:
+                            amount = self._amount(row.get(column))
+                            if not amount:
+                                skipped += 1
+                                continue
+                            field.run_validators(amount)
+                            type_id = self._type_id(row.get("type_id"))
+                            if type_id in seen:
+                                raise ValueError("the ship appears twice")
+                            seen.add(type_id)
+                            rule = SrpPayoutRule.objects.filter(
+                                ship_type_id=type_id, doctrine_key="", scope=scope, category_key=category.pk
+                            ).first()
+                            if rule is not None and rule.amount == amount:
+                                unchanged += 1
+                                continue
+                            # The name comes from the file or from a lookup, in a dry run too (a lookup only reads), so an ID
+                            # that is no ship is reported before --apply.
+                            name = (
+                                rule.ship_type_name
+                                if rule is not None and rule.ship_type_name
+                                else self._name(row, name_column, type_id, unresolved)
+                            )
+                        except (ValueError, ValidationError) as exc:
+                            message = "; ".join(exc.messages) if isinstance(exc, ValidationError) else str(exc)
+                            bad.append((line, message))
+                            continue
+                        if rule is None:
+                            created += 1
+                        else:
+                            updated += 1
+                        if not options["apply"]:
+                            continue
+                        before = config_snapshot(rule) if rule is not None else None
+                        if rule is None:
+                            rule = SrpPayoutRule(
+                                ship_type_id=type_id, ship_type_name=name, scope=scope, category=category, amount=amount
+                            )
+                        else:
+                            rule.amount = amount
+                            rule.ship_type_name = name
+                        rule.save()
+                        audit(
+                            None,
+                            "configuration.create" if before is None else "configuration.update",
+                            rule,
+                            before,
+                            config_snapshot(rule),
+                            f"Imported from {source}",
+                        )
+        except UnicodeDecodeError:
+            raise CommandError(
+                f"{source} is not a UTF-8 file. Save it as CSV UTF-8 (with or without a byte order mark) and run the "
+                "command again. Nothing was written."
+            ) from None
         for line, message in bad:
             self.stderr.write(f"Line {line}: skipped ({message}).")
         verb = "" if options["apply"] else "would be "

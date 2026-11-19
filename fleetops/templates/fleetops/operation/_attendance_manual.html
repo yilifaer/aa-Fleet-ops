@@ -1,8 +1,8 @@
 {% load i18n %}
 {% if can_manage_attendance and accepts_records %}
 <div class="card mb-3" id="manual-attendance"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2"><strong>{% translate "Add / Correct PAP" %}</strong><a class="btn btn-sm btn-outline-secondary" href="{% url 'fleetops:roster_import' operation.uuid %}">{% translate "Paste roster" %}</a></div><div class="card-body">
-  {% if manual_attendance_errors %}<div class="alert alert-danger" id="manual-attendance-errors">{% for error in manual_attendance_errors %}<div>{{ error }}</div>{% endfor %}</div>{% endif %}
-  <form method="post" action="{% url 'fleetops:add_manual_attendance' operation.uuid %}">{% csrf_token %}
+  {% if manual_attendance_errors %}<div class="alert {% if manual_attendance_warning %}alert-warning{% else %}alert-danger{% endif %}" id="manual-attendance-errors">{% for error in manual_attendance_errors %}<div>{{ error }}</div>{% endfor %}</div>{% endif %}
+  <form method="post" action="{% url 'fleetops:add_manual_attendance' operation.uuid %}">{% csrf_token %}{{ manual_attendance_form.confirm_second }}
     <div class="row g-2">
       <div class="col-md-3">{{ manual_attendance_form.character_name.label_tag }}{{ manual_attendance_form.character_name }}</div>
       <div class="col-md-2">{{ manual_attendance_form.character_id.label_tag }}{{ manual_attendance_form.character_id }}</div>

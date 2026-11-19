@@ -354,6 +354,21 @@
       return;
     }
     const submitter = event.submitter || null;
+    // A button with data-fo-need="<field name>" needs that field filled before it asks or sends (the reject buttons
+    // of the approvals page: the note field is shared with Approve, so it cannot be "required"). The message is the
+    // button's data-fo-need-message. The server checks it again.
+    const needed = submitter && submitter.dataset.foNeed ? form.elements[submitter.dataset.foNeed] : null;
+    if (needed && !String(needed.value || '').trim()) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      // The message is shown by reportValidity() and the custom validity is cleared at once: left set, it would
+      // block the next submit of the same form (Approve with an empty note) until the field is typed in.
+      needed.setCustomValidity(submitter.dataset.foNeedMessage || '');
+      needed.reportValidity();
+      needed.setCustomValidity('');
+      needed.focus();
+      return;
+    }
     const source = submitter && submitter.dataset.foConfirm ? submitter : form;
     const question = source.dataset.foConfirm;
     if (!question) {

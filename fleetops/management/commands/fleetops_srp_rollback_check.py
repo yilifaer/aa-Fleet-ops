@@ -26,6 +26,13 @@ class Command(BaseCommand):
                 self.stdout.write(f"        {rollback.describe(found[code])}")
             else:
                 self.stdout.write(self.style.SUCCESS(f"OK      {label}"))
+        batch_problem = rollback.check_batch_numbers()
+        if batch_problem:
+            found[batch_problem.code] = batch_problem
+            self.stdout.write(self.style.ERROR("FAILED  Payment batch numbers equal their database ID"))
+            self.stdout.write(f"        {rollback.describe_batch_numbers(batch_problem)}")
+        else:
+            self.stdout.write(self.style.SUCCESS("OK      Payment batch numbers equal their database ID"))
         if found:
             raise CommandError("Going back is not safe yet. Fix the points above and run this check again.")
         self.stdout.write(self.style.SUCCESS("All checks passed: 'migrate fleetops 0023' is not stopped by the guard."))

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 
 from django.db import transaction
+from django.db.models import Q
 
 from fleetops import texts
 from fleetops.models import MAX_MULTIPLIER, AttendanceRecord, FleetOperation, ReviewStatus
@@ -21,6 +22,23 @@ def manual_row_granted(review_status, correction, has_managed_row):
     if correction == AttendanceRecord.Correction.MERGE:
         return not has_managed_row
     return True
+
+
+def manual_rows_of_player(operation, character_id):
+    """The manual and pasted PAP rows (not rejected) the player of the character already has on the fleet: those of
+    the character and of every other character of the same account. A second row is allowed (it is a separate
+    credit); the forms warn before it is made."""
+    from fleetops.services.identity import identity_for_character_id
+
+    identity = identity_for_character_id(character_id)
+    who = Q(character_id=character_id)
+    if identity.user is not None:
+        who |= Q(auth_user=identity.user)
+    return list(
+        AttendanceRecord.objects.filter(who, operation=operation, source__in=AttendanceRecord.USER_SOURCES)
+        .exclude(review_status=ReviewStatus.REJECTED)
+        .order_by("created_at", "pk")
+    )
 
 
 def create_manual_attendance(

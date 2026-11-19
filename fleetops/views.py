@@ -66,6 +66,7 @@ from fleetops.services.audit import audit
 from fleetops.services.attendance import (
     RECORDABLE_STATUSES,
     create_manual_attendance,
+    manual_rows_of_player,
     set_operation_attendance_multiplier,
 )
 from fleetops.services.counting import counted_operations, evaluate_stats_inclusion, operation_count_reason
@@ -1771,12 +1772,34 @@ def add_manual_attendance(request, operation_uuid):
 MANUAL_ATTENDANCE_ENTRY_KEY = "fleetops_manual_attendance_entry"
 
 
-def _keep_manual_attendance_entry(request, operation, errors):
+def _keep_manual_attendance_entry(request, operation, errors, *, confirm=None, warning=False):
+    values = {name: request.POST.get(name, "") for name in ManualAttendanceForm.base_fields}
+    if confirm is not None:
+        values["confirm_second"] = str(confirm)
     request.session[MANUAL_ATTENDANCE_ENTRY_KEY] = {
         "operation": str(operation.uuid),
-        "values": {name: request.POST.get(name, "") for name in ManualAttendanceForm.base_fields},
+        "values": values,
         "errors": errors,
+        "warning": warning,
     }
+
+
+def _second_record_warning(operation, data):
+    """The warning when the player already has a manual PAP on the fleet and has not acknowledged it; else ''.
+
+    A second record is allowed (it is another credit), so the entry is saved when the same form is sent again with
+    the character ID of the warning in ``confirm_second``."""
+    character_id = data["character_id"]
+    if str(data.get("confirm_second") or "") == str(character_id):
+        return ""
+    rows = manual_rows_of_player(operation, character_id)
+    if not rows:
+        return ""
+    return _(
+        "This player already has manual PAP on this fleet (entries: %(count)s, PAP in total: %(value)s). A new entry "
+        "is a second record that counts as well. Press Save again to add it, or delete the first one if it was a "
+        "mistake."
+    ) % {"count": len(rows), "value": sum(row.attendance_value for row in rows)}
 
 
 def _save_manual_attendance(request, operation, data, *, form=None):
@@ -1784,6 +1807,16 @@ def _save_manual_attendance(request, operation, data, *, form=None):
 
     Refusals go to ``form`` when there is one, else to the fleet page.
     """
+    warning = _second_record_warning(operation, data)
+    if warning:
+        if form is not None:
+            form.add_error(None, warning)
+            form.data = form.data.copy()
+            form.data["confirm_second"] = str(data["character_id"])
+        else:
+            messages.warning(request, warning)
+            _keep_manual_attendance_entry(request, operation, [warning], confirm=data["character_id"], warning=True)
+        return None
     try:
         record = create_manual_attendance(
             operation,

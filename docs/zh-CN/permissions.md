@@ -160,7 +160,7 @@ FC 统计不受影响。
 | 数据集 | 谁可以 |
 |---|---|
 | `corporations`、`fcs` | `view_all_stats` |
-| `members` | `view_all_stats` 可导出全联盟或任意军团（`corporation=<id>`）；`view_corp_stats` 只能带上本军团的 ID，其他军团返回 404 |
+| `members` | `view_all_stats` 可导出全联盟或任意军团（`corporation=<id>`）；`view_corp_stats` 只能带上本军团的 ID，其他军团返回 404；该月没有成员也没有 PAP 的军团 ID，对 `view_all_stats` 同样返回 404，与该军团的页面一致 |
 | `member-fleets` | 能打开该成员页的人（`user=<id>`），否则 404 |
 | `attendance`（PAP 历史） | `scope=me`：`basic_access`；`scope=corporation`：`view_corp_stats`；`scope=alliance`：`view_all_stats` |
 | `incentives` | `manage_incentives`，且已勾选"启用 FC 奖金" |

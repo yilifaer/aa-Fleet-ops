@@ -54,6 +54,28 @@ OVERVIEW_SORTS = ("name", "-name", "average", "-average", "total", "-total", "ma
 _STATUS_ORDER = {"missed": 0, "in_progress": 1, "no_members": 2, "none": 3, "met": 4}
 
 
+def corporation_name(corporation_id, year, month):
+    """The corporation's name: its current members' corporation, else the name stored with its PAP of the month.
+
+    None when the corporation has neither members in scope nor PAP in the month.
+    """
+    names = list(
+        population.member_profiles(corporation_id=corporation_id).values_list(
+            "main_character__corporation_name", flat=True
+        )[:1]
+    )
+    if not names:
+        names = list(
+            attendance_queryset(year, month)
+            .filter(corporation_id=corporation_id)
+            .order_by("-created_at")
+            .values_list("corporation_name", flat=True)[:1]
+        )
+    if not names:
+        return None
+    return names[0] or str(corporation_id)
+
+
 def attendance_queryset(year, month, *, settings_obj=None):
     """Counted PAP of the month; PAP is credited to the main of the character's owner."""
     start, end = month_bounds(year, month)

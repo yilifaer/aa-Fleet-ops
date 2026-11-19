@@ -116,6 +116,11 @@ Rules behind these settings:
 - Manual and imported PAP rows are corrections: **keep** adds a separate credit, **replace** takes the place of
   the tracked PAP, **merge** adds its value to it. They are applied each time PAP is calculated, so deleting
   one and recalculating restores the tracked PAP.
+- A second manual entry for a player who already has a manual or pasted PAP row on the fleet (not rejected; any
+  character of the same account) is allowed, as it is a separate credit and counts as well. Before it is saved the
+  fleet page and the **Add PAP** page hold it back once with a warning (how many entries and how much PAP the player
+  already has); pressing **Save** again, which sends the ID of that character along, saves it. Another character
+  warns again.
 - While a fleet runs, its **PAP** tab shows who would get PAP if the fleet closed now. Members who do not
   manage the fleet see only their own characters. The dashboard and My Statistics show "PAP in running fleets".
 - A fleet that was closed under an earlier release keeps the PAP selection it was closed with and takes no PAP
@@ -779,14 +784,23 @@ To enable FleetOps SRP:
   audit entry (it is not a data change) and logs at debug level only, never a token.
 - **Payment batches.** Every payment makes a batch (`PAY-<number>`): the claims a payer marked paid together, the
   number of players, the total and the optional note, which members see in the claim (the note is the payment note).
-  The numbers are those of the moment of payment and do not change when a payment is undone later. A single payment
+  The batch numbers are continuous: a batch gets the highest number so far plus one when it is finished, and only
+  a batch that is kept gets one, so a payment where everything was skipped leaves no gap. Two payments finishing at
+  the same moment never get the same number (the number is unique and the second one tries again). Batches made
+  before 0.3.0b7 keep the number they showed so far (their internal key), so a `PAY-n` already written in a transfer
+  reason still matches. The page, the lists, the claim export, the audit entry (`object_id` is the number), the
+  payment events and the search of the batches in the admin (`PAY-117` or `117`, an exact match) all use this number. The counts are those of the moment
+  of payment and do not change when a payment is undone later. A single payment
   makes a batch of one. If nothing could be paid (everything was skipped) no batch is left. The batch is audited once as
   `srp.payment_batch` (claims, players, total and the length of the note, the note itself as the reason); every
-  claim's payment event names the batch. **Recent payment batches** on the payments page lists the batches of the last 30
+  claim's payment event names the batch by its number. **Recent payment batches** on the payments page lists the batches of the last 30
   days (50 at most); the page of a batch (payers only; a reviewer without a payment permission gets a 403) lists the
   claims still paid in it, says how many payments were undone since and links to **Undo payment...** on each claim.
   Claims paid before 0.3.0b1 have no batch and show "(before batches)". A batch that stayed empty is deleted by the daily
-  cleanup after an hour.
+  cleanup after an hour. A payment cut off by a hard stop (a killed process) leaves its batch without a number: it shows
+  as plain `PAY` until the daily cleanup repairs it (after an hour at the earliest), which gives it its number and names it in the
+  events. Going back to 0.3.0b6 is refused while a batch has a number that is not its internal key
+  (`fleetops_srp_rollback_check` lists them).
 - **Export of the claims to pay.** The payments page offers the approved claims (with the filters of the page) as a
   file, one row per claim or one row per player: whom to pay (the main character as it is now), the character ID, the
   claim, the loss time, the ship, the category, the link and the approved amount; the last row is the total. Claims the
@@ -870,7 +884,7 @@ the timeline and is not copied to the audit log.
 
 ### Submitting a rejected claim again
 
-By default only a withdrawn claim can be submitted again by its member; a rejected claim has to be reopened by a reviewer. When **Members may resubmit rejected claims** (SRP settings, **Members and review**; off by default) is on, the claimant also sees **Submit again** on their own rejected claim; the button is shown only when the submission can succeed (no ban, SRP on, within the claim deadline, for a rejected claim an open link), otherwise the claim page says why not. It works exactly like submitting a withdrawn claim again: the claim is calculated again with the current rules and the monthly limits, goes back to the review queue as pending and is audited as `srp.claim_resubmit`. The rejection stays in the claim's history (the event with its reason and the audit entry), and the rejection reason is no longer shown on the claim while it is pending. A claim that a reviewer rejected carries the warning "Submitted again after a rejection" (reviewer, reason, date and time in EVE time) after it is submitted again, and a claim the rules rejected carries "Submitted again after being rejected automatically by the rules on <time>: <reason>": it shows in the queue, and **Approve clean claims** skips it, so a reviewer has to decide it by hand. The member's rejection count on the claim page counts such a claim as before, because it is built from the claim's rejection events, not from its current status. A claim that was rejected because the member was banned (**Reject pending claims** when banning) can never be submitted again by the member, not even after the ban ends or is lifted; only a reviewer can reopen it. A rejection made before 0.3.0b5 has no ban mark; it counts as a ban rejection when the reviewer who created a ban of the claimant rejected the claim of that claimant within 5 minutes after the ban was created (the ban may be lifted). No data is converted; a rejection by another reviewer or later than that is an ordinary rejection. The same rules apply as for a withdrawn claim: SRP must be on, a banned member cannot, the loss must be within the claim deadline, a closed SRP link (a fleet link or a standing link) stops a rejected claim but not a withdrawn one, and a claim over the monthly limit is treated by **Over limit action** (it can be rejected again). Claims imported from aa-srp can never be resubmitted. Turning the setting off hides the button again at once; a claim that was resubmitted stays pending. The change of the setting is audited like the other SRP settings.
+By default only a withdrawn claim can be submitted again by its member; a rejected claim has to be reopened by a reviewer. When **Members may resubmit rejected claims** (SRP settings, **Members and review**; off by default) is on, the claimant also sees **Submit again** on their own rejected claim; the button is shown only when the submission can succeed (no ban, SRP on, within the claim deadline, for a rejected claim an open link), otherwise the claim page says why not. It works exactly like submitting a withdrawn claim again: the claim is calculated again with the current rules and the monthly limits, goes back to the review queue as pending and is audited as `srp.claim_resubmit`. The rejection stays in the claim's history (the event with its reason and the audit entry), and the rejection reason is no longer shown on the claim while it is pending. A claim that a reviewer rejected carries the warning "Submitted again after a rejection" (reviewer, reason, date and time in EVE time) after it is submitted again, and a claim the rules rejected carries "Submitted again after being rejected automatically by the rules on <time>: <reason>": it shows in the queue, and **Approve clean claims** skips it, so a reviewer has to decide it by hand. The member's rejection count on the claim page counts such a claim as before, because it is built from the claim's rejection events, not from its current status. A claim that was rejected because the member was banned (**Reject pending claims** when banning) can never be submitted again by the member, not even after the ban ends or is lifted; only a reviewer can reopen it. A rejection made before the site got 0.3.0b5 has no ban mark; it counts as a ban rejection when the reviewer who created a ban of the claimant rejected the claim of that claimant within 5 minutes after the ban was created (the ban may be lifted). The window applies only to rejections without a mark that are older than the upgrade (the time `fleetops.0045_srp_member_resubmit_rejected` was applied, read from the migration table; when it cannot be read the window is not used and the member may submit again, with the warning). Every ban rejection since the upgrade carries the mark, so an ordinary rejection made within minutes of a ban is not mistaken for one. No data is converted; a rejection by another reviewer or later than that is an ordinary rejection. The same rules apply as for a withdrawn claim: SRP must be on, a banned member cannot, the loss must be within the claim deadline, a closed SRP link (a fleet link or a standing link) stops a rejected claim but not a withdrawn one, and a claim over the monthly limit is treated by **Over limit action** (it can be rejected again). Claims imported from aa-srp can never be resubmitted. Turning the setting off hides the button again at once; a claim that was resubmitted stays pending. The change of the setting is audited like the other SRP settings.
 
 ### Insurance estimate
 
@@ -1167,7 +1181,10 @@ a `type_id` column, a column with the amounts (`--column`, default `amount`) and
 (`--name-column`, default `name`; without it the ship is looked up). Rows without an amount, or with 0, are skipped; a
 rule for the same ship, scope (`--scope`, default `any`) and category is updated, others are created, each with its audit
 entry `configuration.create` or `configuration.update` ("Imported from" and the name of the file). Bad rows are listed
-with their line number and skipped. Without `--apply` nothing is written and the command only counts; it still looks up the ship names (read only, from the
+with their line number and skipped; a `type_id` must be a positive whole number the database can hold (above that it is
+a bad row in the dry run already). With `--apply` all rules and their audit entries are written in one transaction: if
+the command stops half way nothing is kept. A file that is not UTF-8 (save it as CSV UTF-8, with or without a byte order
+mark) is refused with a message and writes nothing. Without `--apply` nothing is written and the command only counts; it still looks up the ship names (read only, from the
 Eve SDE app or ESI), so a `type_id` that is no EVE item type is listed as a bad row before you apply, and the ships whose name could
 not be looked up (ESI not reachable) are named in the output.
 

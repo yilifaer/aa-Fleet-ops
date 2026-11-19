@@ -124,6 +124,9 @@ class MembersAccessTests(TestCase):
             check("members", self.manager, corporation=str(f.OTHER_CORP[0]))
 
     def test_view_all_stats_may_export_any_corporation(self):
+        # Changed for 0.3.0b7: a corporation without members or PAP in the month is 404 for the file, like its page
+        # (see test_regression_0_3_0b7_more); the corporation of this test gets a member first.
+        f.member("other_corp_member", corporation=f.OTHER_CORP)
         scope = check("members", self.lead, corporation=str(f.OTHER_CORP[0]))
         self.assertEqual(scope.corporation_id, f.OTHER_CORP[0])
 

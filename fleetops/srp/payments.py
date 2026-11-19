@@ -11,11 +11,12 @@ when a payment is undone later. Only payments after the upgrade have a batch; ol
 from datetime import timedelta
 
 from allianceauth.services.hooks import get_extension_logger
-from django.db import transaction
+from django.db import IntegrityError, transaction
+from django.db.models import Max, Q
 from django.utils import timezone
 
-from fleetops.models import SrpClaim, SrpPaymentBatch
-from fleetops.services.audit import audit
+from fleetops.models import SrpClaim, SrpClaimEvent, SrpPaymentBatch
+from fleetops.services.audit import audit_event
 from fleetops.srp import policy as rules
 from fleetops.srp.types import SrpPayRow
 
@@ -90,6 +91,57 @@ def create_batch(actor, note: str, filters=None) -> SrpPaymentBatch:
         )
 
 
+NUMBER_TRIES = 8
+
+
+def assign_number(batch: SrpPaymentBatch, counts: dict | None = None) -> int:
+    """Give the batch the next free number (the highest number plus one) once, and return it.
+
+    ``counts`` (field values of the batch) are written by the same UPDATE as the number, so a batch never has its
+    counts without a number.
+
+    Numbers are continuous because only batches that are kept get one. Two payments finishing at the same time may
+    compute the same number: the unique column lets one of them win and the other tries again with the new maximum.
+    """
+    counts = counts or {}
+    if batch.number:
+        if counts:
+            SrpPaymentBatch.objects.filter(pk=batch.pk).update(**counts)
+        return batch.number
+    for _attempt in range(NUMBER_TRIES):
+        number = (SrpPaymentBatch.objects.aggregate(top=Max("number"))["top"] or 0) + 1
+        try:
+            with transaction.atomic():
+                changed = SrpPaymentBatch.objects.filter(pk=batch.pk, number__isnull=True).update(number=number, **counts)
+        except IntegrityError:
+            continue
+        if not changed:
+            # Numbered meanwhile (a repair of the same batch): take what is stored.
+            batch.number = SrpPaymentBatch.objects.values_list("number", flat=True).get(pk=batch.pk)
+            if counts:
+                SrpPaymentBatch.objects.filter(pk=batch.pk).update(**counts)
+            return batch.number
+        batch.number = number
+        return number
+    raise RuntimeError("No free payment batch number after several tries.")
+
+
+def name_batch_in_events(batch: SrpPaymentBatch) -> None:
+    """The paid events of the claims in the batch name it by number: they were written with its UUID because the
+    number is given only when the batch is kept."""
+    # By the UUID alone: the event of a claim that was undone before the batch was numbered (its claim no longer
+    # points to the batch) is named too, and so is its unpaid event.
+    events = list(
+        SrpClaimEvent.objects.filter(
+            action__in=(SrpClaimEvent.Action.PAID, SrpClaimEvent.Action.UNPAID), data__batch_uuid=str(batch.uuid)
+        )
+    )
+    for event in events:
+        event.data = {"batch": batch.number}
+    if events:
+        SrpClaimEvent.objects.bulk_update(events, ["data"])
+
+
 def payer_name(user) -> str:
     """The name written on a batch: the main character of the payer, else the user name."""
     try:
@@ -111,12 +163,17 @@ def finish_batch(batch: SrpPaymentBatch, done, note: str) -> SrpPaymentBatch | N
     batch.claim_count = len(done)
     batch.payee_count = len({payee_key(claim) for claim in done})
     batch.total = sum(claim.approved_amount or 0 for claim in done)
-    batch.save(update_fields=["claim_count", "payee_count", "total"])
-    audit(
+    # The counts and the number are written by one statement: a batch with claims counted but no number cannot be left.
+    assign_number(
+        batch, {"claim_count": batch.claim_count, "payee_count": batch.payee_count, "total": batch.total}
+    )
+    name_batch_in_events(batch)
+    # The entry names the batch by its number (PAY-n), the number shown everywhere else.
+    audit_event(
         batch.created_by,
         "srp.payment_batch",
-        batch,
-        None,
+        "SrpPaymentBatch",
+        batch.number,
         {"count": batch.claim_count, "payees": batch.payee_count, "total": batch.total, "note_length": len(note)},
         note,
     )
@@ -134,9 +191,16 @@ def repair_cut_batches(now=None) -> int:
     cut off in the middle, for example by a killed worker); returns how many were repaired."""
     cutoff = (now or timezone.now()) - ORPHAN_AFTER
     repaired = 0
-    for batch in SrpPaymentBatch.objects.filter(created_at__lt=cutoff, claim_count=0, claims__isnull=False).distinct():
+    cut = Q(claim_count=0) | Q(number__isnull=True)
+    for batch in SrpPaymentBatch.objects.filter(cut, created_at__lt=cutoff, claims__isnull=False).distinct():
         if finish_batch(batch, SrpClaim.objects.filter(payment_batch=batch), "") is not None:
             repaired += 1
+    # A batch numbered whose events were not renamed yet (cut off between the two steps).
+    waiting = SrpClaimEvent.objects.filter(data__batch_uuid__isnull=False, action__in=(
+        SrpClaimEvent.Action.PAID, SrpClaimEvent.Action.UNPAID))
+    uuids = {str(event.data["batch_uuid"]) for event in waiting}
+    for batch in SrpPaymentBatch.objects.filter(uuid__in=uuids, number__isnull=False):
+        name_batch_in_events(batch)
     return repaired
 
 

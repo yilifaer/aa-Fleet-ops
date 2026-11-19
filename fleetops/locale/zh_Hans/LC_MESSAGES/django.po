@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: AA FleetOps\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-19 08:14+0000\n"
+"POT-Creation-Date: 2026-11-19 09:01+0000\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -1310,7 +1310,7 @@ msgstr "备注"
 msgid "With its PAP rows waiting for approval"
 msgstr "含等待审批的 PAP 行"
 
-#: forms_records.py texts.py
+#: forms_records.py templates/fleetops/approvals.html texts.py
 msgid "Give a reason for the rejection."
 msgstr "请填写拒绝原因。"
 
@@ -4376,6 +4376,10 @@ msgstr "SRP 发现的损失"
 #, python-format
 msgid "Loss %(id)s"
 msgstr "损失 %(id)s"
+
+#: models.py
+msgid "Number"
+msgstr "编号"
 
 #: models.py
 msgid "Created by (name)"
@@ -15230,6 +15234,11 @@ msgstr "FC 的放弃领取状态已更新，奖金已重新计算。"
 #, python-format
 msgid "Invalid manual PAP entry. %(details)s"
 msgstr "补录 PAP 条目无效。%(details)s"
+
+#: views.py
+#, python-format
+msgid "This player already has manual PAP on this fleet (entries: %(count)s, PAP in total: %(value)s). A new entry is a second record that counts as well. Press Save again to add it, or delete the first one if it was a mistake."
+msgstr "该玩家在这支舰队上已有补录 PAP（条数：%(count)s，PAP 合计：%(value)s）。再录入一条就是第二条记录，同样计数。要添加请再保存一次；如果第一条是录错了，请先删除它。"
 
 #: views.py
 msgid "Historical manual PAP saved."

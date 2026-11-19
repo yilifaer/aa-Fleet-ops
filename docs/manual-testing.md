@@ -420,7 +420,7 @@ right actor.
 
 - [ ] With **Members may resubmit rejected claims** on: a member's rejected claim of a closed fleet link and of a closed standing link has no **Submit again** button and says why; the same claim with the link open has it. A withdrawn claim of a closed link can still be submitted again.
 - [ ] A claim an automatic rule rejected and the member submitted again shows "Submitted again after being rejected automatically by the rules on <date> <time> EVE: <reason>"; **Approve clean claims** skips it. The warning of a manual rejection shows the date and the time.
-- [ ] Ban a member with **Reject pending claims** off, reject one of their pending claims yourself within five minutes: the member cannot submit it again (a reviewer can reopen it). A rejection by another reviewer, or an hour later, can be submitted again.
+- [ ] Ban a member with **Reject pending claims** on: the member cannot submit the rejected claims again (a reviewer can reopen them). Ban a member with it off and reject one of their pending claims by hand a minute later: on a site upgraded to 0.3.0b5 or later that is an ordinary rejection and the member can submit it again (0.3.0b7); only unmarked rejections from before the 0.3.0b5 upgrade are found by the five minute window.
 - [ ] A member with a ban, SRP switched off or a loss past the deadline sees no **Submit again** on a withdrawn or rejected claim.
 - [ ] **Configuration** > Doctrine settings > Ship order: save without a change shows *Nothing was changed.* and the audit log gets no entry.
 - [ ] Payments: a card with nothing you may pay shows "—"; the line under **To pay** counts only what you may pay.
@@ -429,3 +429,11 @@ right actor.
 - [ ] The audit page shows "Webhook address replaced" for a changed webhook, no address.
 - [ ] Rollback: `python manage.py fleetops_srp_rollback_check` first, `migrate fleetops 0045` only when all checks are OK.
 
+## 24. The rest of the fixes from the 0.3.0b6 regression (0.3.0b7)
+
+- [ ] Payments: make two payments and a third where everything is skipped (your own claims): the batches are `PAY-n` and `PAY-n+1` with no gap; the page of a batch, the lists, the claim export (`srp-claims`, column **Payment batch**) and the audit entry (`srp.payment_batch`) use that number. Batches made before the upgrade keep the number they had.
+- [ ] Upgrade check: `python manage.py migrate` applies `0047`; `fleetops_srp_rollback_check` then `migrate fleetops 0046` removes the new column (the earlier version shows `PAY-` followed by the internal number again).
+- [ ] Approvals: **Reject** and **Reject selected** with an empty note show the browser message "Give a reason for the rejection." and do not open the confirmation; **Approve** and **Approve selected** with an empty note work as before.
+- [ ] Statistics: **Members** export with `?corporation=` and an ID that does not exist is 404 (like the corporation page); a real corporation exports.
+- [ ] Add PAP twice for the same player on one fleet (fleet page and **Manual PAP** page): the second save is held back with a warning; saving again adds it.
+- [ ] `fleetops_srp_import_payouts`: a type ID above the largest number the database holds is a bad row in the dry run; a file saved in another encoding is refused with a message; `--apply` stopped half way writes nothing.

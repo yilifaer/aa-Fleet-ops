@@ -2,7 +2,7 @@
 
 ## [0.3.0b7] - Unreleased
 
-Fixes from the full regression run of 0.3.0b6 on a test site: wording, translations and small checks. This version changes no data and has no migration.
+Fixes from the full regression run of 0.3.0b6 on a test site: wording, translations, small checks and continuous payment batch numbers. One new migration, `0047`, numbers the payment batches; it changes nothing else.
 
 ### Fixed
 
@@ -22,17 +22,24 @@ Fixes from the full regression run of 0.3.0b6 on a test site: wording, translati
 - **Recalculating an empty queue** shows a blue note that there is nothing to recalculate instead of a green success message.
 - **SRP exports** check the permission before the period: somebody who may not download gets the same refusal whatever the period says.
 - The sentence after a refused fleet end ("... The fleet was not ended.") has no stray space in Chinese, and the summary of the Discord role sync uses the separator of the language.
+- **Payment batch numbers are continuous.** A batch gets the next number (the highest so far plus one) only when it is finished and kept, so a payment where everything was skipped leaves no gap in `PAY-n`, and two payments at the same moment never share a number. Batches made so far keep the number they already showed, so a `PAY-n` that was written in a transfer reason still matches. The page of a batch, the lists, the claim export, the audit log, the payment events and the search of batches in the admin (`PAY-117` or `117`, an exact match) use this number. A payment cut off by a hard stop (killed process) leaves a batch shown as plain `PAY` until the daily cleanup repairs it (after an hour at the earliest); its events are named when it is repaired.
+- **Importing payout rules from a CSV file** (`fleetops_srp_import_payouts`): a ship ID that is too large is reported as a bad row already in the dry run (it used to crash on `--apply`), `--apply` writes all rules and their audit entries in one transaction (nothing is kept when it stops half way), and a file that is not UTF-8 is refused with a clear message.
+- **Approvals page:** **Reject** and **Reject selected** ask for the note in the browser before the confirmation dialog opens. The note field stays optional for **Approve**; the server still checks it.
+- **Exporting the members of a corporation that does not exist** (or has no members and no PAP in the month) answers 404 for people who may see every corporation, like the page of that corporation, instead of an empty file.
+- **A second manual PAP for the same player on a fleet** (the fleet page and the **Add PAP** page) is held back once with a warning that says what the player already has; saving again adds it as before.
+- **Claims an SRP ban rejected before 0.3.0b5** are recognised by the five minute window only when the rejection is older than the upgrade to 0.3.0b5 (read from the migration table). A rejection without the ban mark made after the upgrade is an ordinary rejection, so the member can submit it again even when a ban by the same reviewer was made minutes before. When the upgrade time cannot be read the window is not used.
 - Two unstable tests of the plugin itself were fixed (one depended on the language the previous test left, one ran against an installed CharLink that the test settings do not load).
 
 ### Upgrade notes
 
-- No migration and no change to settings. Run `python manage.py collectstatic --noinput`, then restart Alliance Auth and Celery so the new translations load.
+- One new migration, `0047`: it adds the number of the payment batches and gives every existing batch the number it already had (its internal key), so nothing changes in what you see. Run `python manage.py migrate`, then `python manage.py collectstatic --noinput`, and restart Alliance Auth and Celery so the new translations and the page script load. No change to settings.
+- From now on the next batch is numbered one above the highest number, so after a payment with nothing to pay there is no gap in the numbers.
 - The additional information of a ping is now shown exactly as the FC types it. An FC who used Discord markdown there on purpose (bold, a quote) will see the characters instead; the template itself can still use markdown.
 - The payments page sends the amount of each row as before; only scripts or bookmarks that post to it without the amounts are refused now.
 
 ### Rollback notes
 
-- Nothing was stored differently, so going back to 0.3.0b6 needs no step. Records written in this version are plain text (a kick of a member without a known corporation has the name alone) and read fine in 0.3.0b6.
+- Run `python manage.py fleetops_srp_rollback_check` first and roll back only when all checks are OK (migration 0047 has the same guard as 0040 to 0046). Then `python manage.py migrate fleetops 0046` drops the batch number column and you install 0.3.0b6; no batch, claim or payment is lost. Version 0.3.0b6 shows every batch as `PAY-` and its internal key again, so going back is refused while any batch has a number that is not its internal key (the batches made before 0.3.0b7 have one; the ones made after it usually do not): a `PAY-n` written in a transfer reason would name another batch, and going forward again would number the batches by their key for good. Both `migrate` and `fleetops_srp_rollback_check` list the numbers in the way. Records written in this version are plain text (a kick of a member without a known corporation has the name alone) and read fine in 0.3.0b6.
 
 ## [0.3.0b6] - 2026-11-14
 

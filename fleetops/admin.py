@@ -537,6 +537,15 @@ class SrpPaymentBatchAdmin(SrpReadOnlyAdmin):
     list_display = ("__str__", "created_by_name", "created_at", "claim_count", "payee_count", "total")
     search_fields = ("created_by_name",)
 
+    def get_search_results(self, request, queryset, search_term):
+        """A search for ``PAY-117`` or ``117`` finds the batch with that number (exactly), as the reference is written
+        in transfer reasons; any other text searches the name of the payer."""
+        term = (search_term or "").strip()
+        digits = term[4:] if term[:4].upper() == "PAY-" else term
+        if digits.isascii() and digits.isdigit() and len(digits) < 10:
+            return queryset.filter(number=int(digits)), False
+        return super().get_search_results(request, queryset, search_term)
+
 
 @admin.register(SrpPayerSetting)
 class SrpPayerSettingAdmin(SrpReadOnlyAdmin):

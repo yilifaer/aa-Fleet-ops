@@ -383,6 +383,9 @@ class ManualAttendanceForm(forms.Form):
         initial=AttendanceRecord.Correction.KEEP,
     )
     notes = forms.CharField(label=pgettext_lazy("FleetOps", "Notes"), required=False, widget=forms.Textarea(attrs={"rows": 2}))
+    # Set by the page after it warned that the player already has a manual PAP on the fleet: the ID of the character
+    # the warning was for, so saving again is the acknowledgement. Another character warns again.
+    confirm_second = forms.CharField(required=False, max_length=20, widget=forms.HiddenInput())
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

@@ -2953,9 +2953,14 @@ class SrpLoss(models.Model):
 
 class SrpPaymentBatch(models.Model):
     """One round of payments: the claims a payer marked paid together. The numbers are those of the moment of
-    payment and do not change when a payment is undone later."""
+    payment and do not change when a payment is undone later.
+
+    ``number`` is the n of ``PAY-n``: continuous, given when the batch is finished and kept (a payment that paid
+    nothing leaves no gap), unique. Batches made before 0.3.0b7 have their primary key as number.
+    """
 
     uuid = models.UUIDField(verbose_name=_("UUID"), default=uuid.uuid4, unique=True, editable=False)
+    number = models.PositiveIntegerField(verbose_name=_("Number"), null=True, blank=True, unique=True, editable=False)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         verbose_name=_("Created by"),
@@ -2984,7 +2989,7 @@ class SrpPaymentBatch(models.Model):
 
     @property
     def reference(self):
-        return f"PAY-{self.pk}" if self.pk else "PAY"
+        return f"PAY-{self.number}" if self.number else "PAY"
 
 
 class SrpInsurancePrice(models.Model):

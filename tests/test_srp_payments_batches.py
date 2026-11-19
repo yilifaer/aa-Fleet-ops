@@ -55,10 +55,10 @@ class BatchTests(PaymentsBase):
         self.assertEqual(result.batch, batch)
         self.assertEqual((batch.claim_count, batch.payee_count, batch.total), (5, 3, 72_000_000))
         self.assertEqual((batch.created_by, batch.note), (self.payer, "Round one"))
-        self.assertEqual(batch.reference, f"PAY-{batch.pk}")
+        self.assertEqual(batch.reference, f"PAY-{batch.number}")
         self.assertEqual(set(SrpClaim.objects.filter(payment_batch=batch).values_list("pk", flat=True)), {c.pk for c in claims})
         events = SrpClaimEvent.objects.filter(action=Action.PAID)
-        self.assertEqual({event.data["batch"] for event in events}, {batch.pk})
+        self.assertEqual({event.data["batch"] for event in events}, {batch.number})
         self.assertEqual(events.count(), 5)
         entries = AuditLog.objects.filter(action="srp.payment_batch")
         self.assertEqual(entries.count(), 1)
@@ -123,7 +123,7 @@ class BatchTests(PaymentsBase):
         batch.refresh_from_db()
         self.assertIsNone(first.payment_batch)
         self.assertEqual((batch.claim_count, batch.total), (2, 20_000_000))
-        self.assertEqual(first.events.get(action=Action.UNPAID).data, {"batch": batch.pk})
+        self.assertEqual(first.events.get(action=Action.UNPAID).data, {"batch": batch.number})
 
     def test_a_payment_that_stops_halfway_keeps_the_batch_of_the_claims_paid(self):
         first, second = self.approved(), self.approved(self.other)

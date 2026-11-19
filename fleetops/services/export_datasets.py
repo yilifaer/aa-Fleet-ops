@@ -192,6 +192,9 @@ def check_members(request) -> ExportScope:
             _require(request, VIEW_CORP_STATS)
             if not stats_access.can_view_corporation(request.user, corporation_id):
                 raise Http404
+        elif statistics_service.corporation_name(corporation_id, year, month) is None:
+            # The page of a corporation answers 404 for one without members or PAP in the month; so does the file.
+            raise Http404
         label = f"corporation-{corporation_id}"
     # The filters of the members page; a value the page would ignore is not exported either.
     status = request.GET.get("status", "")

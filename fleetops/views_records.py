@@ -66,6 +66,7 @@ def records_context(request, operation):
         del request.session[MANUAL_ATTENDANCE_ENTRY_KEY]
         context["manual_attendance_form"] = ManualAttendanceForm(initial=entry.get("values") or {})
         context["manual_attendance_errors"] = entry.get("errors") or []
+        context["manual_attendance_warning"] = bool(entry.get("warning"))
     return context
 
 

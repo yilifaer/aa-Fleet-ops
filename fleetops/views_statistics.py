@@ -13,7 +13,7 @@ from fleetops.services.assessment import corporation_status, member_status, mont
 from fleetops.services.history import configured_alliance_ids, month_retention_days
 from fleetops.services.periods import month_ref
 from fleetops.services.statistics import (
-    attendance_queryset,
+    corporation_name,
     corporation_overview,
     corporation_statistics,
     fc_operations_queryset,
@@ -125,28 +125,6 @@ def corporation_statistics_view(request):
     )
 
 
-def _corporation_name(corporation_id, year, month):
-    """The corporation's name: its current members' corporation, else the name stored with its PAP of the month.
-
-    None when the corporation has neither members in scope nor PAP in the month.
-    """
-    names = list(
-        population.member_profiles(corporation_id=corporation_id).values_list(
-            "main_character__corporation_name", flat=True
-        )[:1]
-    )
-    if not names:
-        names = list(
-            attendance_queryset(year, month)
-            .filter(corporation_id=corporation_id)
-            .order_by("-created_at")
-            .values_list("corporation_name", flat=True)[:1]
-        )
-    if not names:
-        return None
-    return names[0] or str(corporation_id)
-
-
 @fleetops_permission_required(("fleetops.view_corp_stats", "fleetops.view_all_stats"), any_perm=True)
 def corporation_statistics_detail_view(request, corporation_id):
     """Any corporation for ``view_all_stats``; a corporation manager only their own (the same page as without an ID).
@@ -159,7 +137,7 @@ def corporation_statistics_detail_view(request, corporation_id):
             return not_found(request, OWN_CORPORATION_STATISTICS_REASON)
         return corporation_statistics_view(request)
     year, month = _year_month(request)
-    name = _corporation_name(corporation_id, year, month)
+    name = corporation_name(corporation_id, year, month)
     if name is None:
         raise Http404
     stats = corporation_statistics(corporation_id, year, month)

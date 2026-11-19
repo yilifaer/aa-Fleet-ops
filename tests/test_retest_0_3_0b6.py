@@ -340,6 +340,12 @@ class OldBanRejectionTests(ClaimBase):
         super().setUp()
         self.settings(member_resubmit_rejected=True)
         self.other_reviewer = f.create_user("b6_other_reviewer", perms=f.SRP_REVIEWER_PERMS)
+        # Changed for 0.3.0b7: the window only finds rejections from before the site got 0.3.0b5 (the upgrade time is
+        # the one of the migration that starts the marker); these tests are about such old rejections, so the site
+        # "was upgraded" an hour from now. The tests of the upgrade time itself are in test_regression_0_3_0b7_more.
+        patcher = mock.patch.object(claims, "marker_upgrade_time", return_value=timezone.now() + timedelta(hours=1))
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def banned_and_rejected(self, *, actor=None, minutes=0.0, lift=False):
         """A pending claim, a ban of its member, then a rejection ``minutes`` after the ban without the marker."""

@@ -204,7 +204,7 @@ Exports are at `/fleetops/statistics/export/<dataset>/?format=xlsx` or `format=c
 | Dataset | Who |
 |---|---|
 | `corporations`, `fcs` | `view_all_stats` |
-| `members` | `view_all_stats` for the alliance or any corporation (`corporation=<id>`); `view_corp_stats` only with the own corporation's ID, any other corporation is 404 |
+| `members` | `view_all_stats` for the alliance or any corporation (`corporation=<id>`); `view_corp_stats` only with the own corporation's ID, any other corporation is 404; a corporation ID without members or PAP in the month is 404 for `view_all_stats` too, like the page of that corporation |
 | `member-fleets` | Whoever may open that member's page (`user=<id>`), otherwise 404 |
 | `attendance` (PAP history) | `scope=me`: `basic_access`; `scope=corporation`: `view_corp_stats`; `scope=alliance`: `view_all_stats` |
 | `incentives` | `manage_incentives`, while **Incentive enabled** is ticked |

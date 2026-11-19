@@ -443,7 +443,8 @@ def _mark_paid(claim, actor, note, expected_amount=None, batch=None, *, shown_re
             from_status=Status.APPROVED,
             amount=locked.approved_amount,
             reason=note,
-            data={"batch": batch.pk} if batch is not None else None,
+            # The batch gets its number only when it is finished and kept, so the event names it by its UUID.
+            data={"batch_uuid": str(batch.uuid)} if batch is not None else None,
             old={"status": Status.APPROVED},
             new={"status": locked.status, "approved_amount": locked.approved_amount},
         )
@@ -501,7 +502,12 @@ def undo_payment(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
         if locked.status != Status.PAID:
             raise claims.wrong_state(locked, texts.SRP_ONLY_PAID_UNPAID(), Status.APPROVED)
         previous = {"status": locked.status, "paid_at": locked.paid_at.isoformat() if locked.paid_at else None}
-        previous_batch = locked.payment_batch_id
+        # A batch that is not numbered yet (a payment still running, or cut off and not repaired yet) is named by its
+        # UUID; the event gets the number when the batch is finished.
+        batch_data = None
+        if locked.payment_batch_id:
+            batch_ref = locked.payment_batch
+            batch_data = {"batch": batch_ref.number} if batch_ref.number else {"batch_uuid": str(batch_ref.uuid)}
         locked.status = Status.APPROVED
         locked.paid_by = None
         locked.paid_at = None
@@ -515,7 +521,7 @@ def undo_payment(claim: SrpClaim, *, actor, reason: str) -> SrpClaim:
             from_status=Status.PAID,
             amount=locked.approved_amount,
             reason=reason,
-            data={"batch": previous_batch} if previous_batch is not None else None,
+            data=batch_data,
             old=previous,
             new={"status": locked.status},
         )

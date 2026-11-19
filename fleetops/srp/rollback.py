@@ -10,9 +10,9 @@ written into the migrations, because a migration may not import this code. ``Rol
 
 from dataclasses import dataclass, field
 
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
 
-from fleetops.models import SrpClaim, SrpFleetLink, SrpPayoutRule
+from fleetops.models import SrpClaim, SrpPaymentBatch, SrpFleetLink, SrpPayoutRule
 
 MAX_LISTED = 50
 
@@ -82,3 +82,25 @@ def describe(problem: Problem) -> str:
             "link) or restore the database from before the upgrade."
         )
     return f"{problem.count} claims were imported from aa-srp. Run fleetops_import_aasrp --undo first."
+
+
+BATCH_NUMBERS = "batch_numbers"
+
+
+def check_batch_numbers() -> Problem | None:
+    """Payment batches whose number (PAY-n) is not their database ID: the earlier version shows PAY-<ID>, so going
+    back (migration 0047) is refused while there are any. Listed are the numbers."""
+    moved = SrpPaymentBatch.objects.filter(number__isnull=False).exclude(number=F("pk"))
+    count = moved.count()
+    if not count:
+        return None
+    return Problem(BATCH_NUMBERS, count, list(moved.order_by("number").values_list("number", flat=True)[:MAX_LISTED]))
+
+
+def describe_batch_numbers(problem: Problem) -> str:
+    listed = _listed(Problem(problem.code, problem.count, [f"PAY-{number}" for number in problem.listed]))
+    return (
+        f"Payment batches with a number that is not their database ID ({listed}): the earlier "
+        "version shows PAY-<database ID>, so going back below 0047 is refused. Stay on this version or restore the "
+        "database from before the upgrade."
+    )
